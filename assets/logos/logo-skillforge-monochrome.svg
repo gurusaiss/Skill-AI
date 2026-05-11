@@ -1,0 +1,44 @@
+<svg width="400" height="120" viewBox="0 0 400 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Main Icon: Anvil + Circuit Pattern (Monochrome) -->
+  <g id="icon">
+    <!-- Anvil Base -->
+    <path d="M30 70 L50 70 L50 80 L30 80 Z" fill="#1E293B"/>
+    
+    <!-- Anvil Body -->
+    <path d="M25 50 L55 50 L60 70 L20 70 Z" fill="#1E293B"/>
+    
+    <!-- Anvil Horn -->
+    <path d="M55 50 L70 50 L70 60 L60 60 Z" fill="#475569"/>
+    
+    <!-- Circuit Nodes -->
+    <circle cx="35" cy="35" r="3" fill="#64748B"/>
+    <circle cx="50" cy="30" r="3" fill="#64748B"/>
+    <circle cx="65" cy="35" r="3" fill="#64748B"/>
+    
+    <!-- Circuit Lines -->
+    <line x1="35" y1="35" x2="35" y2="50" stroke="#64748B" stroke-width="2"/>
+    <line x1="50" y1="30" x2="50" y2="50" stroke="#64748B" stroke-width="2"/>
+    <line x1="65" y1="35" x2="65" y2="50" stroke="#64748B" stroke-width="2"/>
+    <line x1="35" y1="35" x2="50" y2="30" stroke="#64748B" stroke-width="2"/>
+    <line x1="50" y1="30" x2="65" y2="35" stroke="#64748B" stroke-width="2"/>
+    
+    <!-- Growth Arrow -->
+    <path d="M40 85 L40 95 L35 90 M40 95 L45 90" stroke="#1E293B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  
+  <!-- Text: SkillForge -->
+  <g id="text">
+    <text x="90" y="65" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="800" fill="#1E293B">
+      SkillForge
+    </text>
+    
+    <!-- AI Badge -->
+    <rect x="310" y="45" width="45" height="28" rx="6" fill="#1E293B"/>
+    <text x="332.5" y="64" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" fill="#FFFFFF" text-anchor="middle">AI</text>
+  </g>
+  
+  <!-- Tagline -->
+  <text x="90" y="85" font-family="Inter, Arial, sans-serif" font-size="12" font-weight="500" fill="#64748B">
+    Adaptive Learning Platform
+  </text>
+</svg>

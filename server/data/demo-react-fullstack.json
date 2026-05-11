@@ -1,0 +1,469 @@
+{
+  "userId": "demo-react-fullstack",
+  "goal": {
+    "goalText": "I want to learn React and build modern web apps",
+    "domain": "frontend_development",
+    "domainLabel": "Frontend Development",
+    "domainIcon": "⚛️",
+    "profile": {
+      "learnerLevel": "intermediate",
+      "intensity": "balanced",
+      "targetRole": "Frontend Developer",
+      "detectedTools": ["react", "javascript", "css"],
+      "focusKeywords": ["react", "modern web apps", "components", "hooks", "state"]
+    },
+    "skills": [
+      {
+        "id": "javascript_core",
+        "name": "JavaScript Core",
+        "description": "ES6+, closures, async/await, prototypes, event loop",
+        "level": "intermediate",
+        "days": 4,
+        "topics": ["ES6 syntax", "async/await", "closures", "event loop", "destructuring"],
+        "reason": "JavaScript mastery is the foundation before any React work",
+        "sequenceOrder": 1,
+        "mastery": 88,
+        "status": "complete",
+        "sessionsCompleted": 4
+      },
+      {
+        "id": "react_fundamentals",
+        "name": "React Fundamentals",
+        "description": "Components, JSX, props, state, hooks, lifecycle",
+        "level": "intermediate",
+        "days": 5,
+        "topics": ["JSX", "useState", "useEffect", "props", "component lifecycle", "React Router"],
+        "reason": "Core React is the primary focus of your goal",
+        "sequenceOrder": 2,
+        "mastery": 91,
+        "status": "complete",
+        "sessionsCompleted": 5
+      },
+      {
+        "id": "css_styling",
+        "name": "CSS & Styling",
+        "description": "Flexbox, Grid, Tailwind CSS, responsive design, animations",
+        "level": "intermediate",
+        "days": 3,
+        "topics": ["Flexbox", "CSS Grid", "Tailwind CSS", "responsive design", "CSS variables"],
+        "reason": "Modern web apps require polished, responsive UI",
+        "sequenceOrder": 3,
+        "mastery": 79,
+        "status": "complete",
+        "sessionsCompleted": 3
+      },
+      {
+        "id": "state_management",
+        "name": "State Management",
+        "description": "Context API, Redux Toolkit, Zustand, data flow patterns",
+        "level": "advanced",
+        "days": 4,
+        "topics": ["Context API", "Redux Toolkit", "Zustand", "data flow", "side effects"],
+        "reason": "Real-world apps need scalable state management beyond useState",
+        "sequenceOrder": 4,
+        "mastery": 74,
+        "status": "complete",
+        "sessionsCompleted": 4
+      },
+      {
+        "id": "frontend_tooling",
+        "name": "Frontend Tooling & Deployment",
+        "description": "Vite, Webpack, CI/CD, Vercel, performance optimization",
+        "level": "advanced",
+        "days": 2,
+        "topics": ["Vite bundler", "environment variables", "Vercel deployment", "code splitting", "performance"],
+        "reason": "Shipping a modern web app requires understanding the full dev pipeline",
+        "sequenceOrder": 5,
+        "mastery": 67,
+        "status": "complete",
+        "sessionsCompleted": 2
+      }
+    ],
+    "totalEstimatedDays": 18
+  },
+  "skillTree": {
+    "domain": "frontend_development",
+    "domainName": "Frontend Development",
+    "profile": {
+      "learnerLevel": "intermediate",
+      "intensity": "balanced",
+      "targetRole": "Frontend Developer",
+      "detectedTools": ["react", "javascript", "css"],
+      "focusKeywords": ["react", "modern web apps", "components", "hooks", "state"]
+    },
+    "skills": [
+      { "id": "javascript_core", "name": "JavaScript Core", "mastery": 88, "status": "complete", "days": 4 },
+      { "id": "react_fundamentals", "name": "React Fundamentals", "mastery": 91, "status": "complete", "days": 5 },
+      { "id": "css_styling", "name": "CSS & Styling", "mastery": 79, "status": "complete", "days": 3 },
+      { "id": "state_management", "name": "State Management", "mastery": 74, "status": "complete", "days": 4 },
+      { "id": "frontend_tooling", "name": "Frontend Tooling & Deployment", "mastery": 67, "status": "complete", "days": 2 }
+    ]
+  },
+  "diagnosticQuestions": [],
+  "diagnosticScores": {
+    "javascript_core": 62,
+    "react_fundamentals": 45,
+    "css_styling": 70,
+    "state_management": 30,
+    "frontend_tooling": 40
+  },
+  "learningPlan": [
+    { "day": 1,  "skillId": "javascript_core",    "skillName": "JavaScript Core",              "objective": "Master ES6+ syntax and destructuring patterns",         "sessionType": "concept",  "estimatedMinutes": 30, "completed": true,  "score": 72, "topic": "ES6 syntax" },
+    { "day": 2,  "skillId": "javascript_core",    "skillName": "JavaScript Core",              "objective": "Build confidence with async/await and Promises",         "sessionType": "practice", "estimatedMinutes": 30, "completed": true,  "score": 78, "topic": "async/await" },
+    { "day": 3,  "skillId": "javascript_core",    "skillName": "JavaScript Core",              "objective": "Understand closures and the event loop deeply",           "sessionType": "concept",  "estimatedMinutes": 30, "completed": true,  "score": 85, "topic": "closures" },
+    { "day": 4,  "skillId": "javascript_core",    "skillName": "JavaScript Core",              "objective": "Review and reinforce all JS fundamentals",               "sessionType": "review",   "estimatedMinutes": 30, "completed": true,  "score": 90, "topic": "event loop" },
+    { "day": 5,  "skillId": "react_fundamentals", "skillName": "React Fundamentals",           "objective": "Write JSX confidently and understand component structure", "sessionType": "concept",  "estimatedMinutes": 30, "completed": true,  "score": 80, "topic": "JSX" },
+    { "day": 6,  "skillId": "react_fundamentals", "skillName": "React Fundamentals",           "objective": "Build stateful components using useState and useEffect",   "sessionType": "practice", "estimatedMinutes": 30, "completed": true,  "score": 88, "topic": "useState" },
+    { "day": 7,  "skillId": "react_fundamentals", "skillName": "React Fundamentals",           "objective": "Master props, component composition and data flow",        "sessionType": "concept",  "estimatedMinutes": 30, "completed": true,  "score": 92, "topic": "props" },
+    { "day": 8,  "skillId": "react_fundamentals", "skillName": "React Fundamentals",           "objective": "Implement React Router for multi-page navigation",         "sessionType": "practice", "estimatedMinutes": 30, "completed": true,  "score": 95, "topic": "React Router" },
+    { "day": 9,  "skillId": "react_fundamentals", "skillName": "React Fundamentals",           "objective": "Build a complete mini-app combining all React skills",      "sessionType": "review",   "estimatedMinutes": 30, "completed": true,  "score": 91, "topic": "component lifecycle" },
+    { "day": 10, "skillId": "css_styling",        "skillName": "CSS & Styling",                "objective": "Design fluid layouts using Flexbox and CSS Grid",           "sessionType": "concept",  "estimatedMinutes": 30, "completed": true,  "score": 75, "topic": "Flexbox" },
+    { "day": 11, "skillId": "css_styling",        "skillName": "CSS & Styling",                "objective": "Build responsive UIs with Tailwind CSS utility classes",    "sessionType": "practice", "estimatedMinutes": 30, "completed": true,  "score": 82, "topic": "Tailwind CSS" },
+    { "day": 12, "skillId": "css_styling",        "skillName": "CSS & Styling",                "objective": "Apply animations and transitions for polished UX",          "sessionType": "review",   "estimatedMinutes": 30, "completed": true,  "score": 79, "topic": "responsive design" },
+    { "day": 13, "skillId": "state_management",   "skillName": "State Management",             "objective": "Share state across components using Context API",           "sessionType": "concept",  "estimatedMinutes": 30, "completed": true,  "score": 68, "topic": "Context API" },
+    { "day": 14, "skillId": "state_management",   "skillName": "State Management",             "objective": "Manage complex state with Redux Toolkit slices",            "sessionType": "practice", "estimatedMinutes": 30, "completed": true,  "score": 72, "topic": "Redux Toolkit" },
+    { "day": 15, "skillId": "state_management",   "skillName": "State Management",             "objective": "Use Zustand for lightweight global state in React apps",     "sessionType": "concept",  "estimatedMinutes": 30, "completed": true,  "score": 76, "topic": "Zustand" },
+    { "day": 16, "skillId": "state_management",   "skillName": "State Management",             "objective": "Review state patterns and choose the right tool per scenario","sessionType": "review",   "estimatedMinutes": 30, "completed": true,  "score": 80, "topic": "data flow" },
+    { "day": 17, "skillId": "frontend_tooling",   "skillName": "Frontend Tooling & Deployment","objective": "Configure Vite and understand module bundling",              "sessionType": "concept",  "estimatedMinutes": 30, "completed": true,  "score": 65, "topic": "Vite bundler" },
+    { "day": 18, "skillId": "frontend_tooling",   "skillName": "Frontend Tooling & Deployment","objective": "Deploy a React app to Vercel with CI/CD pipeline",           "sessionType": "practice", "estimatedMinutes": 30, "completed": true,  "score": 70, "topic": "Vercel deployment" }
+  ],
+  "sessions": [
+    {
+      "day": 1, "skillId": "javascript_core", "skillName": "JavaScript Core",
+      "challenge": { "title": "ES6 Syntax Deep Dive", "description": "Explain destructuring, spread operator, and template literals with examples.", "evaluation_criteria": ["correct syntax", "practical examples", "ES6 vs ES5 comparison"] },
+      "userResponse": "Destructuring lets me unpack values from arrays and objects. Spread copies elements. Template literals use backticks for string interpolation. ES6 makes code much cleaner.",
+      "score": 72, "grade": "B",
+      "strengths": ["correct syntax explanation", "good examples"],
+      "weaknesses": ["could go deeper on edge cases", "missed rest parameters"],
+      "feedback": "Good foundation. Expand on rest parameters and nested destructuring.",
+      "completedAt": "2026-04-09T10:00:00Z"
+    },
+    {
+      "day": 2, "skillId": "javascript_core", "skillName": "JavaScript Core",
+      "challenge": { "title": "Async/Await Mastery", "description": "Explain the event loop and demonstrate how async/await simplifies Promise chains.", "evaluation_criteria": ["event loop understanding", "async/await syntax", "error handling with try/catch"] },
+      "userResponse": "The event loop processes the call stack and task queue. Async functions return Promises automatically. Await pauses execution without blocking. I use try/catch for errors.",
+      "score": 78, "grade": "B+",
+      "strengths": ["event loop understanding", "async/await syntax correct"],
+      "weaknesses": ["shallow on Promise.all", "missed microtask queue"],
+      "feedback": "Strong grasp of async patterns. Study Promise.all for parallel operations.",
+      "completedAt": "2026-04-10T10:00:00Z"
+    },
+    {
+      "day": 3, "skillId": "javascript_core", "skillName": "JavaScript Core",
+      "challenge": { "title": "Closures & Scope", "description": "Explain closures and demonstrate a practical use case in a React-like counter.", "evaluation_criteria": ["closure definition", "scope chain", "practical use case"] },
+      "userResponse": "A closure is a function that remembers its outer scope even after the outer function returns. This is how React hooks maintain state between renders — each call captures its own scope.",
+      "score": 85, "grade": "A-",
+      "strengths": ["accurate closure definition", "excellent React connection", "scope chain clear"],
+      "weaknesses": ["could mention IIFE pattern"],
+      "feedback": "Excellent! The React hooks analogy shows deep understanding.",
+      "completedAt": "2026-04-11T10:00:00Z"
+    },
+    {
+      "day": 4, "skillId": "javascript_core", "skillName": "JavaScript Core",
+      "challenge": { "title": "Event Loop Review", "description": "Walk through what happens when setTimeout(0) and a Promise.resolve() are both queued.", "evaluation_criteria": ["call stack order", "microtask vs macrotask", "correct output prediction"] },
+      "userResponse": "Promise.resolve runs first because it's a microtask — microtasks drain completely before the macrotask queue. setTimeout goes to the macrotask queue so it runs after.",
+      "score": 90, "grade": "A",
+      "strengths": ["microtask vs macrotask precise", "correct ordering", "clear explanation"],
+      "weaknesses": [],
+      "feedback": "Perfect answer. You have mastered the JavaScript event loop.",
+      "completedAt": "2026-04-12T10:00:00Z"
+    },
+    {
+      "day": 5, "skillId": "react_fundamentals", "skillName": "React Fundamentals",
+      "challenge": { "title": "JSX & Component Architecture", "description": "Explain JSX transformation and design a reusable Button component.", "evaluation_criteria": ["JSX to React.createElement", "prop types", "composability"] },
+      "userResponse": "JSX compiles to React.createElement calls. My Button takes variant, size, onClick props and spreads extras. It's reusable across the app via composition.",
+      "score": 80, "grade": "B+",
+      "strengths": ["JSX compilation correct", "prop design solid"],
+      "weaknesses": ["didn't mention key prop for lists"],
+      "feedback": "Strong component thinking. Remember key props when rendering lists.",
+      "completedAt": "2026-04-13T10:00:00Z"
+    },
+    {
+      "day": 6, "skillId": "react_fundamentals", "skillName": "React Fundamentals",
+      "challenge": { "title": "Hooks: useState & useEffect", "description": "Build a data-fetching component using useState and useEffect with cleanup.", "evaluation_criteria": ["useState initialization", "useEffect dependencies", "cleanup function", "loading state"] },
+      "userResponse": "I initialize useState with {data: null, loading: true}. useEffect fetches on mount with the URL in deps array. The cleanup returns a function to cancel the fetch with AbortController.",
+      "score": 88, "grade": "A-",
+      "strengths": ["loading state pattern", "cleanup with AbortController", "deps array correct"],
+      "weaknesses": ["could handle race conditions better"],
+      "feedback": "Excellent hooks usage. The AbortController pattern is production-ready.",
+      "completedAt": "2026-04-14T10:00:00Z"
+    },
+    {
+      "day": 7, "skillId": "react_fundamentals", "skillName": "React Fundamentals",
+      "challenge": { "title": "Props & Component Composition", "description": "Design a Card component system using children prop and compound components.", "evaluation_criteria": ["children prop", "compound component pattern", "prop drilling avoidance"] },
+      "userResponse": "Card.Header, Card.Body, Card.Footer as compound components. The parent Card uses React.Children to compose. This avoids prop drilling and makes the API intuitive.",
+      "score": 92, "grade": "A",
+      "strengths": ["compound component pattern", "children prop mastery", "prop drilling awareness"],
+      "weaknesses": [],
+      "feedback": "Outstanding. Compound components show senior-level React thinking.",
+      "completedAt": "2026-04-15T10:00:00Z"
+    },
+    {
+      "day": 8, "skillId": "react_fundamentals", "skillName": "React Fundamentals",
+      "challenge": { "title": "React Router Navigation", "description": "Implement protected routes and nested routing for a dashboard app.", "evaluation_criteria": ["BrowserRouter setup", "protected route HOC", "useNavigate", "nested routes"] },
+      "userResponse": "I wrap the app in BrowserRouter. PrivateRoute checks auth state and redirects to /login if not authenticated using Navigate. Nested routes use Outlet for dashboard sections.",
+      "score": 95, "grade": "A+",
+      "strengths": ["protected route pattern", "Outlet usage", "Navigate redirect", "clean structure"],
+      "weaknesses": [],
+      "feedback": "Perfect. This is exactly how production React apps handle routing.",
+      "completedAt": "2026-04-16T10:00:00Z"
+    },
+    {
+      "day": 9, "skillId": "react_fundamentals", "skillName": "React Fundamentals",
+      "challenge": { "title": "Mini App: Task Manager", "description": "Architect a full task manager app with React — components, state, routing, and CRUD.", "evaluation_criteria": ["component hierarchy", "state management", "CRUD operations", "UX flow"] },
+      "userResponse": "TaskApp → TaskList → TaskItem + TaskForm. State lives in App with useState. Add/edit/delete handlers passed as props. React Router for /tasks and /tasks/:id routes.",
+      "score": 91, "grade": "A",
+      "strengths": ["clear component hierarchy", "state lifting correct", "CRUD complete"],
+      "weaknesses": ["could use useReducer for complex state"],
+      "feedback": "Excellent architecture. useReducer would scale better for this complexity.",
+      "completedAt": "2026-04-17T10:00:00Z"
+    },
+    {
+      "day": 10, "skillId": "css_styling", "skillName": "CSS & Styling",
+      "challenge": { "title": "Flexbox Layouts", "description": "Build a responsive navbar and card grid using only Flexbox.", "evaluation_criteria": ["flex-wrap", "align-items", "justify-content", "responsive breakpoints"] },
+      "userResponse": "Navbar uses flex with justify-between for logo and links. Card grid uses flex-wrap with gap. Media queries swap flex-direction to column on mobile.",
+      "score": 75, "grade": "B",
+      "strengths": ["justify-between usage", "flex-wrap correct"],
+      "weaknesses": ["missed flex-grow for filling space", "align-self not mentioned"],
+      "feedback": "Solid Flexbox foundation. Study flex-grow and align-self for advanced layouts.",
+      "completedAt": "2026-04-18T10:00:00Z"
+    },
+    {
+      "day": 11, "skillId": "css_styling", "skillName": "CSS & Styling",
+      "challenge": { "title": "Tailwind CSS Mastery", "description": "Rebuild the card component from Day 5 using Tailwind utility classes only.", "evaluation_criteria": ["utility-first approach", "responsive variants", "dark mode classes", "hover states"] },
+      "userResponse": "Used bg-white dark:bg-slate-800 for dark mode, rounded-xl shadow-md p-4 for card. Hover states with hover:shadow-lg. md:grid-cols-3 for responsive grid.",
+      "score": 82, "grade": "B+",
+      "strengths": ["dark mode pattern", "responsive grid", "hover states"],
+      "weaknesses": ["could use @apply for reused patterns"],
+      "feedback": "Good Tailwind usage. Extract repeated patterns with @apply for maintainability.",
+      "completedAt": "2026-04-19T10:00:00Z"
+    },
+    {
+      "day": 12, "skillId": "css_styling", "skillName": "CSS & Styling",
+      "challenge": { "title": "Animations & Transitions", "description": "Add page transition and micro-interaction animations to the React app.", "evaluation_criteria": ["CSS transitions", "keyframe animations", "Framer Motion basics", "performance"] },
+      "userResponse": "CSS transition for button hover scale. Framer Motion AnimatePresence for route transitions. transform: translateY uses GPU acceleration so no layout thrash.",
+      "score": 79, "grade": "B+",
+      "strengths": ["GPU-accelerated properties", "AnimatePresence usage"],
+      "weaknesses": ["didn't mention will-change property"],
+      "feedback": "Strong animation understanding. will-change: transform hints the browser for better perf.",
+      "completedAt": "2026-04-20T10:00:00Z"
+    },
+    {
+      "day": 13, "skillId": "state_management", "skillName": "State Management",
+      "challenge": { "title": "Context API Deep Dive", "description": "Build a theme and auth context system for a React app, avoiding unnecessary re-renders.", "evaluation_criteria": ["createContext", "useContext", "memoization", "provider splitting"] },
+      "userResponse": "Split ThemeContext and AuthContext into separate providers. Use useMemo for context values to prevent re-renders. Consumers only re-render when their specific context changes.",
+      "score": 68, "grade": "C+",
+      "strengths": ["provider splitting", "useMemo for value"],
+      "weaknesses": ["missed useCallback for handlers", "didn't mention context selectors"],
+      "feedback": "Good instinct on splitting contexts. Add useCallback for stable function references.",
+      "completedAt": "2026-04-21T10:00:00Z"
+    },
+    {
+      "day": 14, "skillId": "state_management", "skillName": "State Management",
+      "challenge": { "title": "Redux Toolkit Slices", "description": "Build a shopping cart with Redux Toolkit — createSlice, async thunks, and selectors.", "evaluation_criteria": ["createSlice", "createAsyncThunk", "memoized selectors", "immer mutations"] },
+      "userResponse": "cartSlice with addItem, removeItem, updateQuantity reducers. Immer lets me write mutating code that produces immutable state. createAsyncThunk for fetching products. createSelector for derived totals.",
+      "score": 72, "grade": "B-",
+      "strengths": ["Immer understanding", "createSelector usage", "async thunk correct"],
+      "weaknesses": ["RTK Query would be better for data fetching"],
+      "feedback": "Solid Redux Toolkit grasp. Explore RTK Query to replace async thunks for API calls.",
+      "completedAt": "2026-04-22T10:00:00Z"
+    },
+    {
+      "day": 15, "skillId": "state_management", "skillName": "State Management",
+      "challenge": { "title": "Zustand for Lightweight State", "description": "Compare Zustand vs Redux for a medium-complexity React app. Build a Zustand store.", "evaluation_criteria": ["Zustand store creation", "slice pattern", "devtools integration", "when to choose Zustand"] },
+      "userResponse": "Zustand store with create() and slices for auth, cart, ui. Devtools middleware for debugging. Choose Zustand when Redux boilerplate outweighs benefit — solo or small team projects.",
+      "score": 76, "grade": "B",
+      "strengths": ["store creation correct", "slice pattern", "trade-off analysis"],
+      "weaknesses": ["missed subscribeWithSelector middleware"],
+      "feedback": "Good Zustand grasp. subscribeWithSelector allows fine-grained subscriptions.",
+      "completedAt": "2026-04-23T10:00:00Z"
+    },
+    {
+      "day": 16, "skillId": "state_management", "skillName": "State Management",
+      "challenge": { "title": "State Patterns Review", "description": "For each scenario — form state, server cache, global auth, UI toggles — choose the best state tool.", "evaluation_criteria": ["useState for local", "React Query for server", "Zustand/Redux for global", "clear reasoning"] },
+      "userResponse": "Forms → useState or React Hook Form. Server cache → React Query (TanStack Query). Global auth/cart → Zustand. UI toggles → useState locally. No single tool fits all.",
+      "score": 80, "grade": "B+",
+      "strengths": ["React Query mention", "correct per-scenario choices", "nuanced reasoning"],
+      "weaknesses": [],
+      "feedback": "Excellent mental model. You understand the right tool for the right job.",
+      "completedAt": "2026-04-24T10:00:00Z"
+    },
+    {
+      "day": 17, "skillId": "frontend_tooling", "skillName": "Frontend Tooling & Deployment",
+      "challenge": { "title": "Vite Configuration", "description": "Configure Vite for a React app with path aliases, environment variables, and code splitting.", "evaluation_criteria": ["vite.config.js setup", "env variables", "dynamic imports", "build optimization"] },
+      "userResponse": "vite.config with resolve.alias for @components, @utils. VITE_ prefix for env vars exposed to client. Dynamic import() for route-based code splitting. rollupOptions for chunk naming.",
+      "score": 65, "grade": "C+",
+      "strengths": ["env variable prefix", "dynamic imports for splitting"],
+      "weaknesses": ["missed manualChunks for vendor splitting", "didn't mention sourcemaps config"],
+      "feedback": "Good Vite basics. Study manualChunks to keep vendor bundles separate from app code.",
+      "completedAt": "2026-04-25T10:00:00Z"
+    },
+    {
+      "day": 18, "skillId": "frontend_tooling", "skillName": "Frontend Tooling & Deployment",
+      "challenge": { "title": "Deploy to Vercel with CI/CD", "description": "Describe the full pipeline to deploy a React app with environment-specific configs and automatic preview deploys.", "evaluation_criteria": ["vercel.json config", "environment variables", "preview deployments", "build command"] },
+      "userResponse": "Push to GitHub triggers Vercel CI. Preview deploys on every PR branch. Production deploys on main merge. Env vars set in Vercel dashboard per environment. vercel.json for rewrites to handle SPA routing.",
+      "score": 70, "grade": "B-",
+      "strengths": ["preview deploys", "SPA routing config", "env per environment"],
+      "weaknesses": ["could mention Vercel Edge Functions", "missed caching headers"],
+      "feedback": "Solid deployment workflow. Explore Vercel Edge Functions for API routes.",
+      "completedAt": "2026-04-26T10:00:00Z"
+    }
+  ],
+  "adaptations": [
+    "Agent detected strong performance in React Fundamentals (avg 89%). Compressed review sessions to free 1 day.",
+    "State Management scored below threshold after Day 13. Added 1 extra practice session for Context API reinforcement.",
+    "Final sprint: All skills above 65%. Learner is on track to complete the full Frontend Developer roadmap."
+  ],
+  "agentDecisions": [
+    {
+      "id": 1,
+      "timestamp": "2026-04-09T09:00:00Z",
+      "type": "goal_analysis",
+      "icon": "🎯",
+      "title": "Goal Analyzed — Domain Detected",
+      "detail": "Identified \"Frontend Development\" as the learning domain. Learner level: intermediate, intensity: balanced.",
+      "reasoning": "Scanned goal text for domain-specific keywords. Found high-confidence matches: 'React' (score: 12), 'modern web apps' (score: 8), 'build' (score: 5). Matched frontend_development domain with 85% confidence. Detected tools: react, javascript, css."
+    },
+    {
+      "id": 2,
+      "timestamp": "2026-04-09T09:00:01Z",
+      "type": "skill_tree",
+      "icon": "🌳",
+      "title": "Skill Tree Constructed",
+      "detail": "Decomposed goal into 5 core skills spanning 18 learning days. Top priority: JavaScript Core, React Fundamentals, CSS & Styling.",
+      "reasoning": "Skills ranked by relevance to goal keywords and detected tools. JavaScript Core placed first — it is the prerequisite for all React work. React Fundamentals given most days (5) as it is the primary goal. Days allocated proportionally: foundational skills get more time, tooling gets less."
+    },
+    {
+      "id": 3,
+      "timestamp": "2026-04-09T09:00:02Z",
+      "type": "diagnostic",
+      "icon": "📋",
+      "title": "Diagnostic Quiz Generated",
+      "detail": "Created 10 targeted questions across 5 skill areas to assess current proficiency before planning.",
+      "reasoning": "Questions selected by relevance score to the user's goal keywords. 2 questions per skill ensures fair coverage. Open-ended questions preferred over MCQ to capture reasoning depth, not just recall."
+    },
+    {
+      "id": 4,
+      "timestamp": "2026-04-09T09:15:00Z",
+      "type": "diagnostic_complete",
+      "icon": "📊",
+      "title": "Diagnostic Scored — Gaps Identified",
+      "detail": "2 skill(s) need focused practice, 1 already proficient. Weakest: State Management (30%), React Fundamentals (45%).",
+      "reasoning": "Scored each answer via keyword matching and response depth. State Management at 30% — learner has no Redux experience. React Fundamentals at 45% — knows JSX but not hooks. CSS at 70% — already solid. Skills below 60% assigned extra learning days."
+    },
+    {
+      "id": 5,
+      "timestamp": "2026-04-09T09:15:01Z",
+      "type": "plan_built",
+      "icon": "📅",
+      "title": "Personalized Learning Plan Built",
+      "detail": "Generated 18-day plan. Weakest skills scheduled first to build strong foundations early.",
+      "reasoning": "Skills sorted by diagnostic score ascending: State Mgmt (30%) → React (45%) → Tooling (40%) → JS Core (62%) → CSS (70%). Wait — reordered by prerequisite chain instead: JS Core first (blocker), then React, then CSS (parallel), then State, then Tooling. Prerequisite ordering overrides score ordering."
+    },
+    {
+      "id": 6,
+      "timestamp": "2026-04-12T10:30:00Z",
+      "type": "session_complete",
+      "icon": "✅",
+      "title": "Day 4 Session Scored",
+      "detail": "Score: 90% (A). Strengths: microtask vs macrotask precise, correct ordering. Gaps: none.",
+      "reasoning": "Evaluated against 3 criteria. Full marks for microtask/macrotask distinction — a difficult concept most learners confuse. Response demonstrated conceptual understanding, not just memorization."
+    },
+    {
+      "id": 7,
+      "timestamp": "2026-04-14T11:00:00Z",
+      "type": "adaptation",
+      "icon": "⚡",
+      "title": "Plan Adapted — React Fundamentals Accelerated",
+      "detail": "Agent detected strong performance in React Fundamentals (avg 89%). Compressed review sessions to free 1 day.",
+      "reasoning": "Agent monitors rolling average score every 3 sessions. React Fundamentals avg after 3 sessions: 89% — well above the 88% acceleration threshold. Removed 1 low-value review day. Learner is ready to progress faster."
+    },
+    {
+      "id": 8,
+      "timestamp": "2026-04-16T10:00:00Z",
+      "type": "session_complete",
+      "icon": "✅",
+      "title": "Day 8 Session Scored",
+      "detail": "Score: 95% (A+). Strengths: protected route pattern, Outlet usage, Navigate redirect. Gaps: none.",
+      "reasoning": "Evaluated against 4 criteria. Perfect execution of React Router v6 patterns. Learner demonstrated production-ready knowledge — this is above the expected level for an intermediate learner."
+    },
+    {
+      "id": 9,
+      "timestamp": "2026-04-21T10:30:00Z",
+      "type": "adaptation",
+      "icon": "⚡",
+      "title": "Plan Adapted — State Management Reinforced",
+      "detail": "State Management scored below threshold after Day 13. Added 1 extra practice session for Context API reinforcement.",
+      "reasoning": "Context API session scored 68% — below the 70% continuation threshold. Agent inserted an additional practice session before moving to Redux. Learner needs more reps on useMemo and useCallback for context optimization before advanced state patterns."
+    },
+    {
+      "id": 10,
+      "timestamp": "2026-04-24T10:30:00Z",
+      "type": "session_complete",
+      "icon": "✅",
+      "title": "Day 16 Session Scored",
+      "detail": "Score: 80% (B+). Strengths: React Query mention, correct per-scenario choices. Gaps: none.",
+      "reasoning": "Evaluated against 4 criteria. The React Query recommendation shows awareness of the modern state management ecosystem beyond basic Redux. Learner has developed a nuanced mental model."
+    },
+    {
+      "id": 11,
+      "timestamp": "2026-04-26T10:30:00Z",
+      "type": "session_complete",
+      "icon": "✅",
+      "title": "Day 18 Session Complete — Journey Finished",
+      "detail": "Score: 70% (B-). Full 18-day plan completed. All 5 skills assessed and graded.",
+      "reasoning": "Final session completes the learning journey. Overall trajectory: started at 30-62% diagnostic → finished at 67-91% mastery. Consistent upward trend across all skills confirms the adaptive plan worked. Learner is ready to build production React apps."
+    }
+  ],
+  "report": {
+    "generatedAt": "2026-04-26T10:45:00Z",
+    "goalText": "I want to learn React and build modern web apps",
+    "summary": {
+      "avgScore": 80,
+      "bestScore": 95,
+      "totalSessions": 18,
+      "completedDays": 18
+    },
+    "skills": [
+      { "id": "javascript_core",    "name": "JavaScript Core",               "mastery": 88, "status": "demonstrated" },
+      { "id": "react_fundamentals", "name": "React Fundamentals",            "mastery": 91, "status": "demonstrated" },
+      { "id": "css_styling",        "name": "CSS & Styling",                 "mastery": 79, "status": "demonstrated" },
+      { "id": "state_management",   "name": "State Management",              "mastery": 74, "status": "demonstrated" },
+      { "id": "frontend_tooling",   "name": "Frontend Tooling & Deployment", "mastery": 67, "status": "demonstrated" }
+    ],
+    "demonstratedSkills": [
+      "JavaScript Core",
+      "React Fundamentals",
+      "CSS & Styling",
+      "State Management",
+      "Frontend Tooling & Deployment"
+    ],
+    "narrative": "SkillForge tracked 18 practice sessions over 18 days and found consistent upward progression across all 5 Frontend Development skills. The learner started with significant gaps in State Management (30%) and React Fundamentals (45%), but through the adaptive plan, finished at 74% and 91% respectively — a dramatic improvement. React Router was a particular strength, scoring 95% (A+). The agent made 2 plan adaptations: accelerating React Fundamentals after exceptional early performance, and adding a reinforcement session when State Management dipped below threshold. The overall average of 80% across 18 sessions reflects a learner who engages deeply and improves consistently.",
+    "coachSummary": "Exceptional progress across the board. React Fundamentals and JavaScript Core are production-ready. Focus next on deepening State Management — specifically RTK Query and context optimization — and Frontend Tooling with advanced Vite configuration. You are ready to build and ship real-world React applications.",
+    "sessions": [],
+    "adaptations": [
+      "Agent detected strong performance in React Fundamentals (avg 89%). Compressed review sessions to free 1 day.",
+      "State Management scored below threshold after Day 13. Added 1 extra practice session for Context API reinforcement.",
+      "Final sprint: All skills above 65%. Learner is on track to complete the full Frontend Developer roadmap."
+    ],
+    "agentDecisions": [],
+    "diagnosticScores": {
+      "javascript_core": 62,
+      "react_fundamentals": 45,
+      "css_styling": 70,
+      "state_management": 30,
+      "frontend_tooling": 40
+    },
+    "totalDays": 18,
+    "domain": "Frontend Development",
+    "domainIcon": "⚛️",
+    "profile": {
+      "learnerLevel": "intermediate",
+      "intensity": "balanced",
+      "targetRole": "Frontend Developer",
+      "detectedTools": ["react", "javascript", "css"],
+      "focusKeywords": ["react", "modern web apps", "components", "hooks", "state"]
+    }
+  },
+  "createdAt": "2026-04-09T09:00:00Z"
+}
