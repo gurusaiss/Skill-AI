@@ -1,0 +1,2322 @@
+{
+  "userId": "demo_skillforge_2024",
+  "goal": {
+    "goalText": "I want to become a backend Python developer",
+    "domain": "backend_development",
+    "domainLabel": "Backend Development",
+    "domainIcon": "💻",
+    "profile": {
+      "rawGoal": "I want to become a backend Python developer",
+      "targetRole": "backend python",
+      "learnerLevel": "intermediate",
+      "intensity": "steady",
+      "detectedTools": [
+        "python"
+      ],
+      "focusKeywords": [
+        "want",
+        "become",
+        "backend",
+        "python",
+        "developer"
+      ],
+      "domainId": "backend_development"
+    },
+    "skills": [
+      {
+        "id": "deployment",
+        "name": "Deployment & DevOps",
+        "description": "Deploy backend applications using containers and modern CI/CD pipelines.",
+        "level": "intermediate",
+        "days": 2,
+        "topics": [
+          "Docker",
+          "CI/CD",
+          "environment variables",
+          "logging",
+          "monitoring"
+        ],
+        "relevanceScore": 3,
+        "reason": "Prioritized because Deployment & DevOps strongly supports your backend python goal.",
+        "recommendedFor": "backend python",
+        "sequenceHint": 5,
+        "sequenceOrder": 1,
+        "mastery": 51,
+        "status": "active",
+        "sessionsCompleted": 8
+      },
+      {
+        "id": "auth_security",
+        "name": "Authentication & Security",
+        "description": "Implement secure authentication and authorization mechanisms in backend systems.",
+        "level": "advanced",
+        "days": 3,
+        "topics": [
+          "JWT",
+          "OAuth2",
+          "password hashing",
+          "HTTPS",
+          "CORS"
+        ],
+        "relevanceScore": 3,
+        "reason": "Prioritized because Authentication & Security strongly supports your backend python goal.",
+        "recommendedFor": "backend python",
+        "sequenceHint": 4,
+        "sequenceOrder": 2,
+        "mastery": 36,
+        "status": "active",
+        "sessionsCompleted": 1
+      },
+      {
+        "id": "nodejs",
+        "name": "Node.js Fundamentals",
+        "description": "Master the core concepts of Node.js including its event-driven, non-blocking architecture.",
+        "level": "beginner",
+        "days": 2,
+        "topics": [
+          "event loop",
+          "modules",
+          "async/await",
+          "streams",
+          "error handling"
+        ],
+        "relevanceScore": 0,
+        "reason": "Included as a foundation for becoming a backend python.",
+        "recommendedFor": "backend python",
+        "sequenceHint": 3,
+        "sequenceOrder": 3,
+        "mastery": 36,
+        "status": "active",
+        "sessionsCompleted": 1
+      },
+      {
+        "id": "rest_apis",
+        "name": "REST API Design",
+        "description": "Learn how to design and build RESTful APIs following industry best practices.",
+        "level": "intermediate",
+        "days": 3,
+        "topics": [
+          "HTTP methods",
+          "REST principles",
+          "status codes",
+          "authentication",
+          "versioning"
+        ],
+        "relevanceScore": 0,
+        "reason": "Included as a foundation for becoming a backend python.",
+        "recommendedFor": "backend python",
+        "sequenceHint": 1,
+        "sequenceOrder": 4,
+        "mastery": 37,
+        "status": "active",
+        "sessionsCompleted": 2
+      },
+      {
+        "id": "databases",
+        "name": "Database Design",
+        "description": "Understand relational and non-relational database design, normalization, and querying.",
+        "level": "intermediate",
+        "days": 3,
+        "topics": [
+          "SQL basics",
+          "normalization",
+          "indexing",
+          "transactions",
+          "NoSQL"
+        ],
+        "relevanceScore": 0,
+        "reason": "Included as a foundation for becoming a backend python.",
+        "recommendedFor": "backend python",
+        "sequenceHint": 2,
+        "sequenceOrder": 5,
+        "mastery": 46,
+        "status": "active",
+        "sessionsCompleted": 2
+      }
+    ],
+    "totalEstimatedDays": 13
+  },
+  "skillTree": {
+    "domain": "backend_development",
+    "domainName": "Backend Development",
+    "profile": {
+      "rawGoal": "I want to become a backend Python developer",
+      "targetRole": "backend python",
+      "learnerLevel": "intermediate",
+      "intensity": "steady",
+      "detectedTools": [
+        "python"
+      ],
+      "focusKeywords": [
+        "want",
+        "become",
+        "backend",
+        "python",
+        "developer"
+      ],
+      "domainId": "backend_development"
+    },
+    "skills": [
+      {
+        "id": "deployment",
+        "name": "Deployment & DevOps",
+        "description": "Deploy backend applications using containers and modern CI/CD pipelines.",
+        "level": "intermediate",
+        "days": 2,
+        "topics": [
+          "Docker",
+          "CI/CD",
+          "environment variables",
+          "logging",
+          "monitoring"
+        ],
+        "relevanceScore": 3,
+        "reason": "Prioritized because Deployment & DevOps strongly supports your backend python goal.",
+        "recommendedFor": "backend python",
+        "sequenceHint": 5,
+        "sequenceOrder": 1,
+        "mastery": 52,
+        "status": "active",
+        "sessionsCompleted": 0
+      },
+      {
+        "id": "auth_security",
+        "name": "Authentication & Security",
+        "description": "Implement secure authentication and authorization mechanisms in backend systems.",
+        "level": "advanced",
+        "days": 3,
+        "topics": [
+          "JWT",
+          "OAuth2",
+          "password hashing",
+          "HTTPS",
+          "CORS"
+        ],
+        "relevanceScore": 3,
+        "reason": "Prioritized because Authentication & Security strongly supports your backend python goal.",
+        "recommendedFor": "backend python",
+        "sequenceHint": 4,
+        "sequenceOrder": 2,
+        "mastery": 80,
+        "status": "locked",
+        "sessionsCompleted": 0
+      },
+      {
+        "id": "nodejs",
+        "name": "Node.js Fundamentals",
+        "description": "Master the core concepts of Node.js including its event-driven, non-blocking architecture.",
+        "level": "beginner",
+        "days": 2,
+        "topics": [
+          "event loop",
+          "modules",
+          "async/await",
+          "streams",
+          "error handling"
+        ],
+        "relevanceScore": 0,
+        "reason": "Included as a foundation for becoming a backend python.",
+        "recommendedFor": "backend python",
+        "sequenceHint": 3,
+        "sequenceOrder": 3,
+        "mastery": 72,
+        "status": "locked",
+        "sessionsCompleted": 0
+      },
+      {
+        "id": "rest_apis",
+        "name": "REST API Design",
+        "description": "Learn how to design and build RESTful APIs following industry best practices.",
+        "level": "intermediate",
+        "days": 3,
+        "topics": [
+          "HTTP methods",
+          "REST principles",
+          "status codes",
+          "authentication",
+          "versioning"
+        ],
+        "relevanceScore": 0,
+        "reason": "Included as a foundation for becoming a backend python.",
+        "recommendedFor": "backend python",
+        "sequenceHint": 1,
+        "sequenceOrder": 4,
+        "mastery": 64,
+        "status": "locked",
+        "sessionsCompleted": 0
+      },
+      {
+        "id": "databases",
+        "name": "Database Design",
+        "description": "Understand relational and non-relational database design, normalization, and querying.",
+        "level": "intermediate",
+        "days": 3,
+        "topics": [
+          "SQL basics",
+          "normalization",
+          "indexing",
+          "transactions",
+          "NoSQL"
+        ],
+        "relevanceScore": 0,
+        "reason": "Included as a foundation for becoming a backend python.",
+        "recommendedFor": "backend python",
+        "sequenceHint": 2,
+        "sequenceOrder": 5,
+        "mastery": 63,
+        "status": "locked",
+        "sessionsCompleted": 0
+      }
+    ]
+  },
+  "diagnosticQuestions": [
+    {
+      "id": "q_deployment_2_deployment_1",
+      "question": "Explain the difference between continuous integration and continuous deployment. Answer for your backend python goal with one practical example.",
+      "type": "open_ended",
+      "options": [],
+      "correct": "",
+      "explanation": "CI automates testing and integration, while CD automates deployment to production.",
+      "key_concepts": [
+        "CI/CD",
+        "automation",
+        "deployment"
+      ],
+      "score_keywords": [
+        "integration",
+        "deployment",
+        "automated",
+        "testing",
+        "production",
+        "pipeline",
+        "continuous"
+      ],
+      "sample_good_answer": "Continuous Integration (CI) automatically builds and tests code changes when committed. Continuous Deployment (CD) goes further by automatically deploying passing builds to production. CI ensures code quality, while CD ensures rapid, reliable releases.",
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "targetRole": "backend python",
+      "personalizationHint": "Prioritized because Deployment & DevOps strongly supports your backend python goal.",
+      "source": "static"
+    },
+    {
+      "id": "q_deployment_4_deployment_2",
+      "question": "Describe the importance of logging and monitoring in production systems. Answer for your backend python goal with one practical example.",
+      "type": "open_ended",
+      "options": [],
+      "correct": "",
+      "explanation": "Logging and monitoring help detect issues, debug problems, and understand system behavior.",
+      "key_concepts": [
+        "logging",
+        "monitoring",
+        "observability"
+      ],
+      "score_keywords": [
+        "logging",
+        "monitoring",
+        "errors",
+        "debug",
+        "performance",
+        "alerts",
+        "metrics",
+        "observability"
+      ],
+      "sample_good_answer": "Logging and monitoring are critical for production systems because they enable early detection of issues, provide debugging information when problems occur, track performance metrics, and help understand user behavior. They allow teams to respond quickly to incidents and make data-driven decisions.",
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "targetRole": "backend python",
+      "personalizationHint": "Prioritized because Deployment & DevOps strongly supports your backend python goal.",
+      "source": "static"
+    },
+    {
+      "id": "q_auth_security_2_auth_security_1",
+      "question": "Explain the OAuth2 authorization code flow and why it's more secure than the implicit flow. Answer for your backend python goal with one practical example.",
+      "type": "open_ended",
+      "options": [],
+      "correct": "",
+      "explanation": "Authorization code flow uses a backend exchange, keeping tokens away from the browser.",
+      "key_concepts": [
+        "OAuth2",
+        "authorization",
+        "security"
+      ],
+      "score_keywords": [
+        "authorization",
+        "code",
+        "token",
+        "backend",
+        "client secret",
+        "implicit",
+        "secure",
+        "browser"
+      ],
+      "sample_good_answer": "The authorization code flow exchanges an authorization code for tokens on the backend using a client secret, keeping access tokens away from the browser. This is more secure than the implicit flow which exposes tokens in the URL, making them vulnerable to interception.",
+      "skillId": "auth_security",
+      "skillName": "Authentication & Security",
+      "targetRole": "backend python",
+      "personalizationHint": "Prioritized because Authentication & Security strongly supports your backend python goal.",
+      "source": "static"
+    },
+    {
+      "id": "q_auth_security_4_auth_security_2",
+      "question": "Describe CORS and explain why it's important for API security. Answer for your backend python goal with one practical example.",
+      "type": "open_ended",
+      "options": [],
+      "correct": "",
+      "explanation": "CORS controls which origins can access resources, preventing unauthorized cross-origin requests.",
+      "key_concepts": [
+        "CORS",
+        "security",
+        "cross-origin"
+      ],
+      "score_keywords": [
+        "CORS",
+        "origin",
+        "cross-origin",
+        "browser",
+        "security",
+        "header",
+        "Access-Control",
+        "domain"
+      ],
+      "sample_good_answer": "CORS (Cross-Origin Resource Sharing) is a security mechanism that controls which domains can access your API from browsers. It prevents malicious websites from making unauthorized requests to your API by requiring explicit permission through Access-Control headers, protecting against CSRF attacks.",
+      "skillId": "auth_security",
+      "skillName": "Authentication & Security",
+      "targetRole": "backend python",
+      "personalizationHint": "Prioritized because Authentication & Security strongly supports your backend python goal.",
+      "source": "static"
+    },
+    {
+      "id": "q_nodejs_2_nodejs_1",
+      "question": "Explain the difference between require() and import in Node.js. Answer for your backend python goal with one practical example.",
+      "type": "open_ended",
+      "options": [],
+      "correct": "",
+      "explanation": "require() is CommonJS syntax (synchronous), while import is ES6 module syntax (can be asynchronous).",
+      "key_concepts": [
+        "modules",
+        "CommonJS",
+        "ES6"
+      ],
+      "score_keywords": [
+        "require",
+        "import",
+        "CommonJS",
+        "ES6",
+        "module",
+        "synchronous",
+        "asynchronous"
+      ],
+      "sample_good_answer": "require() is CommonJS syntax that loads modules synchronously at runtime. import is ES6 module syntax that can be statically analyzed and supports asynchronous loading. Modern Node.js supports both, but import is preferred for new projects.",
+      "skillId": "nodejs",
+      "skillName": "Node.js Fundamentals",
+      "targetRole": "backend python",
+      "personalizationHint": "Included as a foundation for becoming a backend python.",
+      "source": "static"
+    },
+    {
+      "id": "q_nodejs_4_nodejs_2",
+      "question": "Describe how streams work in Node.js and provide a use case where they're beneficial. Answer for your backend python goal with one practical example.",
+      "type": "open_ended",
+      "options": [],
+      "correct": "",
+      "explanation": "Streams process data in chunks rather than loading everything into memory at once.",
+      "key_concepts": [
+        "streams",
+        "memory efficiency",
+        "data processing"
+      ],
+      "score_keywords": [
+        "stream",
+        "chunk",
+        "memory",
+        "efficient",
+        "pipe",
+        "readable",
+        "writable",
+        "large"
+      ],
+      "sample_good_answer": "Streams process data in small chunks instead of loading entire files into memory. They're beneficial for handling large files like video uploads or log processing, where loading everything at once would consume too much memory. Streams can be piped together for efficient data transformation.",
+      "skillId": "nodejs",
+      "skillName": "Node.js Fundamentals",
+      "targetRole": "backend python",
+      "personalizationHint": "Included as a foundation for becoming a backend python.",
+      "source": "static"
+    },
+    {
+      "id": "q_rest_apis_2_rest_apis_1",
+      "question": "Explain the difference between stateless and stateful APIs and why REST APIs should be stateless. Answer for your backend python goal with one practical example.",
+      "type": "open_ended",
+      "options": [],
+      "correct": "",
+      "explanation": "Stateless APIs don't store client session data on the server, making them more scalable and reliable.",
+      "key_concepts": [
+        "REST principles",
+        "stateless",
+        "scalability"
+      ],
+      "score_keywords": [
+        "stateless",
+        "session",
+        "server",
+        "scalability",
+        "independent",
+        "request"
+      ],
+      "sample_good_answer": "Stateless APIs don't store client session information on the server. Each request contains all necessary information. This makes REST APIs more scalable because servers don't need to maintain session state, and any server can handle any request.",
+      "skillId": "rest_apis",
+      "skillName": "REST API Design",
+      "targetRole": "backend python",
+      "personalizationHint": "Included as a foundation for becoming a backend python.",
+      "source": "static"
+    },
+    {
+      "id": "q_rest_apis_4_rest_apis_2",
+      "question": "Describe three common API versioning strategies and their trade-offs. Answer for your backend python goal with one practical example.",
+      "type": "open_ended",
+      "options": [],
+      "correct": "",
+      "explanation": "Common strategies include URI versioning, header versioning, and query parameter versioning, each with different trade-offs.",
+      "key_concepts": [
+        "versioning",
+        "API design",
+        "backwards compatibility"
+      ],
+      "score_keywords": [
+        "URI",
+        "header",
+        "query",
+        "version",
+        "backwards",
+        "compatibility",
+        "breaking"
+      ],
+      "sample_good_answer": "Three strategies are: 1) URI versioning (/v1/users) - simple but creates multiple endpoints, 2) Header versioning (Accept: application/vnd.api.v1+json) - cleaner URIs but less visible, 3) Query parameter versioning (?version=1) - flexible but can be overlooked. Each balances visibility, simplicity, and backwards compatibility differently.",
+      "skillId": "rest_apis",
+      "skillName": "REST API Design",
+      "targetRole": "backend python",
+      "personalizationHint": "Included as a foundation for becoming a backend python.",
+      "source": "static"
+    },
+    {
+      "id": "q_databases_2_databases_1",
+      "question": "Explain the ACID properties and why they matter for database transactions. Answer for your backend python goal with one practical example.",
+      "type": "open_ended",
+      "options": [],
+      "correct": "",
+      "explanation": "ACID (Atomicity, Consistency, Isolation, Durability) ensures reliable transaction processing.",
+      "key_concepts": [
+        "transactions",
+        "ACID",
+        "data integrity"
+      ],
+      "score_keywords": [
+        "Atomicity",
+        "Consistency",
+        "Isolation",
+        "Durability",
+        "transaction",
+        "reliable",
+        "integrity"
+      ],
+      "sample_good_answer": "ACID stands for Atomicity (all-or-nothing execution), Consistency (valid state transitions), Isolation (concurrent transactions don't interfere), and Durability (committed changes persist). These properties ensure reliable transaction processing and data integrity in databases.",
+      "skillId": "databases",
+      "skillName": "Database Design",
+      "targetRole": "backend python",
+      "personalizationHint": "Included as a foundation for becoming a backend python.",
+      "source": "static"
+    },
+    {
+      "id": "q_databases_4_databases_2",
+      "question": "Compare and contrast SQL and NoSQL databases, including when to use each. Answer for your backend python goal with one practical example.",
+      "type": "open_ended",
+      "options": [],
+      "correct": "",
+      "explanation": "SQL databases are relational with fixed schemas, while NoSQL databases are flexible and schema-less.",
+      "key_concepts": [
+        "SQL",
+        "NoSQL",
+        "database types",
+        "use cases"
+      ],
+      "score_keywords": [
+        "relational",
+        "schema",
+        "flexible",
+        "scalability",
+        "ACID",
+        "consistency",
+        "document",
+        "key-value"
+      ],
+      "sample_good_answer": "SQL databases use fixed schemas and ACID transactions, ideal for structured data and complex queries. NoSQL databases offer flexible schemas and horizontal scalability, better for unstructured data, high write loads, and distributed systems. Choose SQL for financial systems, NoSQL for social media or IoT applications.",
+      "skillId": "databases",
+      "skillName": "Database Design",
+      "targetRole": "backend python",
+      "personalizationHint": "Included as a foundation for becoming a backend python.",
+      "source": "static"
+    }
+  ],
+  "diagnosticScores": {
+    "deployment": 52,
+    "auth_security": 80,
+    "nodejs": 72,
+    "rest_apis": 64,
+    "databases": 63
+  },
+  "learningPlan": [
+    {
+      "day": 1,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "objective": "Build confidence in Docker for Deployment & DevOps for your backend python goal. Prioritized because Deployment & DevOps strongly supports your backend python goal.",
+      "sessionType": "concept",
+      "estimatedMinutes": 30,
+      "resources": [
+        "https://developer.mozilla.org/",
+        "https://www.freecodecamp.org/",
+        "https://docs.python.org/3/",
+        "Practice focus: Docker, CI/CD"
+      ],
+      "completed": true,
+      "score": 42,
+      "addedByAgent": false,
+      "challengeId": "ch_deployment_1",
+      "topic": "Docker"
+    },
+    {
+      "day": 2,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "objective": "Build confidence in CI/CD for Deployment & DevOps for your backend python goal. Prioritized because Deployment & DevOps strongly supports your backend python goal.",
+      "sessionType": "practice",
+      "estimatedMinutes": 30,
+      "resources": [
+        "https://developer.mozilla.org/",
+        "https://www.freecodecamp.org/",
+        "https://docs.python.org/3/",
+        "Practice focus: Docker, CI/CD"
+      ],
+      "completed": true,
+      "score": 48,
+      "addedByAgent": false,
+      "challengeId": "ch_deployment_2",
+      "topic": "CI/CD"
+    },
+    {
+      "day": 3,
+      "skillId": "databases",
+      "skillName": "Database Design",
+      "objective": "Build confidence in SQL basics for Database Design for your backend python goal. Included as a foundation for becoming a backend python.",
+      "sessionType": "concept",
+      "estimatedMinutes": 30,
+      "resources": [
+        "https://developer.mozilla.org/",
+        "https://www.freecodecamp.org/",
+        "https://docs.python.org/3/",
+        "Practice focus: SQL basics, normalization"
+      ],
+      "completed": true,
+      "score": 55,
+      "addedByAgent": false,
+      "challengeId": "ch_databases_1",
+      "topic": "SQL basics"
+    },
+    {
+      "day": 4,
+      "skillId": "databases",
+      "skillName": "Database Design",
+      "objective": "Build confidence in normalization for Database Design for your backend python goal. Included as a foundation for becoming a backend python.",
+      "sessionType": "practice",
+      "estimatedMinutes": 30,
+      "resources": [
+        "https://developer.mozilla.org/",
+        "https://www.freecodecamp.org/",
+        "https://docs.python.org/3/",
+        "Practice focus: SQL basics, normalization"
+      ],
+      "completed": true,
+      "score": 61,
+      "addedByAgent": false,
+      "challengeId": "ch_databases_2",
+      "topic": "normalization"
+    },
+    {
+      "day": 5,
+      "skillId": "rest_apis",
+      "skillName": "REST API Design",
+      "objective": "Build confidence in HTTP methods for REST API Design for your backend python goal. Included as a foundation for becoming a backend python.",
+      "sessionType": "concept",
+      "estimatedMinutes": 30,
+      "resources": [
+        "https://developer.mozilla.org/",
+        "https://www.freecodecamp.org/",
+        "https://docs.python.org/3/",
+        "Practice focus: HTTP methods, REST principles"
+      ],
+      "completed": true,
+      "score": 38,
+      "addedByAgent": false,
+      "challengeId": "ch_rest_apis_1",
+      "topic": "HTTP methods"
+    },
+    {
+      "day": 6,
+      "skillId": "rest_apis",
+      "skillName": "REST API Design",
+      "objective": "Build confidence in REST principles for REST API Design for your backend python goal. Included as a foundation for becoming a backend python.",
+      "sessionType": "practice",
+      "estimatedMinutes": 30,
+      "resources": [
+        "https://developer.mozilla.org/",
+        "https://www.freecodecamp.org/",
+        "https://docs.python.org/3/",
+        "Practice focus: HTTP methods, REST principles"
+      ],
+      "completed": true,
+      "score": 45,
+      "addedByAgent": false,
+      "challengeId": "ch_rest_apis_2",
+      "topic": "REST principles"
+    },
+    {
+      "day": 7,
+      "skillId": "nodejs",
+      "skillName": "Node.js Fundamentals",
+      "objective": "Build confidence in event loop for Node.js Fundamentals for your backend python goal. Included as a foundation for becoming a backend python.",
+      "sessionType": "concept",
+      "estimatedMinutes": 30,
+      "resources": [
+        "https://developer.mozilla.org/",
+        "https://www.freecodecamp.org/",
+        "https://docs.python.org/3/",
+        "Practice focus: event loop, modules"
+      ],
+      "completed": true,
+      "score": 52,
+      "addedByAgent": false,
+      "challengeId": "ch_nodejs_1",
+      "topic": "event loop"
+    },
+    {
+      "day": 8,
+      "skillId": "auth_security",
+      "skillName": "Authentication & Security",
+      "objective": "Build confidence in JWT for Authentication & Security for your backend python goal. Prioritized because Authentication & Security strongly supports your backend python goal.",
+      "sessionType": "practice",
+      "estimatedMinutes": 30,
+      "resources": [
+        "https://developer.mozilla.org/",
+        "https://www.freecodecamp.org/",
+        "https://docs.python.org/3/",
+        "Practice focus: JWT, OAuth2"
+      ],
+      "completed": true,
+      "score": 60,
+      "addedByAgent": false,
+      "challengeId": "ch_auth_security_1",
+      "topic": "JWT"
+    },
+    {
+      "day": 9,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "objective": "Extended demo review for Deployment & DevOps.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": true,
+      "score": 44,
+      "addedByAgent": true,
+      "challengeId": "demo_review_9",
+      "topic": "Docker"
+    },
+    {
+      "day": 10,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "objective": "Extended demo review for Deployment & DevOps.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": true,
+      "score": 58,
+      "addedByAgent": true,
+      "challengeId": "demo_review_10",
+      "topic": "CI/CD"
+    },
+    {
+      "day": 11,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "objective": "Extended demo review for Deployment & DevOps.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": true,
+      "score": 65,
+      "addedByAgent": true,
+      "challengeId": "demo_review_11",
+      "topic": "environment variables"
+    },
+    {
+      "day": 12,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "objective": "Extended demo review for Deployment & DevOps.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": true,
+      "score": 50,
+      "addedByAgent": true,
+      "challengeId": "demo_review_12",
+      "topic": "logging"
+    },
+    {
+      "day": 13,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "objective": "Extended demo review for Deployment & DevOps.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": true,
+      "score": 63,
+      "addedByAgent": true,
+      "challengeId": "demo_review_13",
+      "topic": "monitoring"
+    },
+    {
+      "day": 14,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "objective": "Extended demo review for Deployment & DevOps.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": true,
+      "score": 72,
+      "addedByAgent": true,
+      "challengeId": "demo_review_14",
+      "topic": "Docker"
+    },
+    {
+      "day": 15,
+      "skillId": "databases",
+      "skillName": "Database Design",
+      "objective": "Review and reinforce Database Design.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": false,
+      "score": null,
+      "addedByAgent": true,
+      "challengeId": "review_databases_15",
+      "topic": "SQL basics"
+    },
+    {
+      "day": 16,
+      "skillId": "databases",
+      "skillName": "Database Design",
+      "objective": "Review and reinforce Database Design.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": false,
+      "score": null,
+      "addedByAgent": true,
+      "challengeId": "review_databases_16",
+      "topic": "normalization"
+    },
+    {
+      "day": 17,
+      "skillId": "rest_apis",
+      "skillName": "REST API Design",
+      "objective": "Review and reinforce REST API Design.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": false,
+      "score": null,
+      "addedByAgent": true,
+      "challengeId": "review_rest_apis_17",
+      "topic": "HTTP methods"
+    },
+    {
+      "day": 18,
+      "skillId": "rest_apis",
+      "skillName": "REST API Design",
+      "objective": "Review and reinforce REST API Design.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": false,
+      "score": null,
+      "addedByAgent": true,
+      "challengeId": "review_rest_apis_18",
+      "topic": "REST principles"
+    },
+    {
+      "day": 19,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "objective": "Review and reinforce Deployment & DevOps.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": false,
+      "score": null,
+      "addedByAgent": true,
+      "challengeId": "review_deployment_19",
+      "topic": "Docker"
+    },
+    {
+      "day": 20,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "objective": "Review and reinforce Deployment & DevOps.",
+      "sessionType": "review",
+      "estimatedMinutes": 25,
+      "resources": [
+        "https://developer.mozilla.org/"
+      ],
+      "completed": false,
+      "score": null,
+      "addedByAgent": true,
+      "challengeId": "review_deployment_20",
+      "topic": "CI/CD"
+    }
+  ],
+  "sessions": [
+    {
+      "day": 1,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "challenge": {
+        "id": "ch_deployment_1",
+        "day_range": [
+          1,
+          1
+        ],
+        "type": "docker",
+        "title": "Create Production-Ready Dockerfile for your backend python path",
+        "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on Docker.",
+        "hints": [
+          "Use multi-stage builds to reduce image size",
+          "Copy package.json before source code for better caching",
+          "Run as non-root user",
+          "Use specific base image versions",
+          "Minimize layers"
+        ],
+        "evaluation_criteria": [
+          "multi-stage build",
+          "layer caching",
+          "security",
+          "image size",
+          "non-root user",
+          "version pinning",
+          "best practices",
+          "Docker",
+          "deployment & devops"
+        ],
+        "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 1 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 42,
+      "grade": "F",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: multi-stage build, layer caching, security",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 42 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.736Z"
+    },
+    {
+      "day": 2,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "challenge": {
+        "id": "ch_deployment_2",
+        "day_range": [
+          2,
+          3
+        ],
+        "type": "cicd",
+        "title": "Design CI/CD Pipeline for your backend python path",
+        "description": "Design a complete CI/CD pipeline for a web application. Include stages for testing, building, security scanning, and deployment. Explain rollback strategy and monitoring. Focus especially on CI/CD. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+        "hints": [
+          "Include automated testing at multiple levels",
+          "Add security and dependency scanning",
+          "Implement blue-green or canary deployment",
+          "Set up monitoring and alerting",
+          "Plan for rollback scenarios"
+        ],
+        "evaluation_criteria": [
+          "pipeline stages",
+          "automated testing",
+          "security scanning",
+          "deployment strategy",
+          "rollback plan",
+          "monitoring",
+          "best practices",
+          "CI/CD",
+          "deployment & devops"
+        ],
+        "model_solution": "Pipeline stages: 1) Code commit triggers build, 2) Run linting and unit tests, 3) Build Docker image, 4) Run integration tests, 5) Security scan (Snyk, Trivy), 6) Push to registry, 7) Deploy to staging, 8) Run smoke tests, 9) Deploy to production (blue-green), 10) Health checks, 11) Monitor metrics. Rollback: keep previous version running, route traffic back if issues detected. Monitoring: track error rates, response times, resource usage with alerts. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 2 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 48,
+      "grade": "D",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: pipeline stages, automated testing, security scanning",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 48 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.741Z"
+    },
+    {
+      "day": 3,
+      "skillId": "databases",
+      "skillName": "Database Design",
+      "challenge": {
+        "id": "ch_databases_1",
+        "day_range": [
+          1,
+          2
+        ],
+        "type": "design",
+        "title": "Design a Normalized Database Schema for your backend python path",
+        "description": "Design a normalized database schema for an e-commerce platform with products, categories, orders, and customers. Apply normalization principles up to 3NF. Include primary keys, foreign keys, and explain your design decisions. Focus especially on SQL basics. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+        "hints": [
+          "Identify entities and their relationships",
+          "Eliminate redundancy through normalization",
+          "Use junction tables for many-to-many relationships",
+          "Consider indexing strategies",
+          "Tie your answer back to SQL basics."
+        ],
+        "evaluation_criteria": [
+          "normalization",
+          "primary keys",
+          "foreign keys",
+          "relationships",
+          "redundancy elimination",
+          "junction tables",
+          "data integrity",
+          "indexing",
+          "SQL basics",
+          "database design"
+        ],
+        "model_solution": "Schema includes: customers table (id PK, name, email unique), products table (id PK, name, price, category_id FK), categories table (id PK, name), orders table (id PK, customer_id FK, order_date, total), order_items junction table (order_id FK, product_id FK, quantity, price, composite PK). This achieves 3NF by eliminating transitive dependencies, uses foreign keys for referential integrity, indexes on foreign keys and frequently queried columns. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 3 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 55,
+      "grade": "D",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: normalization, primary keys, foreign keys",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 55 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.746Z"
+    },
+    {
+      "day": 4,
+      "skillId": "databases",
+      "skillName": "Database Design",
+      "challenge": {
+        "id": "ch_databases_2",
+        "day_range": [
+          3,
+          5
+        ],
+        "type": "query",
+        "title": "Write Complex SQL Queries with Joins and Aggregations for your backend python path",
+        "description": "Given an e-commerce database, write SQL queries to: 1) Find top 5 customers by total spending, 2) Calculate average order value per category, 3) Identify products never ordered, 4) Find customers who ordered in last month but not this month. Focus especially on normalization. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+        "hints": [
+          "Use JOINs to combine related tables",
+          "Apply GROUP BY for aggregations",
+          "Use HAVING to filter grouped results",
+          "Consider LEFT JOIN for finding missing relationships",
+          "Tie your answer back to normalization."
+        ],
+        "evaluation_criteria": [
+          "correct JOINs",
+          "aggregation functions",
+          "GROUP BY",
+          "HAVING clause",
+          "subqueries",
+          "date functions",
+          "ORDER BY",
+          "LIMIT",
+          "normalization",
+          "database design"
+        ],
+        "model_solution": "Query 1: SELECT c.name, SUM(o.total) as spending FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id ORDER BY spending DESC LIMIT 5. Query 2: SELECT cat.name, AVG(o.total) FROM categories cat JOIN products p ON cat.id = p.category_id JOIN order_items oi ON p.id = oi.product_id JOIN orders o ON oi.order_id = o.id GROUP BY cat.id. Query 3: SELECT p.* FROM products p LEFT JOIN order_items oi ON p.id = oi.product_id WHERE oi.product_id IS NULL. Query 4: Use subqueries with date ranges and NOT IN. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 4 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 61,
+      "grade": "C",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: correct JOINs, aggregation functions, GROUP BY",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 61 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.751Z"
+    },
+    {
+      "day": 5,
+      "skillId": "rest_apis",
+      "skillName": "REST API Design",
+      "challenge": {
+        "id": "ch_rest_apis_1",
+        "day_range": [
+          1,
+          2
+        ],
+        "type": "design",
+        "title": "Design a RESTful API for a Blog Platform for your backend python path",
+        "description": "Design a complete REST API for a blog platform that supports posts, comments, and users. Define all endpoints with HTTP methods, request/response formats, and status codes. Consider authentication, pagination, and error handling. Focus especially on HTTP methods. Recent weak spots to address: Could improve by covering: pipeline stages, automated testing, security scanning Response could be more detailed.",
+        "hints": [
+          "Use plural nouns for resource names (e.g., /posts, /comments)",
+          "Nest related resources appropriately (e.g., /posts/:id/comments)",
+          "Include proper HTTP status codes for each operation",
+          "Consider how to handle authentication tokens",
+          "Tie your answer back to HTTP methods."
+        ],
+        "evaluation_criteria": [
+          "proper HTTP methods",
+          "RESTful resource naming",
+          "status codes",
+          "authentication",
+          "pagination",
+          "error handling",
+          "nested resources",
+          "CRUD operations",
+          "HTTP methods",
+          "rest api design"
+        ],
+        "model_solution": "A complete REST API design would include: GET /posts (list with pagination), POST /posts (create), GET /posts/:id (retrieve), PUT /posts/:id (update), DELETE /posts/:id (delete), GET /posts/:id/comments (nested comments), POST /auth/login (authentication), proper 200/201/204/400/401/404 status codes, JWT token in Authorization header, query parameters for pagination (?page=1&limit=10), and consistent error response format with message and error code. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 5 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 38,
+      "grade": "F",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: proper HTTP methods, RESTful resource naming, status codes",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 38 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.755Z"
+    },
+    {
+      "day": 6,
+      "skillId": "rest_apis",
+      "skillName": "REST API Design",
+      "challenge": {
+        "id": "ch_rest_apis_2",
+        "day_range": [
+          3,
+          5
+        ],
+        "type": "implementation",
+        "title": "Implement API Versioning Strategy for your backend python path",
+        "description": "You have an existing API that needs breaking changes. Propose and justify an API versioning strategy. Explain how you would implement it, handle deprecation, and communicate changes to API consumers. Focus especially on REST principles. Recent weak spots to address: Could improve by covering: normalization, primary keys, foreign keys Response could be more detailed.",
+        "hints": [
+          "Consider URI versioning, header versioning, or query parameter versioning",
+          "Think about backwards compatibility",
+          "Plan a deprecation timeline",
+          "Document the migration path",
+          "Tie your answer back to REST principles."
+        ],
+        "evaluation_criteria": [
+          "versioning strategy",
+          "backwards compatibility",
+          "deprecation plan",
+          "communication",
+          "implementation details",
+          "migration path",
+          "documentation",
+          "REST principles",
+          "rest api design"
+        ],
+        "model_solution": "Recommended approach: URI versioning (/v1/users, /v2/users) for visibility and simplicity. Implementation: maintain both versions simultaneously, route to appropriate handlers, share business logic where possible. Deprecation: announce 6 months in advance, add deprecation headers (Sunset, Deprecation), provide migration guide, monitor v1 usage, gradually reduce support. Communication: update API docs, send email notifications, add warnings in responses, provide code examples for migration. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 6 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 45,
+      "grade": "D",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: versioning strategy, backwards compatibility, deprecation plan",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 45 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.761Z"
+    },
+    {
+      "day": 7,
+      "skillId": "nodejs",
+      "skillName": "Node.js Fundamentals",
+      "challenge": {
+        "id": "ch_nodejs_1",
+        "day_range": [
+          1,
+          1
+        ],
+        "type": "coding",
+        "title": "Build an Async File Processor for your backend python path",
+        "description": "Create a Node.js script that reads multiple files asynchronously, processes their content (count words), and writes results to an output file. Use async/await and proper error handling. Focus especially on event loop. Recent weak spots to address: Could improve by covering: correct JOINs, aggregation functions, GROUP BY Response could be more detailed.",
+        "hints": [
+          "Use fs.promises for async file operations",
+          "Handle errors with try-catch",
+          "Process files concurrently with Promise.all",
+          "Ensure proper cleanup",
+          "Tie your answer back to event loop."
+        ],
+        "evaluation_criteria": [
+          "async/await",
+          "Promise.all",
+          "error handling",
+          "file operations",
+          "concurrent processing",
+          "proper cleanup",
+          "code organization",
+          "event loop",
+          "node.js fundamentals"
+        ],
+        "model_solution": "Use fs.promises.readFile() to read files, Promise.all() to process concurrently, implement word counting logic, wrap in try-catch blocks, use fs.promises.writeFile() for output, handle file not found errors gracefully, log progress, ensure all promises are awaited, structure code with clear functions for readability. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 7 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 52,
+      "grade": "D",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: async/await, Promise.all, error handling",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 52 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.765Z"
+    },
+    {
+      "day": 8,
+      "skillId": "auth_security",
+      "skillName": "Authentication & Security",
+      "challenge": {
+        "id": "ch_auth_security_1",
+        "day_range": [
+          1,
+          2
+        ],
+        "type": "implementation",
+        "title": "Implement JWT Authentication System for your backend python path",
+        "description": "Design and implement a complete JWT-based authentication system including registration, login, token refresh, and protected routes. Explain security considerations and best practices. Focus especially on JWT. Recent weak spots to address: Could improve by covering: proper HTTP methods, RESTful resource naming, status codes Response could be more detailed.",
+        "hints": [
+          "Hash passwords with bcrypt before storing",
+          "Generate JWT with appropriate expiration",
+          "Implement refresh token mechanism",
+          "Validate tokens on protected routes",
+          "Store refresh tokens securely"
+        ],
+        "evaluation_criteria": [
+          "password hashing",
+          "JWT generation",
+          "token validation",
+          "refresh tokens",
+          "secure storage",
+          "expiration handling",
+          "middleware",
+          "security best practices",
+          "JWT",
+          "authentication & security"
+        ],
+        "model_solution": "System includes: 1) Registration endpoint that hashes passwords with bcrypt (10+ rounds), 2) Login endpoint that verifies password and returns access token (15min expiry) + refresh token (7 days), 3) Refresh endpoint that validates refresh token and issues new access token, 4) Auth middleware that verifies JWT on protected routes, 5) Store refresh tokens in database with user association, 6) Use HTTPS only, httpOnly cookies for tokens, implement rate limiting, validate input, use strong JWT secrets. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 8 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 60,
+      "grade": "C",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: password hashing, JWT generation, token validation",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 60 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.769Z"
+    },
+    {
+      "day": 9,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "challenge": {
+        "id": "ch_deployment_1",
+        "day_range": [
+          1,
+          1
+        ],
+        "type": "docker",
+        "title": "Create Production-Ready Dockerfile for your backend python path",
+        "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on Docker. Recent weak spots to address: Could improve by covering: versioning strategy, backwards compatibility, deprecation plan Response could be more detailed.",
+        "hints": [
+          "Use multi-stage builds to reduce image size",
+          "Copy package.json before source code for better caching",
+          "Run as non-root user",
+          "Use specific base image versions",
+          "Minimize layers"
+        ],
+        "evaluation_criteria": [
+          "multi-stage build",
+          "layer caching",
+          "security",
+          "image size",
+          "non-root user",
+          "version pinning",
+          "best practices",
+          "Docker",
+          "deployment & devops"
+        ],
+        "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 9 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 44,
+      "grade": "F",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: multi-stage build, layer caching, security",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 44 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.775Z"
+    },
+    {
+      "day": 10,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "challenge": {
+        "id": "ch_deployment_1",
+        "day_range": [
+          1,
+          1
+        ],
+        "type": "docker",
+        "title": "Create Production-Ready Dockerfile for your backend python path",
+        "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on CI/CD. Recent weak spots to address: Could improve by covering: async/await, Promise.all, error handling Response could be more detailed.",
+        "hints": [
+          "Use multi-stage builds to reduce image size",
+          "Copy package.json before source code for better caching",
+          "Run as non-root user",
+          "Use specific base image versions",
+          "Minimize layers"
+        ],
+        "evaluation_criteria": [
+          "multi-stage build",
+          "layer caching",
+          "security",
+          "image size",
+          "non-root user",
+          "version pinning",
+          "best practices",
+          "CI/CD",
+          "deployment & devops"
+        ],
+        "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 10 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 58,
+      "grade": "D",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: multi-stage build, layer caching, security",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 58 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.780Z"
+    },
+    {
+      "day": 11,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "challenge": {
+        "id": "ch_deployment_1",
+        "day_range": [
+          1,
+          1
+        ],
+        "type": "docker",
+        "title": "Create Production-Ready Dockerfile for your backend python path",
+        "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on environment variables. Recent weak spots to address: Could improve by covering: password hashing, JWT generation, token validation Response could be more detailed.",
+        "hints": [
+          "Use multi-stage builds to reduce image size",
+          "Copy package.json before source code for better caching",
+          "Run as non-root user",
+          "Use specific base image versions",
+          "Minimize layers"
+        ],
+        "evaluation_criteria": [
+          "multi-stage build",
+          "layer caching",
+          "security",
+          "image size",
+          "non-root user",
+          "version pinning",
+          "best practices",
+          "environment variables",
+          "deployment & devops"
+        ],
+        "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 11 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 65,
+      "grade": "C",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: multi-stage build, layer caching, security",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 65 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.784Z"
+    },
+    {
+      "day": 12,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "challenge": {
+        "id": "ch_deployment_1",
+        "day_range": [
+          1,
+          1
+        ],
+        "type": "docker",
+        "title": "Create Production-Ready Dockerfile for your backend python path",
+        "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on logging. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+        "hints": [
+          "Use multi-stage builds to reduce image size",
+          "Copy package.json before source code for better caching",
+          "Run as non-root user",
+          "Use specific base image versions",
+          "Minimize layers"
+        ],
+        "evaluation_criteria": [
+          "multi-stage build",
+          "layer caching",
+          "security",
+          "image size",
+          "non-root user",
+          "version pinning",
+          "best practices",
+          "logging",
+          "deployment & devops"
+        ],
+        "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 12 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 50,
+      "grade": "D",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: multi-stage build, layer caching, security",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 50 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.789Z"
+    },
+    {
+      "day": 13,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "challenge": {
+        "id": "ch_deployment_1",
+        "day_range": [
+          1,
+          1
+        ],
+        "type": "docker",
+        "title": "Create Production-Ready Dockerfile for your backend python path",
+        "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on monitoring. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+        "hints": [
+          "Use multi-stage builds to reduce image size",
+          "Copy package.json before source code for better caching",
+          "Run as non-root user",
+          "Use specific base image versions",
+          "Minimize layers"
+        ],
+        "evaluation_criteria": [
+          "multi-stage build",
+          "layer caching",
+          "security",
+          "image size",
+          "non-root user",
+          "version pinning",
+          "best practices",
+          "monitoring",
+          "deployment & devops"
+        ],
+        "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 13 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 63,
+      "grade": "C",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: multi-stage build, layer caching, security",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 63 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.792Z"
+    },
+    {
+      "day": 14,
+      "skillId": "deployment",
+      "skillName": "Deployment & DevOps",
+      "challenge": {
+        "id": "ch_deployment_1",
+        "day_range": [
+          1,
+          1
+        ],
+        "type": "docker",
+        "title": "Create Production-Ready Dockerfile for your backend python path",
+        "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on Docker. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+        "hints": [
+          "Use multi-stage builds to reduce image size",
+          "Copy package.json before source code for better caching",
+          "Run as non-root user",
+          "Use specific base image versions",
+          "Minimize layers"
+        ],
+        "evaluation_criteria": [
+          "multi-stage build",
+          "layer caching",
+          "security",
+          "image size",
+          "non-root user",
+          "version pinning",
+          "best practices",
+          "Docker",
+          "deployment & devops"
+        ],
+        "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+        "source": "static"
+      },
+      "userResponse": "This is my day 14 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+      "score": 72,
+      "grade": "C",
+      "strengths": [
+        "Included reasoning for decisions"
+      ],
+      "weaknesses": [
+        "Could improve by covering: multi-stage build, layer caching, security",
+        "Response could be more detailed",
+        "Missing several key concepts"
+      ],
+      "feedback": "Adjusted demo score to 72 for showcase consistency.",
+      "completedAt": "2026-04-26T11:12:22.796Z"
+    }
+  ],
+  "adaptations": [
+    "Agent update: added 2 extra review days after weak authentication performance.",
+    "Agent update: you are advancing faster in API design and can move quicker."
+  ],
+  "report": {
+    "generatedAt": "2026-04-26T11:12:22.801Z",
+    "goalText": "I want to become a backend Python developer",
+    "summary": {
+      "avgScore": 54,
+      "bestScore": 72,
+      "totalSessions": 14,
+      "completedDays": 14
+    },
+    "skills": [
+      {
+        "id": "deployment",
+        "name": "Deployment & DevOps",
+        "mastery": 51,
+        "status": "active"
+      },
+      {
+        "id": "auth_security",
+        "name": "Authentication & Security",
+        "mastery": 36,
+        "status": "active"
+      },
+      {
+        "id": "nodejs",
+        "name": "Node.js Fundamentals",
+        "mastery": 36,
+        "status": "active"
+      },
+      {
+        "id": "rest_apis",
+        "name": "REST API Design",
+        "mastery": 37,
+        "status": "active"
+      },
+      {
+        "id": "databases",
+        "name": "Database Design",
+        "mastery": 46,
+        "status": "active"
+      }
+    ],
+    "demonstratedSkills": [],
+    "narrative": "SkillForge tracked 14 practice sessions and found steady growth toward Backend Development. The learner performed best when responses were detailed, reasoned, and directly tied to the evaluation criteria.",
+    "coachSummary": "Continue focusing on weak areas and build consistency through repeated practice.",
+    "sessions": [
+      {
+        "day": 1,
+        "skillId": "deployment",
+        "skillName": "Deployment & DevOps",
+        "challenge": {
+          "id": "ch_deployment_1",
+          "day_range": [
+            1,
+            1
+          ],
+          "type": "docker",
+          "title": "Create Production-Ready Dockerfile for your backend python path",
+          "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on Docker.",
+          "hints": [
+            "Use multi-stage builds to reduce image size",
+            "Copy package.json before source code for better caching",
+            "Run as non-root user",
+            "Use specific base image versions",
+            "Minimize layers"
+          ],
+          "evaluation_criteria": [
+            "multi-stage build",
+            "layer caching",
+            "security",
+            "image size",
+            "non-root user",
+            "version pinning",
+            "best practices",
+            "Docker",
+            "deployment & devops"
+          ],
+          "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 1 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 42,
+        "grade": "F",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: multi-stage build, layer caching, security",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 42 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.736Z"
+      },
+      {
+        "day": 2,
+        "skillId": "deployment",
+        "skillName": "Deployment & DevOps",
+        "challenge": {
+          "id": "ch_deployment_2",
+          "day_range": [
+            2,
+            3
+          ],
+          "type": "cicd",
+          "title": "Design CI/CD Pipeline for your backend python path",
+          "description": "Design a complete CI/CD pipeline for a web application. Include stages for testing, building, security scanning, and deployment. Explain rollback strategy and monitoring. Focus especially on CI/CD. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+          "hints": [
+            "Include automated testing at multiple levels",
+            "Add security and dependency scanning",
+            "Implement blue-green or canary deployment",
+            "Set up monitoring and alerting",
+            "Plan for rollback scenarios"
+          ],
+          "evaluation_criteria": [
+            "pipeline stages",
+            "automated testing",
+            "security scanning",
+            "deployment strategy",
+            "rollback plan",
+            "monitoring",
+            "best practices",
+            "CI/CD",
+            "deployment & devops"
+          ],
+          "model_solution": "Pipeline stages: 1) Code commit triggers build, 2) Run linting and unit tests, 3) Build Docker image, 4) Run integration tests, 5) Security scan (Snyk, Trivy), 6) Push to registry, 7) Deploy to staging, 8) Run smoke tests, 9) Deploy to production (blue-green), 10) Health checks, 11) Monitor metrics. Rollback: keep previous version running, route traffic back if issues detected. Monitoring: track error rates, response times, resource usage with alerts. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 2 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 48,
+        "grade": "D",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: pipeline stages, automated testing, security scanning",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 48 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.741Z"
+      },
+      {
+        "day": 3,
+        "skillId": "databases",
+        "skillName": "Database Design",
+        "challenge": {
+          "id": "ch_databases_1",
+          "day_range": [
+            1,
+            2
+          ],
+          "type": "design",
+          "title": "Design a Normalized Database Schema for your backend python path",
+          "description": "Design a normalized database schema for an e-commerce platform with products, categories, orders, and customers. Apply normalization principles up to 3NF. Include primary keys, foreign keys, and explain your design decisions. Focus especially on SQL basics. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+          "hints": [
+            "Identify entities and their relationships",
+            "Eliminate redundancy through normalization",
+            "Use junction tables for many-to-many relationships",
+            "Consider indexing strategies",
+            "Tie your answer back to SQL basics."
+          ],
+          "evaluation_criteria": [
+            "normalization",
+            "primary keys",
+            "foreign keys",
+            "relationships",
+            "redundancy elimination",
+            "junction tables",
+            "data integrity",
+            "indexing",
+            "SQL basics",
+            "database design"
+          ],
+          "model_solution": "Schema includes: customers table (id PK, name, email unique), products table (id PK, name, price, category_id FK), categories table (id PK, name), orders table (id PK, customer_id FK, order_date, total), order_items junction table (order_id FK, product_id FK, quantity, price, composite PK). This achieves 3NF by eliminating transitive dependencies, uses foreign keys for referential integrity, indexes on foreign keys and frequently queried columns. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 3 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 55,
+        "grade": "D",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: normalization, primary keys, foreign keys",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 55 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.746Z"
+      },
+      {
+        "day": 4,
+        "skillId": "databases",
+        "skillName": "Database Design",
+        "challenge": {
+          "id": "ch_databases_2",
+          "day_range": [
+            3,
+            5
+          ],
+          "type": "query",
+          "title": "Write Complex SQL Queries with Joins and Aggregations for your backend python path",
+          "description": "Given an e-commerce database, write SQL queries to: 1) Find top 5 customers by total spending, 2) Calculate average order value per category, 3) Identify products never ordered, 4) Find customers who ordered in last month but not this month. Focus especially on normalization. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+          "hints": [
+            "Use JOINs to combine related tables",
+            "Apply GROUP BY for aggregations",
+            "Use HAVING to filter grouped results",
+            "Consider LEFT JOIN for finding missing relationships",
+            "Tie your answer back to normalization."
+          ],
+          "evaluation_criteria": [
+            "correct JOINs",
+            "aggregation functions",
+            "GROUP BY",
+            "HAVING clause",
+            "subqueries",
+            "date functions",
+            "ORDER BY",
+            "LIMIT",
+            "normalization",
+            "database design"
+          ],
+          "model_solution": "Query 1: SELECT c.name, SUM(o.total) as spending FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id ORDER BY spending DESC LIMIT 5. Query 2: SELECT cat.name, AVG(o.total) FROM categories cat JOIN products p ON cat.id = p.category_id JOIN order_items oi ON p.id = oi.product_id JOIN orders o ON oi.order_id = o.id GROUP BY cat.id. Query 3: SELECT p.* FROM products p LEFT JOIN order_items oi ON p.id = oi.product_id WHERE oi.product_id IS NULL. Query 4: Use subqueries with date ranges and NOT IN. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 4 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 61,
+        "grade": "C",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: correct JOINs, aggregation functions, GROUP BY",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 61 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.751Z"
+      },
+      {
+        "day": 5,
+        "skillId": "rest_apis",
+        "skillName": "REST API Design",
+        "challenge": {
+          "id": "ch_rest_apis_1",
+          "day_range": [
+            1,
+            2
+          ],
+          "type": "design",
+          "title": "Design a RESTful API for a Blog Platform for your backend python path",
+          "description": "Design a complete REST API for a blog platform that supports posts, comments, and users. Define all endpoints with HTTP methods, request/response formats, and status codes. Consider authentication, pagination, and error handling. Focus especially on HTTP methods. Recent weak spots to address: Could improve by covering: pipeline stages, automated testing, security scanning Response could be more detailed.",
+          "hints": [
+            "Use plural nouns for resource names (e.g., /posts, /comments)",
+            "Nest related resources appropriately (e.g., /posts/:id/comments)",
+            "Include proper HTTP status codes for each operation",
+            "Consider how to handle authentication tokens",
+            "Tie your answer back to HTTP methods."
+          ],
+          "evaluation_criteria": [
+            "proper HTTP methods",
+            "RESTful resource naming",
+            "status codes",
+            "authentication",
+            "pagination",
+            "error handling",
+            "nested resources",
+            "CRUD operations",
+            "HTTP methods",
+            "rest api design"
+          ],
+          "model_solution": "A complete REST API design would include: GET /posts (list with pagination), POST /posts (create), GET /posts/:id (retrieve), PUT /posts/:id (update), DELETE /posts/:id (delete), GET /posts/:id/comments (nested comments), POST /auth/login (authentication), proper 200/201/204/400/401/404 status codes, JWT token in Authorization header, query parameters for pagination (?page=1&limit=10), and consistent error response format with message and error code. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 5 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 38,
+        "grade": "F",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: proper HTTP methods, RESTful resource naming, status codes",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 38 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.755Z"
+      },
+      {
+        "day": 6,
+        "skillId": "rest_apis",
+        "skillName": "REST API Design",
+        "challenge": {
+          "id": "ch_rest_apis_2",
+          "day_range": [
+            3,
+            5
+          ],
+          "type": "implementation",
+          "title": "Implement API Versioning Strategy for your backend python path",
+          "description": "You have an existing API that needs breaking changes. Propose and justify an API versioning strategy. Explain how you would implement it, handle deprecation, and communicate changes to API consumers. Focus especially on REST principles. Recent weak spots to address: Could improve by covering: normalization, primary keys, foreign keys Response could be more detailed.",
+          "hints": [
+            "Consider URI versioning, header versioning, or query parameter versioning",
+            "Think about backwards compatibility",
+            "Plan a deprecation timeline",
+            "Document the migration path",
+            "Tie your answer back to REST principles."
+          ],
+          "evaluation_criteria": [
+            "versioning strategy",
+            "backwards compatibility",
+            "deprecation plan",
+            "communication",
+            "implementation details",
+            "migration path",
+            "documentation",
+            "REST principles",
+            "rest api design"
+          ],
+          "model_solution": "Recommended approach: URI versioning (/v1/users, /v2/users) for visibility and simplicity. Implementation: maintain both versions simultaneously, route to appropriate handlers, share business logic where possible. Deprecation: announce 6 months in advance, add deprecation headers (Sunset, Deprecation), provide migration guide, monitor v1 usage, gradually reduce support. Communication: update API docs, send email notifications, add warnings in responses, provide code examples for migration. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 6 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 45,
+        "grade": "D",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: versioning strategy, backwards compatibility, deprecation plan",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 45 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.761Z"
+      },
+      {
+        "day": 7,
+        "skillId": "nodejs",
+        "skillName": "Node.js Fundamentals",
+        "challenge": {
+          "id": "ch_nodejs_1",
+          "day_range": [
+            1,
+            1
+          ],
+          "type": "coding",
+          "title": "Build an Async File Processor for your backend python path",
+          "description": "Create a Node.js script that reads multiple files asynchronously, processes their content (count words), and writes results to an output file. Use async/await and proper error handling. Focus especially on event loop. Recent weak spots to address: Could improve by covering: correct JOINs, aggregation functions, GROUP BY Response could be more detailed.",
+          "hints": [
+            "Use fs.promises for async file operations",
+            "Handle errors with try-catch",
+            "Process files concurrently with Promise.all",
+            "Ensure proper cleanup",
+            "Tie your answer back to event loop."
+          ],
+          "evaluation_criteria": [
+            "async/await",
+            "Promise.all",
+            "error handling",
+            "file operations",
+            "concurrent processing",
+            "proper cleanup",
+            "code organization",
+            "event loop",
+            "node.js fundamentals"
+          ],
+          "model_solution": "Use fs.promises.readFile() to read files, Promise.all() to process concurrently, implement word counting logic, wrap in try-catch blocks, use fs.promises.writeFile() for output, handle file not found errors gracefully, log progress, ensure all promises are awaited, structure code with clear functions for readability. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 7 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 52,
+        "grade": "D",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: async/await, Promise.all, error handling",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 52 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.765Z"
+      },
+      {
+        "day": 8,
+        "skillId": "auth_security",
+        "skillName": "Authentication & Security",
+        "challenge": {
+          "id": "ch_auth_security_1",
+          "day_range": [
+            1,
+            2
+          ],
+          "type": "implementation",
+          "title": "Implement JWT Authentication System for your backend python path",
+          "description": "Design and implement a complete JWT-based authentication system including registration, login, token refresh, and protected routes. Explain security considerations and best practices. Focus especially on JWT. Recent weak spots to address: Could improve by covering: proper HTTP methods, RESTful resource naming, status codes Response could be more detailed.",
+          "hints": [
+            "Hash passwords with bcrypt before storing",
+            "Generate JWT with appropriate expiration",
+            "Implement refresh token mechanism",
+            "Validate tokens on protected routes",
+            "Store refresh tokens securely"
+          ],
+          "evaluation_criteria": [
+            "password hashing",
+            "JWT generation",
+            "token validation",
+            "refresh tokens",
+            "secure storage",
+            "expiration handling",
+            "middleware",
+            "security best practices",
+            "JWT",
+            "authentication & security"
+          ],
+          "model_solution": "System includes: 1) Registration endpoint that hashes passwords with bcrypt (10+ rounds), 2) Login endpoint that verifies password and returns access token (15min expiry) + refresh token (7 days), 3) Refresh endpoint that validates refresh token and issues new access token, 4) Auth middleware that verifies JWT on protected routes, 5) Store refresh tokens in database with user association, 6) Use HTTPS only, httpOnly cookies for tokens, implement rate limiting, validate input, use strong JWT secrets. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 8 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 60,
+        "grade": "C",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: password hashing, JWT generation, token validation",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 60 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.769Z"
+      },
+      {
+        "day": 9,
+        "skillId": "deployment",
+        "skillName": "Deployment & DevOps",
+        "challenge": {
+          "id": "ch_deployment_1",
+          "day_range": [
+            1,
+            1
+          ],
+          "type": "docker",
+          "title": "Create Production-Ready Dockerfile for your backend python path",
+          "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on Docker. Recent weak spots to address: Could improve by covering: versioning strategy, backwards compatibility, deprecation plan Response could be more detailed.",
+          "hints": [
+            "Use multi-stage builds to reduce image size",
+            "Copy package.json before source code for better caching",
+            "Run as non-root user",
+            "Use specific base image versions",
+            "Minimize layers"
+          ],
+          "evaluation_criteria": [
+            "multi-stage build",
+            "layer caching",
+            "security",
+            "image size",
+            "non-root user",
+            "version pinning",
+            "best practices",
+            "Docker",
+            "deployment & devops"
+          ],
+          "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 9 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 44,
+        "grade": "F",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: multi-stage build, layer caching, security",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 44 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.775Z"
+      },
+      {
+        "day": 10,
+        "skillId": "deployment",
+        "skillName": "Deployment & DevOps",
+        "challenge": {
+          "id": "ch_deployment_1",
+          "day_range": [
+            1,
+            1
+          ],
+          "type": "docker",
+          "title": "Create Production-Ready Dockerfile for your backend python path",
+          "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on CI/CD. Recent weak spots to address: Could improve by covering: async/await, Promise.all, error handling Response could be more detailed.",
+          "hints": [
+            "Use multi-stage builds to reduce image size",
+            "Copy package.json before source code for better caching",
+            "Run as non-root user",
+            "Use specific base image versions",
+            "Minimize layers"
+          ],
+          "evaluation_criteria": [
+            "multi-stage build",
+            "layer caching",
+            "security",
+            "image size",
+            "non-root user",
+            "version pinning",
+            "best practices",
+            "CI/CD",
+            "deployment & devops"
+          ],
+          "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 10 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 58,
+        "grade": "D",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: multi-stage build, layer caching, security",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 58 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.780Z"
+      },
+      {
+        "day": 11,
+        "skillId": "deployment",
+        "skillName": "Deployment & DevOps",
+        "challenge": {
+          "id": "ch_deployment_1",
+          "day_range": [
+            1,
+            1
+          ],
+          "type": "docker",
+          "title": "Create Production-Ready Dockerfile for your backend python path",
+          "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on environment variables. Recent weak spots to address: Could improve by covering: password hashing, JWT generation, token validation Response could be more detailed.",
+          "hints": [
+            "Use multi-stage builds to reduce image size",
+            "Copy package.json before source code for better caching",
+            "Run as non-root user",
+            "Use specific base image versions",
+            "Minimize layers"
+          ],
+          "evaluation_criteria": [
+            "multi-stage build",
+            "layer caching",
+            "security",
+            "image size",
+            "non-root user",
+            "version pinning",
+            "best practices",
+            "environment variables",
+            "deployment & devops"
+          ],
+          "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 11 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 65,
+        "grade": "C",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: multi-stage build, layer caching, security",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 65 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.784Z"
+      },
+      {
+        "day": 12,
+        "skillId": "deployment",
+        "skillName": "Deployment & DevOps",
+        "challenge": {
+          "id": "ch_deployment_1",
+          "day_range": [
+            1,
+            1
+          ],
+          "type": "docker",
+          "title": "Create Production-Ready Dockerfile for your backend python path",
+          "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on logging. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+          "hints": [
+            "Use multi-stage builds to reduce image size",
+            "Copy package.json before source code for better caching",
+            "Run as non-root user",
+            "Use specific base image versions",
+            "Minimize layers"
+          ],
+          "evaluation_criteria": [
+            "multi-stage build",
+            "layer caching",
+            "security",
+            "image size",
+            "non-root user",
+            "version pinning",
+            "best practices",
+            "logging",
+            "deployment & devops"
+          ],
+          "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 12 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 50,
+        "grade": "D",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: multi-stage build, layer caching, security",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 50 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.789Z"
+      },
+      {
+        "day": 13,
+        "skillId": "deployment",
+        "skillName": "Deployment & DevOps",
+        "challenge": {
+          "id": "ch_deployment_1",
+          "day_range": [
+            1,
+            1
+          ],
+          "type": "docker",
+          "title": "Create Production-Ready Dockerfile for your backend python path",
+          "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on monitoring. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+          "hints": [
+            "Use multi-stage builds to reduce image size",
+            "Copy package.json before source code for better caching",
+            "Run as non-root user",
+            "Use specific base image versions",
+            "Minimize layers"
+          ],
+          "evaluation_criteria": [
+            "multi-stage build",
+            "layer caching",
+            "security",
+            "image size",
+            "non-root user",
+            "version pinning",
+            "best practices",
+            "monitoring",
+            "deployment & devops"
+          ],
+          "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 13 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 63,
+        "grade": "C",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: multi-stage build, layer caching, security",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 63 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.792Z"
+      },
+      {
+        "day": 14,
+        "skillId": "deployment",
+        "skillName": "Deployment & DevOps",
+        "challenge": {
+          "id": "ch_deployment_1",
+          "day_range": [
+            1,
+            1
+          ],
+          "type": "docker",
+          "title": "Create Production-Ready Dockerfile for your backend python path",
+          "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size. Focus especially on Docker. Recent weak spots to address: Could improve by covering: multi-stage build, layer caching, security Response could be more detailed.",
+          "hints": [
+            "Use multi-stage builds to reduce image size",
+            "Copy package.json before source code for better caching",
+            "Run as non-root user",
+            "Use specific base image versions",
+            "Minimize layers"
+          ],
+          "evaluation_criteria": [
+            "multi-stage build",
+            "layer caching",
+            "security",
+            "image size",
+            "non-root user",
+            "version pinning",
+            "best practices",
+            "Docker",
+            "deployment & devops"
+          ],
+          "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching. A strong response should feel relevant to backend python.",
+          "source": "static"
+        },
+        "userResponse": "This is my day 14 practice response because I want to improve. For example, I would explain the idea, return a simple implementation, and describe why the approach works.",
+        "score": 72,
+        "grade": "C",
+        "strengths": [
+          "Included reasoning for decisions"
+        ],
+        "weaknesses": [
+          "Could improve by covering: multi-stage build, layer caching, security",
+          "Response could be more detailed",
+          "Missing several key concepts"
+        ],
+        "feedback": "Adjusted demo score to 72 for showcase consistency.",
+        "completedAt": "2026-04-26T11:12:22.796Z"
+      }
+    ],
+    "adaptations": [
+      "Agent update: added 2 extra review days after weak authentication performance.",
+      "Agent update: you are advancing faster in API design and can move quicker."
+    ]
+  },
+  "createdAt": "2026-04-26T11:12:22.724Z"
+}

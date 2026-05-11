@@ -1,0 +1,278 @@
+{
+  "backend_development": {
+    "id": "backend_development",
+    "name": "Backend Development",
+    "skills": [
+      {
+        "id": "rest_apis",
+        "name": "REST API Design",
+        "description": "Learn how to design and build RESTful APIs following industry best practices.",
+        "level": "intermediate",
+        "days": 3,
+        "topics": ["HTTP methods", "REST principles", "status codes", "authentication", "versioning"]
+      },
+      {
+        "id": "databases",
+        "name": "Database Design",
+        "description": "Understand relational and non-relational database design, normalization, and querying.",
+        "level": "intermediate",
+        "days": 3,
+        "topics": ["SQL basics", "normalization", "indexing", "transactions", "NoSQL"]
+      },
+      {
+        "id": "nodejs",
+        "name": "Node.js Fundamentals",
+        "description": "Master the core concepts of Node.js including its event-driven, non-blocking architecture.",
+        "level": "beginner",
+        "days": 2,
+        "topics": ["event loop", "modules", "async/await", "streams", "error handling"]
+      },
+      {
+        "id": "auth_security",
+        "name": "Authentication & Security",
+        "description": "Implement secure authentication and authorization mechanisms in backend systems.",
+        "level": "advanced",
+        "days": 3,
+        "topics": ["JWT", "OAuth2", "password hashing", "HTTPS", "CORS"]
+      },
+      {
+        "id": "deployment",
+        "name": "Deployment & DevOps",
+        "description": "Deploy backend applications using containers and modern CI/CD pipelines.",
+        "level": "intermediate",
+        "days": 2,
+        "topics": ["Docker", "CI/CD", "environment variables", "logging", "monitoring"]
+      }
+    ]
+  },
+  "machine_learning": {
+    "id": "machine_learning",
+    "name": "Machine Learning",
+    "skills": [
+      {
+        "id": "ml_fundamentals",
+        "name": "ML Fundamentals",
+        "description": "Understand the core concepts and algorithms that underpin machine learning.",
+        "level": "beginner",
+        "days": 3,
+        "topics": ["supervised learning", "unsupervised learning", "training/test split", "overfitting", "bias-variance tradeoff"]
+      },
+      {
+        "id": "data_preprocessing",
+        "name": "Data Preprocessing",
+        "description": "Prepare raw data for machine learning models through cleaning and transformation.",
+        "level": "beginner",
+        "days": 2,
+        "topics": ["normalization", "missing values", "feature engineering", "encoding", "scaling"]
+      },
+      {
+        "id": "neural_networks",
+        "name": "Neural Networks",
+        "description": "Build and train deep neural networks for complex pattern recognition tasks.",
+        "level": "advanced",
+        "days": 4,
+        "topics": ["perceptrons", "backpropagation", "activation functions", "layers", "gradient descent"]
+      },
+      {
+        "id": "model_evaluation",
+        "name": "Model Evaluation",
+        "description": "Evaluate and compare machine learning models using appropriate metrics.",
+        "level": "intermediate",
+        "days": 2,
+        "topics": ["accuracy", "precision/recall", "F1 score", "confusion matrix", "cross-validation"]
+      },
+      {
+        "id": "nlp_basics",
+        "name": "NLP Basics",
+        "description": "Apply natural language processing techniques to understand and generate text.",
+        "level": "intermediate",
+        "days": 3,
+        "topics": ["tokenization", "embeddings", "sentiment analysis", "text classification", "transformers"]
+      }
+    ]
+  },
+  "ui_ux_design": {
+    "id": "ui_ux_design",
+    "name": "UI/UX Design",
+    "skills": [
+      {
+        "id": "design_principles",
+        "name": "Design Principles",
+        "description": "Learn the foundational visual design principles that guide effective UI creation.",
+        "level": "beginner",
+        "days": 2,
+        "topics": ["visual hierarchy", "color theory", "typography", "whitespace", "contrast"]
+      },
+      {
+        "id": "user_research",
+        "name": "User Research",
+        "description": "Conduct user research to inform design decisions and validate assumptions.",
+        "level": "intermediate",
+        "days": 2,
+        "topics": ["user interviews", "surveys", "personas", "journey mapping", "usability testing"]
+      },
+      {
+        "id": "wireframing",
+        "name": "Wireframing & Prototyping",
+        "description": "Create wireframes and interactive prototypes to communicate design ideas.",
+        "level": "beginner",
+        "days": 2,
+        "topics": ["low-fidelity wireframes", "high-fidelity mockups", "Figma basics", "component libraries", "design systems"]
+      },
+      {
+        "id": "interaction_design",
+        "name": "Interaction Design",
+        "description": "Design meaningful interactions and micro-animations that enhance user experience.",
+        "level": "intermediate",
+        "days": 3,
+        "topics": ["micro-interactions", "animations", "affordances", "feedback", "accessibility"]
+      },
+      {
+        "id": "responsive_design",
+        "name": "Responsive Design",
+        "description": "Build layouts that adapt seamlessly across all screen sizes and devices.",
+        "level": "intermediate",
+        "days": 2,
+        "topics": ["mobile-first", "breakpoints", "flexbox", "grid", "fluid typography"]
+      }
+    ]
+  },
+  "digital_marketing": {
+    "id": "digital_marketing",
+    "name": "Digital Marketing",
+    "skills": [
+      {
+        "id": "seo",
+        "name": "SEO Fundamentals",
+        "description": "Optimize websites and content to rank higher in search engine results.",
+        "level": "beginner",
+        "days": 2,
+        "topics": ["keywords", "on-page SEO", "backlinks", "technical SEO", "analytics"]
+      },
+      {
+        "id": "content_marketing",
+        "name": "Content Marketing",
+        "description": "Create and distribute valuable content to attract and retain a target audience.",
+        "level": "beginner",
+        "days": 2,
+        "topics": ["content strategy", "blogging", "storytelling", "content calendar", "distribution"]
+      },
+      {
+        "id": "social_media",
+        "name": "Social Media Marketing",
+        "description": "Grow brand presence and engagement across social media platforms.",
+        "level": "beginner",
+        "days": 2,
+        "topics": ["platform strategy", "engagement", "paid ads", "influencer marketing", "analytics"]
+      },
+      {
+        "id": "email_marketing",
+        "name": "Email Marketing",
+        "description": "Build and nurture email lists with targeted campaigns and automation.",
+        "level": "intermediate",
+        "days": 2,
+        "topics": ["list building", "segmentation", "automation", "A/B testing", "deliverability"]
+      },
+      {
+        "id": "paid_advertising",
+        "name": "Paid Advertising",
+        "description": "Plan and execute paid ad campaigns across search and social platforms.",
+        "level": "intermediate",
+        "days": 3,
+        "topics": ["Google Ads", "Facebook Ads", "targeting", "bidding strategies", "conversion tracking"]
+      }
+    ]
+  },
+  "frontend_development": {
+    "id": "frontend_development",
+    "name": "Frontend Development",
+    "skills": [
+      {
+        "id": "javascript_core",
+        "name": "JavaScript Core",
+        "description": "Master modern JavaScript fundamentals including ES6+ syntax, closures, and async patterns.",
+        "level": "beginner",
+        "days": 3,
+        "topics": ["variables and scope", "functions and closures", "ES6+ features", "async/await and Promises", "DOM manipulation"]
+      },
+      {
+        "id": "react_fundamentals",
+        "name": "React Fundamentals",
+        "description": "Build interactive UIs with React components, hooks, props, and state.",
+        "level": "intermediate",
+        "days": 4,
+        "topics": ["JSX and components", "props and state", "React hooks (useState, useEffect)", "event handling", "conditional rendering"]
+      },
+      {
+        "id": "css_styling",
+        "name": "CSS & Styling",
+        "description": "Style modern web apps using CSS, Flexbox, Grid, and utility-first frameworks.",
+        "level": "beginner",
+        "days": 2,
+        "topics": ["flexbox", "CSS Grid", "responsive design", "CSS modules", "Tailwind CSS"]
+      },
+      {
+        "id": "state_management",
+        "name": "State Management",
+        "description": "Manage complex application state with Context API, Redux, or Zustand.",
+        "level": "advanced",
+        "days": 3,
+        "topics": ["React Context API", "Redux basics", "local vs global state", "custom hooks", "data fetching patterns"]
+      },
+      {
+        "id": "frontend_tooling",
+        "name": "Frontend Tooling & Deployment",
+        "description": "Use modern build tools and workflows to develop and ship frontend applications.",
+        "level": "intermediate",
+        "days": 2,
+        "topics": ["Vite and webpack", "npm and package management", "TypeScript basics", "testing with Vitest", "deployment to Vercel/Netlify"]
+      }
+    ]
+  },
+  "data_science": {
+    "id": "data_science",
+    "name": "Data Science",
+    "skills": [
+      {
+        "id": "statistics",
+        "name": "Statistics & Probability",
+        "description": "Apply statistical methods and probability theory to analyze and interpret data.",
+        "level": "beginner",
+        "days": 3,
+        "topics": ["descriptive statistics", "probability distributions", "hypothesis testing", "confidence intervals", "correlation"]
+      },
+      {
+        "id": "data_visualization",
+        "name": "Data Visualization",
+        "description": "Communicate data insights effectively through charts, graphs, and dashboards.",
+        "level": "beginner",
+        "days": 2,
+        "topics": ["chart types", "matplotlib", "storytelling with data", "dashboards", "color usage"]
+      },
+      {
+        "id": "pandas_numpy",
+        "name": "Pandas & NumPy",
+        "description": "Manipulate and analyze data efficiently using Python's core data science libraries.",
+        "level": "intermediate",
+        "days": 2,
+        "topics": ["DataFrames", "array operations", "data cleaning", "merging", "aggregation"]
+      },
+      {
+        "id": "exploratory_analysis",
+        "name": "Exploratory Data Analysis",
+        "description": "Systematically explore datasets to uncover patterns, anomalies, and relationships.",
+        "level": "intermediate",
+        "days": 2,
+        "topics": ["data profiling", "outlier detection", "correlation analysis", "feature distributions", "missing data"]
+      },
+      {
+        "id": "sql_for_data",
+        "name": "SQL for Data Science",
+        "description": "Query and transform data stored in relational databases using SQL.",
+        "level": "beginner",
+        "days": 2,
+        "topics": ["SELECT queries", "JOINs", "aggregations", "window functions", "subqueries"]
+      }
+    ]
+  }
+}

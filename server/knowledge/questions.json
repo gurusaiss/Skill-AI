@@ -1,0 +1,1212 @@
+{
+  "rest_apis": {
+    "intermediate": [
+      {
+        "id": "q_rest_apis_1",
+        "question": "Which HTTP method should be used to update a partial resource?",
+        "type": "multiple_choice",
+        "options": ["PATCH", "PUT", "POST", "UPDATE"],
+        "correct": "PATCH",
+        "explanation": "PATCH is used for partial updates, while PUT replaces the entire resource.",
+        "key_concepts": ["HTTP methods", "REST principles", "resource updates"],
+        "score_keywords": ["PATCH", "partial", "update", "resource"],
+        "sample_good_answer": "PATCH is the correct method for partial updates because it modifies only the specified fields without replacing the entire resource."
+      },
+      {
+        "id": "q_rest_apis_2",
+        "question": "Explain the difference between stateless and stateful APIs and why REST APIs should be stateless.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Stateless APIs don't store client session data on the server, making them more scalable and reliable.",
+        "key_concepts": ["REST principles", "stateless", "scalability"],
+        "score_keywords": ["stateless", "session", "server", "scalability", "independent", "request"],
+        "sample_good_answer": "Stateless APIs don't store client session information on the server. Each request contains all necessary information. This makes REST APIs more scalable because servers don't need to maintain session state, and any server can handle any request."
+      },
+      {
+        "id": "q_rest_apis_3",
+        "question": "What HTTP status code should be returned when a resource is successfully created?",
+        "type": "multiple_choice",
+        "options": ["200 OK", "201 Created", "204 No Content", "202 Accepted"],
+        "correct": "201 Created",
+        "explanation": "201 Created indicates successful resource creation and typically includes a Location header.",
+        "key_concepts": ["status codes", "resource creation", "HTTP"],
+        "score_keywords": ["201", "Created", "resource", "success"],
+        "sample_good_answer": "201 Created is the appropriate status code because it specifically indicates that a new resource was successfully created on the server."
+      },
+      {
+        "id": "q_rest_apis_4",
+        "question": "Describe three common API versioning strategies and their trade-offs.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Common strategies include URI versioning, header versioning, and query parameter versioning, each with different trade-offs.",
+        "key_concepts": ["versioning", "API design", "backwards compatibility"],
+        "score_keywords": ["URI", "header", "query", "version", "backwards", "compatibility", "breaking"],
+        "sample_good_answer": "Three strategies are: 1) URI versioning (/v1/users) - simple but creates multiple endpoints, 2) Header versioning (Accept: application/vnd.api.v1+json) - cleaner URIs but less visible, 3) Query parameter versioning (?version=1) - flexible but can be overlooked. Each balances visibility, simplicity, and backwards compatibility differently."
+      }
+    ]
+  },
+  "databases": {
+    "intermediate": [
+      {
+        "id": "q_databases_1",
+        "question": "What is the purpose of database normalization?",
+        "type": "multiple_choice",
+        "options": ["Reduce data redundancy", "Increase query speed", "Add more tables", "Encrypt data"],
+        "correct": "Reduce data redundancy",
+        "explanation": "Normalization organizes data to minimize redundancy and dependency.",
+        "key_concepts": ["normalization", "data redundancy", "database design"],
+        "score_keywords": ["redundancy", "duplicate", "organize", "dependency"],
+        "sample_good_answer": "Normalization reduces data redundancy by organizing data into related tables, eliminating duplicate information and ensuring data integrity."
+      },
+      {
+        "id": "q_databases_2",
+        "question": "Explain the ACID properties and why they matter for database transactions.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "ACID (Atomicity, Consistency, Isolation, Durability) ensures reliable transaction processing.",
+        "key_concepts": ["transactions", "ACID", "data integrity"],
+        "score_keywords": ["Atomicity", "Consistency", "Isolation", "Durability", "transaction", "reliable", "integrity"],
+        "sample_good_answer": "ACID stands for Atomicity (all-or-nothing execution), Consistency (valid state transitions), Isolation (concurrent transactions don't interfere), and Durability (committed changes persist). These properties ensure reliable transaction processing and data integrity in databases."
+      },
+      {
+        "id": "q_databases_3",
+        "question": "Which SQL clause is used to filter grouped results?",
+        "type": "multiple_choice",
+        "options": ["WHERE", "HAVING", "FILTER", "GROUP BY"],
+        "correct": "HAVING",
+        "explanation": "HAVING filters groups after GROUP BY, while WHERE filters rows before grouping.",
+        "key_concepts": ["SQL basics", "aggregation", "filtering"],
+        "score_keywords": ["HAVING", "GROUP BY", "filter", "aggregate"],
+        "sample_good_answer": "HAVING is used to filter grouped results because it operates on aggregated data after GROUP BY, unlike WHERE which filters individual rows."
+      },
+      {
+        "id": "q_databases_4",
+        "question": "Compare and contrast SQL and NoSQL databases, including when to use each.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "SQL databases are relational with fixed schemas, while NoSQL databases are flexible and schema-less.",
+        "key_concepts": ["SQL", "NoSQL", "database types", "use cases"],
+        "score_keywords": ["relational", "schema", "flexible", "scalability", "ACID", "consistency", "document", "key-value"],
+        "sample_good_answer": "SQL databases use fixed schemas and ACID transactions, ideal for structured data and complex queries. NoSQL databases offer flexible schemas and horizontal scalability, better for unstructured data, high write loads, and distributed systems. Choose SQL for financial systems, NoSQL for social media or IoT applications."
+      }
+    ]
+  }
+,
+  "nodejs": {
+    "beginner": [
+      {
+        "id": "q_nodejs_1",
+        "question": "What is the event loop in Node.js?",
+        "type": "multiple_choice",
+        "options": ["A loop that processes events and callbacks", "A for loop in JavaScript", "A database connection pool", "A web server"],
+        "correct": "A loop that processes events and callbacks",
+        "explanation": "The event loop is the core mechanism that handles asynchronous operations in Node.js.",
+        "key_concepts": ["event loop", "async", "non-blocking"],
+        "score_keywords": ["event", "loop", "async", "callback", "non-blocking"],
+        "sample_good_answer": "The event loop is a mechanism that continuously checks for and processes events and callbacks, enabling Node.js to handle asynchronous operations efficiently."
+      },
+      {
+        "id": "q_nodejs_2",
+        "question": "Explain the difference between require() and import in Node.js.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "require() is CommonJS syntax (synchronous), while import is ES6 module syntax (can be asynchronous).",
+        "key_concepts": ["modules", "CommonJS", "ES6"],
+        "score_keywords": ["require", "import", "CommonJS", "ES6", "module", "synchronous", "asynchronous"],
+        "sample_good_answer": "require() is CommonJS syntax that loads modules synchronously at runtime. import is ES6 module syntax that can be statically analyzed and supports asynchronous loading. Modern Node.js supports both, but import is preferred for new projects."
+      },
+      {
+        "id": "q_nodejs_3",
+        "question": "Which keyword is used to handle rejected promises?",
+        "type": "multiple_choice",
+        "options": ["catch", "reject", "error", "fail"],
+        "correct": "catch",
+        "explanation": "The catch() method or catch block handles promise rejections.",
+        "key_concepts": ["async/await", "promises", "error handling"],
+        "score_keywords": ["catch", "promise", "rejection", "error"],
+        "sample_good_answer": "catch is used to handle rejected promises, either as .catch() method or in try-catch blocks with async/await."
+      },
+      {
+        "id": "q_nodejs_4",
+        "question": "Describe how streams work in Node.js and provide a use case where they're beneficial.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Streams process data in chunks rather than loading everything into memory at once.",
+        "key_concepts": ["streams", "memory efficiency", "data processing"],
+        "score_keywords": ["stream", "chunk", "memory", "efficient", "pipe", "readable", "writable", "large"],
+        "sample_good_answer": "Streams process data in small chunks instead of loading entire files into memory. They're beneficial for handling large files like video uploads or log processing, where loading everything at once would consume too much memory. Streams can be piped together for efficient data transformation."
+      }
+    ]
+  }
+,
+  "auth_security": {
+    "advanced": [
+      {
+        "id": "q_auth_security_1",
+        "question": "What is the main advantage of JWT over session-based authentication?",
+        "type": "multiple_choice",
+        "options": ["Stateless authentication", "Better encryption", "Faster processing", "Smaller size"],
+        "correct": "Stateless authentication",
+        "explanation": "JWTs are self-contained and don't require server-side session storage.",
+        "key_concepts": ["JWT", "stateless", "authentication"],
+        "score_keywords": ["stateless", "self-contained", "server", "session", "scalable"],
+        "sample_good_answer": "JWT enables stateless authentication because the token contains all necessary user information, eliminating the need for server-side session storage and improving scalability."
+      },
+      {
+        "id": "q_auth_security_2",
+        "question": "Explain the OAuth2 authorization code flow and why it's more secure than the implicit flow.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Authorization code flow uses a backend exchange, keeping tokens away from the browser.",
+        "key_concepts": ["OAuth2", "authorization", "security"],
+        "score_keywords": ["authorization", "code", "token", "backend", "client secret", "implicit", "secure", "browser"],
+        "sample_good_answer": "The authorization code flow exchanges an authorization code for tokens on the backend using a client secret, keeping access tokens away from the browser. This is more secure than the implicit flow which exposes tokens in the URL, making them vulnerable to interception."
+      },
+      {
+        "id": "q_auth_security_3",
+        "question": "Which hashing algorithm is recommended for storing passwords?",
+        "type": "multiple_choice",
+        "options": ["bcrypt", "MD5", "SHA-1", "Base64"],
+        "correct": "bcrypt",
+        "explanation": "bcrypt is designed for password hashing with built-in salting and adjustable cost factor.",
+        "key_concepts": ["password hashing", "security", "encryption"],
+        "score_keywords": ["bcrypt", "hash", "salt", "secure", "password"],
+        "sample_good_answer": "bcrypt is recommended because it's specifically designed for password hashing with automatic salting and an adjustable work factor to remain secure against brute-force attacks."
+      },
+      {
+        "id": "q_auth_security_4",
+        "question": "Describe CORS and explain why it's important for API security.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "CORS controls which origins can access resources, preventing unauthorized cross-origin requests.",
+        "key_concepts": ["CORS", "security", "cross-origin"],
+        "score_keywords": ["CORS", "origin", "cross-origin", "browser", "security", "header", "Access-Control", "domain"],
+        "sample_good_answer": "CORS (Cross-Origin Resource Sharing) is a security mechanism that controls which domains can access your API from browsers. It prevents malicious websites from making unauthorized requests to your API by requiring explicit permission through Access-Control headers, protecting against CSRF attacks."
+      }
+    ]
+  },
+  "deployment": {
+    "intermediate": [
+      {
+        "id": "q_deployment_1",
+        "question": "What is the primary benefit of using Docker containers?",
+        "type": "multiple_choice",
+        "options": ["Consistent environments across development and production", "Faster code execution", "Automatic bug fixes", "Free hosting"],
+        "correct": "Consistent environments across development and production",
+        "explanation": "Docker ensures the application runs the same way regardless of where it's deployed.",
+        "key_concepts": ["Docker", "containers", "consistency"],
+        "score_keywords": ["consistent", "environment", "portable", "isolation", "dependencies"],
+        "sample_good_answer": "Docker provides consistent environments by packaging applications with all dependencies, ensuring they run identically across development, testing, and production environments."
+      },
+      {
+        "id": "q_deployment_2",
+        "question": "Explain the difference between continuous integration and continuous deployment.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "CI automates testing and integration, while CD automates deployment to production.",
+        "key_concepts": ["CI/CD", "automation", "deployment"],
+        "score_keywords": ["integration", "deployment", "automated", "testing", "production", "pipeline", "continuous"],
+        "sample_good_answer": "Continuous Integration (CI) automatically builds and tests code changes when committed. Continuous Deployment (CD) goes further by automatically deploying passing builds to production. CI ensures code quality, while CD ensures rapid, reliable releases."
+      },
+      {
+        "id": "q_deployment_3",
+        "question": "Where should sensitive configuration like API keys be stored?",
+        "type": "multiple_choice",
+        "options": ["Environment variables", "Source code", "Public repository", "Comments"],
+        "correct": "Environment variables",
+        "explanation": "Environment variables keep secrets out of source code and allow different values per environment.",
+        "key_concepts": ["environment variables", "security", "configuration"],
+        "score_keywords": ["environment", "variables", "secrets", "configuration", "secure"],
+        "sample_good_answer": "Environment variables should store sensitive configuration because they keep secrets out of source code, allow different values per environment, and can be managed securely."
+      },
+      {
+        "id": "q_deployment_4",
+        "question": "Describe the importance of logging and monitoring in production systems.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Logging and monitoring help detect issues, debug problems, and understand system behavior.",
+        "key_concepts": ["logging", "monitoring", "observability"],
+        "score_keywords": ["logging", "monitoring", "errors", "debug", "performance", "alerts", "metrics", "observability"],
+        "sample_good_answer": "Logging and monitoring are critical for production systems because they enable early detection of issues, provide debugging information when problems occur, track performance metrics, and help understand user behavior. They allow teams to respond quickly to incidents and make data-driven decisions."
+      }
+    ]
+  }
+,
+  "ml_fundamentals": {
+    "beginner": [
+      {
+        "id": "q_ml_fundamentals_1",
+        "question": "What is the difference between supervised and unsupervised learning?",
+        "type": "multiple_choice",
+        "options": ["Supervised uses labeled data, unsupervised doesn't", "Supervised is faster", "Unsupervised is more accurate", "They are the same"],
+        "correct": "Supervised uses labeled data, unsupervised doesn't",
+        "explanation": "Supervised learning trains on labeled examples, while unsupervised finds patterns in unlabeled data.",
+        "key_concepts": ["supervised learning", "unsupervised learning", "labeled data"],
+        "score_keywords": ["supervised", "unsupervised", "labeled", "unlabeled", "patterns"],
+        "sample_good_answer": "Supervised learning uses labeled training data where the correct output is known, while unsupervised learning finds patterns in unlabeled data without predefined answers."
+      },
+      {
+        "id": "q_ml_fundamentals_2",
+        "question": "Explain what overfitting is and how to prevent it.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Overfitting occurs when a model learns training data too well, including noise, and fails to generalize.",
+        "key_concepts": ["overfitting", "generalization", "model training"],
+        "score_keywords": ["overfitting", "training", "generalize", "validation", "regularization", "cross-validation", "noise"],
+        "sample_good_answer": "Overfitting happens when a model memorizes training data including noise, performing well on training but poorly on new data. Prevention methods include using more training data, regularization techniques, cross-validation, and early stopping."
+      },
+      {
+        "id": "q_ml_fundamentals_3",
+        "question": "Why do we split data into training and test sets?",
+        "type": "multiple_choice",
+        "options": ["To evaluate model performance on unseen data", "To make training faster", "To reduce data size", "To balance the dataset"],
+        "correct": "To evaluate model performance on unseen data",
+        "explanation": "Test sets provide an unbiased evaluation of model performance on new data.",
+        "key_concepts": ["training/test split", "model evaluation", "generalization"],
+        "score_keywords": ["test", "training", "unseen", "evaluate", "generalization"],
+        "sample_good_answer": "We split data to evaluate how well the model generalizes to unseen data, ensuring it hasn't just memorized the training set."
+      },
+      {
+        "id": "q_ml_fundamentals_4",
+        "question": "Describe the bias-variance tradeoff in machine learning.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Bias is error from oversimplification, variance is error from sensitivity to training data fluctuations.",
+        "key_concepts": ["bias-variance tradeoff", "model complexity", "error"],
+        "score_keywords": ["bias", "variance", "tradeoff", "underfitting", "overfitting", "complexity", "error"],
+        "sample_good_answer": "The bias-variance tradeoff balances two error sources: bias (underfitting from oversimplified models) and variance (overfitting from overly complex models). High bias models are too simple, high variance models are too sensitive to training data. The goal is finding optimal complexity that minimizes total error."
+      }
+    ]
+  }
+,
+  "data_preprocessing": {
+    "beginner": [
+      {
+        "id": "q_data_preprocessing_1",
+        "question": "What is feature scaling and why is it important?",
+        "type": "multiple_choice",
+        "options": ["Transforming features to similar ranges", "Removing features", "Adding new features", "Sorting features"],
+        "correct": "Transforming features to similar ranges",
+        "explanation": "Feature scaling ensures all features contribute equally to model training.",
+        "key_concepts": ["scaling", "normalization", "feature engineering"],
+        "score_keywords": ["scaling", "normalization", "range", "standardization", "features"],
+        "sample_good_answer": "Feature scaling transforms features to similar ranges, preventing features with larger values from dominating the model and ensuring fair contribution from all features."
+      },
+      {
+        "id": "q_data_preprocessing_2",
+        "question": "Explain three common methods for handling missing values in datasets.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Common methods include deletion, imputation with mean/median/mode, and predictive imputation.",
+        "key_concepts": ["missing values", "data cleaning", "imputation"],
+        "score_keywords": ["missing", "imputation", "mean", "median", "deletion", "forward fill", "interpolation"],
+        "sample_good_answer": "Three methods are: 1) Deletion - removing rows/columns with missing values (simple but loses data), 2) Imputation - filling with mean/median/mode (preserves data size), 3) Predictive imputation - using other features to predict missing values (more accurate but complex)."
+      },
+      {
+        "id": "q_data_preprocessing_3",
+        "question": "Which encoding method converts categorical variables into binary columns?",
+        "type": "multiple_choice",
+        "options": ["One-hot encoding", "Label encoding", "Binary encoding", "Hash encoding"],
+        "correct": "One-hot encoding",
+        "explanation": "One-hot encoding creates a binary column for each category.",
+        "key_concepts": ["encoding", "categorical data", "feature engineering"],
+        "score_keywords": ["one-hot", "encoding", "binary", "categorical", "dummy"],
+        "sample_good_answer": "One-hot encoding creates binary columns for each category, with 1 indicating presence and 0 indicating absence of that category."
+      },
+      {
+        "id": "q_data_preprocessing_4",
+        "question": "Describe the difference between normalization and standardization.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Normalization scales to [0,1], standardization transforms to mean=0 and std=1.",
+        "key_concepts": ["normalization", "standardization", "scaling"],
+        "score_keywords": ["normalization", "standardization", "scale", "mean", "standard deviation", "range", "zero", "one"],
+        "sample_good_answer": "Normalization (Min-Max scaling) scales features to a fixed range like [0,1] by subtracting minimum and dividing by range. Standardization (Z-score) transforms features to have mean=0 and standard deviation=1. Use normalization when you need bounded values, standardization when data follows normal distribution."
+      }
+    ]
+  },
+  "neural_networks": {
+    "advanced": [
+      {
+        "id": "q_neural_networks_1",
+        "question": "What is the purpose of activation functions in neural networks?",
+        "type": "multiple_choice",
+        "options": ["Introduce non-linearity", "Speed up training", "Reduce overfitting", "Initialize weights"],
+        "correct": "Introduce non-linearity",
+        "explanation": "Activation functions enable neural networks to learn complex non-linear patterns.",
+        "key_concepts": ["activation functions", "non-linearity", "neural networks"],
+        "score_keywords": ["activation", "non-linear", "function", "ReLU", "sigmoid", "tanh"],
+        "sample_good_answer": "Activation functions introduce non-linearity, allowing neural networks to learn complex patterns beyond simple linear relationships."
+      },
+      {
+        "id": "q_neural_networks_2",
+        "question": "Explain how backpropagation works and why it's essential for training neural networks.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Backpropagation calculates gradients by propagating errors backward through the network.",
+        "key_concepts": ["backpropagation", "gradient descent", "training"],
+        "score_keywords": ["backpropagation", "gradient", "error", "chain rule", "weights", "backward", "derivative"],
+        "sample_good_answer": "Backpropagation calculates gradients of the loss function with respect to each weight by propagating errors backward through the network using the chain rule. It's essential because it efficiently computes how to adjust weights to minimize error, enabling neural networks to learn from data."
+      },
+      {
+        "id": "q_neural_networks_3",
+        "question": "Which problem does the ReLU activation function help solve?",
+        "type": "multiple_choice",
+        "options": ["Vanishing gradient", "Overfitting", "Underfitting", "Data imbalance"],
+        "correct": "Vanishing gradient",
+        "explanation": "ReLU maintains gradients for positive values, preventing vanishing gradients in deep networks.",
+        "key_concepts": ["activation functions", "ReLU", "vanishing gradient"],
+        "score_keywords": ["ReLU", "vanishing", "gradient", "activation", "deep"],
+        "sample_good_answer": "ReLU helps solve the vanishing gradient problem by maintaining constant gradients for positive values, allowing deep networks to train effectively."
+      },
+      {
+        "id": "q_neural_networks_4",
+        "question": "Describe the architecture and purpose of convolutional layers in CNNs.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Convolutional layers use filters to detect spatial patterns in images.",
+        "key_concepts": ["layers", "CNN", "convolution"],
+        "score_keywords": ["convolutional", "filter", "kernel", "spatial", "feature", "map", "image", "pattern"],
+        "sample_good_answer": "Convolutional layers apply learnable filters (kernels) that slide across input images to detect spatial patterns like edges, textures, and shapes. Each filter produces a feature map highlighting where patterns are found. This architecture enables CNNs to learn hierarchical visual features efficiently while maintaining spatial relationships."
+      }
+    ]
+  }
+,
+  "model_evaluation": {
+    "intermediate": [
+      {
+        "id": "q_model_evaluation_1",
+        "question": "When is precision more important than recall?",
+        "type": "multiple_choice",
+        "options": ["When false positives are costly", "When false negatives are costly", "When accuracy is high", "When data is balanced"],
+        "correct": "When false positives are costly",
+        "explanation": "Precision focuses on minimizing false positives.",
+        "key_concepts": ["precision/recall", "evaluation metrics", "tradeoffs"],
+        "score_keywords": ["precision", "false positive", "costly", "spam", "positive"],
+        "sample_good_answer": "Precision is more important when false positives are costly, such as spam detection where marking legitimate emails as spam is worse than missing some spam."
+      },
+      {
+        "id": "q_model_evaluation_2",
+        "question": "Explain what a confusion matrix shows and how to interpret it.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "A confusion matrix shows true positives, true negatives, false positives, and false negatives.",
+        "key_concepts": ["confusion matrix", "classification", "evaluation"],
+        "score_keywords": ["confusion", "matrix", "true positive", "false positive", "true negative", "false negative", "predicted", "actual"],
+        "sample_good_answer": "A confusion matrix displays classification results in a table with actual classes as rows and predicted classes as columns. It shows true positives (correctly predicted positive), true negatives (correctly predicted negative), false positives (incorrectly predicted positive), and false negatives (incorrectly predicted negative). This helps identify specific error patterns."
+      },
+      {
+        "id": "q_model_evaluation_3",
+        "question": "What does the F1 score measure?",
+        "type": "multiple_choice",
+        "options": ["Harmonic mean of precision and recall", "Arithmetic mean of accuracy", "Model training speed", "Feature importance"],
+        "correct": "Harmonic mean of precision and recall",
+        "explanation": "F1 score balances precision and recall into a single metric.",
+        "key_concepts": ["F1 score", "precision/recall", "evaluation metrics"],
+        "score_keywords": ["F1", "harmonic", "precision", "recall", "balance"],
+        "sample_good_answer": "F1 score is the harmonic mean of precision and recall, providing a balanced measure when both metrics are important."
+      },
+      {
+        "id": "q_model_evaluation_4",
+        "question": "Describe k-fold cross-validation and its advantages over a single train-test split.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "K-fold cross-validation splits data into k subsets, training k times with different test folds.",
+        "key_concepts": ["cross-validation", "model evaluation", "generalization"],
+        "score_keywords": ["k-fold", "cross-validation", "folds", "robust", "variance", "generalization", "average"],
+        "sample_good_answer": "K-fold cross-validation divides data into k equal folds, training k times with each fold serving as test set once. It provides more robust performance estimates by averaging across multiple splits, reduces variance from random splitting, and uses all data for both training and testing. This gives better insight into model generalization than a single split."
+      }
+    ]
+  },
+  "nlp_basics": {
+    "intermediate": [
+      {
+        "id": "q_nlp_basics_1",
+        "question": "What is tokenization in NLP?",
+        "type": "multiple_choice",
+        "options": ["Breaking text into words or subwords", "Encrypting text", "Translating text", "Summarizing text"],
+        "correct": "Breaking text into words or subwords",
+        "explanation": "Tokenization splits text into meaningful units for processing.",
+        "key_concepts": ["tokenization", "text processing", "NLP"],
+        "score_keywords": ["tokenization", "words", "split", "tokens", "subwords"],
+        "sample_good_answer": "Tokenization breaks text into smaller units called tokens, typically words or subwords, which serve as the basic units for NLP processing."
+      },
+      {
+        "id": "q_nlp_basics_2",
+        "question": "Explain what word embeddings are and why they're useful for NLP tasks.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Word embeddings represent words as dense vectors that capture semantic relationships.",
+        "key_concepts": ["embeddings", "word vectors", "semantics"],
+        "score_keywords": ["embeddings", "vector", "semantic", "representation", "Word2Vec", "similar", "meaning"],
+        "sample_good_answer": "Word embeddings are dense vector representations of words that capture semantic relationships. Words with similar meanings have similar vectors, enabling models to understand context and relationships. They're useful because they convert text into numerical form while preserving meaning, allowing machine learning models to process language effectively."
+      },
+      {
+        "id": "q_nlp_basics_3",
+        "question": "Which NLP task classifies text as positive, negative, or neutral?",
+        "type": "multiple_choice",
+        "options": ["Sentiment analysis", "Named entity recognition", "Machine translation", "Text summarization"],
+        "correct": "Sentiment analysis",
+        "explanation": "Sentiment analysis determines the emotional tone of text.",
+        "key_concepts": ["sentiment analysis", "text classification", "NLP tasks"],
+        "score_keywords": ["sentiment", "positive", "negative", "emotion", "opinion"],
+        "sample_good_answer": "Sentiment analysis classifies text by emotional tone, determining whether it expresses positive, negative, or neutral sentiment."
+      },
+      {
+        "id": "q_nlp_basics_4",
+        "question": "Describe how transformers revolutionized NLP and their key innovation.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Transformers use self-attention mechanisms to process entire sequences in parallel.",
+        "key_concepts": ["transformers", "attention", "deep learning"],
+        "score_keywords": ["transformer", "attention", "self-attention", "parallel", "BERT", "GPT", "context", "sequence"],
+        "sample_good_answer": "Transformers revolutionized NLP through self-attention mechanisms that weigh the importance of different words in context, processing entire sequences in parallel rather than sequentially. This enables better long-range dependencies and faster training. Models like BERT and GPT use transformers to achieve state-of-the-art results across NLP tasks."
+      }
+    ]
+  }
+,
+  "design_principles": {
+    "beginner": [
+      {
+        "id": "q_design_principles_1",
+        "question": "What is visual hierarchy in design?",
+        "type": "multiple_choice",
+        "options": ["Arranging elements by importance", "Using only one color", "Making everything the same size", "Removing all images"],
+        "correct": "Arranging elements by importance",
+        "explanation": "Visual hierarchy guides users' attention through size, color, and placement.",
+        "key_concepts": ["visual hierarchy", "design principles", "layout"],
+        "score_keywords": ["hierarchy", "importance", "attention", "size", "emphasis"],
+        "sample_good_answer": "Visual hierarchy arranges design elements by importance, using size, color, contrast, and placement to guide users' attention to the most important content first."
+      },
+      {
+        "id": "q_design_principles_2",
+        "question": "Explain the 60-30-10 rule in color theory and how to apply it.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "The 60-30-10 rule balances color usage: 60% dominant, 30% secondary, 10% accent.",
+        "key_concepts": ["color theory", "design principles", "balance"],
+        "score_keywords": ["60-30-10", "color", "dominant", "secondary", "accent", "balance", "proportion"],
+        "sample_good_answer": "The 60-30-10 rule suggests using 60% dominant color (usually neutral), 30% secondary color (supporting), and 10% accent color (highlights). This creates balanced, visually appealing designs. For example, 60% white background, 30% gray for sections, 10% blue for buttons and links."
+      },
+      {
+        "id": "q_design_principles_3",
+        "question": "Which typography principle improves readability?",
+        "type": "multiple_choice",
+        "options": ["Appropriate line spacing", "Using many fonts", "All caps text", "Tiny font sizes"],
+        "correct": "Appropriate line spacing",
+        "explanation": "Proper line spacing (leading) makes text easier to read.",
+        "key_concepts": ["typography", "readability", "design principles"],
+        "score_keywords": ["line spacing", "leading", "readability", "typography"],
+        "sample_good_answer": "Appropriate line spacing improves readability by giving text room to breathe, making it easier for eyes to track lines."
+      },
+      {
+        "id": "q_design_principles_4",
+        "question": "Describe the role of whitespace in design and provide examples of effective use.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Whitespace creates breathing room, improves focus, and enhances visual hierarchy.",
+        "key_concepts": ["whitespace", "layout", "design principles"],
+        "score_keywords": ["whitespace", "space", "breathing", "focus", "clarity", "margins", "padding", "clean"],
+        "sample_good_answer": "Whitespace (negative space) creates breathing room around elements, improving focus and readability. Effective uses include: margins around text blocks for easier reading, space between sections to separate content, padding around buttons to make them more clickable, and generous spacing in luxury brand designs to convey elegance."
+      }
+    ]
+  },
+  "user_research": {
+    "intermediate": [
+      {
+        "id": "q_user_research_1",
+        "question": "What is the primary goal of user interviews?",
+        "type": "multiple_choice",
+        "options": ["Understand user needs and behaviors", "Sell products", "Test code", "Design logos"],
+        "correct": "Understand user needs and behaviors",
+        "explanation": "User interviews gather qualitative insights about user needs, pain points, and behaviors.",
+        "key_concepts": ["user interviews", "research methods", "qualitative data"],
+        "score_keywords": ["interviews", "needs", "behaviors", "insights", "qualitative"],
+        "sample_good_answer": "User interviews aim to understand user needs, behaviors, and pain points through direct conversation, providing qualitative insights that inform design decisions."
+      },
+      {
+        "id": "q_user_research_2",
+        "question": "Explain the difference between user personas and user journey maps.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Personas represent user types, journey maps show user experiences over time.",
+        "key_concepts": ["personas", "journey mapping", "user research"],
+        "score_keywords": ["persona", "journey", "map", "user", "experience", "touchpoints", "goals", "pain points"],
+        "sample_good_answer": "User personas are fictional representations of user types based on research, describing demographics, goals, and behaviors. Journey maps visualize a user's experience over time, showing touchpoints, emotions, and pain points throughout their interaction with a product. Personas answer 'who', journey maps answer 'how' and 'when'."
+      },
+      {
+        "id": "q_user_research_3",
+        "question": "Which research method tests how easily users can complete tasks?",
+        "type": "multiple_choice",
+        "options": ["Usability testing", "Surveys", "A/B testing", "Card sorting"],
+        "correct": "Usability testing",
+        "explanation": "Usability testing observes users attempting tasks to identify friction points.",
+        "key_concepts": ["usability testing", "research methods", "task completion"],
+        "score_keywords": ["usability", "testing", "tasks", "observe", "friction"],
+        "sample_good_answer": "Usability testing observes real users attempting specific tasks to identify where they struggle, measuring ease of use and task completion rates."
+      },
+      {
+        "id": "q_user_research_4",
+        "question": "Describe best practices for conducting effective user surveys.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Effective surveys use clear questions, avoid bias, and target the right audience.",
+        "key_concepts": ["surveys", "research methods", "data collection"],
+        "score_keywords": ["survey", "questions", "bias", "clear", "concise", "audience", "response rate", "quantitative"],
+        "sample_good_answer": "Best practices include: keep surveys short (5-10 minutes), use clear and unbiased questions, avoid leading questions, mix question types (multiple choice and open-ended), target the right audience, test before launching, and offer incentives to improve response rates. Start with easy questions and save demographics for the end."
+      }
+    ]
+  }
+,
+  "wireframing": {
+    "beginner": [
+      {
+        "id": "q_wireframing_1",
+        "question": "What is the main purpose of low-fidelity wireframes?",
+        "type": "multiple_choice",
+        "options": ["Quickly explore layout ideas", "Show final colors", "Write production code", "Test performance"],
+        "correct": "Quickly explore layout ideas",
+        "explanation": "Low-fidelity wireframes focus on structure and layout without visual details.",
+        "key_concepts": ["low-fidelity wireframes", "prototyping", "design process"],
+        "score_keywords": ["low-fidelity", "wireframe", "layout", "structure", "quick", "sketch"],
+        "sample_good_answer": "Low-fidelity wireframes quickly explore layout and structure ideas without getting bogged down in visual details, enabling rapid iteration."
+      },
+      {
+        "id": "q_wireframing_2",
+        "question": "Explain the difference between wireframes, mockups, and prototypes.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Wireframes show structure, mockups add visual design, prototypes add interactivity.",
+        "key_concepts": ["wireframes", "mockups", "prototypes", "design fidelity"],
+        "score_keywords": ["wireframe", "mockup", "prototype", "structure", "visual", "interactive", "fidelity"],
+        "sample_good_answer": "Wireframes are low-fidelity layouts showing structure and content placement. Mockups are high-fidelity static designs with colors, typography, and images. Prototypes are interactive versions that simulate user flows and interactions. They represent increasing levels of fidelity: wireframes (structure), mockups (visual), prototypes (interactive)."
+      },
+      {
+        "id": "q_wireframing_3",
+        "question": "Which tool is commonly used for collaborative design and prototyping?",
+        "type": "multiple_choice",
+        "options": ["Figma", "Microsoft Word", "Excel", "Notepad"],
+        "correct": "Figma",
+        "explanation": "Figma is a popular browser-based design tool with real-time collaboration.",
+        "key_concepts": ["Figma basics", "design tools", "collaboration"],
+        "score_keywords": ["Figma", "design", "tool", "collaborative", "prototype"],
+        "sample_good_answer": "Figma is widely used for design and prototyping because it's browser-based, supports real-time collaboration, and offers comprehensive design and prototyping features."
+      },
+      {
+        "id": "q_wireframing_4",
+        "question": "Describe the benefits of using design systems and component libraries.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Design systems ensure consistency, speed up design, and improve collaboration.",
+        "key_concepts": ["design systems", "component libraries", "consistency"],
+        "score_keywords": ["design system", "component", "library", "consistency", "reusable", "efficiency", "standards", "scalable"],
+        "sample_good_answer": "Design systems provide reusable components and standards that ensure visual consistency across products, speed up design and development by eliminating repetitive work, improve collaboration through shared language, and make products more scalable and maintainable. They include components, patterns, guidelines, and documentation."
+      }
+    ]
+  },
+  "interaction_design": {
+    "intermediate": [
+      {
+        "id": "q_interaction_design_1",
+        "question": "What are micro-interactions in UI design?",
+        "type": "multiple_choice",
+        "options": ["Small, focused interactions that accomplish a single task", "Large page transitions", "Database queries", "API calls"],
+        "correct": "Small, focused interactions that accomplish a single task",
+        "explanation": "Micro-interactions are subtle animations and feedback for specific actions.",
+        "key_concepts": ["micro-interactions", "feedback", "user experience"],
+        "score_keywords": ["micro-interaction", "small", "feedback", "animation", "task"],
+        "sample_good_answer": "Micro-interactions are small, focused interactions like button hover effects or like animations that provide feedback and enhance user experience for single tasks."
+      },
+      {
+        "id": "q_interaction_design_2",
+        "question": "Explain the concept of affordances in interaction design with examples.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Affordances are visual cues that suggest how to interact with an element.",
+        "key_concepts": ["affordances", "usability", "visual cues"],
+        "score_keywords": ["affordance", "cue", "suggest", "interaction", "button", "clickable", "visual", "hint"],
+        "sample_good_answer": "Affordances are visual properties that suggest how to interact with an element. Examples: buttons appear raised and clickable, text fields have borders suggesting input, sliders show a draggable handle, links are underlined or colored differently. Good affordances make interfaces intuitive by clearly communicating possible actions."
+      },
+      {
+        "id": "q_interaction_design_3",
+        "question": "Why is immediate feedback important in user interfaces?",
+        "type": "multiple_choice",
+        "options": ["Confirms actions and reduces uncertainty", "Makes apps slower", "Increases file size", "Requires more code"],
+        "correct": "Confirms actions and reduces uncertainty",
+        "explanation": "Feedback helps users understand that their actions were registered and processed.",
+        "key_concepts": ["feedback", "user experience", "interaction"],
+        "score_keywords": ["feedback", "confirm", "action", "uncertainty", "response"],
+        "sample_good_answer": "Immediate feedback confirms that actions were registered, reduces user uncertainty, and creates a responsive feel that builds confidence and trust."
+      },
+      {
+        "id": "q_interaction_design_4",
+        "question": "Describe key principles of accessible interaction design.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Accessible design ensures all users, including those with disabilities, can interact effectively.",
+        "key_concepts": ["accessibility", "inclusive design", "WCAG"],
+        "score_keywords": ["accessibility", "keyboard", "screen reader", "contrast", "ARIA", "focus", "inclusive", "disability"],
+        "sample_good_answer": "Key principles include: keyboard navigation support for all interactions, sufficient color contrast for visibility, clear focus indicators, semantic HTML and ARIA labels for screen readers, touch targets at least 44x44px, error messages that are clear and helpful, and avoiding reliance on color alone to convey information. These ensure usability for people with various disabilities."
+      }
+    ]
+  },
+  "responsive_design": {
+    "intermediate": [
+      {
+        "id": "q_responsive_design_1",
+        "question": "What does mobile-first design mean?",
+        "type": "multiple_choice",
+        "options": ["Designing for mobile screens first, then scaling up", "Only designing for mobile", "Mobile apps only", "Ignoring desktop users"],
+        "correct": "Designing for mobile screens first, then scaling up",
+        "explanation": "Mobile-first starts with constraints of small screens, then progressively enhances for larger screens.",
+        "key_concepts": ["mobile-first", "responsive design", "progressive enhancement"],
+        "score_keywords": ["mobile-first", "small", "screen", "scale", "progressive", "constraints"],
+        "sample_good_answer": "Mobile-first design starts with mobile constraints, ensuring core functionality works on small screens, then progressively enhances the experience for larger screens."
+      },
+      {
+        "id": "q_responsive_design_2",
+        "question": "Explain how CSS breakpoints work and when to use them.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Breakpoints define screen widths where layout changes to optimize for different devices.",
+        "key_concepts": ["breakpoints", "media queries", "responsive design"],
+        "score_keywords": ["breakpoint", "media query", "screen", "width", "layout", "responsive", "device"],
+        "sample_good_answer": "CSS breakpoints use media queries to apply different styles at specific screen widths. Common breakpoints: 640px (mobile), 768px (tablet), 1024px (desktop), 1280px (large desktop). Use them when layout needs to change for usability, like switching from single to multi-column layouts or adjusting navigation from hamburger menu to full menu bar."
+      },
+      {
+        "id": "q_responsive_design_3",
+        "question": "Which CSS layout method is best for creating flexible, responsive grids?",
+        "type": "multiple_choice",
+        "options": ["CSS Grid", "Tables", "Floats", "Absolute positioning"],
+        "correct": "CSS Grid",
+        "explanation": "CSS Grid provides powerful two-dimensional layout control perfect for responsive designs.",
+        "key_concepts": ["grid", "CSS", "layout"],
+        "score_keywords": ["CSS Grid", "grid", "layout", "responsive", "flexible"],
+        "sample_good_answer": "CSS Grid is ideal for responsive grids because it provides powerful two-dimensional layout control with features like auto-fit and minmax for flexible, responsive designs."
+      },
+      {
+        "id": "q_responsive_design_4",
+        "question": "Describe techniques for implementing fluid typography that scales with viewport size.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Fluid typography uses viewport units and clamp() to scale text smoothly across screen sizes.",
+        "key_concepts": ["fluid typography", "responsive design", "CSS"],
+        "score_keywords": ["fluid", "typography", "viewport", "vw", "clamp", "scale", "responsive", "font-size"],
+        "sample_good_answer": "Fluid typography techniques include: 1) Using viewport units (vw) for font sizes that scale with screen width, 2) CSS clamp() function to set minimum, preferred, and maximum sizes (e.g., clamp(1rem, 2vw, 2rem)), 3) calc() to combine fixed and relative units, 4) CSS custom properties for consistent scaling. This creates smooth text scaling without breakpoints."
+      }
+    ]
+  }
+,
+  "seo": {
+    "beginner": [
+      {
+        "id": "q_seo_1",
+        "question": "What is the primary purpose of keyword research in SEO?",
+        "type": "multiple_choice",
+        "options": ["Find terms users search for to target in content", "Count words on a page", "Design logos", "Write code"],
+        "correct": "Find terms users search for to target in content",
+        "explanation": "Keyword research identifies search terms to optimize content for search engines.",
+        "key_concepts": ["keywords", "SEO", "search intent"],
+        "score_keywords": ["keyword", "search", "terms", "target", "users", "intent"],
+        "sample_good_answer": "Keyword research identifies terms and phrases users search for, allowing you to create and optimize content that matches search intent and ranks well."
+      },
+      {
+        "id": "q_seo_2",
+        "question": "Explain the difference between on-page and off-page SEO.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "On-page SEO optimizes content and HTML, off-page SEO builds authority through external signals.",
+        "key_concepts": ["on-page SEO", "off-page SEO", "optimization"],
+        "score_keywords": ["on-page", "off-page", "content", "backlinks", "authority", "meta", "links"],
+        "sample_good_answer": "On-page SEO involves optimizing elements on your website like content quality, meta tags, headings, and internal links. Off-page SEO focuses on external factors like backlinks, social signals, and brand mentions that build domain authority. Both are essential for ranking well."
+      },
+      {
+        "id": "q_seo_3",
+        "question": "Which HTML element is most important for on-page SEO?",
+        "type": "multiple_choice",
+        "options": ["Title tag", "Footer", "Sidebar", "Comments"],
+        "correct": "Title tag",
+        "explanation": "The title tag is a critical ranking factor and appears in search results.",
+        "key_concepts": ["on-page SEO", "HTML", "title tag"],
+        "score_keywords": ["title", "tag", "meta", "heading", "SEO"],
+        "sample_good_answer": "The title tag is most important because it's a major ranking factor, appears in search results, and influences click-through rates."
+      },
+      {
+        "id": "q_seo_4",
+        "question": "Describe the role of Google Analytics in SEO and what metrics to track.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Analytics tracks website performance, user behavior, and SEO effectiveness.",
+        "key_concepts": ["analytics", "metrics", "performance tracking"],
+        "score_keywords": ["analytics", "traffic", "organic", "bounce rate", "conversions", "metrics", "behavior", "keywords"],
+        "sample_good_answer": "Google Analytics tracks SEO performance through metrics like organic traffic volume, bounce rate, average session duration, pages per session, conversion rates, and landing page performance. It shows which keywords drive traffic, how users behave on site, and which content performs best, enabling data-driven SEO decisions."
+      }
+    ]
+  },
+  "content_marketing": {
+    "beginner": [
+      {
+        "id": "q_content_marketing_1",
+        "question": "What is the main goal of content marketing?",
+        "type": "multiple_choice",
+        "options": ["Provide value to attract and retain audience", "Spam users", "Sell immediately", "Copy competitors"],
+        "correct": "Provide value to attract and retain audience",
+        "explanation": "Content marketing focuses on providing valuable content to build relationships and trust.",
+        "key_concepts": ["content strategy", "value", "audience"],
+        "score_keywords": ["value", "attract", "retain", "audience", "trust", "relationship"],
+        "sample_good_answer": "Content marketing aims to provide valuable, relevant content that attracts and retains a target audience, building trust and relationships that eventually drive profitable customer action."
+      },
+      {
+        "id": "q_content_marketing_2",
+        "question": "Explain the components of an effective content strategy.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Content strategy includes audience research, goals, content types, distribution, and measurement.",
+        "key_concepts": ["content strategy", "planning", "execution"],
+        "score_keywords": ["strategy", "audience", "goals", "content", "distribution", "calendar", "metrics", "personas"],
+        "sample_good_answer": "An effective content strategy includes: 1) Audience research and personas, 2) Clear goals and KPIs, 3) Content pillars and topics, 4) Content types and formats, 5) Distribution channels, 6) Content calendar for consistency, 7) Measurement and optimization plan. This ensures content aligns with business objectives and audience needs."
+      },
+      {
+        "id": "q_content_marketing_3",
+        "question": "Which content format typically performs best for building thought leadership?",
+        "type": "multiple_choice",
+        "options": ["Long-form blog posts", "Memes", "Spam emails", "Pop-up ads"],
+        "correct": "Long-form blog posts",
+        "explanation": "In-depth content demonstrates expertise and provides substantial value.",
+        "key_concepts": ["blogging", "content types", "thought leadership"],
+        "score_keywords": ["long-form", "blog", "depth", "expertise", "value"],
+        "sample_good_answer": "Long-form blog posts build thought leadership by demonstrating deep expertise, providing comprehensive value, and ranking well in search engines."
+      },
+      {
+        "id": "q_content_marketing_4",
+        "question": "Describe effective storytelling techniques for content marketing.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Storytelling creates emotional connections through relatable narratives and characters.",
+        "key_concepts": ["storytelling", "engagement", "emotional connection"],
+        "score_keywords": ["storytelling", "narrative", "emotion", "character", "conflict", "resolution", "relatable", "journey"],
+        "sample_good_answer": "Effective storytelling techniques include: creating relatable characters (customer personas), establishing conflict or challenge, showing transformation journey, using sensory details, evoking emotions, maintaining authenticity, and providing resolution. Stories should align with brand values and customer experiences, making content memorable and shareable."
+      }
+    ]
+  }
+,
+  "social_media": {
+    "beginner": [
+      {
+        "id": "q_social_media_1",
+        "question": "What is the most important factor for social media success?",
+        "type": "multiple_choice",
+        "options": ["Consistent engagement with audience", "Posting once a year", "Buying followers", "Ignoring comments"],
+        "correct": "Consistent engagement with audience",
+        "explanation": "Regular, authentic engagement builds community and trust.",
+        "key_concepts": ["engagement", "community", "consistency"],
+        "score_keywords": ["engagement", "consistent", "audience", "community", "interaction"],
+        "sample_good_answer": "Consistent engagement with your audience builds relationships, trust, and community, which are essential for social media success."
+      },
+      {
+        "id": "q_social_media_2",
+        "question": "Explain how to develop a platform-specific social media strategy.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Each platform has unique audiences, formats, and best practices requiring tailored approaches.",
+        "key_concepts": ["platform strategy", "audience", "content formats"],
+        "score_keywords": ["platform", "strategy", "audience", "format", "Instagram", "LinkedIn", "Twitter", "TikTok", "content"],
+        "sample_good_answer": "Platform-specific strategies consider each platform's unique characteristics: Instagram favors visual content and stories, LinkedIn suits professional thought leadership, Twitter works for real-time updates and conversations, TikTok requires short entertaining videos. Research each platform's demographics, peak times, content formats, and algorithms to tailor content and posting schedules accordingly."
+      },
+      {
+        "id": "q_social_media_3",
+        "question": "Which metric best indicates genuine audience engagement?",
+        "type": "multiple_choice",
+        "options": ["Comments and shares", "Follower count", "Profile views", "Impressions"],
+        "correct": "Comments and shares",
+        "explanation": "Comments and shares show active participation and content value.",
+        "key_concepts": ["analytics", "engagement metrics", "social media"],
+        "score_keywords": ["comments", "shares", "engagement", "interaction", "active"],
+        "sample_good_answer": "Comments and shares indicate genuine engagement because they require active participation and show that content resonates enough for users to interact or spread it."
+      },
+      {
+        "id": "q_social_media_4",
+        "question": "Describe best practices for working with influencers in social media marketing.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Effective influencer marketing requires authentic partnerships, clear expectations, and audience alignment.",
+        "key_concepts": ["influencer marketing", "partnerships", "authenticity"],
+        "score_keywords": ["influencer", "authentic", "audience", "alignment", "partnership", "disclosure", "engagement", "micro"],
+        "sample_good_answer": "Best practices include: choosing influencers whose audience aligns with your target market, prioritizing engagement rate over follower count, considering micro-influencers for niche audiences, establishing clear expectations and deliverables, allowing creative freedom for authenticity, requiring proper disclosure, tracking performance metrics, and building long-term relationships rather than one-off posts."
+      }
+    ]
+  },
+  "email_marketing": {
+    "intermediate": [
+      {
+        "id": "q_email_marketing_1",
+        "question": "What is email list segmentation?",
+        "type": "multiple_choice",
+        "options": ["Dividing subscribers into targeted groups", "Deleting subscribers", "Sending one email to everyone", "Buying email lists"],
+        "correct": "Dividing subscribers into targeted groups",
+        "explanation": "Segmentation allows personalized messaging to different audience groups.",
+        "key_concepts": ["segmentation", "targeting", "personalization"],
+        "score_keywords": ["segmentation", "groups", "targeted", "personalized", "divide"],
+        "sample_good_answer": "Email list segmentation divides subscribers into targeted groups based on characteristics or behaviors, enabling personalized messaging that increases relevance and engagement."
+      },
+      {
+        "id": "q_email_marketing_2",
+        "question": "Explain how email automation workflows improve marketing efficiency.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Automation sends triggered emails based on user actions, saving time while maintaining personalization.",
+        "key_concepts": ["automation", "workflows", "efficiency"],
+        "score_keywords": ["automation", "workflow", "triggered", "behavior", "welcome", "abandoned", "drip", "efficient"],
+        "sample_good_answer": "Email automation workflows trigger emails based on user actions or time intervals, like welcome series for new subscribers or abandoned cart reminders. This improves efficiency by maintaining consistent communication without manual effort, increases relevance through timely messaging, and scales personalization. Common workflows include onboarding, nurture campaigns, and re-engagement sequences."
+      },
+      {
+        "id": "q_email_marketing_3",
+        "question": "What should you test in an A/B test for email campaigns?",
+        "type": "multiple_choice",
+        "options": ["Subject lines", "Everything at once", "Nothing", "Only images"],
+        "correct": "Subject lines",
+        "explanation": "A/B testing should focus on one variable at a time, with subject lines being highly impactful.",
+        "key_concepts": ["A/B testing", "optimization", "subject lines"],
+        "score_keywords": ["A/B test", "subject line", "variable", "test", "optimize"],
+        "sample_good_answer": "Subject lines are ideal for A/B testing because they significantly impact open rates and you should test one variable at a time for clear results."
+      },
+      {
+        "id": "q_email_marketing_4",
+        "question": "Describe strategies to improve email deliverability and avoid spam folders.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Deliverability depends on sender reputation, authentication, content quality, and list hygiene.",
+        "key_concepts": ["deliverability", "spam", "sender reputation"],
+        "score_keywords": ["deliverability", "spam", "SPF", "DKIM", "reputation", "authentication", "engagement", "clean list"],
+        "sample_good_answer": "Improve deliverability by: 1) Authenticating emails with SPF, DKIM, and DMARC, 2) Maintaining clean lists by removing inactive subscribers, 3) Using double opt-in for quality subscribers, 4) Avoiding spam trigger words, 5) Maintaining consistent sending patterns, 6) Monitoring sender reputation, 7) Encouraging engagement, 8) Providing easy unsubscribe options. These build trust with email providers."
+      }
+    ]
+  },
+  "paid_advertising": {
+    "intermediate": [
+      {
+        "id": "q_paid_advertising_1",
+        "question": "What is the difference between CPC and CPM bidding?",
+        "type": "multiple_choice",
+        "options": ["CPC charges per click, CPM charges per 1000 impressions", "They are the same", "CPC is always better", "CPM is always cheaper"],
+        "correct": "CPC charges per click, CPM charges per 1000 impressions",
+        "explanation": "CPC (Cost Per Click) and CPM (Cost Per Mille) are different pricing models.",
+        "key_concepts": ["bidding strategies", "CPC", "CPM"],
+        "score_keywords": ["CPC", "CPM", "click", "impression", "cost", "bidding"],
+        "sample_good_answer": "CPC (Cost Per Click) charges when someone clicks your ad, ideal for driving traffic. CPM (Cost Per Mille) charges per 1000 impressions, better for brand awareness campaigns."
+      },
+      {
+        "id": "q_paid_advertising_2",
+        "question": "Explain how to structure a Google Ads campaign for optimal performance.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Proper campaign structure uses organized ad groups, relevant keywords, and targeted ads.",
+        "key_concepts": ["Google Ads", "campaign structure", "optimization"],
+        "score_keywords": ["campaign", "ad group", "keywords", "structure", "relevant", "Quality Score", "targeting"],
+        "sample_good_answer": "Structure Google Ads campaigns by: 1) Creating separate campaigns for different goals or products, 2) Organizing ad groups by tightly themed keywords (5-20 per group), 3) Writing multiple ad variations per group, 4) Using relevant landing pages, 5) Implementing negative keywords, 6) Setting appropriate bids and budgets. This improves Quality Score, reduces costs, and increases relevance."
+      },
+      {
+        "id": "q_paid_advertising_3",
+        "question": "Which Facebook ad objective should you choose for driving website sales?",
+        "type": "multiple_choice",
+        "options": ["Conversions", "Reach", "Engagement", "Video views"],
+        "correct": "Conversions",
+        "explanation": "The Conversions objective optimizes for specific actions like purchases.",
+        "key_concepts": ["Facebook Ads", "objectives", "conversions"],
+        "score_keywords": ["conversions", "objective", "sales", "purchase", "optimize"],
+        "sample_good_answer": "The Conversions objective optimizes ad delivery for users likely to complete desired actions like purchases, making it ideal for driving website sales."
+      },
+      {
+        "id": "q_paid_advertising_4",
+        "question": "Describe how to set up effective conversion tracking for paid advertising campaigns.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Conversion tracking measures campaign effectiveness by tracking desired user actions.",
+        "key_concepts": ["conversion tracking", "measurement", "ROI"],
+        "score_keywords": ["conversion", "tracking", "pixel", "tag", "measurement", "ROI", "attribution", "goals"],
+        "sample_good_answer": "Set up conversion tracking by: 1) Installing tracking pixels (Facebook Pixel, Google Tag), 2) Defining conversion events (purchases, signups, downloads), 3) Setting up goals in analytics platforms, 4) Implementing UTM parameters for source tracking, 5) Testing tracking before launching campaigns, 6) Setting up attribution windows, 7) Monitoring conversion data regularly. This enables ROI measurement and campaign optimization."
+      }
+    ]
+  }
+,
+  "statistics": {
+    "beginner": [
+      {
+        "id": "q_statistics_1",
+        "question": "What is the difference between mean, median, and mode?",
+        "type": "multiple_choice",
+        "options": ["Mean is average, median is middle value, mode is most frequent", "They are all the same", "Mean is always best", "Mode is always highest"],
+        "correct": "Mean is average, median is middle value, mode is most frequent",
+        "explanation": "These are three different measures of central tendency.",
+        "key_concepts": ["descriptive statistics", "central tendency", "measures"],
+        "score_keywords": ["mean", "median", "mode", "average", "middle", "frequent", "central"],
+        "sample_good_answer": "Mean is the arithmetic average, median is the middle value when sorted, and mode is the most frequently occurring value. Each is useful in different scenarios."
+      },
+      {
+        "id": "q_statistics_2",
+        "question": "Explain what a normal distribution is and why it's important in statistics.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Normal distribution is a bell-shaped curve where data clusters around the mean.",
+        "key_concepts": ["probability distributions", "normal distribution", "bell curve"],
+        "score_keywords": ["normal", "distribution", "bell curve", "mean", "standard deviation", "symmetric", "68-95-99.7"],
+        "sample_good_answer": "A normal distribution is a symmetric, bell-shaped probability distribution where data clusters around the mean. It's important because many natural phenomena follow this pattern, and it's the foundation for many statistical tests. The 68-95-99.7 rule states that approximately 68% of data falls within 1 standard deviation, 95% within 2, and 99.7% within 3."
+      },
+      {
+        "id": "q_statistics_3",
+        "question": "What does a p-value less than 0.05 typically indicate?",
+        "type": "multiple_choice",
+        "options": ["Statistical significance", "No relationship", "Perfect correlation", "Data error"],
+        "correct": "Statistical significance",
+        "explanation": "P-value < 0.05 suggests results are unlikely due to chance alone.",
+        "key_concepts": ["hypothesis testing", "p-value", "significance"],
+        "score_keywords": ["p-value", "significance", "0.05", "hypothesis", "chance"],
+        "sample_good_answer": "A p-value less than 0.05 indicates statistical significance, meaning the observed results are unlikely to have occurred by chance alone, typically leading to rejection of the null hypothesis."
+      },
+      {
+        "id": "q_statistics_4",
+        "question": "Describe the difference between correlation and causation with an example.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Correlation shows relationship, causation shows one variable directly causes changes in another.",
+        "key_concepts": ["correlation", "causation", "relationships"],
+        "score_keywords": ["correlation", "causation", "relationship", "cause", "effect", "confounding", "spurious"],
+        "sample_good_answer": "Correlation means two variables move together, but causation means one directly causes the other. Example: ice cream sales and drowning deaths are correlated (both increase in summer) but ice cream doesn't cause drowning—temperature is a confounding variable. Correlation doesn't imply causation; establishing causation requires controlled experiments or careful analysis."
+      }
+    ]
+  },
+  "data_visualization": {
+    "beginner": [
+      {
+        "id": "q_data_visualization_1",
+        "question": "Which chart type is best for showing trends over time?",
+        "type": "multiple_choice",
+        "options": ["Line chart", "Pie chart", "Scatter plot", "Bar chart"],
+        "correct": "Line chart",
+        "explanation": "Line charts effectively show how values change over continuous time periods.",
+        "key_concepts": ["chart types", "time series", "visualization"],
+        "score_keywords": ["line chart", "time", "trend", "continuous", "temporal"],
+        "sample_good_answer": "Line charts are best for showing trends over time because they clearly display continuous changes and make patterns easy to identify."
+      },
+      {
+        "id": "q_data_visualization_2",
+        "question": "Explain the principles of effective data storytelling.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Data storytelling combines data, visuals, and narrative to communicate insights effectively.",
+        "key_concepts": ["storytelling with data", "communication", "insights"],
+        "score_keywords": ["storytelling", "narrative", "context", "audience", "insight", "visualization", "message", "clarity"],
+        "sample_good_answer": "Effective data storytelling includes: 1) Understanding your audience and their needs, 2) Identifying the key message or insight, 3) Providing context and background, 4) Choosing appropriate visualizations, 5) Using clear annotations and labels, 6) Building a logical narrative flow, 7) Highlighting important findings, 8) Ending with actionable conclusions. The goal is making data accessible and compelling."
+      },
+      {
+        "id": "q_data_visualization_3",
+        "question": "What is the main purpose of a dashboard?",
+        "type": "multiple_choice",
+        "options": ["Display key metrics at a glance", "Store all data", "Replace reports", "Decorate screens"],
+        "correct": "Display key metrics at a glance",
+        "explanation": "Dashboards provide quick overview of important metrics and KPIs.",
+        "key_concepts": ["dashboards", "KPIs", "monitoring"],
+        "score_keywords": ["dashboard", "metrics", "KPI", "glance", "overview", "monitor"],
+        "sample_good_answer": "Dashboards display key metrics and KPIs at a glance, enabling quick monitoring of performance and identification of issues or opportunities."
+      },
+      {
+        "id": "q_data_visualization_4",
+        "question": "Describe best practices for using color in data visualizations.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Effective color use enhances understanding without causing confusion or accessibility issues.",
+        "key_concepts": ["color usage", "accessibility", "design"],
+        "score_keywords": ["color", "contrast", "accessibility", "colorblind", "consistent", "meaningful", "palette", "highlight"],
+        "sample_good_answer": "Best practices include: 1) Use color purposefully to highlight important data, 2) Ensure sufficient contrast for readability, 3) Consider colorblind accessibility (avoid red-green combinations), 4) Limit color palette to 5-7 colors, 5) Use consistent colors for same categories across charts, 6) Avoid relying solely on color to convey information, 7) Use sequential colors for ordered data and diverging colors for data with meaningful midpoint."
+      }
+    ]
+  },
+  "pandas_numpy": {
+    "intermediate": [
+      {
+        "id": "q_pandas_numpy_1",
+        "question": "What is the primary data structure in Pandas?",
+        "type": "multiple_choice",
+        "options": ["DataFrame", "Array", "List", "Dictionary"],
+        "correct": "DataFrame",
+        "explanation": "DataFrame is a 2D labeled data structure, like a table or spreadsheet.",
+        "key_concepts": ["DataFrames", "data structures", "Pandas"],
+        "score_keywords": ["DataFrame", "Pandas", "table", "structure", "2D"],
+        "sample_good_answer": "DataFrame is Pandas' primary data structure, representing data in a 2D table format with labeled rows and columns, similar to a spreadsheet."
+      },
+      {
+        "id": "q_pandas_numpy_2",
+        "question": "Explain the difference between Pandas and NumPy and when to use each.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "NumPy handles numerical arrays, Pandas handles labeled tabular data with more features.",
+        "key_concepts": ["Pandas", "NumPy", "data structures"],
+        "score_keywords": ["Pandas", "NumPy", "array", "DataFrame", "labeled", "numerical", "tabular", "operations"],
+        "sample_good_answer": "NumPy provides fast numerical array operations and is ideal for mathematical computations on homogeneous data. Pandas builds on NumPy, adding labeled data structures (DataFrames), handling mixed data types, missing values, and providing high-level data manipulation methods. Use NumPy for pure numerical computation, Pandas for data analysis and manipulation with real-world messy data."
+      },
+      {
+        "id": "q_pandas_numpy_3",
+        "question": "Which Pandas method combines DataFrames horizontally?",
+        "type": "multiple_choice",
+        "options": ["merge() or join()", "append()", "concat() with axis=0", "stack()"],
+        "correct": "merge() or join()",
+        "explanation": "merge() and join() combine DataFrames based on common columns or indices.",
+        "key_concepts": ["merging", "DataFrames", "joins"],
+        "score_keywords": ["merge", "join", "combine", "horizontal", "columns"],
+        "sample_good_answer": "merge() or join() combine DataFrames horizontally based on common keys, similar to SQL joins, allowing you to combine related data from different sources."
+      },
+      {
+        "id": "q_pandas_numpy_4",
+        "question": "Describe common aggregation operations in Pandas and provide use cases.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Aggregation operations summarize data using functions like sum, mean, count, etc.",
+        "key_concepts": ["aggregation", "groupby", "summary statistics"],
+        "score_keywords": ["aggregation", "groupby", "sum", "mean", "count", "agg", "statistics", "summarize"],
+        "sample_good_answer": "Common aggregations include: sum() for totals, mean() for averages, count() for frequencies, min()/max() for ranges, std() for variability. Use with groupby() for category-wise analysis (e.g., df.groupby('category')['sales'].sum() for total sales per category). The agg() method allows multiple aggregations simultaneously. Use cases: sales reports, demographic analysis, performance metrics."
+      }
+    ]
+  },
+  "exploratory_analysis": {
+    "intermediate": [
+      {
+        "id": "q_exploratory_analysis_1",
+        "question": "What is the first step in exploratory data analysis?",
+        "type": "multiple_choice",
+        "options": ["Data profiling and understanding structure", "Building models", "Making predictions", "Deploying to production"],
+        "correct": "Data profiling and understanding structure",
+        "explanation": "EDA starts with understanding data structure, types, and basic statistics.",
+        "key_concepts": ["data profiling", "EDA", "data understanding"],
+        "score_keywords": ["profiling", "structure", "understand", "explore", "first step"],
+        "sample_good_answer": "Data profiling and understanding structure is the first step, examining data types, dimensions, missing values, and basic statistics before deeper analysis."
+      },
+      {
+        "id": "q_exploratory_analysis_2",
+        "question": "Explain methods for detecting and handling outliers in datasets.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Outliers can be detected using statistical methods and visualizations, then handled appropriately.",
+        "key_concepts": ["outlier detection", "data quality", "statistical methods"],
+        "score_keywords": ["outlier", "IQR", "z-score", "boxplot", "detection", "remove", "transform", "cap"],
+        "sample_good_answer": "Detection methods include: 1) IQR method (values beyond 1.5×IQR from quartiles), 2) Z-score (values beyond 3 standard deviations), 3) Visualizations (boxplots, scatter plots). Handling strategies: remove if data errors, cap at threshold, transform using log/sqrt, or keep if legitimate extreme values. Choice depends on domain knowledge and analysis goals."
+      },
+      {
+        "id": "q_exploratory_analysis_3",
+        "question": "Which visualization best shows the relationship between two continuous variables?",
+        "type": "multiple_choice",
+        "options": ["Scatter plot", "Bar chart", "Pie chart", "Histogram"],
+        "correct": "Scatter plot",
+        "explanation": "Scatter plots display relationships and correlations between two continuous variables.",
+        "key_concepts": ["correlation analysis", "visualization", "relationships"],
+        "score_keywords": ["scatter plot", "correlation", "relationship", "continuous", "variables"],
+        "sample_good_answer": "Scatter plots best show relationships between two continuous variables, revealing correlations, patterns, and potential outliers in the data."
+      },
+      {
+        "id": "q_exploratory_analysis_4",
+        "question": "Describe strategies for analyzing and understanding feature distributions.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Understanding distributions helps identify patterns, skewness, and appropriate transformations.",
+        "key_concepts": ["feature distributions", "statistical analysis", "visualization"],
+        "score_keywords": ["distribution", "histogram", "skewness", "kurtosis", "normal", "transform", "density", "summary statistics"],
+        "sample_good_answer": "Analyze distributions using: 1) Histograms and density plots for shape visualization, 2) Summary statistics (mean, median, std, quartiles), 3) Skewness and kurtosis measures, 4) Q-Q plots to compare against normal distribution, 5) Box plots for outliers and spread. Identify if data is normal, skewed, bimodal, or has outliers. Apply transformations (log, sqrt, Box-Cox) if needed for modeling."
+      }
+    ]
+  },
+  "sql_for_data": {
+    "beginner": [
+      {
+        "id": "q_sql_for_data_1",
+        "question": "What does the SELECT statement do in SQL?",
+        "type": "multiple_choice",
+        "options": ["Retrieves data from database tables", "Deletes data", "Creates tables", "Updates records"],
+        "correct": "Retrieves data from database tables",
+        "explanation": "SELECT is used to query and retrieve data from one or more tables.",
+        "key_concepts": ["SELECT queries", "SQL basics", "data retrieval"],
+        "score_keywords": ["SELECT", "retrieve", "query", "data", "table"],
+        "sample_good_answer": "SELECT retrieves data from database tables, allowing you to specify which columns and rows to return based on conditions."
+      },
+      {
+        "id": "q_sql_for_data_2",
+        "question": "Explain the different types of SQL JOINs and when to use each.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "JOINs combine data from multiple tables based on related columns.",
+        "key_concepts": ["JOINs", "table relationships", "SQL"],
+        "score_keywords": ["JOIN", "INNER", "LEFT", "RIGHT", "FULL", "tables", "combine", "relationship"],
+        "sample_good_answer": "INNER JOIN returns only matching rows from both tables. LEFT JOIN returns all rows from left table plus matches from right. RIGHT JOIN returns all from right plus matches from left. FULL JOIN returns all rows from both tables. Use INNER for required relationships, LEFT/RIGHT when one table is primary, FULL when you need all data regardless of matches."
+      },
+      {
+        "id": "q_sql_for_data_3",
+        "question": "Which SQL function calculates the total of a numeric column?",
+        "type": "multiple_choice",
+        "options": ["SUM()", "COUNT()", "AVG()", "MAX()"],
+        "correct": "SUM()",
+        "explanation": "SUM() aggregates numeric values to produce a total.",
+        "key_concepts": ["aggregations", "SQL functions", "calculations"],
+        "score_keywords": ["SUM", "aggregate", "total", "numeric", "function"],
+        "sample_good_answer": "SUM() calculates the total of all values in a numeric column, commonly used with GROUP BY for category-wise totals."
+      },
+      {
+        "id": "q_sql_for_data_4",
+        "question": "Describe how window functions differ from regular aggregate functions in SQL.",
+        "type": "open_ended",
+        "options": [],
+        "correct": "",
+        "explanation": "Window functions perform calculations across rows while preserving individual rows.",
+        "key_concepts": ["window functions", "aggregations", "SQL"],
+        "score_keywords": ["window", "function", "OVER", "PARTITION", "aggregate", "row", "preserve", "running total"],
+        "sample_good_answer": "Window functions (using OVER clause) perform calculations across a set of rows related to the current row while preserving all individual rows. Regular aggregates collapse rows into groups. For example, SUM() with GROUP BY returns one row per group, but SUM() OVER() returns a running total for each row. Window functions enable running totals, rankings, moving averages, and row comparisons without losing detail."
+      }
+    ]
+  }
+}

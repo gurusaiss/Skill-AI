@@ -1,0 +1,1252 @@
+{
+  "rest_apis": [
+    {
+      "id": "ch_rest_apis_1",
+      "day_range": [1, 2],
+      "type": "design",
+      "title": "Design a RESTful API for a Blog Platform",
+      "description": "Design a complete REST API for a blog platform that supports posts, comments, and users. Define all endpoints with HTTP methods, request/response formats, and status codes. Consider authentication, pagination, and error handling.",
+      "hints": [
+        "Use plural nouns for resource names (e.g., /posts, /comments)",
+        "Nest related resources appropriately (e.g., /posts/:id/comments)",
+        "Include proper HTTP status codes for each operation",
+        "Consider how to handle authentication tokens"
+      ],
+      "evaluation_criteria": [
+        "proper HTTP methods",
+        "RESTful resource naming",
+        "status codes",
+        "authentication",
+        "pagination",
+        "error handling",
+        "nested resources",
+        "CRUD operations"
+      ],
+      "model_solution": "A complete REST API design would include: GET /posts (list with pagination), POST /posts (create), GET /posts/:id (retrieve), PUT /posts/:id (update), DELETE /posts/:id (delete), GET /posts/:id/comments (nested comments), POST /auth/login (authentication), proper 200/201/204/400/401/404 status codes, JWT token in Authorization header, query parameters for pagination (?page=1&limit=10), and consistent error response format with message and error code."
+    },
+    {
+      "id": "ch_rest_apis_2",
+      "day_range": [3, 5],
+      "type": "implementation",
+      "title": "Implement API Versioning Strategy",
+      "description": "You have an existing API that needs breaking changes. Propose and justify an API versioning strategy. Explain how you would implement it, handle deprecation, and communicate changes to API consumers.",
+      "hints": [
+        "Consider URI versioning, header versioning, or query parameter versioning",
+        "Think about backwards compatibility",
+        "Plan a deprecation timeline",
+        "Document the migration path"
+      ],
+      "evaluation_criteria": [
+        "versioning strategy",
+        "backwards compatibility",
+        "deprecation plan",
+        "communication",
+        "implementation details",
+        "migration path",
+        "documentation"
+      ],
+      "model_solution": "Recommended approach: URI versioning (/v1/users, /v2/users) for visibility and simplicity. Implementation: maintain both versions simultaneously, route to appropriate handlers, share business logic where possible. Deprecation: announce 6 months in advance, add deprecation headers (Sunset, Deprecation), provide migration guide, monitor v1 usage, gradually reduce support. Communication: update API docs, send email notifications, add warnings in responses, provide code examples for migration."
+    }
+  ],
+  "databases": [
+    {
+      "id": "ch_databases_1",
+      "day_range": [1, 2],
+      "type": "design",
+      "title": "Design a Normalized Database Schema",
+      "description": "Design a normalized database schema for an e-commerce platform with products, categories, orders, and customers. Apply normalization principles up to 3NF. Include primary keys, foreign keys, and explain your design decisions.",
+      "hints": [
+        "Identify entities and their relationships",
+        "Eliminate redundancy through normalization",
+        "Use junction tables for many-to-many relationships",
+        "Consider indexing strategies"
+      ],
+      "evaluation_criteria": [
+        "normalization",
+        "primary keys",
+        "foreign keys",
+        "relationships",
+        "redundancy elimination",
+        "junction tables",
+        "data integrity",
+        "indexing"
+      ],
+      "model_solution": "Schema includes: customers table (id PK, name, email unique), products table (id PK, name, price, category_id FK), categories table (id PK, name), orders table (id PK, customer_id FK, order_date, total), order_items junction table (order_id FK, product_id FK, quantity, price, composite PK). This achieves 3NF by eliminating transitive dependencies, uses foreign keys for referential integrity, indexes on foreign keys and frequently queried columns."
+    },
+    {
+      "id": "ch_databases_2",
+      "day_range": [3, 5],
+      "type": "query",
+      "title": "Write Complex SQL Queries with Joins and Aggregations",
+      "description": "Given an e-commerce database, write SQL queries to: 1) Find top 5 customers by total spending, 2) Calculate average order value per category, 3) Identify products never ordered, 4) Find customers who ordered in last month but not this month.",
+      "hints": [
+        "Use JOINs to combine related tables",
+        "Apply GROUP BY for aggregations",
+        "Use HAVING to filter grouped results",
+        "Consider LEFT JOIN for finding missing relationships"
+      ],
+      "evaluation_criteria": [
+        "correct JOINs",
+        "aggregation functions",
+        "GROUP BY",
+        "HAVING clause",
+        "subqueries",
+        "date functions",
+        "ORDER BY",
+        "LIMIT"
+      ],
+      "model_solution": "Query 1: SELECT c.name, SUM(o.total) as spending FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id ORDER BY spending DESC LIMIT 5. Query 2: SELECT cat.name, AVG(o.total) FROM categories cat JOIN products p ON cat.id = p.category_id JOIN order_items oi ON p.id = oi.product_id JOIN orders o ON oi.order_id = o.id GROUP BY cat.id. Query 3: SELECT p.* FROM products p LEFT JOIN order_items oi ON p.id = oi.product_id WHERE oi.product_id IS NULL. Query 4: Use subqueries with date ranges and NOT IN."
+    }
+  ]
+,
+  "nodejs": [
+    {
+      "id": "ch_nodejs_1",
+      "day_range": [1, 1],
+      "type": "coding",
+      "title": "Build an Async File Processor",
+      "description": "Create a Node.js script that reads multiple files asynchronously, processes their content (count words), and writes results to an output file. Use async/await and proper error handling.",
+      "hints": [
+        "Use fs.promises for async file operations",
+        "Handle errors with try-catch",
+        "Process files concurrently with Promise.all",
+        "Ensure proper cleanup"
+      ],
+      "evaluation_criteria": [
+        "async/await",
+        "Promise.all",
+        "error handling",
+        "file operations",
+        "concurrent processing",
+        "proper cleanup",
+        "code organization"
+      ],
+      "model_solution": "Use fs.promises.readFile() to read files, Promise.all() to process concurrently, implement word counting logic, wrap in try-catch blocks, use fs.promises.writeFile() for output, handle file not found errors gracefully, log progress, ensure all promises are awaited, structure code with clear functions for readability."
+    },
+    {
+      "id": "ch_nodejs_2",
+      "day_range": [2, 3],
+      "type": "architecture",
+      "title": "Explain Event Loop and Build a Demo",
+      "description": "Explain how the Node.js event loop works, including the different phases. Then create a code example that demonstrates the execution order of setTimeout, setImmediate, process.nextTick, and Promise callbacks.",
+      "hints": [
+        "Describe the event loop phases: timers, pending callbacks, idle/prepare, poll, check, close",
+        "Explain microtask queue vs macrotask queue",
+        "Show execution order with console.log statements",
+        "Discuss implications for performance"
+      ],
+      "evaluation_criteria": [
+        "event loop phases",
+        "microtask queue",
+        "macrotask queue",
+        "execution order",
+        "process.nextTick",
+        "Promise",
+        "setTimeout",
+        "setImmediate",
+        "practical example"
+      ],
+      "model_solution": "Event loop has 6 phases: timers (setTimeout/setInterval), pending callbacks (I/O), idle/prepare (internal), poll (retrieve I/O), check (setImmediate), close callbacks. Microtasks (process.nextTick, Promises) execute between phases. Execution order: 1) process.nextTick, 2) Promise callbacks, 3) setTimeout, 4) setImmediate (in I/O cycle). Demo code shows this with console.log statements demonstrating the order."
+    }
+  ],
+  "auth_security": [
+    {
+      "id": "ch_auth_security_1",
+      "day_range": [1, 2],
+      "type": "implementation",
+      "title": "Implement JWT Authentication System",
+      "description": "Design and implement a complete JWT-based authentication system including registration, login, token refresh, and protected routes. Explain security considerations and best practices.",
+      "hints": [
+        "Hash passwords with bcrypt before storing",
+        "Generate JWT with appropriate expiration",
+        "Implement refresh token mechanism",
+        "Validate tokens on protected routes",
+        "Store refresh tokens securely"
+      ],
+      "evaluation_criteria": [
+        "password hashing",
+        "JWT generation",
+        "token validation",
+        "refresh tokens",
+        "secure storage",
+        "expiration handling",
+        "middleware",
+        "security best practices"
+      ],
+      "model_solution": "System includes: 1) Registration endpoint that hashes passwords with bcrypt (10+ rounds), 2) Login endpoint that verifies password and returns access token (15min expiry) + refresh token (7 days), 3) Refresh endpoint that validates refresh token and issues new access token, 4) Auth middleware that verifies JWT on protected routes, 5) Store refresh tokens in database with user association, 6) Use HTTPS only, httpOnly cookies for tokens, implement rate limiting, validate input, use strong JWT secrets."
+    },
+    {
+      "id": "ch_auth_security_2",
+      "day_range": [3, 5],
+      "type": "security_analysis",
+      "title": "Security Audit and OWASP Top 10",
+      "description": "Conduct a security audit of a sample API. Identify vulnerabilities related to OWASP Top 10 (injection, broken auth, XSS, etc.). Propose fixes for each vulnerability found.",
+      "hints": [
+        "Check for SQL injection vulnerabilities",
+        "Test authentication and session management",
+        "Look for XSS and CSRF vulnerabilities",
+        "Verify input validation and sanitization",
+        "Check for sensitive data exposure"
+      ],
+      "evaluation_criteria": [
+        "vulnerability identification",
+        "OWASP Top 10 knowledge",
+        "SQL injection",
+        "XSS",
+        "CSRF",
+        "authentication issues",
+        "proposed fixes",
+        "security best practices"
+      ],
+      "model_solution": "Audit findings: 1) SQL Injection - use parameterized queries/ORMs, 2) Broken Authentication - implement proper session management and MFA, 3) XSS - sanitize input and escape output, use Content-Security-Policy headers, 4) CSRF - implement CSRF tokens, 5) Security Misconfiguration - remove default credentials, disable directory listing, 6) Sensitive Data Exposure - encrypt data at rest and in transit, 7) Implement rate limiting, logging, and monitoring."
+    }
+  ],
+  "deployment": [
+    {
+      "id": "ch_deployment_1",
+      "day_range": [1, 1],
+      "type": "docker",
+      "title": "Create Production-Ready Dockerfile",
+      "description": "Write a Dockerfile for a Node.js application following best practices. Include multi-stage builds, proper layer caching, security considerations, and minimal image size.",
+      "hints": [
+        "Use multi-stage builds to reduce image size",
+        "Copy package.json before source code for better caching",
+        "Run as non-root user",
+        "Use specific base image versions",
+        "Minimize layers"
+      ],
+      "evaluation_criteria": [
+        "multi-stage build",
+        "layer caching",
+        "security",
+        "image size",
+        "non-root user",
+        "version pinning",
+        "best practices"
+      ],
+      "model_solution": "Dockerfile: FROM node:18-alpine AS builder, WORKDIR /app, COPY package*.json ./, RUN npm ci --only=production, COPY . ., FROM node:18-alpine, RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001, WORKDIR /app, COPY --from=builder --chown=nodejs:nodejs /app ., USER nodejs, EXPOSE 3000, CMD ['node', 'index.js']. This uses multi-stage build, runs as non-root, pins versions, optimizes caching."
+    },
+    {
+      "id": "ch_deployment_2",
+      "day_range": [2, 3],
+      "type": "cicd",
+      "title": "Design CI/CD Pipeline",
+      "description": "Design a complete CI/CD pipeline for a web application. Include stages for testing, building, security scanning, and deployment. Explain rollback strategy and monitoring.",
+      "hints": [
+        "Include automated testing at multiple levels",
+        "Add security and dependency scanning",
+        "Implement blue-green or canary deployment",
+        "Set up monitoring and alerting",
+        "Plan for rollback scenarios"
+      ],
+      "evaluation_criteria": [
+        "pipeline stages",
+        "automated testing",
+        "security scanning",
+        "deployment strategy",
+        "rollback plan",
+        "monitoring",
+        "best practices"
+      ],
+      "model_solution": "Pipeline stages: 1) Code commit triggers build, 2) Run linting and unit tests, 3) Build Docker image, 4) Run integration tests, 5) Security scan (Snyk, Trivy), 6) Push to registry, 7) Deploy to staging, 8) Run smoke tests, 9) Deploy to production (blue-green), 10) Health checks, 11) Monitor metrics. Rollback: keep previous version running, route traffic back if issues detected. Monitoring: track error rates, response times, resource usage with alerts."
+    }
+  ]
+,
+  "ml_fundamentals": [
+    {
+      "id": "ch_ml_fundamentals_1",
+      "day_range": [1, 2],
+      "type": "concept",
+      "title": "Explain and Demonstrate Train-Test Split",
+      "description": "Explain why we split data into training and test sets. Demonstrate with code how to properly split data, discussing the typical split ratios and potential pitfalls like data leakage.",
+      "hints": [
+        "Discuss the purpose of generalization testing",
+        "Explain data leakage risks",
+        "Show code using sklearn train_test_split",
+        "Mention stratification for imbalanced data"
+      ],
+      "evaluation_criteria": [
+        "generalization explanation",
+        "data leakage",
+        "split ratios",
+        "stratification",
+        "code example",
+        "best practices",
+        "pitfalls"
+      ],
+      "model_solution": "We split data to evaluate model performance on unseen data, ensuring it generalizes rather than memorizes. Typical split: 80/20 or 70/30. Code: from sklearn.model_selection import train_test_split; X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y). Use stratify for imbalanced classes. Pitfalls: data leakage (preprocessing on full dataset before split), temporal data (use time-based split), small datasets (use cross-validation)."
+    },
+    {
+      "id": "ch_ml_fundamentals_2",
+      "day_range": [3, 4],
+      "type": "practical",
+      "title": "Build and Evaluate a Classification Model",
+      "description": "Build a classification model on a provided dataset. Split data properly, train the model, make predictions, and evaluate using appropriate metrics. Discuss overfitting and how to detect it.",
+      "hints": [
+        "Use a simple model like logistic regression or decision tree",
+        "Compare training vs test accuracy",
+        "Plot learning curves",
+        "Try different train/test splits"
+      ],
+      "evaluation_criteria": [
+        "proper data split",
+        "model training",
+        "predictions",
+        "evaluation metrics",
+        "overfitting detection",
+        "learning curves",
+        "interpretation"
+      ],
+      "model_solution": "Implementation: 1) Load and explore data, 2) Split with train_test_split, 3) Train LogisticRegression or DecisionTreeClassifier, 4) Predict on both train and test sets, 5) Calculate accuracy, precision, recall, F1, 6) Compare train vs test scores (large gap indicates overfitting), 7) Plot learning curves showing performance vs training size, 8) If overfitting: reduce model complexity, add regularization, get more data, or use cross-validation."
+    }
+  ],
+  "data_preprocessing": [
+    {
+      "id": "ch_data_preprocessing_1",
+      "day_range": [1, 1],
+      "type": "practical",
+      "title": "Handle Missing Data in Real Dataset",
+      "description": "Given a dataset with missing values, analyze the missing data patterns, choose appropriate imputation strategies for different columns, and implement the solution. Justify your choices.",
+      "hints": [
+        "Visualize missing data patterns",
+        "Consider MCAR, MAR, MNAR",
+        "Use different strategies for different column types",
+        "Compare results of different approaches"
+      ],
+      "evaluation_criteria": [
+        "missing data analysis",
+        "imputation strategy",
+        "justification",
+        "implementation",
+        "different methods",
+        "validation",
+        "best practices"
+      ],
+      "model_solution": "Analysis: 1) Check missing percentage per column (df.isnull().sum()), 2) Visualize with missingno library, 3) Identify patterns (MCAR/MAR/MNAR). Strategy: numerical columns with <5% missing - mean/median imputation, categorical - mode imputation, >30% missing - consider dropping column, time series - forward fill. Implementation: use SimpleImputer from sklearn, or pandas fillna(). Validate by comparing distributions before/after imputation. For important features, consider predictive imputation using other features."
+    },
+    {
+      "id": "ch_data_preprocessing_2",
+      "day_range": [2, 3],
+      "type": "feature_engineering",
+      "title": "Feature Engineering Pipeline",
+      "description": "Build a complete preprocessing pipeline that handles missing values, encodes categorical variables, scales numerical features, and creates new features. Make it reusable for train and test data.",
+      "hints": [
+        "Use sklearn Pipeline and ColumnTransformer",
+        "Fit on training data only",
+        "Apply same transformations to test data",
+        "Create meaningful derived features"
+      ],
+      "evaluation_criteria": [
+        "pipeline structure",
+        "missing value handling",
+        "encoding",
+        "scaling",
+        "feature creation",
+        "train-test consistency",
+        "reusability"
+      ],
+      "model_solution": "Pipeline: from sklearn.pipeline import Pipeline; from sklearn.compose import ColumnTransformer; from sklearn.preprocessing import StandardScaler, OneHotEncoder; from sklearn.impute import SimpleImputer. Create separate transformers for numerical (impute + scale) and categorical (impute + encode) columns. Use ColumnTransformer to apply appropriate transformer to each column type. Fit pipeline on training data only: pipeline.fit(X_train). Transform both train and test: X_train_transformed = pipeline.transform(X_train). Add feature creation steps like polynomial features or domain-specific calculations."
+    }
+  ],
+  "neural_networks": [
+    {
+      "id": "ch_neural_networks_1",
+      "day_range": [1, 2],
+      "type": "implementation",
+      "title": "Build a Neural Network from Scratch",
+      "description": "Implement a simple neural network with one hidden layer from scratch (no deep learning frameworks). Include forward propagation, backpropagation, and gradient descent. Train it on a simple dataset.",
+      "hints": [
+        "Implement sigmoid or ReLU activation",
+        "Calculate loss (MSE or cross-entropy)",
+        "Compute gradients using chain rule",
+        "Update weights with learning rate"
+      ],
+      "evaluation_criteria": [
+        "forward propagation",
+        "activation functions",
+        "loss calculation",
+        "backpropagation",
+        "gradient descent",
+        "weight updates",
+        "training loop",
+        "convergence"
+      ],
+      "model_solution": "Implementation: 1) Initialize weights randomly, 2) Forward pass: z1 = X @ W1 + b1, a1 = sigmoid(z1), z2 = a1 @ W2 + b2, y_pred = sigmoid(z2), 3) Calculate loss: MSE or binary cross-entropy, 4) Backward pass: compute gradients dL/dW2, dL/db2, dL/dW1, dL/db1 using chain rule, 5) Update: W1 -= learning_rate * dW1, 6) Repeat for multiple epochs, 7) Track loss to verify convergence. Test on XOR problem or simple classification task."
+    },
+    {
+      "id": "ch_neural_networks_2",
+      "day_range": [3, 5],
+      "type": "deep_learning",
+      "title": "Design and Train a CNN for Image Classification",
+      "description": "Design a convolutional neural network architecture for image classification. Explain your architecture choices, implement it using a framework, train it, and analyze the results. Discuss techniques to prevent overfitting.",
+      "hints": [
+        "Use convolutional layers for feature extraction",
+        "Add pooling layers to reduce dimensions",
+        "Include dropout for regularization",
+        "Use data augmentation",
+        "Monitor training and validation loss"
+      ],
+      "evaluation_criteria": [
+        "architecture design",
+        "convolutional layers",
+        "pooling",
+        "regularization",
+        "data augmentation",
+        "training process",
+        "overfitting prevention",
+        "results analysis"
+      ],
+      "model_solution": "Architecture: Input -> Conv2D(32 filters, 3x3) -> ReLU -> MaxPool2D(2x2) -> Conv2D(64 filters, 3x3) -> ReLU -> MaxPool2D(2x2) -> Flatten -> Dense(128) -> Dropout(0.5) -> Dense(num_classes) -> Softmax. Use Adam optimizer, categorical cross-entropy loss. Prevent overfitting: 1) Data augmentation (rotation, flip, zoom), 2) Dropout layers, 3) Early stopping, 4) L2 regularization, 5) Batch normalization. Monitor train/val loss curves. Analyze: confusion matrix, per-class accuracy, visualize learned filters."
+    }
+  ],
+  "model_evaluation": [
+    {
+      "id": "ch_model_evaluation_1",
+      "day_range": [1, 1],
+      "type": "metrics",
+      "title": "Calculate and Interpret Classification Metrics",
+      "description": "Given predictions and true labels, calculate precision, recall, F1-score, and accuracy. Create a confusion matrix. Explain when each metric is most important and interpret the results.",
+      "hints": [
+        "Use sklearn.metrics for calculations",
+        "Visualize confusion matrix",
+        "Discuss precision-recall tradeoff",
+        "Consider class imbalance"
+      ],
+      "evaluation_criteria": [
+        "metric calculations",
+        "confusion matrix",
+        "interpretation",
+        "precision-recall tradeoff",
+        "class imbalance",
+        "use cases",
+        "recommendations"
+      ],
+      "model_solution": "Calculations: from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score, confusion_matrix. Precision = TP/(TP+FP), Recall = TP/(TP+FN), F1 = 2*(P*R)/(P+R), Accuracy = (TP+TN)/Total. Confusion matrix shows error patterns. Interpretation: High precision, low recall = conservative model (few false positives). Low precision, high recall = aggressive model (few false negatives). Use precision for spam detection (minimize false positives), recall for disease detection (minimize false negatives), F1 for balanced view, accuracy only when classes balanced."
+    },
+    {
+      "id": "ch_model_evaluation_2",
+      "day_range": [2, 3],
+      "type": "cross_validation",
+      "title": "Implement K-Fold Cross-Validation",
+      "description": "Implement k-fold cross-validation from scratch and using sklearn. Compare results with simple train-test split. Discuss advantages and when to use stratified k-fold.",
+      "hints": [
+        "Split data into k equal folds",
+        "Train k times, each time using different fold as test",
+        "Average the results",
+        "Use stratified version for imbalanced data"
+      ],
+      "evaluation_criteria": [
+        "k-fold implementation",
+        "sklearn usage",
+        "result averaging",
+        "comparison with train-test",
+        "stratified k-fold",
+        "advantages",
+        "best practices"
+      ],
+      "model_solution": "Manual implementation: 1) Split data into k folds, 2) For each fold: use it as test, others as train, 3) Train model and evaluate, 4) Average scores across folds. Sklearn: from sklearn.model_selection import cross_val_score; scores = cross_val_score(model, X, y, cv=5). Advantages: more robust estimate, uses all data for training and testing, reduces variance from random splitting. Use StratifiedKFold for classification with imbalanced classes to maintain class distribution in each fold. Typical k=5 or 10. Report mean and std of scores."
+    }
+  ],
+  "nlp_basics": [
+    {
+      "id": "ch_nlp_basics_1",
+      "day_range": [1, 2],
+      "type": "preprocessing",
+      "title": "Build Text Preprocessing Pipeline",
+      "description": "Create a complete text preprocessing pipeline including tokenization, lowercasing, removing punctuation, stopword removal, and lemmatization. Apply it to a text dataset and analyze the results.",
+      "hints": [
+        "Use NLTK or spaCy for NLP operations",
+        "Consider the order of operations",
+        "Compare before and after preprocessing",
+        "Discuss when to keep/remove stopwords"
+      ],
+      "evaluation_criteria": [
+        "tokenization",
+        "normalization",
+        "stopword removal",
+        "lemmatization",
+        "pipeline structure",
+        "analysis",
+        "best practices"
+      ],
+      "model_solution": "Pipeline: 1) Lowercase text, 2) Remove URLs, emails, special characters, 3) Tokenize with nltk.word_tokenize or spaCy, 4) Remove punctuation, 5) Remove stopwords (from nltk.corpus import stopwords), 6) Lemmatize (WordNetLemmatizer or spaCy). Implementation: def preprocess(text): text = text.lower(); tokens = word_tokenize(text); tokens = [lemmatizer.lemmatize(t) for t in tokens if t not in stopwords and t.isalpha()]. Analysis: compare vocabulary size, most common words before/after. Note: keep stopwords for some tasks like sentiment analysis where 'not' is important."
+    },
+    {
+      "id": "ch_nlp_basics_2",
+      "day_range": [3, 4],
+      "type": "classification",
+      "title": "Build Sentiment Analysis Classifier",
+      "description": "Build a sentiment analysis classifier for movie reviews or tweets. Use TF-IDF or word embeddings for features. Train a model, evaluate it, and analyze misclassifications.",
+      "hints": [
+        "Preprocess text data",
+        "Use TfidfVectorizer or pre-trained embeddings",
+        "Try logistic regression or neural network",
+        "Analyze errors to understand model limitations"
+      ],
+      "evaluation_criteria": [
+        "text preprocessing",
+        "feature extraction",
+        "model selection",
+        "training",
+        "evaluation",
+        "error analysis",
+        "improvements"
+      ],
+      "model_solution": "Implementation: 1) Load and preprocess data (tokenize, clean), 2) Feature extraction: TfidfVectorizer(max_features=5000, ngram_range=(1,2)) or use pre-trained word2vec/GloVe embeddings, 3) Train classifier: LogisticRegression or simple neural network, 4) Evaluate: accuracy, precision, recall, F1, confusion matrix, 5) Error analysis: examine misclassified examples, look for patterns (sarcasm, negation, mixed sentiment), 6) Improvements: handle negation ('not good'), use bigrams, try BERT-based models, balance dataset."
+    }
+  ]
+,
+  "design_principles": [
+    {
+      "id": "ch_design_principles_1",
+      "day_range": [1, 1],
+      "type": "analysis",
+      "title": "Analyze Visual Hierarchy in Existing Designs",
+      "description": "Analyze 3 different website homepages and evaluate their visual hierarchy. Identify what draws attention first, how the eye moves through the page, and suggest improvements.",
+      "hints": [
+        "Look for size, color, and contrast differences",
+        "Identify the primary, secondary, and tertiary elements",
+        "Consider F-pattern and Z-pattern reading",
+        "Evaluate whitespace usage"
+      ],
+      "evaluation_criteria": [
+        "hierarchy analysis",
+        "attention flow",
+        "size and contrast",
+        "reading patterns",
+        "whitespace",
+        "improvements",
+        "justification"
+      ],
+      "model_solution": "Analysis framework: 1) Identify primary element (largest, highest contrast, positioned prominently - usually hero section or main CTA), 2) Secondary elements (supporting content, navigation), 3) Tertiary elements (footer, fine print), 4) Trace eye movement path (F-pattern for text-heavy, Z-pattern for minimal), 5) Evaluate: Is the most important content most prominent? Does hierarchy guide users to desired actions? Improvements: increase size/contrast of CTAs, add more whitespace around key elements, use color strategically, ensure mobile hierarchy works."
+    },
+    {
+      "id": "ch_design_principles_2",
+      "day_range": [2, 3],
+      "type": "design",
+      "title": "Create a Color Palette with Rationale",
+      "description": "Design a color palette for a specific brand or product (e.g., eco-friendly products, tech startup, luxury brand). Apply color theory principles and explain your choices. Show how colors would be used across UI elements.",
+      "hints": [
+        "Consider brand personality and target audience",
+        "Use color psychology",
+        "Ensure sufficient contrast for accessibility",
+        "Apply 60-30-10 rule",
+        "Test with colorblind simulators"
+      ],
+      "evaluation_criteria": [
+        "color theory",
+        "brand alignment",
+        "psychology",
+        "accessibility",
+        "60-30-10 rule",
+        "contrast ratios",
+        "application examples"
+      ],
+      "model_solution": "Example for eco-friendly brand: Primary (60%): Soft green (#4A7C59) - nature, growth, sustainability. Secondary (30%): Warm beige (#E8DCC4) - natural, earthy, calm. Accent (10%): Terracotta (#C86F4F) - energy, warmth, calls-to-action. Rationale: Green evokes nature and environmental consciousness, beige provides warmth without overwhelming, terracotta adds vibrancy for CTAs. Application: green for headers and primary buttons, beige for backgrounds and cards, terracotta for CTAs and highlights. Accessibility: all combinations meet WCAG AA contrast (4.5:1 for text). Tested with colorblind simulators to ensure distinguishability."
+    }
+  ],
+  "user_research": [
+    {
+      "id": "ch_user_research_1",
+      "day_range": [1, 1],
+      "type": "planning",
+      "title": "Design a User Research Study",
+      "description": "Plan a user research study for a new mobile app feature. Define research questions, choose appropriate methods, create a recruitment plan, and draft interview questions or survey.",
+      "hints": [
+        "Start with clear research objectives",
+        "Choose methods based on what you need to learn",
+        "Define target participants",
+        "Prepare unbiased questions",
+        "Plan for analysis"
+      ],
+      "evaluation_criteria": [
+        "research objectives",
+        "method selection",
+        "recruitment plan",
+        "question quality",
+        "unbiased approach",
+        "analysis plan",
+        "timeline"
+      ],
+      "model_solution": "Study plan: 1) Objectives: Understand user needs for [feature], identify pain points, validate assumptions. 2) Methods: User interviews (qualitative depth) + survey (quantitative validation). 3) Recruitment: 15 interview participants, 100 survey responses, criteria: current users, diverse demographics, mix of power users and casual users. 4) Interview questions (open-ended): 'Tell me about your experience with...', 'What challenges do you face when...', 'How do you currently solve...'. Avoid leading questions. 5) Survey: mix of Likert scales and open-ended. 6) Analysis: thematic analysis for interviews, statistical analysis for survey. 7) Timeline: 2 weeks recruitment, 2 weeks data collection, 1 week analysis."
+    },
+    {
+      "id": "ch_user_research_2",
+      "day_range": [2, 3],
+      "type": "synthesis",
+      "title": "Create User Personas and Journey Map",
+      "description": "Based on provided research data, create 2-3 user personas and a journey map for one persona. Include demographics, goals, pain points, behaviors, and touchpoints throughout their journey.",
+      "hints": [
+        "Base personas on real data patterns",
+        "Include both demographics and psychographics",
+        "Make personas specific and realistic",
+        "Journey map should show emotions and pain points",
+        "Identify opportunities for improvement"
+      ],
+      "evaluation_criteria": [
+        "data-driven personas",
+        "completeness",
+        "realism",
+        "journey stages",
+        "touchpoints",
+        "emotions",
+        "pain points",
+        "opportunities"
+      ],
+      "model_solution": "Persona example: 'Sarah, Busy Professional' - Age 32, Marketing Manager, Goals: Save time, stay organized, Pain points: Too many tools, information overload, Behaviors: Mobile-first, values efficiency, Quote: 'I need tools that work together seamlessly'. Journey map stages: 1) Awareness (discovers product via ad, emotion: curious), 2) Consideration (reads reviews, emotion: hopeful but skeptical), 3) Trial (signs up, emotion: excited then frustrated with onboarding), 4) Usage (daily use, emotion: satisfied but occasionally confused), 5) Advocacy (recommends to colleagues, emotion: proud). Pain points: confusing onboarding, missing feature X. Opportunities: improve onboarding, add feature X, create templates."
+    }
+  ],
+  "wireframing": [
+    {
+      "id": "ch_wireframing_1",
+      "day_range": [1, 1],
+      "type": "design",
+      "title": "Create Low-Fidelity Wireframes",
+      "description": "Create low-fidelity wireframes for a mobile app with 3-4 key screens (e.g., home, search, detail, profile). Focus on layout, content hierarchy, and user flow. Explain your design decisions.",
+      "hints": [
+        "Use simple boxes and placeholders",
+        "Focus on structure, not visuals",
+        "Show navigation between screens",
+        "Annotate key interactions",
+        "Consider mobile constraints"
+      ],
+      "evaluation_criteria": [
+        "layout structure",
+        "content hierarchy",
+        "user flow",
+        "navigation",
+        "mobile considerations",
+        "annotations",
+        "design rationale"
+      ],
+      "model_solution": "Wireframes include: 1) Home screen: top navigation bar, search bar, content cards in vertical scroll, bottom tab bar. 2) Search screen: search input at top, filters below, results list. 3) Detail screen: back button, hero image, title, description, action buttons, related items. 4) Profile screen: avatar, user info, settings list. Design decisions: bottom tab bar for easy thumb reach, cards for scannable content, prominent search for discoverability, clear back navigation, action buttons above fold. Annotations show tap targets, scroll behavior, state changes. Flow: Home -> Search -> Detail -> back to Search or Home."
+    },
+    {
+      "id": "ch_wireframing_2",
+      "day_range": [2, 3],
+      "type": "prototyping",
+      "title": "Build Interactive Prototype in Figma",
+      "description": "Convert wireframes into an interactive prototype in Figma. Add interactions, transitions, and micro-animations. Test the prototype and document any usability issues found.",
+      "hints": [
+        "Use Figma's prototyping features",
+        "Add realistic interactions (tap, swipe)",
+        "Include loading states and feedback",
+        "Test with 2-3 users",
+        "Document findings"
+      ],
+      "evaluation_criteria": [
+        "interactivity",
+        "transitions",
+        "micro-interactions",
+        "realistic flow",
+        "loading states",
+        "user testing",
+        "findings documentation"
+      ],
+      "model_solution": "Prototype implementation: 1) Create frames for each screen state, 2) Add interactions: tap on card -> navigate to detail with 'Move In' animation, swipe on card -> reveal actions, tap search -> show keyboard and focus state, 3) Micro-interactions: button press states, loading spinners, success checkmarks, 4) Transitions: 300ms ease-in-out for smoothness, 5) Test with users: observe where they tap, note confusion points, time to complete tasks. Findings: users expected swipe-to-delete but it wasn't obvious, search icon too small, back button sometimes missed. Improvements: add visual affordances for swipe, increase tap targets, make navigation more prominent."
+    }
+  ],
+  "interaction_design": [
+    {
+      "id": "ch_interaction_design_1",
+      "day_range": [1, 2],
+      "type": "design",
+      "title": "Design Micro-Interactions for Common Actions",
+      "description": "Design micro-interactions for 5 common UI actions (e.g., like button, form submission, pull-to-refresh, toggle switch, loading). Describe the animation, timing, and feedback for each.",
+      "hints": [
+        "Consider the trigger, rules, feedback, and loops",
+        "Keep animations subtle and purposeful",
+        "Use appropriate timing (200-500ms)",
+        "Provide clear feedback",
+        "Consider accessibility"
+      ],
+      "evaluation_criteria": [
+        "trigger definition",
+        "animation description",
+        "timing",
+        "feedback",
+        "purposefulness",
+        "accessibility",
+        "implementation notes"
+      ],
+      "model_solution": "1) Like button: Trigger: tap. Animation: heart scales up 1.2x and changes color red, then scales back to 1.0x. Timing: 300ms ease-out. Feedback: haptic vibration, counter increments. 2) Form submission: Trigger: submit button tap. Animation: button shows loading spinner, disables. Timing: spinner rotates continuously. Feedback: success checkmark appears, form clears, success message shows. 3) Pull-to-refresh: Trigger: pull down gesture. Animation: spinner appears and rotates, content slides down. Timing: 400ms. Feedback: content updates, spinner fades out. 4) Toggle: Trigger: tap. Animation: knob slides left/right, background color changes. Timing: 200ms ease-in-out. Feedback: haptic. 5) Loading: Skeleton screens fade in, then content replaces. Accessibility: respect prefers-reduced-motion, provide text alternatives."
+    },
+    {
+      "id": "ch_interaction_design_2",
+      "day_range": [3, 4],
+      "type": "accessibility",
+      "title": "Accessibility Audit and Improvements",
+      "description": "Conduct an accessibility audit of a website or app. Test with keyboard navigation, screen reader, and color contrast tools. Document issues and propose fixes following WCAG guidelines.",
+      "hints": [
+        "Test keyboard navigation (Tab, Enter, Esc)",
+        "Use screen reader (NVDA, JAWS, VoiceOver)",
+        "Check color contrast ratios",
+        "Verify ARIA labels",
+        "Test with assistive technologies"
+      ],
+      "evaluation_criteria": [
+        "keyboard navigation",
+        "screen reader compatibility",
+        "color contrast",
+        "ARIA labels",
+        "focus indicators",
+        "WCAG compliance",
+        "proposed fixes"
+      ],
+      "model_solution": "Audit findings: 1) Keyboard navigation: some buttons not reachable via Tab, no visible focus indicators. Fix: ensure all interactive elements are keyboard accessible, add clear focus styles (outline: 2px solid blue). 2) Screen reader: images missing alt text, buttons have generic labels like 'click here'. Fix: add descriptive alt text, use specific button labels like 'Submit contact form'. 3) Color contrast: text on colored backgrounds fails WCAG AA (3:1 ratio). Fix: increase contrast to 4.5:1 minimum. 4) ARIA: missing labels on form inputs, no live regions for dynamic content. Fix: add aria-label, aria-describedby, aria-live for updates. 5) Forms: no error announcements. Fix: use aria-invalid and aria-errormessage. Test with NVDA and verify all content is accessible."
+    }
+  ],
+  "responsive_design": [
+    {
+      "id": "ch_responsive_design_1",
+      "day_range": [1, 1],
+      "type": "implementation",
+      "title": "Build Responsive Layout with CSS Grid",
+      "description": "Create a responsive layout using CSS Grid that adapts from single column on mobile to multi-column on desktop. Include a header, main content area, sidebar, and footer. No media queries allowed - use auto-fit/auto-fill.",
+      "hints": [
+        "Use grid-template-columns with auto-fit or auto-fill",
+        "Use minmax() for flexible sizing",
+        "Consider grid-template-areas for layout",
+        "Test at different viewport sizes"
+      ],
+      "evaluation_criteria": [
+        "CSS Grid usage",
+        "responsive behavior",
+        "auto-fit/auto-fill",
+        "minmax",
+        "no media queries",
+        "layout quality",
+        "browser compatibility"
+      ],
+      "model_solution": "CSS: .container { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; } .header { grid-column: 1 / -1; } .main { grid-column: span 2; } .sidebar { grid-column: span 1; } .footer { grid-column: 1 / -1; }. This creates a layout that automatically adjusts columns based on available space. On mobile (<300px per column), stacks to single column. On tablet, shows 2 columns. On desktop, shows 3+ columns. Main content spans 2 columns when space allows. Alternative: use grid-template-areas for more explicit control. Test in Chrome, Firefox, Safari."
+    },
+    {
+      "id": "ch_responsive_design_2",
+      "day_range": [2, 3],
+      "type": "design",
+      "title": "Design Mobile-First Responsive Component",
+      "description": "Design a responsive navigation component using mobile-first approach. Start with mobile design (hamburger menu), then progressively enhance for tablet and desktop. Implement with HTML/CSS/JS.",
+      "hints": [
+        "Start with mobile styles as base",
+        "Use min-width media queries to add complexity",
+        "Consider touch targets on mobile (44x44px minimum)",
+        "Add hover states for desktop",
+        "Ensure keyboard accessibility"
+      ],
+      "evaluation_criteria": [
+        "mobile-first approach",
+        "progressive enhancement",
+        "touch targets",
+        "media queries",
+        "accessibility",
+        "implementation",
+        "smooth transitions"
+      ],
+      "model_solution": "Mobile (base): Hamburger icon (44x44px), menu hidden by default, slides in from side when toggled, overlay background, close button. CSS: .nav { display: none; position: fixed; top: 0; left: 0; width: 80%; height: 100vh; transform: translateX(-100%); transition: transform 0.3s; } .nav.open { transform: translateX(0); }. Tablet (min-width: 768px): Horizontal menu, no hamburger, items in row. CSS: @media (min-width: 768px) { .nav { display: flex; position: static; transform: none; } .hamburger { display: none; } }. Desktop (min-width: 1024px): Add hover effects, dropdowns for sub-menus. Accessibility: keyboard navigation, focus trap in mobile menu, ARIA labels, Esc to close."
+    }
+  ]
+,
+  "seo": [
+    {
+      "id": "ch_seo_1",
+      "day_range": [1, 1],
+      "type": "audit",
+      "title": "Conduct On-Page SEO Audit",
+      "description": "Audit a website's on-page SEO. Check title tags, meta descriptions, heading structure, image alt text, internal linking, and page speed. Provide a prioritized list of improvements.",
+      "hints": [
+        "Use tools like Google PageSpeed Insights",
+        "Check HTML structure and semantic markup",
+        "Analyze keyword usage",
+        "Review mobile-friendliness",
+        "Check for duplicate content"
+      ],
+      "evaluation_criteria": [
+        "title tags",
+        "meta descriptions",
+        "heading hierarchy",
+        "alt text",
+        "internal links",
+        "page speed",
+        "mobile-friendly",
+        "prioritized recommendations"
+      ],
+      "model_solution": "Audit checklist: 1) Title tags: unique, 50-60 chars, include target keyword. Issues: duplicate titles, too long. Fix: rewrite unique titles per page. 2) Meta descriptions: compelling, 150-160 chars, include keyword. Issues: missing on some pages. Fix: write descriptions for all pages. 3) Headings: single H1, logical H2-H6 hierarchy. Issues: multiple H1s, skipped levels. Fix: restructure to single H1, proper nesting. 4) Images: descriptive alt text. Issues: many missing. Fix: add alt text describing image content. 5) Internal links: contextual, descriptive anchor text. Issues: generic 'click here' links. Fix: use descriptive anchors. 6) Page speed: 3s load time. Issues: large images, no caching. Fix: compress images, enable caching, minify CSS/JS. Priority: 1) Page speed (affects rankings), 2) Title tags, 3) Alt text, 4) Meta descriptions."
+    },
+    {
+      "id": "ch_seo_2",
+      "day_range": [2, 3],
+      "type": "strategy",
+      "title": "Develop Keyword Strategy and Content Plan",
+      "description": "Research keywords for a specific niche, analyze search intent and competition, and create a 3-month content plan targeting those keywords. Include primary and secondary keywords for each piece.",
+      "hints": [
+        "Use keyword research tools (Google Keyword Planner, Ahrefs)",
+        "Analyze search intent (informational, navigational, transactional)",
+        "Check keyword difficulty and search volume",
+        "Map keywords to content types",
+        "Consider long-tail keywords"
+      ],
+      "evaluation_criteria": [
+        "keyword research",
+        "search intent analysis",
+        "competition analysis",
+        "keyword selection",
+        "content mapping",
+        "3-month plan",
+        "realistic goals"
+      ],
+      "model_solution": "Example for 'sustainable fashion' niche: 1) Research: Use tools to find keywords. High volume: 'sustainable fashion' (10K/mo, high difficulty), 'eco-friendly clothing' (5K/mo, medium). Long-tail: 'how to build sustainable wardrobe' (500/mo, low difficulty), 'best sustainable fashion brands 2024' (800/mo, low). 2) Intent: 'sustainable fashion' = informational, 'buy eco-friendly clothes' = transactional, 'sustainable fashion brands' = navigational. 3) Content plan: Month 1: Blog post 'Ultimate Guide to Sustainable Fashion' (primary: sustainable fashion, secondary: eco-friendly, ethical), 'How to Build a Sustainable Wardrobe' (primary: sustainable wardrobe, secondary: capsule wardrobe). Month 2: 'Top 10 Sustainable Fashion Brands' (primary: sustainable brands, secondary: ethical brands), 'Sustainable vs Fast Fashion' (primary: fast fashion, secondary: environmental impact). Month 3: Product pages optimized for transactional keywords. Track rankings and adjust."
+    }
+  ],
+  "content_marketing": [
+    {
+      "id": "ch_content_marketing_1",
+      "day_range": [1, 1],
+      "type": "strategy",
+      "title": "Create Content Marketing Strategy",
+      "description": "Develop a content marketing strategy for a specific business. Define target audience, content pillars, content types, distribution channels, and success metrics. Create a 1-month content calendar.",
+      "hints": [
+        "Start with audience personas",
+        "Identify 3-5 content pillars aligned with business goals",
+        "Mix content types (blog, video, social, email)",
+        "Plan distribution across channels",
+        "Define measurable KPIs"
+      ],
+      "evaluation_criteria": [
+        "audience definition",
+        "content pillars",
+        "content types",
+        "distribution plan",
+        "KPIs",
+        "content calendar",
+        "alignment with goals"
+      ],
+      "model_solution": "Strategy for B2B SaaS: 1) Audience: Marketing managers at mid-size companies, pain points: limited budget, need ROI proof. 2) Content pillars: Product education, Industry trends, Customer success, Marketing tips, Company culture. 3) Content types: Blog posts (2/week), Case studies (1/month), Webinars (1/month), Social posts (daily), Email newsletter (weekly). 4) Distribution: Blog on website, LinkedIn for B2B reach, email to subscribers, guest posts on industry sites. 5) KPIs: 10K monthly blog visitors, 500 email subscribers, 50 webinar attendees, 20 qualified leads. 6) Calendar: Week 1: Blog 'How to measure marketing ROI', LinkedIn posts promoting blog, email newsletter. Week 2: Blog 'Top marketing trends 2024', case study release, social promotion. Week 3: Webinar 'Marketing automation best practices', blog recap. Week 4: Blog 'Customer success story', planning next month."
+    },
+    {
+      "id": "ch_content_marketing_2",
+      "day_range": [2, 3],
+      "type": "creation",
+      "title": "Write Long-Form Content with SEO",
+      "description": "Write a 1500+ word blog post on a chosen topic. Include keyword optimization, compelling headline, clear structure with subheadings, internal/external links, and a strong CTA. Explain your SEO and storytelling choices.",
+      "hints": [
+        "Research target keyword and related terms",
+        "Create outline before writing",
+        "Use inverted pyramid structure",
+        "Include data and examples",
+        "Optimize for featured snippets"
+      ],
+      "evaluation_criteria": [
+        "keyword optimization",
+        "headline quality",
+        "structure",
+        "readability",
+        "links",
+        "CTA",
+        "storytelling",
+        "SEO best practices"
+      ],
+      "model_solution": "Example post: 'The Complete Guide to Email Marketing Automation in 2024'. 1) Headline: Includes target keyword, number, year for freshness, promises completeness. 2) Structure: Introduction (hook with stat, problem statement), What is email automation (definition, benefits), Types of automation workflows (welcome, abandoned cart, nurture), How to set up automation (step-by-step), Best practices (7 tips), Tools comparison, Conclusion + CTA. 3) SEO: Target keyword in title, first paragraph, H2s. Related keywords: email marketing, automation tools, workflows. Internal links to related posts. External links to authoritative sources. 4) Readability: Short paragraphs (3-4 lines), bullet points, subheadings every 300 words, images/screenshots. 5) Storytelling: Start with customer pain point, use real examples, include case study. 6) CTA: 'Start your free trial' button, 'Download our email automation checklist'. 7) Featured snippet optimization: Include 'What is' definition in first paragraph, numbered list for steps."
+    }
+  ],
+  "social_media": [
+    {
+      "id": "ch_social_media_1",
+      "day_range": [1, 1],
+      "type": "strategy",
+      "title": "Develop Platform-Specific Social Media Strategy",
+      "description": "Create a social media strategy for a brand across 3 platforms (e.g., Instagram, LinkedIn, TikTok). Define content themes, posting frequency, content formats, and engagement tactics for each platform.",
+      "hints": [
+        "Research each platform's demographics and best practices",
+        "Tailor content to platform strengths",
+        "Consider optimal posting times",
+        "Plan for community management",
+        "Set platform-specific goals"
+      ],
+      "evaluation_criteria": [
+        "platform selection",
+        "content themes",
+        "posting frequency",
+        "content formats",
+        "engagement tactics",
+        "platform-specific optimization",
+        "goals and metrics"
+      ],
+      "model_solution": "Strategy for fitness brand: 1) Instagram: Visual platform, younger audience. Content: Workout videos (Reels), transformation photos, motivational quotes, behind-the-scenes. Frequency: 1 feed post + 3 Stories daily. Format: High-quality photos, 15-30s Reels, carousel posts for tutorials. Engagement: Respond to comments within 1 hour, use polls in Stories, host challenges with hashtag. Goals: 10K followers, 5% engagement rate. 2) LinkedIn: Professional audience. Content: Fitness industry insights, employee spotlights, company milestones, thought leadership. Frequency: 3 posts/week. Format: Text posts with images, articles, company updates. Engagement: Comment on industry posts, share employee content. Goals: 5K followers, establish thought leadership. 3) TikTok: Gen Z, entertainment-focused. Content: Quick workout tips, trending challenges, humor, day-in-the-life. Frequency: 1-2 videos daily. Format: 15-60s vertical videos, trending sounds. Engagement: Duet with users, respond to comments with videos. Goals: 50K followers, viral content. Cross-platform: Repurpose content but optimize for each platform."
+    },
+    {
+      "id": "ch_social_media_2",
+      "day_range": [2, 3],
+      "type": "campaign",
+      "title": "Plan and Execute Social Media Campaign",
+      "description": "Design a 2-week social media campaign for a product launch. Include campaign theme, content calendar, paid ad strategy, influencer partnerships, and measurement plan.",
+      "hints": [
+        "Create a compelling campaign theme/hashtag",
+        "Build anticipation before launch",
+        "Mix organic and paid content",
+        "Leverage user-generated content",
+        "Plan for real-time engagement"
+      ],
+      "evaluation_criteria": [
+        "campaign theme",
+        "content calendar",
+        "paid strategy",
+        "influencer plan",
+        "measurement",
+        "creativity",
+        "execution plan"
+      ],
+      "model_solution": "Campaign for new fitness app launch: 1) Theme: '#TransformWithUs - 30-Day Challenge'. Hashtag for tracking, challenge for engagement. 2) Pre-launch (Week 1): Teaser posts (3), countdown (daily), influencer unboxing (2), email list building. Content: Sneak peeks, feature highlights, early bird offer. 3) Launch (Week 2): Launch announcement, live demo, user testimonials, challenge kickoff. Content: App walkthrough, success stories, how-to guides. 4) Paid strategy: $5K budget. Facebook/Instagram ads targeting fitness enthusiasts 25-45, lookalike audiences. Ad formats: Video ads (app demo), carousel (features), Stories ads. Retargeting website visitors. 5) Influencers: Partner with 5 micro-influencers (10-50K followers), provide free premium access, ask for honest reviews and challenge participation. 6) UGC: Encourage users to share progress with hashtag, repost best content, feature in Stories. 7) Measurement: Track hashtag usage, app downloads, engagement rate, ad conversions, influencer reach. Goal: 10K downloads, 1M impressions, 50K hashtag uses."
+    }
+  ],
+  "email_marketing": [
+    {
+      "id": "ch_email_marketing_1",
+      "day_range": [1, 1],
+      "type": "automation",
+      "title": "Design Email Automation Workflow",
+      "description": "Design a complete email automation workflow for one of: welcome series, abandoned cart, or re-engagement. Include trigger, email sequence, timing, content, and success metrics.",
+      "hints": [
+        "Map out the trigger event",
+        "Plan 3-5 emails in sequence",
+        "Vary timing between emails",
+        "Include clear CTAs",
+        "Plan exit conditions"
+      ],
+      "evaluation_criteria": [
+        "trigger definition",
+        "email sequence",
+        "timing",
+        "content quality",
+        "CTAs",
+        "personalization",
+        "metrics"
+      ],
+      "model_solution": "Abandoned cart workflow: 1) Trigger: User adds item to cart but doesn't complete purchase within 1 hour. 2) Email sequence: Email 1 (1 hour after): Subject 'You left something behind', content: cart reminder with product images, CTA 'Complete your purchase', include customer reviews. Email 2 (24 hours): Subject 'Still interested? Here's 10% off', content: cart items + discount code, urgency (code expires in 48h), CTA 'Claim your discount'. Email 3 (72 hours): Subject 'Last chance - your cart expires soon', content: final reminder, social proof, free shipping offer, CTA 'Checkout now'. 3) Personalization: Use customer name, show exact cart items, recommend related products. 4) Exit conditions: Stop if purchase completed, unsubscribe, or after email 3. 5) Metrics: Open rate (target 40%), click rate (15%), conversion rate (10%), revenue recovered. 6) A/B test: subject lines, discount amounts, timing."
+    },
+    {
+      "id": "ch_email_marketing_2",
+      "day_range": [2, 3],
+      "type": "optimization",
+      "title": "A/B Test Email Campaign",
+      "description": "Design an A/B test for an email campaign. Choose what to test (subject line, CTA, layout, etc.), create two versions, define success metrics, and explain how you'd analyze results and implement learnings.",
+      "hints": [
+        "Test one variable at a time",
+        "Ensure statistical significance",
+        "Define sample size needed",
+        "Set test duration",
+        "Plan for implementation"
+      ],
+      "evaluation_criteria": [
+        "test hypothesis",
+        "variable selection",
+        "version creation",
+        "sample size",
+        "success metrics",
+        "analysis plan",
+        "implementation"
+      ],
+      "model_solution": "A/B test for newsletter: 1) Hypothesis: Personalized subject lines increase open rates. 2) Variable: Subject line only. Version A (control): 'Your weekly marketing tips'. Version B (test): '[Name], your personalized marketing tips inside'. 3) Sample: 10K subscribers, split 50/50 (5K each). Need 5K per group for 95% confidence, 80% power to detect 2% difference. 4) Duration: Send simultaneously, measure for 48 hours. 5) Success metric: Open rate (primary), click rate (secondary). 6) Analysis: Compare open rates using chi-square test. If B wins with p<0.05, implement. Calculate lift: (B_rate - A_rate) / A_rate * 100. 7) Results interpretation: If B wins: personalization works, apply to all campaigns. If A wins: subscribers prefer straightforward subject lines. If no difference: test other variables. 8) Next tests: CTA button color, email length, send time. 9) Documentation: Record all tests, results, and learnings in shared doc."
+    }
+  ],
+  "paid_advertising": [
+    {
+      "id": "ch_paid_advertising_1",
+      "day_range": [1, 2],
+      "type": "campaign",
+      "title": "Create Google Ads Campaign Structure",
+      "description": "Structure a Google Ads campaign for an e-commerce store. Create campaign, ad groups, keywords, ad copy, and landing page recommendations. Include budget allocation and bidding strategy.",
+      "hints": [
+        "Organize by product categories",
+        "Group related keywords tightly",
+        "Write multiple ad variations",
+        "Use negative keywords",
+        "Align ads with landing pages"
+      ],
+      "evaluation_criteria": [
+        "campaign structure",
+        "ad groups",
+        "keyword selection",
+        "ad copy",
+        "landing pages",
+        "budget allocation",
+        "bidding strategy"
+      ],
+      "model_solution": "Campaign for online shoe store: 1) Campaign: 'Shoes - Search - Brand'. Budget: $100/day. Bidding: Target ROAS 400%. 2) Ad Groups: AG1 'Running Shoes' - Keywords: [running shoes], [best running shoes], 'running shoes for men'. Negative: cheap, free. Ads: 'Premium Running Shoes | Free Shipping | Shop Now' with extensions (sitelinks, callouts). AG2 'Casual Shoes' - Keywords: [casual shoes], [everyday shoes]. AG3 'Formal Shoes' - Keywords: [dress shoes], [formal footwear]. 3) Ad copy: Headline 1: Include keyword, Headline 2: USP (Free Shipping), Headline 3: CTA. Description: Benefits, features, offer. Use all extensions: sitelinks (categories), callouts (Free Returns, 24/7 Support), structured snippets (Brands: Nike, Adidas). 4) Landing pages: Dedicated page per ad group, match ad copy, clear CTA, product grid, filters, reviews. 5) Budget: 40% running (high volume), 35% casual, 25% formal. 6) Optimization: Add negative keywords weekly, pause low-performing keywords, test ad variations, adjust bids based on performance."
+    },
+    {
+      "id": "ch_paid_advertising_2",
+      "day_range": [3, 5],
+      "type": "optimization",
+      "title": "Analyze and Optimize Ad Campaign Performance",
+      "description": "Given campaign performance data, analyze results, identify issues, and propose optimizations. Calculate key metrics (CTR, CPC, ROAS, conversion rate) and create an action plan.",
+      "hints": [
+        "Calculate all relevant metrics",
+        "Identify underperforming elements",
+        "Look for patterns in data",
+        "Prioritize high-impact changes",
+        "Consider budget reallocation"
+      ],
+      "evaluation_criteria": [
+        "metric calculations",
+        "data analysis",
+        "issue identification",
+        "optimization recommendations",
+        "prioritization",
+        "action plan",
+        "expected impact"
+      ],
+      "model_solution": "Analysis of campaign data: 1) Metrics: CTR = Clicks/Impressions = 500/10000 = 5% (good, above 3% benchmark). CPC = Cost/Clicks = $1000/500 = $2 (acceptable). Conversion rate = Conversions/Clicks = 25/500 = 5% (good). ROAS = Revenue/Cost = $2500/$1000 = 2.5 (below target of 4). 2) Issues: Low ROAS despite good CTR and conversion rate suggests low average order value or wrong audience. Ad Group 1: High CTR (7%) but low conversions (2%) - traffic quality issue. Ad Group 2: Low CTR (2%) - ad relevance issue. 3) Optimizations: AG1: Add negative keywords to filter unqualified traffic, tighten keyword match types, adjust bids down. AG2: Rewrite ad copy to improve relevance, test new headlines, add more ad extensions. Overall: Increase bids on high-ROAS keywords, pause keywords with 0 conversions after 100 clicks, test higher-value product promotions. 4) Action plan: Week 1: Add 50 negative keywords, rewrite AG2 ads. Week 2: Adjust bids, pause poor performers. Week 3: Test new ad variations. Week 4: Analyze results, scale winners. Expected impact: Increase ROAS to 3.5-4.0, reduce wasted spend by 20%."
+    }
+  ]
+,
+  "statistics": [
+    {
+      "id": "ch_statistics_1",
+      "day_range": [1, 2],
+      "type": "analysis",
+      "title": "Perform Hypothesis Testing",
+      "description": "Given two datasets (e.g., website A/B test results), perform a hypothesis test to determine if there's a statistically significant difference. State null/alternative hypotheses, choose appropriate test, calculate p-value, and interpret results.",
+      "hints": [
+        "State H0 and H1 clearly",
+        "Check assumptions (normality, independence)",
+        "Choose appropriate test (t-test, chi-square, etc.)",
+        "Calculate test statistic and p-value",
+        "Interpret with significance level"
+      ],
+      "evaluation_criteria": [
+        "hypothesis formulation",
+        "test selection",
+        "assumptions check",
+        "calculations",
+        "p-value interpretation",
+        "conclusion",
+        "practical significance"
+      ],
+      "model_solution": "A/B test example: Version A (control): 1000 visitors, 50 conversions. Version B (test): 1000 visitors, 65 conversions. 1) Hypotheses: H0: conversion_rate_A = conversion_rate_B (no difference). H1: conversion_rate_A ≠ conversion_rate_B (there is difference). 2) Test: Two-proportion z-test (comparing two proportions). 3) Assumptions: Independent samples (✓), sample size large enough (np > 5, ✓). 4) Calculations: p_A = 50/1000 = 0.05, p_B = 65/1000 = 0.065, p_pooled = (50+65)/(1000+1000) = 0.0575. z = (p_B - p_A) / sqrt(p_pooled * (1-p_pooled) * (1/n_A + 1/n_B)) = 1.45. p-value = 0.147 (two-tailed). 5) Interpretation: At α=0.05, p-value (0.147) > α, fail to reject H0. No statistically significant difference between versions. 6) Practical significance: Even though not statistically significant, 1.5% absolute lift might be practically valuable. Consider running test longer for more data."
+    },
+    {
+      "id": "ch_statistics_2",
+      "day_range": [3, 4],
+      "type": "modeling",
+      "title": "Build and Interpret Regression Model",
+      "description": "Build a linear regression model to predict a continuous outcome. Analyze the results, interpret coefficients, check assumptions, and evaluate model performance using appropriate metrics.",
+      "hints": [
+        "Explore data and relationships first",
+        "Check for multicollinearity",
+        "Interpret coefficients in context",
+        "Check residual plots",
+        "Calculate R-squared and RMSE"
+      ],
+      "evaluation_criteria": [
+        "data exploration",
+        "model building",
+        "coefficient interpretation",
+        "assumption checking",
+        "performance metrics",
+        "residual analysis",
+        "conclusions"
+      ],
+      "model_solution": "Predicting house prices: 1) Data exploration: Scatter plots show positive correlation between price and square footage, number of bedrooms. 2) Model: price = β0 + β1*sqft + β2*bedrooms + β3*age + ε. Using sklearn: from sklearn.linear_model import LinearRegression; model.fit(X_train, y_train). 3) Results: β0 = 50000 (intercept), β1 = 150 (each sqft adds $150), β2 = 20000 (each bedroom adds $20K), β3 = -1000 (each year of age reduces $1K). 4) Interpretation: A 1000 sqft increase predicts $150K price increase, holding other variables constant. 5) Assumptions: Linearity (✓ from scatter plots), Independence (✓), Homoscedasticity (check residual plot - should show random scatter), Normality of residuals (Q-Q plot). 6) Performance: R² = 0.75 (model explains 75% of variance), RMSE = $25K (average prediction error). 7) Residual analysis: Plot residuals vs predicted - check for patterns. If patterns exist, may need non-linear terms or transformations."
+    }
+  ],
+  "data_visualization": [
+    {
+      "id": "ch_data_visualization_1",
+      "day_range": [1, 1],
+      "type": "design",
+      "title": "Create Effective Data Visualizations",
+      "description": "Given a dataset, create 5 different visualizations that tell a story. Choose appropriate chart types for different insights. Explain your design choices and what story each visualization tells.",
+      "hints": [
+        "Match chart type to data type and question",
+        "Use color purposefully",
+        "Add clear titles and labels",
+        "Remove chart junk",
+        "Consider audience"
+      ],
+      "evaluation_criteria": [
+        "chart type selection",
+        "design quality",
+        "clarity",
+        "storytelling",
+        "color usage",
+        "labels and titles",
+        "insights"
+      ],
+      "model_solution": "Sales dataset visualizations: 1) Line chart: Monthly revenue trend over 2 years. Shows seasonal patterns and growth trajectory. Design: Single color line, clear axis labels, annotate key events (product launch spike). Story: 'Revenue grew 50% YoY with Q4 peaks'. 2) Bar chart: Revenue by product category. Shows which categories drive sales. Design: Horizontal bars sorted by value, consistent color, data labels. Story: 'Electronics account for 40% of revenue'. 3) Scatter plot: Marketing spend vs revenue by month. Shows correlation. Design: Points sized by profit margin, trend line, quadrants. Story: 'Higher spend correlates with revenue but diminishing returns above $50K'. 4) Stacked area chart: Revenue composition by region over time. Shows regional growth. Design: Distinct colors per region, legend, smooth curves. Story: 'Asia-Pacific growing fastest, now 30% of total'. 5) Heatmap: Sales by day of week and hour. Shows patterns. Design: Color gradient (light to dark), clear labels. Story: 'Peak sales Tuesday-Thursday 2-4pm'. All charts: Clean design, no gridlines, direct labeling, consistent fonts."
+    },
+    {
+      "id": "ch_data_visualization_2",
+      "day_range": [2, 3],
+      "type": "dashboard",
+      "title": "Design Executive Dashboard",
+      "description": "Design a one-page executive dashboard for a business. Include 4-6 key metrics, appropriate visualizations, and clear hierarchy. Explain your layout decisions and how it supports decision-making.",
+      "hints": [
+        "Identify most important KPIs",
+        "Use visual hierarchy (size, position)",
+        "Include context (targets, trends)",
+        "Keep it simple and scannable",
+        "Consider update frequency"
+      ],
+      "evaluation_criteria": [
+        "KPI selection",
+        "layout design",
+        "visual hierarchy",
+        "chart choices",
+        "clarity",
+        "actionability",
+        "design rationale"
+      ],
+      "model_solution": "E-commerce executive dashboard: 1) Layout: Top row: 4 KPI cards (large numbers). Middle: 2 main charts. Bottom: 1 detailed table. 2) KPIs (top, left to right): Revenue (current month, vs target, trend sparkline), Orders (count, YoY %), Average Order Value (current, vs last month), Conversion Rate (%, trend arrow). Design: Large numbers, green/red indicators, mini trend lines. 3) Chart 1 (middle-left): Revenue trend (line chart, 12 months, target line). Shows if on track. 4) Chart 2 (middle-right): Traffic sources (donut chart, %). Shows channel performance. 5) Table (bottom): Top 10 products by revenue (product name, revenue, units, trend). Sortable. 6) Design decisions: Most important metric (revenue) top-left (F-pattern reading), trends show direction quickly, colors used sparingly (red for alerts, green for positive), white space for breathing room, consistent fonts and sizing. 7) Interactivity: Click KPI to drill down, hover for details, date range selector. 8) Update: Real-time for KPIs, daily for charts. Supports decisions: Quickly see performance vs goals, identify issues (red indicators), understand trends, spot opportunities (top products)."
+    }
+  ],
+  "pandas_numpy": [
+    {
+      "id": "ch_pandas_numpy_1",
+      "day_range": [1, 1],
+      "type": "data_manipulation",
+      "title": "Clean and Transform Messy Dataset",
+      "description": "Given a messy CSV file, use Pandas to clean and transform it. Handle missing values, fix data types, remove duplicates, create new columns, and prepare it for analysis.",
+      "hints": [
+        "Start with df.info() and df.describe()",
+        "Check for and handle missing values",
+        "Convert data types appropriately",
+        "Use vectorized operations",
+        "Create derived features"
+      ],
+      "evaluation_criteria": [
+        "data exploration",
+        "missing value handling",
+        "data type conversion",
+        "duplicate removal",
+        "feature creation",
+        "code efficiency",
+        "final data quality"
+      ],
+      "model_solution": "Cleaning steps: 1) Load and explore: df = pd.read_csv('data.csv'); df.info(); df.describe(); df.head(). 2) Missing values: df.isnull().sum() to identify. For numerical: df['age'].fillna(df['age'].median(), inplace=True). For categorical: df['category'].fillna('Unknown', inplace=True). Drop rows with >50% missing: df.dropna(thresh=len(df.columns)*0.5). 3) Data types: df['date'] = pd.to_datetime(df['date']); df['price'] = df['price'].str.replace('$','').astype(float); df['category'] = df['category'].astype('category'). 4) Duplicates: df.drop_duplicates(subset=['id'], keep='first', inplace=True). 5) Outliers: Use IQR method: Q1 = df['price'].quantile(0.25); Q3 = df['price'].quantile(0.75); IQR = Q3-Q1; df = df[(df['price'] >= Q1-1.5*IQR) & (df['price'] <= Q3+1.5*IQR)]. 6) Feature creation: df['year'] = df['date'].dt.year; df['price_per_unit'] = df['price'] / df['quantity']; df['is_weekend'] = df['date'].dt.dayofweek >= 5. 7) Validation: Check df.info() again, verify no missing values in critical columns, check data types correct."
+    },
+    {
+      "id": "ch_pandas_numpy_2",
+      "day_range": [2, 3],
+      "type": "analysis",
+      "title": "Perform GroupBy Analysis and Aggregations",
+      "description": "Use Pandas groupby to analyze a dataset. Calculate multiple aggregations, create pivot tables, and answer business questions. Demonstrate advanced groupby techniques.",
+      "hints": [
+        "Use groupby with multiple columns",
+        "Apply multiple aggregation functions",
+        "Use agg() with dictionary for different functions per column",
+        "Create pivot tables for cross-tabulation",
+        "Use transform for group-wise operations"
+      ],
+      "evaluation_criteria": [
+        "groupby usage",
+        "multiple aggregations",
+        "pivot tables",
+        "advanced techniques",
+        "business insights",
+        "code clarity",
+        "performance"
+      ],
+      "model_solution": "Sales analysis: 1) Basic groupby: df.groupby('category')['revenue'].sum() - total revenue per category. 2) Multiple aggregations: df.groupby('category').agg({'revenue': ['sum', 'mean', 'count'], 'profit': 'sum', 'quantity': 'sum'}) - multiple metrics per category. 3) Custom aggregations: df.groupby('category').agg({'revenue': ['sum', lambda x: x.max() - x.min()], 'date': ['min', 'max']}) - custom functions. 4) Multiple grouping: df.groupby(['category', 'region'])['revenue'].sum().unstack() - revenue by category and region. 5) Pivot table: pd.pivot_table(df, values='revenue', index='category', columns='month', aggfunc='sum', fill_value=0) - revenue by category and month. 6) Transform: df['pct_of_category'] = df.groupby('category')['revenue'].transform(lambda x: x / x.sum() * 100) - each row's percentage of category total. 7) Filter: df.groupby('category').filter(lambda x: x['revenue'].sum() > 10000) - keep only categories with >$10K revenue. 8) Business questions: Which category has highest average order value? df.groupby('category')['revenue'].mean().idxmax(). What's the month-over-month growth? df.groupby('month')['revenue'].sum().pct_change()."
+    }
+  ],
+  "exploratory_analysis": [
+    {
+      "id": "ch_exploratory_analysis_1",
+      "day_range": [1, 1],
+      "type": "eda",
+      "title": "Comprehensive Exploratory Data Analysis",
+      "description": "Perform complete EDA on a new dataset. Profile the data, visualize distributions, identify relationships, detect outliers, and summarize key findings. Create a report with insights.",
+      "hints": [
+        "Start with basic statistics",
+        "Visualize all variables",
+        "Check correlations",
+        "Look for patterns and anomalies",
+        "Document findings"
+      ],
+      "evaluation_criteria": [
+        "data profiling",
+        "distribution analysis",
+        "correlation analysis",
+        "outlier detection",
+        "visualizations",
+        "insights",
+        "report quality"
+      ],
+      "model_solution": "EDA process: 1) Data profiling: df.shape (rows, columns), df.dtypes (data types), df.describe() (statistics), df.isnull().sum() (missing values). 2) Univariate analysis: For numerical: histograms (df['age'].hist()), box plots (df.boxplot(column='age')), summary stats. For categorical: value_counts (df['category'].value_counts()), bar charts. 3) Bivariate analysis: Scatter plots for numerical pairs (df.plot.scatter(x='age', y='income')), box plots for categorical vs numerical (df.boxplot(column='income', by='category')). 4) Correlation: df.corr() and heatmap (sns.heatmap(df.corr(), annot=True)). Identify strong correlations (>0.7 or <-0.7). 5) Outliers: Box plots, z-scores, IQR method. Investigate outliers - are they errors or valid extreme values? 6) Missing data: Visualize with missingno.matrix(df). Analyze patterns - MCAR, MAR, or MNAR? 7) Key findings: Age ranges 25-65 with peak at 35-45. Income positively correlated with education (r=0.65). 10% missing values in income column, appears MAR. 5 outliers in age (>100) likely data errors. Category distribution: 40% A, 35% B, 25% C. 8) Report: Executive summary, data overview, detailed findings with visualizations, recommendations for cleaning and modeling."
+    },
+    {
+      "id": "ch_exploratory_analysis_2",
+      "day_range": [2, 3],
+      "type": "feature_analysis",
+      "title": "Analyze Feature Relationships and Importance",
+      "description": "Analyze relationships between features and a target variable. Use correlation, mutual information, and feature importance from a model. Identify which features are most predictive and explain why.",
+      "hints": [
+        "Calculate correlation with target",
+        "Use mutual information for non-linear relationships",
+        "Train a model and extract feature importance",
+        "Visualize relationships",
+        "Consider domain knowledge"
+      ],
+      "evaluation_criteria": [
+        "correlation analysis",
+        "mutual information",
+        "feature importance",
+        "visualizations",
+        "interpretation",
+        "domain context",
+        "recommendations"
+      ],
+      "model_solution": "Feature analysis for predicting customer churn: 1) Correlation: df.corr()['churn'].sort_values(ascending=False). Findings: tenure (-0.35), monthly_charges (0.25), total_charges (-0.20). Negative tenure correlation makes sense - longer customers less likely to churn. 2) Mutual information: from sklearn.feature_selection import mutual_info_classif; mi = mutual_info_classif(X, y). Captures non-linear relationships. Contract_type has high MI (0.45) despite low correlation. 3) Feature importance: Train RandomForest: from sklearn.ensemble import RandomForestClassifier; rf.fit(X_train, y_train); importances = rf.feature_importances_. Top features: tenure (0.25), monthly_charges (0.18), contract_type (0.15). 4) Visualizations: Bar chart of feature importance, scatter plots of top features vs target, box plots for categorical features. 5) Interpretation: Tenure most important - new customers at highest risk. Monthly charges matter - high charges increase churn risk. Contract type important - month-to-month contracts have 3x churn rate vs annual. 6) Domain context: Makes business sense - customers need time to see value, high prices drive churn, contracts create commitment. 7) Recommendations: Focus retention efforts on new customers (<6 months), review pricing for high-charge customers, incentivize annual contracts. Consider creating features: price_per_service, tenure_category, contract_renewal_date."
+    }
+  ],
+  "sql_for_data": [
+    {
+      "id": "ch_sql_for_data_1",
+      "day_range": [1, 1],
+      "type": "queries",
+      "title": "Write Complex SQL Queries",
+      "description": "Write SQL queries to answer business questions using joins, aggregations, subqueries, and window functions. Optimize queries for performance.",
+      "hints": [
+        "Use appropriate JOIN types",
+        "Apply WHERE before GROUP BY when possible",
+        "Use window functions for running totals and rankings",
+        "Consider indexes for performance",
+        "Test with EXPLAIN"
+      ],
+      "evaluation_criteria": [
+        "query correctness",
+        "JOIN usage",
+        "aggregations",
+        "subqueries",
+        "window functions",
+        "optimization",
+        "readability"
+      ],
+      "model_solution": "Business questions: 1) Top 5 customers by total spending: SELECT c.name, SUM(o.total) as total_spent FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY total_spent DESC LIMIT 5. 2) Products never ordered: SELECT p.* FROM products p LEFT JOIN order_items oi ON p.id = oi.product_id WHERE oi.product_id IS NULL. 3) Running total of daily sales: SELECT date, SUM(total) as daily_sales, SUM(SUM(total)) OVER (ORDER BY date) as running_total FROM orders GROUP BY date ORDER BY date. 4) Rank customers by spending within each region: SELECT region, customer_name, total_spent, RANK() OVER (PARTITION BY region ORDER BY total_spent DESC) as rank FROM (SELECT c.region, c.name as customer_name, SUM(o.total) as total_spent FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.region, c.id, c.name) subquery. 5) Month-over-month growth: WITH monthly_sales AS (SELECT DATE_TRUNC('month', order_date) as month, SUM(total) as sales FROM orders GROUP BY month) SELECT month, sales, LAG(sales) OVER (ORDER BY month) as prev_month, (sales - LAG(sales) OVER (ORDER BY month)) / LAG(sales) OVER (ORDER BY month) * 100 as growth_pct FROM monthly_sales. Optimization: Add indexes on foreign keys (customer_id, product_id), order_date for date filtering, use EXPLAIN to check query plans, avoid SELECT *, use WHERE to filter before JOIN when possible."
+    },
+    {
+      "id": "ch_sql_for_data_2",
+      "day_range": [2, 3],
+      "type": "analysis",
+      "title": "Perform Cohort Analysis with SQL",
+      "description": "Write SQL queries to perform cohort analysis. Group users by signup month, track retention over time, and calculate cohort metrics. Visualize results.",
+      "hints": [
+        "Use DATE_TRUNC to group by month",
+        "Calculate cohort age (months since signup)",
+        "Use window functions for cohort calculations",
+        "Create retention matrix",
+        "Consider using CTEs for readability"
+      ],
+      "evaluation_criteria": [
+        "cohort definition",
+        "retention calculation",
+        "SQL complexity",
+        "CTE usage",
+        "accuracy",
+        "insights",
+        "visualization"
+      ],
+      "model_solution": "Cohort retention analysis: 1) Define cohorts: WITH cohorts AS (SELECT user_id, DATE_TRUNC('month', signup_date) as cohort_month FROM users). 2) User activity: user_activity AS (SELECT user_id, DATE_TRUNC('month', activity_date) as activity_month FROM user_activities). 3) Cohort size: cohort_size AS (SELECT cohort_month, COUNT(DISTINCT user_id) as cohort_users FROM cohorts GROUP BY cohort_month). 4) Retention: retention AS (SELECT c.cohort_month, ua.activity_month, COUNT(DISTINCT c.user_id) as active_users, EXTRACT(MONTH FROM AGE(ua.activity_month, c.cohort_month)) as months_since_signup FROM cohorts c JOIN user_activity ua ON c.user_id = ua.user_id GROUP BY c.cohort_month, ua.activity_month). 5) Retention rate: SELECT r.cohort_month, r.months_since_signup, r.active_users, cs.cohort_users, ROUND(r.active_users::numeric / cs.cohort_users * 100, 2) as retention_rate FROM retention r JOIN cohort_size cs ON r.cohort_month = cs.cohort_month ORDER BY r.cohort_month, r.months_since_signup. 6) Pivot for matrix: Use CASE statements or crosstab to create retention matrix with cohorts as rows, months as columns. 7) Insights: Month 0 retention 100% (by definition), Month 1 retention 45% (typical drop), Month 6 retention 25%, Month 12 retention 20%. Recent cohorts show improving retention (50% at Month 1). 8) Visualization: Heatmap with cohorts on Y-axis, months on X-axis, color intensity showing retention rate."
+    }
+  ]
+}

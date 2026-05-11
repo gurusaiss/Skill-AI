@@ -1,0 +1,49 @@
+# Vercel Ignore File
+# Files and directories to exclude from Vercel deployment
+
+# Development files
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+.kiro/
+.codex/
+.claude/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Test files
+**/*.test.js
+**/*.spec.js
+coverage/
+.nyc_output/
+
+# Documentation (optional - remove if you want docs deployed)
+AUDIT_REPORT.md
+FIXES_APPLIED.md
+FINALS_UPGRADE.md
+
+# Session data (keep only demo files)
+server/data/*.json
+!server/data/demo*.json
+
+# Build artifacts (will be regenerated)
+client/dist/
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+.cache/
