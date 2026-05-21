@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+
+const BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
 
 function RadarChart({ skills }) {
   if (!skills?.length) return null;
@@ -79,8 +81,117 @@ function ProgressBar({ value, max = 100, color = '#6366F1', label, sub }) {
   );
 }
 
+// ── Module Career Twin ────────────────────────────────────────────────────────
+function ModuleCareerTwin({ module, assignment, navigate, moduleId, assignmentId }) {
+  const skills = (module?.skills || []).map((skill, i) => ({
+    skill: typeof skill === 'string' ? skill : skill.name,
+    current: Math.min(95, 20 + (assignment?.progress || 0) + (i * 5)),
+    target: 90,
+    gap: 90 - Math.min(95, 20 + (assignment?.progress || 0) + (i * 5)),
+  }));
+
+  const progress = assignment?.progress || 0;
+  const sessionsCompleted = Object.values(assignment?.sessionProgress || {}).filter(s => s === 'completed').length;
+  const totalSessions = (module?.sessions || []).length;
+
+  return (
+    <div className="min-h-screen bg-[#0F172A] text-white">
+      <div className="max-w-5xl mx-auto px-6 py-10">
+        {/* Header */}
+        <div className="mb-8">
+          <button
+            onClick={() => navigate(`/module/${moduleId}/learn${assignmentId ? `?assignmentId=${assignmentId}` : ''}`)}
+            className="text-slate-400 hover:text-white text-sm mb-4 flex items-center gap-1"
+          >
+            ← Back to Module
+          </button>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-xl">🧬</div>
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
+                Career Digital Twin
+              </h1>
+              <p className="text-slate-400 text-sm">{module?.title}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Stat Cards */}
+        <div className="grid grid-cols-3 gap-4 mb-8">
+          <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-5 text-center">
+            <div className="text-3xl font-black text-indigo-400">{sessionsCompleted}/{totalSessions || '—'}</div>
+            <div className="text-xs text-slate-500 uppercase tracking-widest mt-1">Sessions Completed</div>
+          </div>
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5 text-center">
+            <div className="text-3xl font-black text-emerald-400">{progress}%</div>
+            <div className="text-xs text-slate-500 uppercase tracking-widest mt-1">Overall Progress</div>
+          </div>
+          <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-5 text-center">
+            <div className="text-3xl font-black text-violet-400">{skills.length}</div>
+            <div className="text-xs text-slate-500 uppercase tracking-widest mt-1">Skills Tracked</div>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* Radar Chart */}
+          <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-5">
+            <h3 className="text-slate-300 font-semibold mb-4">🎯 Competency Radar</h3>
+            <div className="flex justify-center">
+              <RadarChart skills={skills} />
+            </div>
+            <div className="flex gap-4 justify-center mt-2 text-xs">
+              <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-emerald-400" /> Current</div>
+              <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-indigo-400" style={{ borderTop: '1.5px dashed #6366F1', height: 0 }} /> Target</div>
+            </div>
+          </div>
+
+          {/* Skill Breakdown */}
+          <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-5">
+            <h3 className="text-slate-300 font-semibold mb-4">📊 Skill Progress</h3>
+            <div className="space-y-4">
+              {skills.map((s, i) => {
+                const color = s.current >= 75 ? '#10B981' : s.current >= 50 ? '#F59E0B' : '#EF4444';
+                return (
+                  <div key={i}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-300 font-medium">{s.skill}</span>
+                      <span className="font-bold" style={{ color }}>{s.current}% / {s.target}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{ width: `${Math.min(100, s.current)}%`, background: color }}
+                      />
+                    </div>
+                    <div className="text-slate-500 text-xs mt-0.5">Gap: {s.gap}% to target</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Back Button */}
+        <div className="mt-6">
+          <button
+            onClick={() => navigate(`/module/${moduleId}/learn${assignmentId ? `?assignmentId=${assignmentId}` : ''}`)}
+            className="px-6 py-3 rounded-xl font-bold text-sm border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 transition-all"
+          >
+            ← Back to Module
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CareerTwin() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const moduleId = searchParams.get('moduleId');
+  const assignmentId = searchParams.get('assignmentId');
+
   const { user } = useAuth();
   const [moduleContent, setModuleContent] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -89,9 +200,35 @@ export default function CareerTwin() {
   const [market, setMarket] = useState(null);
   const [error, setError] = useState('');
 
+  // Module-aware state
+  const [moduleContextData, setModuleContextData] = useState(null);
+  const [assignmentData, setAssignmentData] = useState(null);
+  const [moduleContextLoading, setModuleContextLoading] = useState(!!moduleId);
+
+  // Fetch module + assignment when moduleId is in URL params
+  useEffect(() => {
+    if (!moduleId) return;
+    const token = localStorage.getItem('auth_token');
+    const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    const fetches = [
+      fetch(`${BASE_URL}/api/modules/${moduleId}`, { headers }).then(r => r.json()),
+    ];
+    if (assignmentId) {
+      fetches.push(fetch(`${BASE_URL}/api/assignments/${assignmentId}`, { headers }).then(r => r.json()));
+    }
+    Promise.all(fetches)
+      .then(([modJson, asnJson]) => {
+        if (modJson?.success && modJson.data) setModuleContextData(modJson.data);
+        if (asnJson?.success && asnJson.data) setAssignmentData(asnJson.data);
+        else if (asnJson?.data) setAssignmentData(asnJson.data);
+      })
+      .catch(() => {})
+      .finally(() => setModuleContextLoading(false));
+  }, [moduleId, assignmentId]);
+
   useEffect(() => {
     const loadAssignedModule = async () => {
-      if (!user) return;
+      if (!user || moduleId) return;
       try {
         const token = localStorage.getItem('auth_token');
         const res = await fetch('/api/assignments?userId=' + user.userId, {
@@ -110,7 +247,7 @@ export default function CareerTwin() {
       } catch (_) {}
     };
     loadAssignedModule();
-  }, [user]);
+  }, [user, moduleId]);
 
   useEffect(() => {
     const uid = localStorage.getItem('skillforge:userId');
@@ -132,6 +269,31 @@ export default function CareerTwin() {
     }).catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  // Module context: show loading state then the module-specific twin
+  if (moduleId && moduleContextLoading) {
+    return (
+      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-5xl mb-4 animate-pulse">🧬</div>
+          <div className="text-indigo-400 font-semibold">Building Module Career Twin...</div>
+          <div className="text-slate-500 text-sm mt-2">Loading module data...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (moduleId) {
+    return (
+      <ModuleCareerTwin
+        module={moduleContextData}
+        assignment={assignmentData}
+        navigate={navigate}
+        moduleId={moduleId}
+        assignmentId={assignmentId}
+      />
+    );
+  }
 
   if (loading) return (
     <div className="min-h-screen bg-[#0F172A] flex items-center justify-center">

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../utils/api.js';
 import AgentThinking from '../components/AgentThinking.jsx';
+
+const BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
 
 // ── Grade metadata ────────────────────────────────────────────────────────────
 const GRADE_META = {
@@ -13,11 +15,15 @@ const GRADE_META = {
 };
 
 // ── Setup Phase ───────────────────────────────────────────────────────────────
-function SetupPhase({ onStart }) {
-  const [role, setRole] = useState('');
-  const [skills, setSkills] = useState('');
+function SetupPhase({ onStart, defaultRole = '', defaultSkills = '', moduleBanner = null }) {
+  const [role, setRole] = useState(defaultRole);
+  const [skills, setSkills] = useState(defaultSkills);
   const [difficulty, setDifficulty] = useState('medium');
   const [questionCount, setQuestionCount] = useState(5);
+
+  // Sync if defaults arrive late (module fetch completes after render)
+  useEffect(() => { if (defaultRole) setRole(defaultRole); }, [defaultRole]);
+  useEffect(() => { if (defaultSkills) setSkills(defaultSkills); }, [defaultSkills]);
 
   const handleStart = () => {
     if (!role.trim() || !skills.trim()) return;
@@ -26,6 +32,14 @@ function SetupPhase({ onStart }) {
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-10 space-y-6">
+      {/* Module Banner */}
+      {moduleBanner && (
+        <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 px-5 py-3 flex items-center gap-3">
+          <span className="text-xl">🧬</span>
+          <span className="text-blue-300 font-semibold text-sm">{moduleBanner}</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="text-center mb-4">
         <div className="text-5xl mb-3">🎤</div>
@@ -506,11 +520,41 @@ function ResultsPhase({ questions, report, role }) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function InterviewSimulator() {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const moduleId = searchParams.get('moduleId');
+
   const [phase, setPhase] = useState('setup'); // setup | loading | interview | generating | results
   const [config, setConfig] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [report, setReport] = useState(null);
   const [error, setError] = useState('');
+
+  // Module-aware state
+  const [moduleData, setModuleData] = useState(null);
+  const [moduleLoading, setModuleLoading] = useState(!!moduleId);
+
+  useEffect(() => {
+    if (!moduleId) return;
+    const token = localStorage.getItem('auth_token');
+    setModuleLoading(true);
+    fetch(`${BASE_URL}/api/modules/${moduleId}`, {
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+      .then(r => r.json())
+      .then(json => {
+        if (json.success && json.data) {
+          setModuleData(json.data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setModuleLoading(false));
+  }, [moduleId]);
+
+  // Derived module props for SetupPhase
+  const defaultRole = moduleData?.title || '';
+  const defaultSkills = moduleData?.skills?.join(', ') || '';
+  const moduleBanner = moduleData ? `Module Interview: ${moduleData.title}` : null;
 
   const handleStart = async (setupConfig) => {
     setConfig(setupConfig);
@@ -544,17 +588,31 @@ export default function InterviewSimulator() {
     }
   };
 
+  if (moduleLoading) {
+    return (
+      <div className="mx-auto max-w-4xl px-6 py-14">
+        <AgentThinking
+          isVisible
+          messages={[
+            'Loading module data…',
+            'Preparing interview for module…',
+          ]}
+        />
+      </div>
+    );
+  }
+
   if (phase === 'loading') {
     return (
       <div className="mx-auto max-w-4xl px-6 py-14">
-        <AgentThinking 
-          isVisible 
+        <AgentThinking
+          isVisible
           messages={[
             'Generating interview questions…',
             'Analyzing role requirements…',
             'Calibrating difficulty…',
             'Preparing your interview…'
-          ]} 
+          ]}
         />
       </div>
     );
@@ -579,7 +637,12 @@ export default function InterviewSimulator() {
   if (phase === 'setup') {
     return (
       <>
-        <SetupPhase onStart={handleStart} />
+        <SetupPhase
+          onStart={handleStart}
+          defaultRole={defaultRole}
+          defaultSkills={defaultSkills}
+          moduleBanner={moduleBanner}
+        />
         {error && (
           <div className="mx-auto max-w-2xl px-6">
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-center">

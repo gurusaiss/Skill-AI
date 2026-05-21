@@ -406,11 +406,17 @@ function ModuleNavbar({ moduleId, assignmentId, activeTab, onTabChange }) {
     { id: 'build', label: 'Build', icon: '🔨' },
   ];
 
+  // Pass moduleId + assignmentId so each tool page can load module context
+  const q = new URLSearchParams();
+  if (moduleId) q.set('moduleId', moduleId);
+  if (assignmentId) q.set('assignmentId', assignmentId);
+  const qs = q.toString() ? `?${q.toString()}` : '';
+
   const toolLinks = [
-    { label: 'Digital Twin', icon: '🧬', path: `/career-twin` },
-    { label: 'Simulator', icon: '🔮', path: `/simulation` },
-    { label: 'AI Interview', icon: '🎙️', path: `/interview` },
-    { label: 'Report', icon: '📄', path: `/report` },
+    { label: 'Digital Twin', icon: '🧬', path: `/career-twin${qs}` },
+    { label: 'Simulator', icon: '🔮', path: `/simulation${qs}` },
+    { label: 'AI Interview', icon: '🎙️', path: `/interview${qs}` },
+    { label: 'Report', icon: '📄', path: `/report${qs}` },
   ];
 
   return (
