@@ -84,6 +84,7 @@ export async function getPackages(filters = {}) {
 // Normalize Supabase snake_case module record → camelCase for client
 function normalizeModule(m) {
   if (!m) return null;
+  const content = m.content || {};
   return {
     id: m.id,
     title: m.title,
@@ -93,9 +94,13 @@ function normalizeModule(m) {
     estimatedDuration: m.estimated_duration ? `${m.estimated_duration} days` : (m.estimatedDuration || '30 days'),
     skills: m.skills || [],
     tasks: m.tasks || [],
-    resources: m.resources || [],
+    resources: content.resources || m.resources || [],
     completionCriteria: m.completion_criteria || m.completionCriteria || 'Complete all tasks',
-    content: m.content || {},
+    // Spread generated content fields to top level for easy access
+    sessions: content.sessions || m.sessions || [],
+    roadmap: content.roadmap || m.roadmap || [],
+    projects: content.projects || m.projects || [],
+    content,
     createdBy: m.created_by || m.createdBy,
     createdAt: m.created_at || m.createdAt,
     updatedAt: m.updated_at || m.updatedAt,
