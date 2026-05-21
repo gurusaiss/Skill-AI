@@ -333,17 +333,17 @@ export default function AdminDashboard() {
                         { label: 'Due Date', value: req.due_date ? new Date(req.due_date).toLocaleDateString() : '—', icon: '🗓️' },
                       ].map(item => (
                         <div key={item.label} className="rounded-lg bg-slate-800/50 border border-slate-700/40 p-3">
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">{item.icon} {item.label}</p>
+                          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-0.5">{item.icon} {item.label}</p>
                           <p className={`text-sm font-semibold text-white ${item.cls || ''}`}>{item.value}</p>
                         </div>
                       ))}
                     </div>
                     {module && (
                       <div className="rounded-lg bg-indigo-900/20 border border-indigo-500/20 p-3">
-                        <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">Module Details</p>
+                        <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-1">Module Details</p>
                         <p className="text-sm font-bold text-white">{module.title}</p>
                         {module.description && <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{module.description}</p>}
-                        {module.difficulty && <span className="inline-block mt-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-700/40 text-slate-300 border border-slate-600/40">{module.difficulty}</span>}
+                        {module.difficulty && <span className="inline-block mt-1 text-xs font-bold uppercase px-2 py-0.5 rounded-full bg-slate-700/40 text-slate-300 border border-slate-600/40">{module.difficulty}</span>}
                       </div>
                     )}
                   </div>
@@ -380,7 +380,7 @@ export default function AdminDashboard() {
               ].map(s => (
                 <div key={s.label} className={`rounded-xl border border-${s.color}-500/20 bg-${s.color}-500/5 p-4 text-center`}>
                   <p className={`text-2xl font-black text-${s.color}-400`}>{s.value}</p>
-                  <p className={`text-[10px] font-bold text-${s.color}-400/70 uppercase tracking-widest mt-0.5`}>{s.label}</p>
+                  <p className={`text-xs font-bold text-${s.color}-400/70 uppercase tracking-widest mt-0.5`}>{s.label}</p>
                 </div>
               ))}
             </div>
@@ -390,7 +390,7 @@ export default function AdminDashboard() {
               {/* Table header */}
               <div className="grid grid-cols-[1fr_1fr_1fr_auto_auto] gap-0 border-b border-slate-700/40 px-4 py-3">
                 {['Module', 'Employee', 'Manager', 'Date', 'Status'].map(h => (
-                  <div key={h} className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{h}</div>
+                  <div key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</div>
                 ))}
               </div>
 
@@ -416,11 +416,11 @@ export default function AdminDashboard() {
                       >
                         <div className="min-w-0 pr-3">
                           <p className="text-sm font-semibold text-white truncate">{module?.title || 'Unknown Module'}</p>
-                          <p className="text-[10px] text-slate-600 truncate">{module?.difficulty || 'Module Assignment'}</p>
+                          <p className="text-xs text-slate-600 truncate">{module?.difficulty || 'Module Assignment'}</p>
                         </div>
                         <div className="min-w-0 pr-3">
                           <p className="text-sm text-slate-300 truncate">{employee?.name || '—'}</p>
-                          <p className="text-[10px] text-slate-600 truncate">{employee?.email || req.employee_id || '—'}</p>
+                          <p className="text-xs text-slate-600 truncate">{employee?.email || req.employee_id || '—'}</p>
                         </div>
                         <div className="min-w-0 pr-3">
                           <p className="text-sm text-slate-300 truncate">{manager?.name || '—'}</p>

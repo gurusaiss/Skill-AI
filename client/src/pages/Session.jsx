@@ -35,6 +35,7 @@ export default function Session() {
   const [response, setResponse] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
     if (!user) { navigate('/'); return; }
@@ -58,6 +59,7 @@ export default function Session() {
     e.preventDefault();
     if (!response.trim()) return;
     setSubmitting(true);
+    setSubmitError('');
     try {
       const uid = user.userId || user.id;
       const data = await authFetch('/api/session/submit', {
@@ -71,7 +73,7 @@ export default function Session() {
       });
       setResult(data);
     } catch (e) {
-      alert(e.message || 'Failed to submit');
+      setSubmitError(e.message || 'Failed to submit. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -128,6 +130,11 @@ export default function Session() {
               className="w-full h-48 px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-y"
               required
             />
+            {submitError && (
+              <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+                <p className="text-sm text-red-400">{submitError}</p>
+              </div>
+            )}
             <div className="mt-4 flex gap-3">
               <button type="submit" disabled={submitting || !response.trim()} className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold disabled:opacity-50 transition-all">
                 {submitting ? 'Submitting...' : 'Submit Response'}

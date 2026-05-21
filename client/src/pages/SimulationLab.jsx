@@ -70,10 +70,12 @@ export default function SimulationLab() {
   const [compareLoading, setCompareLoading] = useState(false);
   const [tab, setTab] = useState('whatif');
 
-  // Load user's goal to auto-populate skill field
+  // Load user's goal to auto-populate skill fields from real data
   useEffect(() => {
     if (!userId) return;
-    fetch(`/api/session/dashboard/${userId}`)
+    const token = localStorage.getItem('auth_token');
+    const authHeaders = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    fetch(`/api/session/dashboard/${userId}`, { headers: authHeaders })
       .then(r => r.json())
       .then(json => {
         if (json.success) {
@@ -94,6 +96,11 @@ export default function SimulationLab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('auth_token');
+    return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  };
+
   const runSimulation = async (skillName) => {
     const s = skillName || skill;
     if (!s.trim()) return;
@@ -102,11 +109,11 @@ export default function SimulationLab() {
       const uid = userId || 'demo';
       const res = await fetch('/api/simulation/whatif', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ userId: uid, proposedSkill: s }),
       });
       const json = await res.json();
-      if (!json.success) throw new Error(json.error);
+      if (!json.success) throw new Error(typeof json.error === 'string' ? json.error : json.error?.message || 'Simulation failed');
       setResult(json.data);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
@@ -119,11 +126,11 @@ export default function SimulationLab() {
       const uid = userId || 'demo';
       const res = await fetch('/api/simulation/compare', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ userId: uid, pathA: compareA, pathB: compareB }),
       });
       const json = await res.json();
-      if (!json.success) throw new Error(json.error);
+      if (!json.success) throw new Error(typeof json.error === 'string' ? json.error : json.error?.message || 'Compare failed');
       setCompareResult(json.data);
     } catch (e) { setError(e.message); }
     finally { setCompareLoading(false); }

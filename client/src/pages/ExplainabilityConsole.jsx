@@ -163,10 +163,12 @@ export default function ExplainabilityConsole() {
   useEffect(() => {
     const uid = userId;
     if (!uid) { setLoading(false); return; }
-    fetch(`/api/session/dashboard/${uid}`)
+    const token = localStorage.getItem('auth_token');
+    const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+    fetch(`/api/session/dashboard/${uid}`, { headers: authHeaders })
       .then(r => r.json())
       .then(json => { if (json.success) setData(json.data); })
-      .catch(() => {})
+      .catch(e => console.error('[ExplainabilityConsole]', e))
       .finally(() => setLoading(false));
   }, []);
 

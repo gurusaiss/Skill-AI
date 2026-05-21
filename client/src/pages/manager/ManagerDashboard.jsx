@@ -76,7 +76,7 @@ const StatCard = ({ label, value, icon, accent }) => {
     <div className={`rounded-xl border p-5 transition-all hover:scale-[1.02] ${classes}`}>
       <div className="flex items-center justify-between">
         <div>
-          <p className={`text-[11px] font-bold uppercase tracking-widest mb-1.5 ${classes.split(' ').pop()}`}>{label}</p>
+          <p className={`text-xs font-bold uppercase tracking-widest mb-1.5 ${classes.split(' ').pop()}`}>{label}</p>
           <p className="text-3xl font-black text-white">{value}</p>
         </div>
         <div className="text-3xl opacity-40">{icon}</div>
@@ -118,7 +118,7 @@ const StatusBadge = ({ status }) => {
   const classes = map[status] || map.pending;
   const label = status ? status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown';
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${classes}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider border ${classes}`}>
       {label}
     </span>
   );
@@ -396,7 +396,7 @@ export default function ManagerDashboard() {
                 <div>
                   <h2 className="text-xl font-bold text-white">{selectedEmployee.name}</h2>
                   <p className="text-sm text-slate-400">{selectedEmployee.email}</p>
-                  <span className="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                  <span className="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
                     {selectedEmployee.role || 'Employee'}
                   </span>
                 </div>
@@ -413,7 +413,7 @@ export default function ManagerDashboard() {
               <div className="grid grid-cols-3 gap-4">
                 <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 text-center">
                   <p className="text-2xl font-black text-white">{selectedEmployee.assignedModules || employeeAssignments.length || 0}</p>
-                  <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mt-1">Modules</p>
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-1">Modules</p>
                 </div>
                 <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 text-center">
                   <p className="text-2xl font-black text-emerald-400">
@@ -422,13 +422,13 @@ export default function ManagerDashboard() {
                       : 0}
                     %
                   </p>
-                  <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mt-1">Completion</p>
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-1">Completion</p>
                 </div>
                 <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 text-center">
                   <p className="text-2xl font-black text-amber-400">
                     {employeeAssignments.filter((a) => isOverdue(a.dueDate, a.status)).length}
                   </p>
-                  <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mt-1">Overdue</p>
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-1">Overdue</p>
                 </div>
               </div>
 
@@ -460,7 +460,7 @@ export default function ManagerDashboard() {
                           <div className="flex items-center gap-2 min-w-0">
                             <p className="text-sm font-semibold text-white truncate">{a.title || a.name || `Assignment #${idx + 1}`}</p>
                             {isOverdue(a.dueDate, a.status) && (
-                              <span className="shrink-0 text-[10px] font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2 py-0.5 rounded-full uppercase">
+                              <span className="shrink-0 text-xs font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2 py-0.5 rounded-full uppercase">
                                 Overdue
                               </span>
                             )}
@@ -484,7 +484,7 @@ export default function ManagerDashboard() {
                           <span className="text-xs font-bold text-slate-400 shrink-0">{a.progress || 0}%</span>
                         </div>
                         {a.dueDate && (
-                          <p className={`text-[11px] mt-1.5 ${isOverdue(a.dueDate, a.status) ? 'text-red-400' : 'text-slate-500'}`}>
+                          <p className={`text-xs mt-1.5 ${isOverdue(a.dueDate, a.status) ? 'text-red-400' : 'text-slate-500'}`}>
                             Due: {formatDate(a.dueDate)}
                           </p>
                         )}
@@ -591,7 +591,7 @@ export default function ManagerDashboard() {
                         <p className="text-sm font-semibold text-white truncate">
                           {a.title || a.name || `Assignment #${idx + 1}`}
                         </p>
-                        <p className="text-[11px] text-slate-500 truncate">
+                        <p className="text-xs text-slate-500 truncate">
                           {a.assignedToName || a.assignedTo || 'Unassigned'} • {a.type || 'Module'}
                         </p>
                       </div>
@@ -646,11 +646,11 @@ export default function ManagerDashboard() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg bg-slate-900/50 p-3 text-center">
                     <p className="text-lg font-black text-emerald-400">{completedAssignments}</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Done</p>
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Done</p>
                   </div>
                   <div className="rounded-lg bg-slate-900/50 p-3 text-center">
                     <p className="text-lg font-black text-amber-400">{overdueAssignments}</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Overdue</p>
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Overdue</p>
                   </div>
                 </div>
                 <div className="pt-3 border-t border-slate-700/40">
@@ -723,27 +723,27 @@ export default function ManagerDashboard() {
                         <p className="text-sm font-semibold text-white group-hover:text-indigo-300 transition-colors truncate">
                           {emp.name || 'Unknown'}
                         </p>
-                        <p className="text-[11px] text-slate-500 truncate">{emp.email || '—'}</p>
+                        <p className="text-xs text-slate-500 truncate">{emp.email || '—'}</p>
                       </div>
                     </div>
                     <div className="flex items-center-center gap-4 sm:gap-6 shrink-0 ml-3">
                       <div className="hidden md:block text-center">
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Role</p>
+                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Role</p>
                         <p className="text-xs text-slate-300 font-medium mt-0.5">{emp.role || 'Employee'}</p>
                       </div>
                       <div className="hidden sm:block text-center">
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Modules</p>
+                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Modules</p>
                         <p className="text-xs text-slate-300 font-medium mt-0.5">{emp.assignedModules || 0}</p>
                       </div>
                       <div className="w-24 hidden sm:block">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Progress</span>
-                          <span className="text-[11px] font-bold text-indigo-400">{empProgress}%</span>
+                          <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">Progress</span>
+                          <span className="text-xs font-bold text-indigo-400">{empProgress}%</span>
                         </div>
                         <ProgressBar value={empProgress} color="indigo" size="sm" />
                       </div>
                       <div className="hidden md:block text-right">
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Last Active</p>
+                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Last Active</p>
                         <p className="text-xs text-slate-300 font-medium mt-0.5">{timeAgo(emp.lastActive)}</p>
                       </div>
                       <div className="w-9 h-7 rounded-lg bg-indigo-600/15 border border-indigo-500/25 flex items-center justify-center text-indigo-400 text-xs font-bold opacity-0 group-hover:opacity-100 transition-all">
@@ -795,7 +795,7 @@ export default function ManagerDashboard() {
                           {a.title || a.name || `Assignment #${idx + 1}`}
                         </p>
                         {overdue && (
-                          <span className="shrink-0 text-[10px] font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2 py-0.5 rounded-full uppercase">
+                          <span className="shrink-0 text-xs font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2 py-0.5 rounded-full uppercase">
                             Overdue
                           </span>
                         )}
@@ -803,14 +803,14 @@ export default function ManagerDashboard() {
                       <StatusBadge status={overdue ? 'overdue' : a.status} />
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2">
-                      <span className="text-[11px] text-slate-500">
+                      <span className="text-xs text-slate-500">
                         👤 {a.assignedToName || a.assignedTo || 'Unassigned'}
                       </span>
-                      <span className="text-[11px] text-slate-500">
+                      <span className="text-xs text-slate-500">
                         📁 {a.type || 'Module'}
                       </span>
                       {a.dueDate && (
-                        <span className={`text-[11px] ${overdue ? 'text-red-400 font-semibold' : 'text-slate-500'}`}>
+                        <span className={`text-xs ${overdue ? 'text-red-400 font-semibold' : 'text-slate-500'}`}>
                           📅 Due: {formatDate(a.dueDate)}
                         </span>
                       )}

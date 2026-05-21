@@ -139,7 +139,7 @@ function AdminReportView({ user, navigate }) {
           { label: 'Total Assignments', value: reports.reduce((s, r) => s + r.totalAssignments, 0), color: '#8b5cf6' },
         ].map((s, i) => (
           <div key={i} className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5">
-            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
             <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
           </div>
         ))}
@@ -153,7 +153,7 @@ function AdminReportView({ user, navigate }) {
         </div>
 
         {/* Header */}
-        <div className="hidden md:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_1fr_auto] px-5 py-2 border-b border-slate-700/30 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+        <div className="hidden md:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_1fr_auto] px-5 py-2 border-b border-slate-700/30 text-xs font-bold text-slate-500 uppercase tracking-widest">
           <span>Employee</span><span>Email</span><span>Total</span><span>Completed</span><span>Completion %</span><span>Last Activity</span><span></span>
         </div>
 
@@ -359,7 +359,7 @@ function EmployeeReportView({ user, navigate }) {
               <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-slate-800/40 border border-slate-700/30">
                 <div>
                   <p className="font-semibold text-white">Day {s.day} — {s.skillName}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{new Date(s.completedAt).toLocaleDateString()}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{s.completedAt ? new Date(s.completedAt).toLocaleDateString() : '—'}</p>
                 </div>
                 <div className="text-right">
                   <div className="text-xl font-black text-emerald-400">{s.score}%</div>

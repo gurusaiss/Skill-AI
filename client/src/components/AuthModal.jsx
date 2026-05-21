@@ -8,7 +8,8 @@ const AuthModal = ({ isOpen, onClose }) => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    name: ''
+    name: '',
+    acceptedTerms: false,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -35,6 +36,11 @@ const AuthModal = ({ isOpen, onClose }) => {
           setError(result?.error?.message || 'Login failed. Please check your credentials.');
         }
       } else {
+        if (!formData.acceptedTerms) {
+          setError('Please accept the Terms of Service and Privacy Policy to continue.');
+          setLoading(false);
+          return;
+        }
         const result = await register(formData.email, formData.password, formData.name);
         if (result && result.success) {
           setIsLogin(true);
@@ -208,7 +214,7 @@ const AuthModal = ({ isOpen, onClose }) => {
 
                 <motion.button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || (!isLogin && !formData.acceptedTerms)}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.99] shadow-lg shadow-indigo-500/20"
@@ -232,7 +238,7 @@ const AuthModal = ({ isOpen, onClose }) => {
                     setIsLogin(!isLogin);
                     setError('');
                     setSuccessMsg('');
-                    setFormData({ email: '', password: '', name: '' });
+                    setFormData({ email: '', password: '', name: '', acceptedTerms: false });
                   }}
                   className="font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
                 >

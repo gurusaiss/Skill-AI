@@ -102,7 +102,7 @@ function Navbar() {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600/20 border border-indigo-500/20 text-lg">🧠</div>
           <div>
             <p className="font-bold text-white text-sm leading-tight tracking-wide">SKILL FORGE</p>
-            <p className="text-[10px] text-slate-500">Autonomous Career AI</p>
+            <p className="text-xs text-slate-500">Autonomous Career AI</p>
           </div>
         </Link>
 
@@ -137,7 +137,7 @@ function Navbar() {
                 >
                   🔔
                   {unreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-indigo-600 text-white text-[10px] font-bold px-1">
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-bold px-1">
                       {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
                   )}
@@ -168,7 +168,7 @@ function Navbar() {
                               <div className={!n.read ? '' : 'ml-3.5'}>
                                 <p className="text-sm font-semibold text-white leading-snug">{n.title}</p>
                                 <p className="text-xs text-slate-400 mt-0.5 leading-snug">{n.message}</p>
-                                <p className="text-[10px] text-slate-600 mt-1">
+                                <p className="text-xs text-slate-600 mt-1">
                                   {n.created_at ? new Date(n.created_at).toLocaleDateString() : ''}
                                 </p>
                               </div>

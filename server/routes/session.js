@@ -176,6 +176,8 @@ RULES:
 - "correct" for MCQ must EXACTLY match one of the 4 options
 - Vary difficulty: q1-3 basic recall, q4-6 application, q7-8 fill concepts, q9-10 subjective analysis`;
 
+    let questions = null;
+
     if (gemini.isEnabled()) {
       try {
         const result = await gemini.generateJSON(prompt, `Quiz generator for ${domain || skillName}. Return valid JSON with exactly 10 questions.`);

@@ -34,7 +34,7 @@ export function ConfidenceSelector({ onSelect, selected }) {
         <span>🧭</span>
         <div>
           <h3 className="text-xs font-bold text-slate-300">Before you start — how confident are you?</h3>
-          <p className="text-[10px] text-slate-500">The agent tracks your self-assessment accuracy over time</p>
+          <p className="text-xs text-slate-500">The agent tracks your self-assessment accuracy over time</p>
         </div>
       </div>
       <div className="grid grid-cols-5 gap-2">
@@ -51,7 +51,7 @@ export function ConfidenceSelector({ onSelect, selected }) {
           >
             <span className="text-xl">{level.emoji}</span>
             <span
-              className="text-[9px] font-semibold text-center leading-tight"
+              className="text-xs font-semibold text-center leading-tight"
               style={{ color: selected === level.value ? level.color : '#475569' }}
             >
               {level.label}
@@ -90,7 +90,7 @@ export function ConfidenceResult({ confidenceLevel, actualScore, historicalCalib
       {/* Comparison bar */}
       <div className="space-y-2">
         <div>
-          <div className="flex justify-between text-[10px] mb-1">
+          <div className="flex justify-between text-xs mb-1">
             <span className="text-slate-500">Your prediction {levelMeta?.emoji}</span>
             <span style={{ color: levelMeta?.color }} className="font-bold">{predictedScore}%</span>
           </div>
@@ -102,7 +102,7 @@ export function ConfidenceResult({ confidenceLevel, actualScore, historicalCalib
           </div>
         </div>
         <div>
-          <div className="flex justify-between text-[10px] mb-1">
+          <div className="flex justify-between text-xs mb-1">
             <span className="text-slate-500">Actual performance</span>
             <span className="text-emerald-400 font-bold">{actualScore}%</span>
           </div>
@@ -117,7 +117,7 @@ export function ConfidenceResult({ confidenceLevel, actualScore, historicalCalib
 
       {/* Insight */}
       <div
-        className="rounded-lg p-2.5 text-[10px] leading-relaxed"
+        className="rounded-lg p-2.5 text-xs leading-relaxed"
         style={{
           backgroundColor: `${calibration.color}08`,
           border: `1px solid ${calibration.color}20`,
@@ -135,7 +135,7 @@ export function ConfidenceResult({ confidenceLevel, actualScore, historicalCalib
 
       {/* Historical accuracy */}
       {historicalCalibrations.length >= 3 && (
-        <div className="text-[9px] text-slate-600 text-center">
+        <div className="text-xs text-slate-600 text-center">
           Calibration accuracy over {historicalCalibrations.length} sessions:{' '}
           <span className="text-indigo-400 font-bold">
             {Math.round(historicalCalibrations.filter(c => Math.abs(c.predicted - c.actual) <= 20).length / historicalCalibrations.length * 100)}%

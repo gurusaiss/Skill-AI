@@ -25,6 +25,21 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 /**
+ * PUT /api/notifications/read-all
+ * Mark all notifications as read for the authenticated user
+ * Defined BEFORE /:id/read so Express does not match "read-all" as an :id segment
+ */
+router.put('/read-all', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user.id;
+    await db.markAllNotificationsRead(userId);
+    res.json({ success: true, data: { message: 'All notifications marked as read' }, error: null });
+  } catch (error) {
+    res.status(500).json({ success: false, data: null, error: { message: error.message } });
+  }
+});
+
+/**
  * PUT /api/notifications/:id/read
  * Mark a single notification as read
  */
@@ -36,20 +51,6 @@ router.put('/:id/read', authenticate, async (req, res) => {
   } catch (error) {
     const status = error.message === 'Notification not found' ? 404 : 500;
     res.status(status).json({ success: false, data: null, error: { message: error.message } });
-  }
-});
-
-/**
- * PUT /api/notifications/read-all
- * Mark all notifications as read for the authenticated user
- */
-router.put('/read-all', authenticate, async (req, res) => {
-  try {
-    const userId = req.user.userId || req.user.id;
-    await db.markAllNotificationsRead(userId);
-    res.json({ success: true, data: { message: 'All notifications marked as read' }, error: null });
-  } catch (error) {
-    res.status(500).json({ success: false, data: null, error: { message: error.message } });
   }
 });
 

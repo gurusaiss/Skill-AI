@@ -113,7 +113,7 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
               <ul className="space-y-2">
                 {keyPoints.map((point, i) => (
                   <li key={i} className="flex gap-3">
-                    <span className="w-5 h-5 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-[10px] font-black text-indigo-400 flex-shrink-0 mt-0.5">
+                    <span className="w-5 h-5 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-400 flex-shrink-0 mt-0.5">
                       {i + 1}
                     </span>
                     <span className="text-sm text-slate-200 leading-relaxed">
@@ -284,7 +284,7 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
         {/* Question card */}
         <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 p-6 mb-6">
           <div className="flex items-center gap-2 mb-4">
-            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+            <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded-full border ${
               q.type === 'mcq' ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
               : q.type === 'fill_blank' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
               : 'bg-purple-500/15 text-purple-400 border-purple-500/30'
@@ -292,7 +292,7 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
               {q.type === 'fill_blank' ? 'Fill Blank' : q.type === 'subjective' ? 'Short Answer' : 'Multiple Choice'}
             </span>
             {q.difficulty && (
-              <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+              <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded-full border ${
                 q.difficulty === 'easy' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                 : q.difficulty === 'hard' ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
                 : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
@@ -367,7 +367,7 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
               <button
                 key={i}
                 onClick={() => setCurrentQ(i)}
-                className={`w-6 h-6 rounded-full text-[10px] font-black transition-all ${
+                className={`w-6 h-6 rounded-full text-xs font-black transition-all ${
                   i === currentQ ? 'bg-indigo-600 text-white'
                   : answers[i] !== undefined ? 'bg-emerald-600/30 text-emerald-400 border border-emerald-500/30'
                   : 'bg-slate-700 text-slate-500'
@@ -499,12 +499,12 @@ function ScorePhase({ score, sessionTitle, onComplete }) {
                     <p className="text-xs text-white font-semibold mb-1">{r.question}</p>
                     {!r.isCorrect && (
                       <>
-                        <p className="text-[10px] text-rose-400">Your answer: {r.userAnswer || '(no answer)'}</p>
-                        <p className="text-[10px] text-emerald-400">Correct: {r.answer}</p>
+                        <p className="text-xs text-rose-400">Your answer: {r.userAnswer || '(no answer)'}</p>
+                        <p className="text-xs text-emerald-400">Correct: {r.answer}</p>
                       </>
                     )}
                     {r.explanation && (
-                      <p className="text-[10px] text-slate-500 mt-1 italic">{r.explanation}</p>
+                      <p className="text-xs text-slate-500 mt-1 italic">{r.explanation}</p>
                     )}
                   </div>
                 </div>

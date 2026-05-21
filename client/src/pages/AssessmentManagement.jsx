@@ -267,7 +267,7 @@ export default function AssessmentManagement() {
             { label: 'Modules Covered', value: new Set(assessments.map(a => a.moduleId).filter(Boolean)).size, color: '#10b981' },
           ].map((s, i) => (
             <div key={i} className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5">
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
               <p className="text-3xl font-black" style={{ color: s.color }}>{s.value}</p>
             </div>
           ))}
@@ -282,7 +282,7 @@ export default function AssessmentManagement() {
           </div>
 
           {/* Table header */}
-          <div className="hidden md:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_auto] px-5 py-2 border-b border-slate-700/30 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+          <div className="hidden md:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_auto] px-5 py-2 border-b border-slate-700/30 text-xs font-bold text-slate-500 uppercase tracking-widest">
             <span>Title</span><span>Module</span><span>Questions</span><span>Schedule</span><span>Created</span><span></span>
           </div>
 
@@ -377,7 +377,7 @@ export default function AssessmentManagement() {
                   <input type="range" min="2" max="20" value={form.numQuestions}
                     onChange={e => setForm(f => ({ ...f, numQuestions: parseInt(e.target.value) }))}
                     className="w-full accent-indigo-500" />
-                  <div className="flex justify-between text-[10px] text-slate-600 mt-1"><span>2</span><span>20</span></div>
+                  <div className="flex justify-between text-xs text-slate-600 mt-1"><span>2</span><span>20</span></div>
                 </div>
 
                 {/* Question Types */}
@@ -470,9 +470,9 @@ export default function AssessmentManagement() {
                     <div key={idx} className="rounded-xl border border-slate-700/50 bg-slate-800/40 p-4">
                       <div className="flex items-start justify-between gap-2 mb-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black text-slate-500">Q{idx + 1}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border uppercase ${DIFFICULTY_COLORS[q.difficulty] || DIFFICULTY_COLORS.medium}`}>{q.difficulty}</span>
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold border border-slate-600/50 bg-slate-700/40 text-slate-400 uppercase">{TYPE_LABELS[q.type] || q.type}</span>
+                          <span className="text-xs font-black text-slate-500">Q{idx + 1}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold border uppercase ${DIFFICULTY_COLORS[q.difficulty] || DIFFICULTY_COLORS.medium}`}>{q.difficulty}</span>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-bold border border-slate-600/50 bg-slate-700/40 text-slate-400 uppercase">{TYPE_LABELS[q.type] || q.type}</span>
                         </div>
                         <button onClick={() => removeQuestion(idx)} className="text-slate-600 hover:text-red-400 text-sm transition-colors">✕</button>
                       </div>
@@ -488,7 +488,7 @@ export default function AssessmentManagement() {
                               className="w-full px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-700/50 text-sm text-slate-300 focus:border-indigo-500/50 focus:outline-none" />
                           ))}
                           <div className="flex items-center gap-2 mt-2">
-                            <span className="text-[10px] text-slate-500">Correct:</span>
+                            <span className="text-xs text-slate-500">Correct:</span>
                             {['A', 'B', 'C', 'D'].map(l => (
                               <button key={l} onClick={() => updateQuestion(idx, 'answer', l)}
                                 className={`w-7 h-7 rounded-lg text-xs font-black border transition-all ${q.answer === l ? 'bg-emerald-500/30 border-emerald-500/50 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-white'}`}>
@@ -501,14 +501,14 @@ export default function AssessmentManagement() {
 
                       {(q.type === 'fill_blank' || q.type === 'subjective') && (
                         <div className="mb-3">
-                          <label className="text-[10px] text-slate-500 mb-1 block">Expected Answer</label>
+                          <label className="text-xs text-slate-500 mb-1 block">Expected Answer</label>
                           <input value={q.answer || ''} onChange={e => updateQuestion(idx, 'answer', e.target.value)}
                             className="w-full px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-700/50 text-sm text-slate-300 focus:border-indigo-500/50 focus:outline-none" />
                         </div>
                       )}
 
                       <div>
-                        <label className="text-[10px] text-slate-500 mb-1 block">Explanation</label>
+                        <label className="text-xs text-slate-500 mb-1 block">Explanation</label>
                         <input value={q.explanation || ''} onChange={e => updateQuestion(idx, 'explanation', e.target.value)}
                           className="w-full px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-700/50 text-sm text-slate-500 focus:border-indigo-500/50 focus:outline-none" />
                       </div>
@@ -547,8 +547,8 @@ export default function AssessmentManagement() {
                 <div key={i} className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xs font-black text-slate-500">Q{i + 1}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border uppercase ${DIFFICULTY_COLORS[q.difficulty] || DIFFICULTY_COLORS.medium}`}>{q.difficulty}</span>
-                    <span className="text-[9px] font-bold text-slate-500 uppercase">{TYPE_LABELS[q.type] || q.type}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold border uppercase ${DIFFICULTY_COLORS[q.difficulty] || DIFFICULTY_COLORS.medium}`}>{q.difficulty}</span>
+                    <span className="text-xs font-bold text-slate-500 uppercase">{TYPE_LABELS[q.type] || q.type}</span>
                   </div>
                   <p className="text-sm text-white mb-3">{q.question}</p>
                   {q.options && (

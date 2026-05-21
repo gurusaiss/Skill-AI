@@ -63,7 +63,7 @@ function ProcessingScreen() {
 
       {/* Message */}
       <div className="text-center space-y-2">
-        <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em]">AI Processing</p>
+        <p className="text-xs font-black text-indigo-400 uppercase tracking-[0.3em]">AI Processing</p>
         <p className="text-lg font-black text-slate-100 min-h-[2rem] transition-all">
           {PROCESSING_MESSAGES[msgIdx]}{dots}
         </p>
@@ -197,7 +197,7 @@ export default function Diagnostic() {
 
       {/* Header */}
       <div className="text-center mb-6">
-        <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">
+        <p className="text-xs font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">
           Step 2 of 2 — Knowledge Quiz
         </p>
         <h1 className="text-xl font-black text-slate-100">
@@ -210,7 +210,7 @@ export default function Diagnostic() {
 
       {/* Progress bar */}
       <div className="mb-5">
-        <div className="flex justify-between text-[10px] text-slate-600 mb-1.5 font-semibold">
+        <div className="flex justify-between text-xs text-slate-600 mb-1.5 font-semibold">
           <span>Question {currentIndex + 1} of {questions.length}</span>
           <span>{answeredCount}/{questions.length} answered</span>
         </div>
@@ -245,7 +245,7 @@ export default function Diagnostic() {
         {/* Concept banner — shown at top of every question */}
         {currentQuestion.concept && (
           <div className="px-5 pt-4 pb-0 flex items-center gap-2 flex-wrap">
-            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Concept Tested</span>
+            <span className="text-xs font-black text-slate-500 uppercase tracking-widest">Concept Tested</span>
             <span className="text-xs px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-300 border border-indigo-500/25 font-bold">
               💡 {currentQuestion.concept}
             </span>
@@ -255,25 +255,25 @@ export default function Diagnostic() {
         <div className="p-5">
           {/* Meta tags */}
           <div className="flex items-center gap-2 mb-4 flex-wrap">
-            <span className="text-[9px] px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-semibold uppercase tracking-wide">
+            <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-semibold uppercase tracking-wide">
               {currentQuestion.skillName}
             </span>
             {currentQuestion.difficulty && (
-              <span className={`text-[9px] px-2.5 py-1 rounded-full border font-bold capitalize ${DIFF_STYLE[currentQuestion.difficulty] || DIFF_STYLE.basic}`}>
+              <span className={`text-xs px-2.5 py-1 rounded-full border font-bold capitalize ${DIFF_STYLE[currentQuestion.difficulty] || DIFF_STYLE.basic}`}>
                 {currentQuestion.difficulty.replace('_', ' ')}
               </span>
             )}
             {currentQuestion.source === 'llm' && (
-              <span className="text-[9px] px-2.5 py-1 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30 font-bold">
+              <span className="text-xs px-2.5 py-1 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30 font-bold">
                 🤖 AI
               </span>
             )}
             {currentQuestion.source === 'rule_base' && (
-              <span className="text-[9px] px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
+              <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
                 ✅ Verified
               </span>
             )}
-            <span className="ml-auto text-[9px] text-slate-600 font-mono">Q{currentIndex + 1}/{questions.length}</span>
+            <span className="ml-auto text-xs text-slate-600 font-mono">Q{currentIndex + 1}/{questions.length}</span>
           </div>
 
           {/* Question text */}

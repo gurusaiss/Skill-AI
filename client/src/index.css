@@ -13,6 +13,12 @@
   box-sizing: border-box;
 }
 
+/* ── Base font: 18px scales all rem Tailwind classes up proportionally ── */
+html {
+  scroll-behavior: smooth;
+  font-size: 18px;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -21,7 +27,6 @@ body {
     linear-gradient(180deg, #0f172a 0%, #111827 100%);
   color: #f8fafc;
   min-height: 100vh;
-  font-size: 16px; /* Ensure minimum readable font size */
 }
 
 a {
@@ -45,19 +50,12 @@ p {
   line-height: 1.6;
 }
 
-/* ── Responsive zoom: scale UI gracefully from 80%–125% ── */
-html {
-  scroll-behavior: smooth;
-  /* Prevent tiny text at high zoom by enforcing minimum base size */
-  font-size: clamp(13px, 1vw + 10px, 16px);
-}
-
 /* Ensure all text is readable at every zoom level */
 small, .text-xs {
-  font-size: max(0.7rem, 11px);
+  font-size: max(0.8rem, 13px);
 }
 .text-sm {
-  font-size: max(0.8rem, 12px);
+  font-size: max(0.875rem, 14px);
 }
 
 /* Prevent horizontal overflow at laptop widths / zoom > 100% */

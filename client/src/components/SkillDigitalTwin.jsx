@@ -327,7 +327,7 @@ export default function SkillDigitalTwin({ skills = [], sessions = [], diagnosti
           <div className="flex items-center justify-between mb-2">
             <span className="font-bold text-slate-200">{selectedSkill.name}</span>
             <button
-              className="text-slate-600 text-[10px] hover:text-slate-400"
+              className="text-slate-600 text-xs hover:text-slate-400"
               onClick={() => setSelectedSkill(null)}
             >
               ✕
@@ -338,29 +338,29 @@ export default function SkillDigitalTwin({ skills = [], sessions = [], diagnosti
               <div className="text-lg font-black" style={{ color: getNodeColor(selectedSkill.mastery, selectedSkill.status) }}>
                 {selectedSkill.mastery || 0}%
               </div>
-              <div className="text-slate-600 text-[9px]">Current Mastery</div>
+              <div className="text-slate-600 text-xs">Current Mastery</div>
             </div>
             <div className="text-center">
               <div className="text-lg font-black text-red-400">
                 {diagnosticScores[selectedSkill.id] || 0}%
               </div>
-              <div className="text-slate-600 text-[9px]">Diagnostic Base</div>
+              <div className="text-slate-600 text-xs">Diagnostic Base</div>
             </div>
             <div className="text-center">
               <div className="text-lg font-black text-emerald-400">
                 +{Math.max(0, (selectedSkill.mastery || 0) - (diagnosticScores[selectedSkill.id] || 0))}%
               </div>
-              <div className="text-slate-600 text-[9px]">Growth</div>
+              <div className="text-slate-600 text-xs">Growth</div>
             </div>
           </div>
-          <div className="mt-2 text-[9px] text-slate-500 uppercase tracking-wider">
+          <div className="mt-2 text-xs text-slate-500 uppercase tracking-wider">
             Sessions: {sessions.filter(s => s.skillId === selectedSkill.id).length} completed
           </div>
         </div>
       )}
 
       {/* Legend */}
-      <div className="flex items-center justify-center gap-4 text-[10px] text-slate-500">
+      <div className="flex items-center justify-center gap-4 text-xs text-slate-500">
         {[
           { color: COLORS.mastered, label: 'Mastered ≥75%' },
           { color: COLORS.active,   label: 'Learning' },

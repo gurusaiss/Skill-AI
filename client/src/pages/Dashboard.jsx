@@ -38,8 +38,8 @@ function StatCard({ label, value, icon, color = '#6366f1', sub, onClick }) {
     >
       <div className="text-2xl mb-2">{icon}</div>
       <div className="text-2xl font-black font-mono leading-none mb-1" style={{ color }}>{value}</div>
-      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</div>
-      {sub && <div className="text-[10px] text-slate-600 mt-1">{sub}</div>}
+      <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">{label}</div>
+      {sub && <div className="text-xs text-slate-600 mt-1">{sub}</div>}
     </button>
   );
 }
@@ -245,12 +245,12 @@ function PlanTimeline({ learningPlan, navigate }) {
                     </p>
 
                     <div className="flex items-center justify-between">
-                      <span className={`text-[10px] font-semibold capitalize ${tc.text}`}>{d.sessionType}</span>
-                      <span className="text-[10px] text-slate-600">{d.estimatedMinutes}m</span>
+                      <span className={`text-xs font-semibold capitalize ${tc.text}`}>{d.sessionType}</span>
+                      <span className="text-xs text-slate-600">{d.estimatedMinutes}m</span>
                     </div>
 
                     {d.addedByAgent && (
-                      <span className="absolute top-1.5 right-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">
+                      <span className="absolute top-1.5 right-1.5 text-xs px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">
                         ⚡
                       </span>
                     )}
@@ -488,7 +488,7 @@ function CareerOverview({ goal, sessions, onProjectClick }) {
           { label: 'Intensity',     value: goal?.profile?.intensity || '—' },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-xl border border-slate-700/50 bg-slate-800/40 p-4">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
             <p className="text-sm font-bold text-slate-100 capitalize">{value}</p>
           </div>
         ))}
@@ -657,9 +657,9 @@ export default function Dashboard() {
 
         {/* Stats row */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-5">
-          <StatCard label="Avg Score"   value={`${stats.avgScore}%`}   icon="📊" color={stats.avgScore  >= 75 ? '#10b981' : stats.avgScore  >= 50 ? '#6366f1' : '#f59e0b'} onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('avgScore', stats.avgScore) })} />
-          <StatCard label="Best Score"  value={`${stats.bestScore}%`}  icon="🏆" color={stats.bestScore >= 75 ? '#10b981' : stats.bestScore >= 50 ? '#6366f1' : '#f59e0b'} onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('bestScore', stats.bestScore) })} />
-          <StatCard label="Sessions"    value={stats.totalSessions}    icon="✅" color="#6366f1" onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('sessions', stats.totalSessions) })} />
+          <StatCard label="Avg Score"   value={`${stats.avgScore ?? 0}%`}   icon="📊" color={(stats.avgScore ?? 0)  >= 75 ? '#10b981' : (stats.avgScore ?? 0)  >= 50 ? '#6366f1' : '#f59e0b'} onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('avgScore', stats.avgScore ?? 0) })} />
+          <StatCard label="Best Score"  value={`${stats.bestScore ?? 0}%`}  icon="🏆" color={(stats.bestScore ?? 0) >= 75 ? '#10b981' : (stats.bestScore ?? 0) >= 50 ? '#6366f1' : '#f59e0b'} onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('bestScore', stats.bestScore ?? 0) })} />
+          <StatCard label="Sessions"    value={stats.totalSessions ?? 0}    icon="✅" color="#6366f1" onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('sessions', stats.totalSessions ?? 0) })} />
           <StatCard label="AI Tweaks"   value={adaptations.length}     icon="⚡" color="#f59e0b" sub="adaptations" onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('adaptations', adaptations.length) })} />
           {avgTrend !== null ? (
             <StatCard label="Trend" value={`${avgTrend > 0 ? '+' : ''}${avgTrend}%`} icon={avgTrend >= 0 ? '📈' : '📉'} color={avgTrend >= 0 ? '#10b981' : '#ef4444'} sub="vs early" onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('trend', avgTrend) })} />
@@ -787,7 +787,7 @@ export default function Dashboard() {
                     </div>
                     <p className="text-sm text-slate-300 leading-relaxed">{agentPopup.desc}</p>
                     <div className="rounded-lg bg-slate-900/60 border border-slate-700/40 px-3 py-2.5">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">When it fires</p>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">When it fires</p>
                       <p className="text-sm text-slate-400">{agentPopup.trigger}</p>
                     </div>
                   </div>
@@ -797,7 +797,7 @@ export default function Dashboard() {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Decision Log</p>
-                  <span className="text-[10px] text-slate-600">{agentDecisions.length} entries</span>
+                  <span className="text-xs text-slate-600">{agentDecisions.length} entries</span>
                 </div>
                 <div className="h-96 overflow-hidden rounded-xl border border-slate-700/50">
                   <AgentBrain decisions={agentDecisions} isThinking={false} />
@@ -837,7 +837,7 @@ export default function Dashboard() {
                 {icon}
               </div>
               <div className="font-bold text-slate-200 text-sm group-hover:text-white transition-colors">{label}</div>
-              <div className="text-[10px] text-slate-500 leading-snug">{sub}</div>
+              <div className="text-xs text-slate-500 leading-snug">{sub}</div>
             </button>
           ))}
         </div>

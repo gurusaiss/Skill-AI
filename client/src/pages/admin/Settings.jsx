@@ -207,11 +207,11 @@ export default function Settings() {
                   <div key={agent.name} className="flex items-center justify-between rounded-xl bg-slate-900/50 border border-slate-700/40 p-4 mb-3">
                     <div>
                       <p className="text-sm font-bold text-indigo-300">{agent.name}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{agent.role}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{agent.role}</p>
                     </div>
                     <div className="flex items-center gap-3">
                       <label className="flex items-center gap-2">
-                        <span className="text-[10px] text-slate-500 font-bold uppercase">Temperature</span>
+                        <span className="text-xs text-slate-500 font-bold uppercase">Temperature</span>
                         <input type="number" step="0.1" min="0" max="1" defaultValue={agent.temp} className="w-16 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs text-center" />
                       </label>
                       <label className="flex items-center gap-1.5">
@@ -283,7 +283,7 @@ export default function Settings() {
                     { label: 'Billing Period', value: 'Monthly',  badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
                   ].map(m => (
                     <div key={m.label} className="rounded-xl border border-slate-700/40 bg-slate-900/50 p-5 text-center">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{m.label}</p>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{m.label}</p>
                       <p className="text-xl font-black text-white">{m.value}</p>
                     </div>
                   ))}
@@ -301,7 +301,7 @@ export default function Settings() {
                         <p className="text-xs text-slate-500 mt-0.5">{p.price} · {p.limit}</p>
                       </div>
                       {p.active
-                        ? <span className="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Active</span>
+                        ? <span className="text-xs font-bold uppercase px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Active</span>
                         : <button className="px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300 text-xs font-bold hover:bg-slate-600">Upgrade</button>
                       }
                     </div>
@@ -339,7 +339,7 @@ export default function Settings() {
                           <td className="py-2.5 px-3 text-slate-500 text-xs">{row.time}</td>
                           <td className="py-2.5 px-3 text-slate-300 text-xs">{row.actor}</td>
                           <td className="py-2.5 px-3">
-                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">{row.action}</span>
+                            <span className="text-xs font-bold uppercase px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">{row.action}</span>
                           </td>
                           <td className="py-2.5 px-3 text-slate-500 text-xs">{row.detail}</td>
                         </tr>
