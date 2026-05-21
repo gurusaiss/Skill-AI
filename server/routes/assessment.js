@@ -284,34 +284,47 @@ router.post('/:id/submit', authenticate, async (req, res) => {
 
 /**
  * POST /api/assessments/generate
- * AI-generate assessment questions from module content (admin/manager only)
+ * AI-generate assessment questions from module content (all authenticated users)
  */
-router.post('/generate', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.post('/generate', authenticate, async (req, res) => {
   try {
-    const { moduleTitle, moduleDescription, skills, numQuestions, questionTypes } = req.body;
+    const { moduleTitle, moduleDescription, skills, numQuestions, questionTypes, sessionTitle, sessionTopics, sessionKeyPoints } = req.body;
 
     const num = Math.min(Math.max(parseInt(numQuestions) || 5, 2), 20);
     const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
 
-    const context = `Module: ${moduleTitle || 'Learning Module'}
-Description: ${moduleDescription || 'No description provided'}
-Skills covered: ${(skills || []).join(', ') || 'General skills'}`;
+    const topicsStr = Array.isArray(sessionTopics) && sessionTopics.length > 0
+      ? sessionTopics.join(', ')
+      : (Array.isArray(skills) && skills.length > 0 ? skills.join(', ') : 'core concepts');
+    const keyPointsStr = Array.isArray(sessionKeyPoints) && sessionKeyPoints.length > 0
+      ? sessionKeyPoints.map((p, i) => `${i+1}. ${typeof p === 'string' ? p : (p.point || p.title || '')}`) .join('\n')
+      : '';
 
-    const prompt = `Generate exactly ${num} assessment questions for this training module.
+    const context = [
+      `Module: ${moduleTitle || 'Learning Module'}`,
+      sessionTitle ? `Session: ${sessionTitle}` : '',
+      `Topics: ${topicsStr}`,
+      moduleDescription ? `Description: ${moduleDescription}` : '',
+      keyPointsStr ? `Key Points:\n${keyPointsStr}` : '',
+    ].filter(Boolean).join('\n');
+
+    const prompt = `Generate exactly ${num} assessment questions SPECIFICALLY about these topics: ${topicsStr}.
 
 ${context}
 
-Question types to include: ${types.join(', ')}
+CRITICAL: Every single question MUST test knowledge of the specific topics listed above. No generic learning strategy questions.
 
-Return a JSON object with a "questions" array. Each question object must have:
-- "type": exactly one of "mcq", "subjective", or "fill_blank"
-- "question": clear question text
+Question types: ${types.join(', ')}
+
+Return a JSON object with a "questions" array. Each question:
+- "type": "mcq", "subjective", or "fill_blank"
+- "question": specific question about ${topicsStr}
 - "difficulty": "easy", "medium", or "hard"
-- "options": for mcq only — array of exactly 4 strings like ["A) option", "B) option", "C) option", "D) option"]
-- "answer": for mcq: the letter "A", "B", "C", or "D"; for fill_blank: the expected word/phrase; for subjective: a model answer
-- "explanation": brief explanation of why this answer is correct
+- "options": mcq only — array of 4 strings ["A) ...", "B) ...", "C) ...", "D) ..."]
+- "answer": mcq: letter "A"/"B"/"C"/"D"; fill_blank: exact word/phrase; subjective: model answer
+- "explanation": why this answer is correct
 
-Distribute types proportionally across requested types. Mix difficulty: 30% easy, 50% medium, 20% hard.`;
+Difficulty mix: 30% easy, 50% medium, 20% hard.`;
 
     const system = `You are an expert corporate training assessment designer. Create high-quality questions that test real understanding and application, not just memorization. Always return valid JSON with exactly a "questions" array.`;
 

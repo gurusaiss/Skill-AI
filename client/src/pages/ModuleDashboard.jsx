@@ -129,16 +129,22 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
   );
 }
 
-function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onSessionComplete }) {
+function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onSessionComplete, onRegenerate }) {
   const navigate = useNavigate();
   const sessions = module?.sessions || module?.content?.sessions || [];
 
   if (sessions.length === 0) {
     return (
-      <div className="text-center py-16 text-slate-500">
+      <div className="text-center py-16">
         <div className="text-5xl mb-4 opacity-30">📚</div>
-        <p className="text-lg font-bold text-slate-400 mb-2">No Sessions Available</p>
-        <p className="text-sm text-slate-600">Sessions will appear once the module is configured.</p>
+        <p className="text-lg font-bold text-slate-400 mb-2">No Sessions Yet</p>
+        <p className="text-sm text-slate-600 mb-6">Click below to generate AI-powered learning sessions for this module.</p>
+        <button
+          onClick={onRegenerate}
+          className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-all shadow-lg shadow-indigo-500/25"
+        >
+          🧠 Generate Learning Content
+        </button>
       </div>
     );
   }
@@ -266,16 +272,22 @@ function ProgressTab({ module, sessionStatuses }) {
   );
 }
 
-function PlanTab({ module }) {
+function PlanTab({ module, onRegenerate }) {
   const roadmap = module?.roadmap || module?.content?.roadmap || [];
   const plan = module?.plan || module?.content?.plan || module?.learningPlan || '';
 
   if (roadmap.length === 0 && !plan) {
     return (
-      <div className="text-center py-16 text-slate-500">
+      <div className="text-center py-16">
         <div className="text-5xl mb-4 opacity-30">🗺️</div>
         <p className="text-lg font-bold text-slate-400 mb-2">No Roadmap Available</p>
-        <p className="text-sm text-slate-600">The learning roadmap will appear here once configured.</p>
+        <p className="text-sm text-slate-600 mb-6">Generate AI learning content to create a personalized roadmap.</p>
+        <button
+          onClick={onRegenerate}
+          className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-all"
+        >
+          🧠 Generate Roadmap
+        </button>
       </div>
     );
   }
@@ -456,6 +468,8 @@ export default function ModuleDashboard() {
   const [module, setModule] = useState(null);
   const [assignment, setAssignment] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [generateStatus, setGenerateStatus] = useState('');
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('sessions');
   // sessionStatuses: { [index]: 'pending' | 'in_progress' | 'completed' }
@@ -465,7 +479,7 @@ export default function ModuleDashboard() {
     loadData();
   }, [moduleId, assignmentId]);
 
-  const loadData = async () => {
+  const loadData = async (skipGenerate = false) => {
     setLoading(true);
     setError(null);
     try {
@@ -474,29 +488,64 @@ export default function ModuleDashboard() {
         assignmentId ? authFetch(`/api/assignments/${assignmentId}`) : Promise.resolve(null),
       ]);
 
+      let mod = null;
       if (modRes.status === 'fulfilled' && modRes.value) {
-        setModule(modRes.value);
+        mod = modRes.value;
+        setModule(mod);
       } else {
         throw new Error('Module not found');
       }
 
       if (assignRes.status === 'fulfilled' && assignRes.value) {
         setAssignment(assignRes.value);
-        // Load session statuses from assignment progress if available
         const progress = assignRes.value?.sessionProgress || assignRes.value?.progress_data?.sessions || {};
         setSessionStatuses(progress);
-        // Unlock first session by default if no status
-        if (!progress[0]) {
-          setSessionStatuses({ 0: 'pending' });
-        }
+        if (!progress[0]) setSessionStatuses({ 0: 'pending' });
       } else {
-        // No assignment — unlock first session
         setSessionStatuses({ 0: 'pending' });
+      }
+
+      // Auto-generate content if no sessions exist
+      const sessions = mod?.sessions || mod?.content?.sessions || [];
+      if (sessions.length === 0 && !skipGenerate) {
+        await generateContent(mod);
       }
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateContent = async (currentModule) => {
+    setGenerating(true);
+    setGenerateStatus('🧠 AI is building your learning curriculum…');
+    try {
+      const messages = [
+        '🧠 AI is analyzing the module topics…',
+        '📚 Generating day-by-day learning sessions…',
+        '🗺️ Creating your personalized roadmap…',
+        '✅ Finalizing content and quiz topics…',
+      ];
+      let msgIdx = 0;
+      const msgInterval = setInterval(() => {
+        msgIdx = (msgIdx + 1) % messages.length;
+        setGenerateStatus(messages[msgIdx]);
+      }, 2500);
+
+      const result = await authFetch(`/api/modules/${moduleId}/generate-content`, { method: 'POST' });
+      clearInterval(msgInterval);
+
+      if (result) {
+        setModule(result);
+        setGenerateStatus('✅ Content ready!');
+        setTimeout(() => setGenerateStatus(''), 1000);
+      }
+    } catch (err) {
+      console.error('Content generation failed:', err);
+      setGenerateStatus('');
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -515,12 +564,33 @@ export default function ModuleDashboard() {
     }
   }, [assignmentId, sessionStatuses]);
 
-  if (loading) {
+  if (loading || generating) {
     return (
       <div className="min-h-screen bg-[#0F172A] flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin text-indigo-400 text-4xl mb-4">⟳</div>
-          <p className="text-slate-400 text-sm">Loading your learning environment…</p>
+        <div className="text-center max-w-sm px-6">
+          <div className="relative w-20 h-20 mx-auto mb-6">
+            <div className="absolute inset-0 rounded-full border-4 border-indigo-500/20" />
+            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-indigo-500 animate-spin" />
+            <div className="absolute inset-0 flex items-center justify-center text-3xl">🧠</div>
+          </div>
+          <p className="text-white font-bold text-base mb-2">
+            {generating ? 'Generating Learning Content' : 'Loading Module'}
+          </p>
+          <p className="text-slate-400 text-sm leading-relaxed">
+            {generateStatus || 'Setting up your learning environment…'}
+          </p>
+          {generating && (
+            <div className="mt-4 space-y-1.5">
+              {['Analyzing module skills', 'Building day sessions', 'Creating roadmap', 'Preparing quizzes'].map((step, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs text-slate-500">
+                  <span className="w-4 h-4 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-xs">
+                    {i + 1}
+                  </span>
+                  {step}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -554,6 +624,22 @@ export default function ModuleDashboard() {
       />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        {/* Regenerate button — shown when module has no sessions */}
+        {(module?.sessions || module?.content?.sessions || []).length === 0 && !generating && (
+          <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold text-amber-300">No learning content generated yet</p>
+              <p className="text-xs text-slate-500 mt-0.5">AI will generate sessions, roadmap, and projects tailored to this module's topics</p>
+            </div>
+            <button
+              onClick={() => generateContent(module)}
+              className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm transition-all flex-shrink-0"
+            >
+              🧠 Generate Now
+            </button>
+          </div>
+        )}
+
         {activeTab === 'overview' && (
           <OverviewTab module={module} assignment={assignment} sessionStatuses={sessionStatuses} />
         )}
@@ -564,13 +650,14 @@ export default function ModuleDashboard() {
             assignmentId={assignmentId}
             sessionStatuses={sessionStatuses}
             onSessionComplete={handleSessionComplete}
+            onRegenerate={() => generateContent(module)}
           />
         )}
         {activeTab === 'progress' && (
           <ProgressTab module={module} sessionStatuses={sessionStatuses} />
         )}
         {activeTab === 'plan' && (
-          <PlanTab module={module} />
+          <PlanTab module={module} onRegenerate={() => generateContent(module)} />
         )}
         {activeTab === 'build' && (
           <BuildTab module={module} />

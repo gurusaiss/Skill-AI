@@ -177,18 +177,21 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
 
 // ─── Quiz phase ───────────────────────────────────────────────────────────────
 
-const FALLBACK_QUESTIONS = (sessionTitle) => [
-  { type: 'mcq', question: `What is the primary goal of learning ${sessionTitle}?`, options: ['A) Understanding core concepts', 'B) Memorizing definitions only', 'C) Skipping prerequisites', 'D) Avoiding practice'], answer: 'A', explanation: 'The primary goal is to build understanding of core concepts.' },
-  { type: 'mcq', question: 'Which approach best supports deep learning?', options: ['A) Reading once quickly', 'B) Active recall and practice', 'C) Passive observation only', 'D) Copying notes verbatim'], answer: 'B', explanation: 'Active recall and practice is proven to improve retention.' },
-  { type: 'mcq', question: 'How should you apply newly learned skills?', options: ['A) Wait until you feel ready', 'B) Only in controlled environments', 'C) Practice in real scenarios as early as possible', 'D) Avoid practical applications initially'], answer: 'C', explanation: 'Early practical application reinforces learning and identifies gaps.' },
-  { type: 'fill_blank', question: `The most effective way to retain knowledge from ${sessionTitle} is through consistent ______.`, answer: 'practice', explanation: 'Consistent practice is the key to retention and skill development.' },
-  { type: 'mcq', question: 'What is the benefit of breaking learning into sessions?', options: ['A) Allows procrastination', 'B) Reduces cognitive load and improves focus', 'C) Makes evaluation harder', 'D) Reduces accountability'], answer: 'B', explanation: 'Spaced learning reduces cognitive load and improves long-term retention.' },
-  { type: 'subjective', question: `Explain how the concepts from ${sessionTitle} can be applied in a real-world work scenario.`, answer: 'Apply the concepts systematically using the learned frameworks, adapting to specific context and requirements.', explanation: 'Application demonstrates genuine understanding beyond memorization.' },
-  { type: 'mcq', question: 'Which metric best measures learning effectiveness?', options: ['A) Time spent reading', 'B) Number of pages covered', 'C) Ability to apply concepts correctly', 'D) How many times content was accessed'], answer: 'C', explanation: 'Application ability is the truest measure of learning.' },
-  { type: 'mcq', question: 'What should you do when you encounter a difficult concept?', options: ['A) Skip it and move on', 'B) Mark it and return with a fresh perspective', 'C) Ask someone else to learn it for you', 'D) Ignore it if it seems complex'], answer: 'B', explanation: 'Returning to difficult concepts with a fresh perspective often leads to breakthrough understanding.' },
-  { type: 'fill_blank', question: 'Learning objectives are best achieved through ______ practice and application.', answer: 'deliberate', explanation: 'Deliberate practice with focused intent accelerates skill development.' },
-  { type: 'mcq', question: 'What is the purpose of a knowledge quiz after learning?', options: ['A) To punish learners who forget', 'B) To reinforce learning and identify knowledge gaps', 'C) To create anxiety about the subject', 'D) To replace the learning material'], answer: 'B', explanation: 'Quizzes act as retrieval practice, which significantly improves long-term memory.' },
-];
+const FALLBACK_QUESTIONS = (sessionTitle, topics = []) => {
+  const topicStr = topics.length > 0 ? topics[0] : sessionTitle;
+  return [
+    { type: 'mcq', question: `What is a key characteristic of ${topicStr}?`, options: [`A) It is used in ${topicStr} workflows`, 'B) It is rarely applied in practice', 'C) It only applies to large organizations', 'D) It requires no foundational knowledge'], answer: 'A', explanation: `${topicStr} is primarily valuable because it enables practical workflows and outcomes.` },
+    { type: 'mcq', question: `Which best describes the primary purpose of ${topicStr}?`, options: ['A) To complicate existing processes', `B) To improve efficiency and outcomes in ${sessionTitle}`, 'C) To replace all manual work immediately', 'D) To reduce team collaboration'], answer: 'B', explanation: `The primary purpose of ${topicStr} is improving efficiency and driving better outcomes.` },
+    { type: 'mcq', question: `When implementing ${topicStr}, what is the most important first step?`, options: ['A) Skip planning and start immediately', `B) Understand the current state and requirements`, 'C) Copy what competitors are doing', 'D) Avoid stakeholder input'], answer: 'B', explanation: 'Understanding current state and requirements ensures the implementation addresses actual needs.' },
+    { type: 'fill_blank', question: `In ${sessionTitle}, ${topicStr} is primarily used to ______ business outcomes.`, answer: 'improve', explanation: `${topicStr} is applied to improve measurable business outcomes.` },
+    { type: 'mcq', question: `What is a common challenge when working with ${topicStr}?`, options: ['A) Too much available documentation', 'B) Ensuring consistent application across the organization', 'C) Excessive simplicity', 'D) Lack of industry relevance'], answer: 'B', explanation: 'Consistent organizational application is one of the most common implementation challenges.' },
+    { type: 'subjective', question: `Describe how ${topicStr} from "${sessionTitle}" would be applied to solve a real problem in your organization.`, answer: `Apply ${topicStr} by first identifying the specific problem, then systematically implementing the concepts from this session, measuring outcomes, and iterating based on results.`, explanation: 'Application to real organizational problems demonstrates genuine understanding.' },
+    { type: 'mcq', question: `Which stakeholder group benefits most directly from ${topicStr}?`, options: ['A) Only the IT department', 'B) Executive leadership exclusively', 'C) The teams directly working in the relevant processes', 'D) External vendors only'], answer: 'C', explanation: 'Teams directly working in the relevant processes see the most immediate benefit.' },
+    { type: 'mcq', question: `What measurement indicates successful implementation of ${topicStr}?`, options: ['A) The number of meetings held', 'B) Time spent in training', 'C) Measurable improvement in targeted outcomes', 'D) Number of tools purchased'], answer: 'C', explanation: 'Measurable improvement in targeted outcomes is the definitive success indicator.' },
+    { type: 'fill_blank', question: `Effective use of ${topicStr} requires both technical knowledge and ______ skills.`, answer: 'practical', explanation: 'Combining technical knowledge with practical application skills is essential for real-world effectiveness.' },
+    { type: 'mcq', question: `What is the relationship between ${topicStr} and the broader ${sessionTitle} discipline?`, options: [`A) ${topicStr} is an isolated concept with no connections`, `B) ${topicStr} is a foundational element that supports the broader discipline`, 'C) They are unrelated topics', 'D) The broader discipline depends on ignoring this concept'], answer: 'B', explanation: `${topicStr} serves as a foundational building block within the broader ${sessionTitle} framework.` },
+  ];
+};
 
 function QuizPhase({ session, sessionIndex, module, onComplete }) {
   const [questions, setQuestions] = useState([]);
@@ -207,21 +210,28 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
   const loadQuestions = async () => {
     setLoadingQ(true);
     try {
+      // Build rich context from this specific session's topics
+      const sessionTopics = session?.topics || session?.keyPoints?.slice(0, 5) || [];
+      const sessionKeyPoints = session?.keyPoints || [];
+
       const res = await authFetch('/api/assessments/generate', {
         method: 'POST',
         body: JSON.stringify({
           moduleTitle: module?.title || 'Learning Module',
           moduleDescription: session?.description || session?.objective || module?.description || '',
-          skills: module?.skills || [],
+          skills: session?.topics || module?.skills || [],
           numQuestions: 10,
           questionTypes: ['mcq', 'mcq', 'mcq', 'mcq', 'mcq', 'mcq', 'mcq', 'subjective', 'fill_blank', 'fill_blank'],
           sessionTitle,
+          sessionTopics,
+          sessionKeyPoints,
         }),
       });
       const qs = Array.isArray(res) ? res : (res?.questions || []);
-      setQuestions(qs.length >= 5 ? qs.slice(0, 10) : FALLBACK_QUESTIONS(sessionTitle));
+      setQuestions(qs.length >= 5 ? qs.slice(0, 10) : FALLBACK_QUESTIONS(sessionTitle, sessionTopics));
     } catch {
-      setQuestions(FALLBACK_QUESTIONS(sessionTitle));
+      const sessionTopics = session?.topics || [];
+      setQuestions(FALLBACK_QUESTIONS(sessionTitle, sessionTopics));
     } finally {
       setLoadingQ(false);
     }
