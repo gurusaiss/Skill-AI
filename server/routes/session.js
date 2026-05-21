@@ -1,14 +1,34 @@
 import express from 'express';
 import SmartAgent from '../agent/SmartAgent.js';
 import gemini from '../services/GeminiService.js';
+import { authenticate } from '../middleware/auth.js';
+import UserStore from '../services/UserStore.js';
 
 const router = express.Router();
 const agent = new SmartAgent();
 
-router.get('/challenge/:userId/:day', async (req, res) => {
+/**
+ * GET /api/session/challenge/:userId/:day
+ * Requires authentication - users can only access their own data
+ */
+router.get('/challenge/:userId/:day', authenticate, async (req, res) => {
   try {
     const { userId, day } = req.params;
-    const result = await agent.getChallenge(userId, day);
+    
+    // Authorization check: users can only access their own data, admins can access any
+    if (req.user.role !== 'admin' && req.user.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        data: null,
+        error: 'Access denied: You can only access your own learning data'
+      });
+    }
+    
+    // Get the learningUUID for the user
+    const user = await UserStore.getUserById(req.user.userId);
+    const learningUUID = user.learningUUID;
+    
+    const result = await agent.getChallenge(learningUUID, day);
     res.json({ success: true, data: result, error: null });
   } catch (error) {
     console.error('[GET /api/session/challenge]', error);
@@ -17,10 +37,28 @@ router.get('/challenge/:userId/:day', async (req, res) => {
   }
 });
 
-router.get('/dashboard/:userId', async (req, res) => {
+/**
+ * GET /api/session/dashboard/:userId
+ * Requires authentication - users can only access their own data
+ */
+router.get('/dashboard/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
-    const data = agent.getDashboard(userId);
+    
+    // Authorization check: users can only access their own data, admins can access any
+    if (req.user.role !== 'admin' && req.user.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        data: null,
+        error: 'Access denied: You can only access your own learning data'
+      });
+    }
+    
+    // Get the learningUUID for the user
+    const user = await UserStore.getUserById(req.user.userId);
+    const learningUUID = user.learningUUID;
+    
+    const data = await agent.getDashboard(learningUUID);
     res.json({ success: true, data, error: null });
   } catch (error) {
     console.error('[GET /api/session/dashboard]', error);
@@ -29,13 +67,21 @@ router.get('/dashboard/:userId', async (req, res) => {
   }
 });
 
-router.post('/submit', async (req, res) => {
+/**
+ * POST /api/session/submit
+ * Requires authentication - uses learningUUID from authenticated user
+ */
+router.post('/submit', authenticate, async (req, res) => {
   try {
-    const { userId, day, skillId, challenge, userResponse } = req.body;
-    if (!userId || !day || !skillId || !challenge || !userResponse) {
+    const { day, skillId, challenge, userResponse } = req.body;
+    
+    // Extract learningUUID from authenticated user
+    const userId = req.user.learningUUID;
+    
+    if (!day || !skillId || !challenge || !userResponse) {
       return res.status(400).json({
         success: false, data: null,
-        error: 'userId, day, skillId, challenge, and userResponse are required',
+        error: 'day, skillId, challenge, and userResponse are required',
       });
     }
     const result = await agent.submitSession({ userId, day, skillId, challenge, userResponse });
@@ -46,19 +92,40 @@ router.post('/submit', async (req, res) => {
   }
 });
 
-// NEW: Agent debates endpoint
-router.get('/debates/:userId', async (req, res) => {
+/**
+ * GET /api/session/debates/:userId
+ * Requires authentication - users can only access their own data
+ */
+router.get('/debates/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
-    const debates = agent.getDebates(userId);
+    
+    // Authorization check: users can only access their own data, admins can access any
+    if (req.user.role !== 'admin' && req.user.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        data: null,
+        error: 'Access denied: You can only access your own learning data'
+      });
+    }
+    
+    // Get the learningUUID for the user
+    const user = await UserStore.getUserById(req.user.userId);
+    const learningUUID = user.learningUUID;
+    
+    const debates = await agent.getDebates(learningUUID);
     res.json({ success: true, data: { debates }, error: null });
   } catch (error) {
     res.status(500).json({ success: false, data: null, error: error.message });
   }
 });
 
-// ── Session Quiz: generate 10 topic-specific questions ──────────────────────
-router.post('/quiz', async (req, res) => {
+/**
+ * POST /api/session/quiz
+ * Generate session quiz
+ * Requires authentication
+ */
+router.post('/quiz', authenticate, async (req, res) => {
   try {
     const { skillName, topic, description, domain, conceptSummary } = req.body;
     if (!skillName || !topic) {
@@ -74,8 +141,9 @@ router.post('/quiz', async (req, res) => {
 ${contextSummary}
 
 Generate EXACTLY 10 questions to test understanding of THIS topic:
-- Questions 1-7: Multiple choice (MCQ) with 4 options (A/B/C/D)
-- Questions 8-10: Fill-in-the-blank (one key term or short phrase answer)
+- Questions 1-6: Multiple choice (MCQ) with 4 options (A/B/C/D)
+- Questions 7-8: Fill-in-the-blank (one key term or short phrase answer)
+- Questions 9-10: Subjective/essay questions (require 2-3 sentence explanations)
 
 Return ONLY valid JSON:
 {
@@ -90,12 +158,11 @@ Return ONLY valid JSON:
       "concept": "Short concept name (2-4 words)"
     },
     {
-      "id": "q8",
-      "type": "fill",
-      "text": "Complete: ___ is the term for [specific concept from ${topic}].",
-      "answer": "exact correct term",
-      "keywords": ["keyword1", "keyword2"],
-      "explanation": "Brief explanation.",
+      "id": "q9",
+      "type": "subjective",
+      "text": "Explain how ${topic} is applied in a real-world ${skillName} scenario. Provide a specific example and explain why it matters.",
+      "expectedAnswer": "Sample answer showing good understanding with 2-3 sentences explaining application and importance.",
+      "explanation": "Good answers should include a specific example and explain the practical importance.",
       "concept": "Short concept name"
     }
   ]
@@ -105,10 +172,9 @@ RULES:
 - All questions must be DIRECTLY about "${topic}" — not generic
 - MCQ wrong options should be plausible misconceptions, not obviously fake
 - Fill-in-blank answers should be 1-3 words max
+- Subjective questions should require explanation, not just yes/no
 - "correct" for MCQ must EXACTLY match one of the 4 options
-- Vary difficulty: q1-3 basic recall, q4-6 application, q7 analysis, q8-10 fill concepts`;
-
-    let questions = null;
+- Vary difficulty: q1-3 basic recall, q4-6 application, q7-8 fill concepts, q9-10 subjective analysis`;
 
     if (gemini.isEnabled()) {
       try {
@@ -134,8 +200,8 @@ RULES:
         { id: 'q6', type: 'mcq', text: `Which outcome best demonstrates genuine mastery of "${t}" in ${s}?`, options: [`A) Applying it correctly in new, unfamiliar scenarios and explaining the reasoning`, `B) Reciting the definition from memory`, `C) Completing a lesson that covered it`, `D) Recognising it when someone else uses it`], correct: `A) Applying it correctly in new, unfamiliar scenarios and explaining the reasoning`, explanation: `True mastery means transfer — applying "${t}" correctly in unseen scenarios.`, concept: t },
         { id: 'q7', type: 'mcq', text: `How does understanding "${t}" improve overall performance in ${s}?`, options: [`A) It enables more accurate, efficient, and professional-quality work`, `B) It only affects one narrow area with no broader impact`, `C) It replaces the need for other ${s} knowledge`, `D) It matters only at expert level, not for beginners`], correct: `A) It enables more accurate, efficient, and professional-quality work`, explanation: `"${t}" contributes to higher quality and efficiency across ${s} tasks.`, concept: t },
         { id: 'q8', type: 'fill', text: `The specific technique or principle described by "${t}" in ${s} is called ___.`, answer: topic, keywords: topic.toLowerCase().split(' '), explanation: `The concept studied today is "${t}".`, concept: t },
-        { id: 'q9', type: 'fill', text: `In ${s}, practitioners use ___ to refer to the approach covered in today's session.`, answer: topic, keywords: topic.toLowerCase().split(' '), explanation: `Today's focus was "${t}".`, concept: t },
-        { id: 'q10', type: 'fill', text: `Complete: ___ is a key skill within ${s} that today's session focused on.`, answer: skillName, keywords: [skillName.toLowerCase()], explanation: `The skill area is "${skillName}".`, concept: skillName },
+        { id: 'q9', type: 'subjective', text: `Explain how "${t}" is applied in a real-world ${s} scenario. Provide a specific example and explain why it matters.`, expectedAnswer: `In ${s}, "${t}" is applied when practitioners need to [specific application]. For example, a ${s} professional might use "${t}" to [concrete example]. This matters because it ensures [benefit or importance].`, explanation: `Good answers should include a specific example and explain the practical importance.`, concept: t },
+        { id: 'q10', type: 'subjective', text: `Describe the relationship between "${t}" and other concepts in ${s}. How does mastering "${t}" help with more advanced ${s} skills?`, expectedAnswer: `"${t}" serves as a foundation for advanced ${s} techniques. It connects to [related concepts] by providing the core understanding needed for [advanced applications]. Mastering "${t}" enables practitioners to [benefits of mastery].`, explanation: `Good answers should show understanding of how concepts interconnect and build upon each other.`, concept: t },
       ];
     }
 
@@ -146,8 +212,12 @@ RULES:
   }
 });
 
-// ── Auto Notes: generate structured study notes after quiz ──────────────────
-router.post('/notes', async (req, res) => {
+/**
+ * POST /api/session/notes
+ * Generate study notes
+ * Requires authentication
+ */
+router.post('/notes', authenticate, async (req, res) => {
   try {
     const { skillName, topic, description, conceptSummary, quizScore, weakConcepts } = req.body;
     if (!topic || !skillName) {

@@ -1,6 +1,8 @@
 import express from 'express';
 import SimulationAgent from '../agent/SimulationAgent.js';
 import SmartAgent from '../agent/SmartAgent.js';
+import { authenticate } from '../middleware/auth.js';
+import UserStore from '../services/UserStore.js';
 
 const router = express.Router();
 const smartAgent = new SmartAgent();
@@ -9,17 +11,19 @@ const smartAgent = new SmartAgent();
  * POST /api/simulation/whatif
  * What-if scenario analysis
  */
-router.post('/whatif', async (req, res) => {
+router.post('/whatif', authenticate, async (req, res) => {
   try {
-    const { userId, proposedSkill, timeframe } = req.body;
-    if (!userId || !proposedSkill) {
-      return res.status(400).json({ success: false, data: null, error: 'userId and proposedSkill required' });
+    const { proposedSkill, timeframe } = req.body;
+    if (!proposedSkill) {
+      return res.status(400).json({ success: false, data: null, error: 'proposedSkill required' });
     }
+
+    const user = await UserStore.getUserById(req.user.userId);
     let session;
-    try { session = smartAgent.loadSession(userId); } catch { session = null; }
+    try { session = smartAgent.loadSession(user.learningUUID); } catch { session = null; }
 
     const result = await SimulationAgent.simulate({
-      userId,
+      userId: user.learningUUID,
       currentGoal: session?.goal?.goalText || 'Career growth',
       currentSkills: session?.goal?.skills?.map(s => s.name) || [],
       proposedSkill,
@@ -38,14 +42,16 @@ router.post('/whatif', async (req, res) => {
  * POST /api/simulation/compare
  * Compare two career paths
  */
-router.post('/compare', async (req, res) => {
+router.post('/compare', authenticate, async (req, res) => {
   try {
-    const { userId, pathA, pathB } = req.body;
+    const { pathA, pathB } = req.body;
     if (!pathA || !pathB) {
       return res.status(400).json({ success: false, data: null, error: 'pathA and pathB required' });
     }
+
+    const user = await UserStore.getUserById(req.user.userId);
     let session;
-    try { session = smartAgent.loadSession(userId); } catch { session = null; }
+    try { session = smartAgent.loadSession(user.learningUUID); } catch { session = null; }
 
     const result = await SimulationAgent.comparePaths({
       goal: session?.goal?.goalText || 'Career growth',
@@ -64,9 +70,16 @@ router.post('/compare', async (req, res) => {
  * GET /api/simulation/forecast/:userId
  * Career trajectory forecast for existing user
  */
-router.get('/forecast/:userId', async (req, res) => {
+router.get('/forecast/:userId', authenticate, async (req, res) => {
   try {
-    const session = smartAgent.loadSession(req.params.userId);
+    const { userId } = req.params;
+
+    if (req.user.role !== 'admin' && req.user.userId !== userId) {
+      return res.status(403).json({ success: false, data: null, error: 'Access denied' });
+    }
+
+    const user = await UserStore.getUserById(req.user.userId);
+    const session = smartAgent.loadSession(user.learningUUID);
     const forecast = SimulationAgent.forecastTrajectory(session);
     res.json({ success: true, data: forecast, error: null });
   } catch (err) {

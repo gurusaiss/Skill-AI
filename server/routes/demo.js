@@ -47,7 +47,7 @@ router.get('/run', async (req, res) => {
 
     // Step 1: GoalAgent
     send('agent', {
-      step: 1, total: 7,
+      step: 1, total: 9,
       agent: 'GoalAgent',
       icon: '🎯',
       status: 'active',
@@ -57,7 +57,7 @@ router.get('/run', async (req, res) => {
 
     // Step 2: DecomposeAgent (real API call)
     send('agent', {
-      step: 2, total: 7,
+      step: 2, total: 9,
       agent: 'DecomposeAgent',
       icon: '🌳',
       status: 'active',
@@ -68,7 +68,7 @@ router.get('/run', async (req, res) => {
     const { userId, skillTree, diagnosticQuestions } = goalResult;
 
     send('agent', {
-      step: 2, total: 7,
+      step: 2, total: 9,
       agent: 'DecomposeAgent',
       icon: '🌳',
       status: 'complete',
@@ -82,7 +82,7 @@ router.get('/run', async (req, res) => {
 
     // Step 3: DiagnosticAgent
     send('agent', {
-      step: 3, total: 7,
+      step: 3, total: 9,
       agent: 'DiagnosticAgent',
       icon: '📋',
       status: 'complete',
@@ -93,7 +93,7 @@ router.get('/run', async (req, res) => {
 
     // Step 4: ScoringAgent (simulate diagnostic answers)
     send('agent', {
-      step: 4, total: 7,
+      step: 4, total: 9,
       agent: 'ScoringAgent',
       icon: '📊',
       status: 'active',
@@ -109,7 +109,7 @@ router.get('/run', async (req, res) => {
     const diagnosticResult = await smartAgent.submitDiagnostic(userId, simulatedAnswers);
 
     send('agent', {
-      step: 4, total: 7,
+      step: 4, total: 9,
       agent: 'ScoringAgent',
       icon: '📊',
       status: 'complete',
@@ -122,7 +122,7 @@ router.get('/run', async (req, res) => {
 
     // Step 5: CurriculumAgent
     send('agent', {
-      step: 5, total: 7,
+      step: 5, total: 9,
       agent: 'CurriculumAgent',
       icon: '📅',
       status: 'complete',
@@ -134,9 +134,52 @@ router.get('/run', async (req, res) => {
     });
     await delay(500);
 
-    // Step 6: MarketAgent
+    // Step 6: EvaluatorAgent
     send('agent', {
-      step: 6, total: 7,
+      step: 6, total: 9,
+      agent: 'EvaluatorAgent',
+      icon: '✅',
+      status: 'active',
+      message: 'Reviewing diagnostic outputs and quality signals...',
+    });
+    await delay(400);
+    send('agent', {
+      step: 6, total: 9,
+      agent: 'EvaluatorAgent',
+      icon: '✅',
+      status: 'complete',
+      message: 'Evaluation complete — diagnostic quality and gap strength reviewed',
+      data: {
+        averageScore: Math.round(Object.values(diagnosticResult.diagnosticScores || {}).reduce((sum, v) => sum + v, 0) / Math.max(1, Object.values(diagnosticResult.diagnosticScores || {}).length)),
+        topSkills: Object.entries(diagnosticResult.diagnosticScores || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([skill]) => skill),
+      },
+    });
+    await delay(500);
+
+    // Step 7: AdaptorAgent
+    send('agent', {
+      step: 7, total: 9,
+      agent: 'AdaptorAgent',
+      icon: '⚡',
+      status: 'active',
+      message: 'Adjusting the plan for weak skills and review sessions...',
+    });
+    await delay(500);
+    send('agent', {
+      step: 7, total: 9,
+      agent: 'AdaptorAgent',
+      icon: '⚡',
+      status: 'complete',
+      message: 'Adaptive plan refinements applied based on performance gaps',
+      data: {
+        reviewSessions: diagnosticResult.learningPlan.filter(d => d.sessionType === 'review').length,
+      },
+    });
+    await delay(500);
+
+    // Step 8: MarketAgent
+    send('agent', {
+      step: 8, total: 9,
       agent: 'MarketAgent',
       icon: '📈',
       status: 'active',
@@ -150,7 +193,7 @@ router.get('/run', async (req, res) => {
     });
 
     send('agent', {
-      step: 6, total: 7,
+      step: 8, total: 9,
       agent: 'MarketAgent',
       icon: '📈',
       status: 'complete',
@@ -164,9 +207,9 @@ router.get('/run', async (req, res) => {
     });
     await delay(500);
 
-    // Step 7: SimulationAgent
+    // Step 9: SimulationAgent
     send('agent', {
-      step: 7, total: 7,
+      step: 9, total: 9,
       agent: 'SimulationAgent',
       icon: '🔮',
       status: 'active',
@@ -180,7 +223,7 @@ router.get('/run', async (req, res) => {
     });
 
     send('agent', {
-      step: 7, total: 7,
+      step: 9, total: 9,
       agent: 'SimulationAgent',
       icon: '🔮',
       status: 'complete',
@@ -204,7 +247,7 @@ router.get('/run', async (req, res) => {
         projectedSalary: forecast.currentState.projectedSalary,
         opportunityCount: marketData.openJobs,
       },
-      message: '✅ Autonomous analysis complete — 7 agents orchestrated successfully',
+      message: '✅ Autonomous analysis complete — 9 agents orchestrated successfully',
       timestamp: new Date().toISOString(),
     });
 

@@ -1,9 +1,9 @@
+/* Import SkillForge Premium Design System */
+@import './styles/design-system.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Import SkillForge Premium Design System */
-@import './styles/design-system.css';
 
 :root {
   color-scheme: dark;
@@ -45,18 +45,62 @@ p {
   line-height: 1.6;
 }
 
-/* Ensure all text is readable */
-small, .text-xs, .text-sm {
-  font-size: clamp(0.75rem, 0.875rem, 1rem);
-}
-
-/* Smooth scrolling */
+/* ── Responsive zoom: scale UI gracefully from 80%–125% ── */
 html {
   scroll-behavior: smooth;
+  /* Prevent tiny text at high zoom by enforcing minimum base size */
+  font-size: clamp(13px, 1vw + 10px, 16px);
+}
+
+/* Ensure all text is readable at every zoom level */
+small, .text-xs {
+  font-size: max(0.7rem, 11px);
+}
+.text-sm {
+  font-size: max(0.8rem, 12px);
+}
+
+/* Prevent horizontal overflow at laptop widths / zoom > 100% */
+body {
+  overflow-x: hidden;
+}
+
+/* Max-width containers scale down gracefully */
+.max-w-7xl {
+  max-width: min(80rem, 100%);
+}
+
+/* Ensure cards don't overflow their grid cells */
+.card-grid > * {
+  min-width: 0;
+}
+
+/* Hide scrollbar while allowing scroll (cross-browser) */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 /* Focus visible for accessibility */
 *:focus-visible {
   outline: 2px solid var(--brand-primary, #6366f1);
   outline-offset: 2px;
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
 }

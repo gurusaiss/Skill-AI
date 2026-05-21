@@ -64,6 +64,11 @@ export default function SimulationLab() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [compareA, setCompareA] = useState('Python');
+  const [compareB, setCompareB] = useState('AWS');
+  const [compareResult, setCompareResult] = useState(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [tab, setTab] = useState('whatif');
 
   // Load user's goal to auto-populate skill field
   useEffect(() => {
@@ -76,11 +81,9 @@ export default function SimulationLab() {
           const domain = json.data?.goal?.domainLabel || '';
           setGoalSkills(skills);
           setGoalDomain(domain);
-          // Auto-populate skill with primary skill if not set
           if (skills.length > 0 && !skill) {
             setSkill(skills[0].name);
           }
-          // Auto-populate comparisons
           if (skills.length >= 2) {
             setCompareA(skills[0].name);
             setCompareB(skills[1].name);
@@ -90,11 +93,6 @@ export default function SimulationLab() {
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
-  const [compareA, setCompareA] = useState('Python');
-  const [compareB, setCompareB] = useState('AWS');
-  const [compareResult, setCompareResult] = useState(null);
-  const [compareLoading, setCompareLoading] = useState(false);
-  const [tab, setTab] = useState('whatif');
 
   const runSimulation = async (skillName) => {
     const s = skillName || skill;

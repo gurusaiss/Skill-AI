@@ -588,7 +588,7 @@ export default function Dashboard() {
   useEffect(() => {
     const userId = localStorage.getItem('skillforge:userId');
     if (!userId) { navigate('/'); return; }
-    
+
     // Always fetch fresh data when Dashboard mounts or location changes
     setLoading(true);
     api.getDashboard(userId)

@@ -1,28 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { api } from '../utils/api.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
+import AuthModal from '../components/AuthModal.jsx';
 
-const PLACEHOLDERS = [
-  'I want to become a backend developer...',
-  'I want to learn to cook professionally...',
-  'I want to become a lawyer...',
-  'I want to master guitar...',
-  'I want to learn tailoring and fashion design...',
-  'I want to become a doctor...',
-  'I want to master UI/UX design...',
-  'I want to learn machine learning...',
-];
-
-// Agent thought stream for the demo animation
+// Agent thought stream for the demo animation (9 specialized agents)
 const AGENT_DEMO_STEPS = [
   { delay: 0,    agent: 'GoalAgent',       icon: '🎯', color: '#6366F1', text: 'Analyzing your learning goal...' },
-  { delay: 800,  agent: 'DecomposeAgent',  icon: '🌳', color: '#8B5CF6', text: 'Breaking down into core skills...' },
-  { delay: 1600, agent: 'DiagnosticAgent', icon: '📋', color: '#06B6D4', text: 'Generating diagnostic questions...' },
-  { delay: 2400, agent: 'ScoringAgent',    icon: '📊', color: '#0EA5E9', text: 'Identifying knowledge gaps...' },
-  { delay: 3200, agent: 'CurriculumAgent', icon: '📅', color: '#14B8A6', text: 'Building personalized learning plan...' },
-  { delay: 4000, agent: 'EvaluatorAgent',  icon: '✅', color: '#10B981', text: 'Evaluating practice responses...' },
-  { delay: 4800, agent: 'AdaptorAgent',    icon: '⚡', color: '#F59E0B', text: 'Adapting plan based on performance' },
+  { delay: 700,  agent: 'DecomposeAgent',  icon: '🌳', color: '#8B5CF6', text: 'Breaking down into core skills...' },
+  { delay: 1400, agent: 'DiagnosticAgent', icon: '📋', color: '#06B6D4', text: 'Generating diagnostic questions...' },
+  { delay: 2100, agent: 'ScoringAgent',    icon: '📊', color: '#0EA5E9', text: 'Identifying knowledge gaps...' },
+  { delay: 2800, agent: 'CurriculumAgent', icon: '📅', color: '#14B8A6', text: 'Building personalized learning plan...' },
+  { delay: 3500, agent: 'EvaluatorAgent',  icon: '✅', color: '#10B981', text: 'Evaluating practice responses...' },
+  { delay: 4200, agent: 'AdaptorAgent',    icon: '⚡', color: '#F59E0B', text: 'Adapting plan based on performance...' },
+  { delay: 4900, agent: 'MarketAgent',     icon: '💼', color: '#EC4899', text: 'Analyzing market opportunities...' },
+  { delay: 5600, agent: 'InterviewAgent',  icon: '🎤', color: '#14B8A6', text: 'Preparing interview scenarios...' },
 ];
 
 // ── Agent popup info ──────────────────────────────────────────────────────────
@@ -97,6 +89,36 @@ const AGENT_INFO = {
       'Reprioritizes weak skills in upcoming sessions dynamically',
     ],
   },
+  MarketAgent: {
+    icon: '💼', color: '#EC4899',
+    title: 'Market Opportunity Agent',
+    points: [
+      'Analyzes current job market trends for your target skill',
+      'Identifies in-demand industries and salary ranges',
+      'Suggests career paths and next-level opportunities',
+      'Recommends strategic skill combinations for market advantage',
+    ],
+  },
+  InterviewAgent: {
+    icon: '🎤', color: '#14B8A6',
+    title: 'Interview Preparation Agent',
+    points: [
+      'Generates realistic interview questions for your skill area',
+      'Simulates technical and behavioral interview scenarios',
+      'Provides feedback on your answers and communication style',
+      'Tracks interview readiness score as you progress',
+    ],
+  },
+  SimulationAgent: {
+    icon: '🎮', color: '#F59E0B',
+    title: 'Simulation & Project Agent',
+    points: [
+      'Creates real-world project scenarios to apply your learning',
+      'Simulates complex workflows and edge cases you\'ll encounter',
+      'Generates capstone projects to demonstrate mastery',
+      'Provides hands-on practice in production-like environments',
+    ],
+  },
 };
 
 // ── Differentiator tag popup info ─────────────────────────────────────────────
@@ -105,7 +127,7 @@ const TAG_INFO = {
     icon: '🤖', color: '#6366F1',
     title: 'True Multi-Agent Pipeline',
     points: [
-      '7 specialized agents each handle a distinct part of your learning journey',
+      '9 specialized agents each handle a distinct part of your learning journey',
       'Agents communicate by passing structured state between each other',
       'No single "do-everything" model — every agent is a specialist',
       'The full pipeline runs autonomously from goal input to competency report',
@@ -164,7 +186,7 @@ const TAG_INFO = {
 };
 
 const STATS = [
-  { value: '7',    label: 'Specialized Agents' },
+  { value: '9',    label: 'Specialized Agents' },
   { value: '∞',    label: 'Skills Supported' },
   { value: '100%', label: 'Autonomous Operation' },
   { value: 'AI',   label: 'Powered Learning' },
@@ -250,7 +272,7 @@ function AgentThoughtStream({ steps, visible, onStepClick }) {
     const timers = steps.map(step =>
       setTimeout(() => setShown(prev => [...prev, step]), step.delay)
     );
-    const reset = setTimeout(() => setShown([]), steps[steps.length - 1].delay + 2200);
+    const reset = setTimeout(() => setShown([]), steps[steps.length - 1].delay + 1800);
     return () => { timers.forEach(clearTimeout); clearTimeout(reset); };
   }, [visible]);
 
@@ -303,77 +325,26 @@ function AgentThoughtStream({ steps, visible, onStepClick }) {
 // ── Main Landing ──────────────────────────────────────────────────────────────
 export default function Landing() {
   const navigate = useNavigate();
-  const [goalText, setGoalText] = useState('');
-  const [phIdx, setPhIdx] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [demoRunning, setDemoRunning] = useState(true);
   const [popup, setPopup] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
-  // Cycle demo every 6.5 seconds
+  // Redirect authenticated users to dashboard
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, authLoading, navigate]);
+
+  // Cycle demo every 30 seconds (auto-restart loop)
   useEffect(() => {
     const interval = setInterval(() => {
       setDemoRunning(false);
       setTimeout(() => setDemoRunning(true), 100);
-    }, 6500);
+    }, 11000);
     return () => clearInterval(interval);
   }, []);
-
-  // Cycle placeholders
-  useEffect(() => {
-    const t = setInterval(() => setPhIdx(i => (i + 1) % PLACEHOLDERS.length), 2200);
-    return () => clearInterval(t);
-  }, []);
-
-  const handleSubmit = async e => {
-    e.preventDefault();
-    if (goalText.trim().length < 5) return;
-    setLoading(true);
-    setError('');
-    try {
-      const data = await api.createGoal({ goalText });
-      localStorage.setItem('skillforge:userId', data.userId);
-      localStorage.setItem('skillforge:goalResponse', JSON.stringify(data));
-      navigate('/profiling', { state: data });
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadDemo = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      // Create a fresh demo session with a sample goal
-      const demoGoal = 'I want to learn React for web development';
-      const data = await api.createGoal({ goalText: demoGoal });
-
-      // Auto-submit diagnostic with sample answers (random selections)
-      const sampleAnswers = data.diagnosticQuestions.map((q) => {
-        if (q.type === 'multiple-choice') {
-          // Pick a random option for MC questions
-          const randomIndex = Math.floor(Math.random() * q.options.length);
-          return q.options[randomIndex];
-        } else {
-          // Provide a sample answer for open-ended questions
-          return 'This is a sample response demonstrating understanding of the concept.';
-        }
-      });
-
-      await api.submitDiagnostic({
-        userId: data.userId,
-        answers: sampleAnswers,
-      });
-
-      localStorage.setItem('skillforge:userId', data.userId);
-      navigate('/dashboard');
-    } catch (err) {
-      setError('Demo failed to load: ' + err.message);
-      setLoading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#060B14] overflow-hidden">
@@ -405,7 +376,7 @@ export default function Landing() {
           >
             <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/8 text-xs font-semibold text-indigo-300">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-              Autonomous AI Learning Platform · 7-Agent System
+              Autonomous AI Learning Platform · 9-Agent System
             </div>
           </motion.div>
 
@@ -428,74 +399,56 @@ export default function Landing() {
 
         {/* ── MAIN GRID ──────────────────────────────────────────────────── */}
         <div className="grid lg:grid-cols-2 gap-8 items-start">
-
-          {/* LEFT: Goal input */}
+          
+          {/* LEFT: Process + Value Props + Goal Input */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
             className="space-y-5"
           >
-            <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 p-6 backdrop-blur">
-              <h2 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-4">
-                Start Your Learning Journey
-              </h2>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <textarea
-                  value={goalText}
-                  onChange={e => setGoalText(e.target.value)}
-                  placeholder={PLACEHOLDERS[phIdx]}
-                  className="w-full min-h-[120px] rounded-xl border border-slate-700 bg-[#060B14] p-4 text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none resize-none transition-colors text-sm"
-                />
-                <div className="flex flex-col sm:flex-row gap-3">
+            {/* Info header */}
+            <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 p-6 backdrop-blur space-y-5">
+              <div>
+                <h3 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-1">Why SkillForge AI</h3>
+                <p className="text-[11px] text-slate-500 leading-snug">The only learning platform that replaces every human instructor with structured AI — from diagnosis to certification.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { emoji: '🎯', label: 'Goal → Plan',       desc: 'Raw goal parsed & structured by GoalAgent', agentKey: 'GoalAgent' },
+                  { emoji: '🌳', label: 'Skill Tree',        desc: 'Auto-decomposed by DecomposeAgent', agentKey: 'DecomposeAgent' },
+                  { emoji: '📋', label: 'Diagnostic Quiz',   desc: '5 MCQs generated per skill gap', agentKey: 'DiagnosticAgent' },
+                  { emoji: '📊', label: 'Profile Report',    desc: 'ScoringAgent maps your 0–100% gaps', agentKey: 'ScoringAgent' },
+                  { emoji: '📅', label: 'Personalised Plan', desc: 'CurriculumAgent builds a 14-day roadmap', agentKey: 'CurriculumAgent' },
+                  { emoji: '⚡', label: 'Adaptive Path',     desc: 'AdaptorAgent adjusts daily based on scores', agentKey: 'AdaptorAgent' },
+                  { emoji: '💼', label: 'Career Intelligence',desc: 'MarketAgent surfaces salary & roles', agentKey: 'MarketAgent' },
+                  { emoji: '🎤', label: 'Interview Ready',  desc: 'InterviewAgent generates practice questions', agentKey: 'InterviewAgent' },
+                  { emoji: '📜', label: 'Certification',    desc: 'EvaluatorAgent signs your competency proof', agentKey: 'EvaluatorAgent' },
+                ].map(item => (
                   <button
-                    type="submit"
-                    disabled={goalText.trim().length < 5 || loading}
-                    className="flex-1 py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
+                    key={item.label}
+                    onClick={() => setPopup(AGENT_INFO[item.agentKey])}
+                    className="flex items-start gap-2 rounded-lg bg-slate-800/40 border border-slate-700/50 p-2.5 text-left hover:bg-slate-700/50 hover:border-slate-600 transition-all active:scale-[0.98] group"
                   >
-                    {loading ? '⏳ Agent analyzing...' : 'Start My AI Journey →'}
+                    <span className="text-sm leading-none mt-0.5">{item.emoji}</span>
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-300 leading-tight group-hover:text-white transition-colors">{item.label}</div>
+                      <div className="text-[8.5px] text-slate-500 mt-0.5 leading-snug">{item.desc}</div>
+                    </div>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/demo')}
-                    className="px-5 py-3.5 rounded-xl font-bold text-sm border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-all"
-                  >
-                    🚀 Live Demo
-                  </button>
-                </div>
-                {error && <p className="text-xs text-red-400">{error}</p>}
-              </form>
+                ))}
+              </div>
             </div>
 
-            {/* Flow steps */}
-            <div className="grid grid-cols-4 gap-2">
-              {FLOW_STEPS.map(step => (
-                <div key={step.title} className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 text-center">
-                  <div className="text-2xl mb-1">{step.icon}</div>
-                  <div className="text-xs font-bold text-slate-300">{step.title}</div>
-                  <div className="text-[9px] text-slate-600 mt-0.5 leading-snug">{step.desc}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 gap-3">
-              {STATS.map(stat => (
-                <div key={stat.label} className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
-                  <div className="text-2xl font-black text-indigo-400">{stat.value}</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-wider">{stat.label}</div>
-                </div>
-              ))}
-            </div>
           </motion.div>
 
-          {/* RIGHT: Live agent demo terminal */}
+          {/* RIGHT: Terminal / Agent Demo */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.3 }}
           >
-            <div className="rounded-2xl border border-slate-700/60 bg-[#060B14] overflow-hidden">
+            <div className="rounded-2xl border border-slate-700/60 bg-[#060B14] overflow-hidden h-full">
               {/* Terminal header */}
               <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800 bg-slate-900/80">
                 <div className="flex gap-1.5">
@@ -549,7 +502,7 @@ export default function Landing() {
           </motion.div>
         </div>
 
-        {/* ── BOTTOM DIFFERENTIATORS ─────────────────────────────────────── */}
+        {/* ── BOTTOM DIFFERENTIATORS */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -581,7 +534,6 @@ export default function Landing() {
           <p className="text-xs text-slate-600 mb-6 uppercase tracking-widest text-center">Frontier Intelligence Modules</p>
           <div className="grid md:grid-cols-4 gap-4">
             {[
-              { icon: '🚀', label: 'Live Demo', desc: 'Watch 7 agents orchestrate in real-time', path: '/demo', color: '#10B981' },
               { icon: '🧬', label: 'Career Digital Twin', desc: 'Your evolving virtual career model', path: '/career-twin', color: '#6366F1' },
               { icon: '🔮', label: 'Simulation Lab', desc: 'What-if career scenario analyzer', path: '/simulation', color: '#8B5CF6' },
               { icon: '🎤', label: 'Interview Simulator', desc: 'AI-powered mock interviews', path: '/interview', color: '#EC4899' },
@@ -602,6 +554,25 @@ export default function Landing() {
         </motion.div>
 
       </div>
+
+      {/* Fixed top-right: Sign In + Live Demo — vertically aligned with Navbar brand */}
+      <div className="fixed top-3 right-6 z-40 flex items-center gap-2">
+        <button
+          onClick={() => setShowAuthModal(true)}
+          className="h-9 px-4 rounded-xl font-semibold text-sm border border-slate-600/60 bg-slate-900/70 text-slate-300 hover:bg-slate-800 hover:border-slate-500 hover:text-white transition-all backdrop-blur-sm"
+        >
+          Sign In
+        </button>
+        <button
+          onClick={() => navigate('/demo')}
+          className="h-9 px-4 rounded-xl font-semibold text-sm bg-indigo-600 text-white hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-500/25"
+        >
+          Live Demo →
+        </button>
+      </div>
+
+      {/* Auth Modal */}
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </div>
   );
 }
