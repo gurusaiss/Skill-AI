@@ -1,5 +1,6 @@
 import express from 'express';
 import InterviewAgent from '../agent/InterviewAgent.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -7,7 +8,7 @@ const router = express.Router();
  * POST /api/interview/generate
  * Generate interview questions based on role and skills
  */
-router.post('/generate', async (req, res, next) => {
+router.post('/generate', authenticate, async (req, res, next) => {
   try {
     const { role, skills, difficulty = 'medium', count = 5 } = req.body;
 
@@ -23,7 +24,7 @@ router.post('/generate', async (req, res, next) => {
       role,
       skills,
       difficulty,
-      count: Math.min(count, 15) // Cap at 15 questions
+      count: Math.min(count, 15)
     });
 
     res.json({
@@ -40,7 +41,7 @@ router.post('/generate', async (req, res, next) => {
  * POST /api/interview/evaluate
  * Evaluate a single interview answer
  */
-router.post('/evaluate', async (req, res, next) => {
+router.post('/evaluate', authenticate, async (req, res, next) => {
   try {
     const { question, answer, role } = req.body;
 
@@ -72,7 +73,7 @@ router.post('/evaluate', async (req, res, next) => {
  * POST /api/interview/report
  * Generate overall interview performance report
  */
-router.post('/report', async (req, res, next) => {
+router.post('/report', authenticate, async (req, res, next) => {
   try {
     const { questions, role } = req.body;
 

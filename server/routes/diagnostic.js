@@ -1,5 +1,6 @@
 import express from 'express';
 import SmartAgent from '../agent/SmartAgent.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 const agent = new SmartAgent();
@@ -7,16 +8,20 @@ const agent = new SmartAgent();
 /**
  * POST /api/diagnostic/submit
  * Submit diagnostic quiz answers
+ * Requires authentication - uses learningUUID from authenticated user
  */
-router.post('/submit', async (req, res) => {
+router.post('/submit', authenticate, async (req, res) => {
   try {
-    const { userId, answers, profilingData } = req.body;
+    const { answers, profilingData } = req.body;
+    
+    // Extract learningUUID from authenticated user
+    const userId = req.user.learningUUID;
 
-    if (!userId || !answers || !Array.isArray(answers)) {
+    if (!answers || !Array.isArray(answers)) {
       return res.status(400).json({
         success: false,
         data: null,
-        error: 'userId and answers array are required'
+        error: 'answers array is required'
       });
     }
 

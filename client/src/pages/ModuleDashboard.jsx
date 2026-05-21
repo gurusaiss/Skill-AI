@@ -1,0 +1,581 @@
+/**
+ * ModuleDashboard.jsx
+ * Inside-module learning environment.
+ * Route: /module/:moduleId/learn?assignmentId=xxx
+ * Shows Overview, Sessions (day-wise), Progress, Plan, Build tabs.
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
+
+const BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
+
+const authFetch = async (path, options = {}) => {
+  const token = localStorage.getItem('auth_token');
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+  const text = await res.text();
+  let data = null;
+  if (text) { try { data = JSON.parse(text); } catch { throw new Error(`Server error (${res.status})`); } }
+  if (!res.ok) throw new Error(data?.error?.message || data?.error || `Request failed (${res.status})`);
+  return data?.data ?? data;
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const getDifficultyColor = (d) => {
+  const m = { beginner: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30', intermediate: 'text-amber-400 bg-amber-500/10 border-amber-500/30', advanced: 'text-rose-400 bg-rose-500/10 border-rose-500/30' };
+  return m[(d || '').toLowerCase()] || m.beginner;
+};
+
+const SessionStatusIcon = ({ status }) => {
+  if (status === 'completed') return <span className="text-emerald-400 text-lg">✓</span>;
+  if (status === 'in_progress') return <span className="text-indigo-400 text-lg animate-pulse">▶</span>;
+  return <span className="text-slate-600 text-lg">○</span>;
+};
+
+// ─── SubViews ─────────────────────────────────────────────────────────────────
+
+function OverviewTab({ module, assignment, sessionStatuses }) {
+  const sessions = module?.sessions || module?.content?.sessions || [];
+  const completed = sessions.filter((_, i) => sessionStatuses[i] === 'completed').length;
+  const pct = sessions.length > 0 ? Math.round((completed / sessions.length) * 100) : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Hero card */}
+      <div className="rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-indigo-600/10 to-purple-600/5 p-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <h2 className="text-2xl font-black text-white mb-2 leading-tight">{module?.title || 'Module'}</h2>
+            <p className="text-slate-300 text-sm leading-relaxed line-clamp-3 mb-4">
+              {module?.description || module?.content?.description || 'No description available.'}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {module?.difficulty && (
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${getDifficultyColor(module.difficulty)}`}>
+                  {module.difficulty}
+                </span>
+              )}
+              {module?.duration && (
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-700/40 border border-slate-600/40 text-slate-300">
+                  ⏱ {module.duration} hrs
+                </span>
+              )}
+              {sessions.length > 0 && (
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-700/40 border border-slate-600/40 text-slate-300">
+                  📚 {sessions.length} sessions
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col items-center gap-2 flex-shrink-0">
+            <div className="relative w-20 h-20">
+              <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+                <circle cx="40" cy="40" r="32" fill="none" stroke="#1e293b" strokeWidth="8" />
+                <circle cx="40" cy="40" r="32" fill="none" stroke="#6366f1" strokeWidth="8"
+                  strokeDasharray={`${2 * Math.PI * 32}`}
+                  strokeDashoffset={`${2 * Math.PI * 32 * (1 - pct / 100)}`}
+                  strokeLinecap="round" className="transition-all duration-700" />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-lg font-black text-white">{pct}%</span>
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Progress</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {[
+          { label: 'Sessions', value: sessions.length, icon: '📚', color: 'indigo' },
+          { label: 'Completed', value: completed, icon: '✅', color: 'emerald' },
+          { label: 'Remaining', value: sessions.length - completed, icon: '⏳', color: 'amber' },
+          { label: 'Progress', value: `${pct}%`, icon: '📊', color: 'purple' },
+        ].map(s => {
+          const cls = { indigo: 'border-indigo-500/20 bg-indigo-500/5 text-indigo-400', emerald: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400', amber: 'border-amber-500/20 bg-amber-500/5 text-amber-400', purple: 'border-purple-500/20 bg-purple-500/5 text-purple-400' }[s.color];
+          return (
+            <div key={s.label} className={`rounded-xl border p-4 ${cls}`}>
+              <div className="text-2xl mb-1">{s.icon}</div>
+              <p className="text-2xl font-black text-white">{s.value}</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest mt-0.5">{s.label}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Skills */}
+      {(module?.skills?.length > 0 || module?.content?.skills?.length > 0) && (
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Skills Covered</h3>
+          <div className="flex flex-wrap gap-2">
+            {(module.skills || module.content?.skills || []).map((skill, i) => (
+              <span key={i} className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-600/15 border border-indigo-500/25 text-indigo-300">
+                {skill}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onSessionComplete }) {
+  const navigate = useNavigate();
+  const sessions = module?.sessions || module?.content?.sessions || [];
+
+  if (sessions.length === 0) {
+    return (
+      <div className="text-center py-16 text-slate-500">
+        <div className="text-5xl mb-4 opacity-30">📚</div>
+        <p className="text-lg font-bold text-slate-400 mb-2">No Sessions Available</p>
+        <p className="text-sm text-slate-600">Sessions will appear once the module is configured.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-4">
+        {sessions.length} Learning Sessions · Click to begin
+      </p>
+      {sessions.map((session, index) => {
+        const status = sessionStatuses[index] || 'locked';
+        const isUnlocked = index === 0 || sessionStatuses[index - 1] === 'completed';
+        const isCompleted = status === 'completed';
+        const isInProgress = status === 'in_progress';
+
+        return (
+          <button
+            key={index}
+            disabled={!isUnlocked && !isCompleted}
+            onClick={() => {
+              if (!isUnlocked && !isCompleted) return;
+              navigate(`/module/${moduleId}/session/${index}${assignmentId ? `?assignmentId=${assignmentId}` : ''}`);
+            }}
+            className={`w-full text-left rounded-xl border p-4 transition-all group ${
+              isCompleted
+                ? 'border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 cursor-pointer'
+                : isUnlocked
+                ? 'border-indigo-500/30 bg-indigo-500/5 hover:bg-indigo-500/10 cursor-pointer hover:border-indigo-500/50'
+                : 'border-slate-700/40 bg-slate-800/20 opacity-50 cursor-not-allowed'
+            }`}
+          >
+            <div className="flex items-center gap-4">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 ${
+                isCompleted ? 'bg-emerald-500/20 text-emerald-400' : isUnlocked ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-700/40 text-slate-600'
+              }`}>
+                {isCompleted ? '✓' : index + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <p className="text-sm font-bold text-white truncate">
+                    {session.title || session.topic || `Day ${index + 1}`}
+                  </p>
+                  {isInProgress && (
+                    <span className="text-[10px] font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 px-1.5 py-0.5 rounded-full">In Progress</span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 truncate">
+                  {session.description || session.objective || (session.topics ? `Topics: ${session.topics.join(', ')}` : 'Click to start learning')}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {session.duration && (
+                  <span className="text-[10px] text-slate-600 hidden sm:block">⏱ {session.duration}</span>
+                )}
+                {!isUnlocked && !isCompleted ? (
+                  <span className="text-slate-600">🔒</span>
+                ) : (
+                  <span className={`text-lg group-hover:translate-x-1 transition-transform ${isCompleted ? 'text-emerald-400' : 'text-indigo-400'}`}>
+                    {isCompleted ? '↺' : '→'}
+                  </span>
+                )}
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProgressTab({ module, sessionStatuses }) {
+  const sessions = module?.sessions || module?.content?.sessions || [];
+  const completed = sessions.filter((_, i) => sessionStatuses[i] === 'completed').length;
+  const pct = sessions.length > 0 ? Math.round((completed / sessions.length) * 100) : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Overall progress */}
+      <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-6">
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Overall Progress</h3>
+        <div className="flex items-center gap-4 mb-3">
+          <div className="flex-1 h-4 rounded-full bg-slate-700/60 overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-700" style={{ width: `${pct}%` }} />
+          </div>
+          <span className="text-xl font-black text-white w-12 text-right">{pct}%</span>
+        </div>
+        <p className="text-sm text-slate-400">{completed} of {sessions.length} sessions completed</p>
+      </div>
+
+      {/* Per-session progress */}
+      <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
+        <div className="p-4 border-b border-slate-700/40">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Session Breakdown</h3>
+        </div>
+        <div className="divide-y divide-slate-700/30">
+          {sessions.map((session, index) => {
+            const status = sessionStatuses[index] || 'pending';
+            const sessionPct = status === 'completed' ? 100 : status === 'in_progress' ? 50 : 0;
+            return (
+              <div key={index} className="flex items-center gap-4 px-4 py-3">
+                <SessionStatusIcon status={status} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">{session.title || `Day ${index + 1}`}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="flex-1 h-1.5 rounded-full bg-slate-700/60 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${status === 'completed' ? 'bg-emerald-500' : status === 'in_progress' ? 'bg-indigo-500' : 'bg-slate-700'}`}
+                        style={{ width: `${sessionPct}%` }} />
+                    </div>
+                    <span className="text-[10px] text-slate-500 w-8">{sessionPct}%</span>
+                  </div>
+                </div>
+                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                  status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                  : status === 'in_progress' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
+                  : 'bg-slate-700/40 text-slate-500 border-slate-700/40'
+                }`}>
+                  {status.replace(/_/g, ' ')}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlanTab({ module }) {
+  const roadmap = module?.roadmap || module?.content?.roadmap || [];
+  const plan = module?.plan || module?.content?.plan || module?.learningPlan || '';
+
+  if (roadmap.length === 0 && !plan) {
+    return (
+      <div className="text-center py-16 text-slate-500">
+        <div className="text-5xl mb-4 opacity-30">🗺️</div>
+        <p className="text-lg font-bold text-slate-400 mb-2">No Roadmap Available</p>
+        <p className="text-sm text-slate-600">The learning roadmap will appear here once configured.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {roadmap.length > 0 && (
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
+          <div className="p-4 border-b border-slate-700/40">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Learning Roadmap</h3>
+          </div>
+          <div className="p-4 space-y-3">
+            {roadmap.map((step, i) => (
+              <div key={i} className="flex gap-4">
+                <div className="flex flex-col items-center flex-shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-400">
+                    {i + 1}
+                  </div>
+                  {i < roadmap.length - 1 && <div className="w-0.5 flex-1 bg-slate-700/50 mt-1" />}
+                </div>
+                <div className="pb-4 flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white">{typeof step === 'string' ? step : step.title || step.phase || step.step || JSON.stringify(step)}</p>
+                  {step.description && <p className="text-xs text-slate-500 mt-0.5">{step.description}</p>}
+                  {step.duration && <p className="text-[10px] text-slate-600 mt-0.5">⏱ {step.duration}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {plan && typeof plan === 'string' && (
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 p-5">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Learning Plan</h3>
+          <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{plan}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BuildTab({ module }) {
+  const projects = module?.projects || module?.content?.projects || module?.challenges || module?.content?.challenges || [];
+  const resources = module?.resources || module?.content?.resources || [];
+
+  return (
+    <div className="space-y-6">
+      {projects.length > 0 ? (
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
+          <div className="p-4 border-b border-slate-700/40">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Projects & Challenges</h3>
+          </div>
+          <div className="divide-y divide-slate-700/30">
+            {projects.map((p, i) => (
+              <div key={i} className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-sm flex-shrink-0">🔨</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white">{typeof p === 'string' ? p : p.title || p.name || `Project ${i + 1}`}</p>
+                    {p.description && <p className="text-xs text-slate-500 mt-0.5">{p.description}</p>}
+                    {p.difficulty && (
+                      <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${getDifficultyColor(p.difficulty)}`}>
+                        {p.difficulty}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="text-center py-16 text-slate-500">
+          <div className="text-5xl mb-4 opacity-30">🔨</div>
+          <p className="text-lg font-bold text-slate-400 mb-2">No Projects Yet</p>
+          <p className="text-sm text-slate-600">Build projects will appear here once configured.</p>
+        </div>
+      )}
+
+      {resources.length > 0 && (
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
+          <div className="p-4 border-b border-slate-700/40">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Resources</h3>
+          </div>
+          <div className="divide-y divide-slate-700/30">
+            {resources.map((r, i) => (
+              <div key={i} className="p-4 flex items-center gap-3">
+                <span className="text-lg">📎</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white">{typeof r === 'string' ? r : r.title || r.name || `Resource ${i + 1}`}</p>
+                  {r.url && (
+                    <a href={r.url} target="_blank" rel="noreferrer" className="text-xs text-indigo-400 hover:text-indigo-300 hover:underline transition-colors">
+                      {r.url}
+                    </a>
+                  )}
+                  {r.type && <span className="text-[10px] text-slate-600 block">{r.type}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Module Navbar (inside-module) ───────────────────────────────────────────
+
+function ModuleNavbar({ moduleId, assignmentId, activeTab, onTabChange }) {
+  const navigate = useNavigate();
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: '📊' },
+    { id: 'sessions', label: 'Sessions', icon: '📚' },
+    { id: 'progress', label: 'Progress', icon: '📈' },
+    { id: 'plan', label: 'Plan', icon: '🗺️' },
+    { id: 'build', label: 'Build', icon: '🔨' },
+  ];
+
+  const toolLinks = [
+    { label: 'Digital Twin', icon: '🧬', path: `/career-twin` },
+    { label: 'Simulator', icon: '🔮', path: `/simulation` },
+    { label: 'AI Interview', icon: '🎙️', path: `/interview` },
+    { label: 'Report', icon: '📄', path: `/report` },
+  ];
+
+  return (
+    <div className="sticky top-[57px] z-20 bg-[#0F172A]/95 backdrop-blur border-b border-slate-800/80">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-2">
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => onTabChange(t.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${
+                activeTab === t.id
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <span>{t.icon}</span>{t.label}
+            </button>
+          ))}
+          <div className="ml-auto flex items-center gap-1 pl-4 border-l border-slate-800 flex-shrink-0">
+            {toolLinks.map(l => (
+              <button
+                key={l.label}
+                onClick={() => navigate(l.path)}
+                title={l.label}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all whitespace-nowrap"
+              >
+                <span>{l.icon}</span>
+                <span className="hidden sm:block">{l.label}</span>
+              </button>
+            ))}
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="ml-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-400 hover:bg-slate-800 transition-all whitespace-nowrap"
+            >
+              ← Exit
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main ModuleDashboard ─────────────────────────────────────────────────────
+
+export default function ModuleDashboard() {
+  const { moduleId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const searchParams = new URLSearchParams(location.search);
+  const assignmentId = searchParams.get('assignmentId');
+
+  const [module, setModule] = useState(null);
+  const [assignment, setAssignment] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('sessions');
+  // sessionStatuses: { [index]: 'pending' | 'in_progress' | 'completed' }
+  const [sessionStatuses, setSessionStatuses] = useState({});
+
+  useEffect(() => {
+    loadData();
+  }, [moduleId, assignmentId]);
+
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [modRes, assignRes] = await Promise.allSettled([
+        authFetch(`/api/modules/${moduleId}`),
+        assignmentId ? authFetch(`/api/assignments/${assignmentId}`) : Promise.resolve(null),
+      ]);
+
+      if (modRes.status === 'fulfilled' && modRes.value) {
+        setModule(modRes.value);
+      } else {
+        throw new Error('Module not found');
+      }
+
+      if (assignRes.status === 'fulfilled' && assignRes.value) {
+        setAssignment(assignRes.value);
+        // Load session statuses from assignment progress if available
+        const progress = assignRes.value?.sessionProgress || assignRes.value?.progress_data?.sessions || {};
+        setSessionStatuses(progress);
+        // Unlock first session by default if no status
+        if (!progress[0]) {
+          setSessionStatuses({ 0: 'pending' });
+        }
+      } else {
+        // No assignment — unlock first session
+        setSessionStatuses({ 0: 'pending' });
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSessionComplete = useCallback((index) => {
+    setSessionStatuses(prev => ({
+      ...prev,
+      [index]: 'completed',
+      [index + 1]: 'pending',
+    }));
+    // Persist progress
+    if (assignmentId) {
+      authFetch(`/api/assignments/${assignmentId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ sessionProgress: { ...sessionStatuses, [index]: 'completed', [index + 1]: 'pending' } }),
+      }).catch(() => {});
+    }
+  }, [assignmentId, sessionStatuses]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin text-indigo-400 text-4xl mb-4">⟳</div>
+          <p className="text-slate-400 text-sm">Loading your learning environment…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !module) {
+    return (
+      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-4">
+        <div className="text-center max-w-sm">
+          <div className="text-5xl mb-4">⚠️</div>
+          <h2 className="text-xl font-black text-white mb-2">Module Not Found</h2>
+          <p className="text-slate-400 text-sm mb-6">{error}</p>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="px-6 py-3 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all"
+          >
+            ← Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0F172A]">
+      <ModuleNavbar
+        moduleId={moduleId}
+        assignmentId={assignmentId}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        {activeTab === 'overview' && (
+          <OverviewTab module={module} assignment={assignment} sessionStatuses={sessionStatuses} />
+        )}
+        {activeTab === 'sessions' && (
+          <SessionsTab
+            module={module}
+            moduleId={moduleId}
+            assignmentId={assignmentId}
+            sessionStatuses={sessionStatuses}
+            onSessionComplete={handleSessionComplete}
+          />
+        )}
+        {activeTab === 'progress' && (
+          <ProgressTab module={module} sessionStatuses={sessionStatuses} />
+        )}
+        {activeTab === 'plan' && (
+          <PlanTab module={module} />
+        )}
+        {activeTab === 'build' && (
+          <BuildTab module={module} />
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,6 +1,6 @@
 /**
  * DemoMode.jsx — Live Autonomous Career Analysis for Judges
- * Streams 7 agents activating in real-time via SSE
+ * Streams 9 agents activating in real-time via SSE
  * Shows orchestration, reasoning, decisions, and output generation
  */
 
@@ -21,8 +21,10 @@ const AGENT_COLORS = {
   DiagnosticAgent: '#F59E0B',
   ScoringAgent:    '#EF4444',
   CurriculumAgent: '#8B5CF6',
+  EvaluatorAgent:  '#10B981',
+  AdaptorAgent:    '#F59E0B',
   MarketAgent:     '#06B6D4',
-  SimulationAgent: '#F97316',
+  SimulationAgent: '#14B8A6',
 };
 
 function AgentPill({ name, status }) {
@@ -115,7 +117,7 @@ export default function DemoMode() {
 
     es.addEventListener('start', (e) => {
       const d = JSON.parse(e.data);
-      setSteps(prev => [...prev, { type: 'system', icon: '🚀', agent: 'Orchestrator', message: d.message, status: 'complete', step: 0, total: 7 }]);
+      setSteps(prev => [...prev, { type: 'system', icon: '🚀', agent: 'Orchestrator', message: d.message, status: 'complete', step: 0, total: 9 }]);
     });
 
     es.addEventListener('agent', (e) => {
@@ -184,7 +186,7 @@ export default function DemoMode() {
             Run Live Career Analysis
           </h1>
           <p className="text-slate-400 max-w-xl mx-auto">
-            Watch 7 specialized AI agents activate, collaborate, debate, and autonomously build a complete
+            Watch 9 specialized AI agents activate, collaborate, debate, and autonomously build a complete
             personalized career mastery plan — in real time.
           </p>
         </div>
@@ -221,7 +223,7 @@ export default function DemoMode() {
               🚀 Run Live Autonomous Career Analysis
             </button>
             <div className="text-slate-500 text-xs mt-2">
-              7 agents · Real API calls · Full orchestration · ~15 seconds
+              9 agents · Real API calls · Full orchestration · ~20 seconds
             </div>
           </div>
         )}
@@ -279,7 +281,7 @@ export default function DemoMode() {
                 { label: 'Market Demand', value: `${complete.summary?.marketDemand}/100`, icon: '📈' },
                 { label: 'Open Jobs', value: complete.summary?.opportunityCount, icon: '💼' },
                 { label: 'Projected Salary', value: complete.summary?.projectedSalary ? `$${(complete.summary.projectedSalary / 1000).toFixed(0)}k` : 'N/A', icon: '💰' },
-                { label: 'Agents Used', value: '7', icon: '🤖' },
+                { label: 'Agents Used', value: '9', icon: '🤖' },
               ].map(({ label, value, icon }) => (
                 <div key={label} className="bg-slate-800/40 rounded-xl p-3">
                   <div className="text-2xl mb-1">{icon}</div>

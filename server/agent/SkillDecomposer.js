@@ -75,8 +75,11 @@ class SkillDecomposer {
   }
 
   // ── Gemini-powered universal decomposition ─────────────────────────────────
-  async decomposeWithLLM(goalText) {
-    const prompt = `You are an expert curriculum architect. A user wants to: "${goalText}"
+  async decomposeWithLLM(goalText, jobDescriptionText = null) {
+    const jobDescriptionSection = jobDescriptionText ? 
+      `\n\nJOB DESCRIPTION CONTEXT:\n${jobDescriptionText}\n\nUse this job description to tailor the skills and focus areas to match the specific requirements and responsibilities mentioned.` : '';
+
+    const prompt = `You are an expert curriculum architect. A user wants to: "${goalText}"${jobDescriptionSection}
 
 Build a REAL skill tree for this EXACT domain. Do NOT generate generic or software-development skills unless the goal is explicitly about software/coding.
 
@@ -421,10 +424,10 @@ STRICT RULES:
   }
 
   // ── Main entry point — tries Gemini first, falls back to rule-based ────────
-  async decompose(goalText) {
+  async decompose(goalText, jobDescriptionText = null) {
     // Try Gemini first (handles ANY domain on earth)
     if (GeminiService.isEnabled()) {
-      const llmResult = await this.decomposeWithLLM(goalText);
+      const llmResult = await this.decomposeWithLLM(goalText, jobDescriptionText);
       if (llmResult) {
         const profile = {
           rawGoal: goalText,

@@ -8,6 +8,8 @@ const AGENT_NAMES = {
   plan_built:          { name: 'CurriculumAgent',  color: '#14B8A6', icon: '📅' },
   adaptation:          { name: 'AdaptorAgent',     color: '#F59E0B', icon: '⚡' },
   session_complete:    { name: 'EvaluatorAgent',   color: '#10B981', icon: '✅' },
+  market_intel:        { name: 'MarketAgent',      color: '#EC4899', icon: '💼' },
+  simulation:          { name: 'SimulationAgent',  color: '#8B5CF6', icon: '🔮' },
 };
 
 function TypewriterText({ text, speed = 18 }) {
@@ -44,6 +46,22 @@ function AgentBubble({ decision, index, isLatest }) {
   const meta = AGENT_NAMES[decision.type] || { name: 'Agent', color: '#6366F1', icon: '🤖' };
   const ts = new Date(decision.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+  // Safe renderer to avoid rendering raw objects in JSX
+  const safe = (v) => {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (Array.isArray(v)) return v.join(', ');
+    if (typeof v === 'object') {
+      if (v.text) return String(v.text);
+      if (v.summary) return String(v.summary);
+      if (v.message) return String(v.message);
+      if (v.content) return String(v.content);
+      try { return JSON.stringify(v); } catch (e) { return String(v); }
+    }
+    return String(v);
+  };
+
   return (
     <div className="relative pl-9 mb-3" style={{ animationDelay: `${index * 80}ms` }}>
       {/* Timeline dot */}
@@ -71,13 +89,13 @@ function AgentBubble({ decision, index, isLatest }) {
             </div>
 
             <p className="text-sm text-slate-200 leading-relaxed font-semibold mb-1">
-              {decision.title}
+              {safe(decision.title)}
             </p>
 
             <p className="text-xs text-slate-400 leading-relaxed">
               {isLatest
-                ? <TypewriterText text={decision.detail} />
-                : decision.detail
+                ? <TypewriterText text={safe(decision.detail)} />
+                : safe(decision.detail)
               }
             </p>
 
@@ -86,8 +104,8 @@ function AgentBubble({ decision, index, isLatest }) {
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Internal Reasoning</p>
                 <p className="text-xs text-slate-400 italic leading-relaxed">
                   {isLatest
-                    ? <TypewriterText text={`"${decision.reasoning}"`} speed={8} />
-                    : `"${decision.reasoning}"`
+                    ? <TypewriterText text={safe(decision.reasoning)} speed={8} />
+                    : safe(decision.reasoning)
                   }
                 </p>
               </div>

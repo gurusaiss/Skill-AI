@@ -13,6 +13,7 @@
     "dev:server": "npm run dev --workspace=server",
     "build": "npm run build --workspace=client",
     "vercel-build": "npm run build --workspace=client",
+    "seed:demo": "npm run seed:demo --workspace=server",
     "test": "npm run test --workspace=server",
     "test:watch": "npm run test:watch --workspace=server",
     "start": "npm run start --workspace=server"
@@ -21,6 +22,8 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
+    "pg": "^8.20.0",
     "pptxgenjs": "^4.0.1"
   }
 }

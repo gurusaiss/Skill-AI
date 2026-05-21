@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 function RadarChart({ skills }) {
   if (!skills?.length) return null;
@@ -80,11 +81,36 @@ function ProgressBar({ value, max = 100, color = '#6366F1', label, sub }) {
 
 export default function CareerTwin() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [moduleContent, setModuleContent] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [forecast, setForecast] = useState(null);
   const [market, setMarket] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const loadAssignedModule = async () => {
+      if (!user) return;
+      try {
+        const token = localStorage.getItem('auth_token');
+        const res = await fetch('/api/assignments?userId=' + user.userId, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const resData = await res.json();
+        const assignments = resData.data?.assignments || resData.assignments || [];
+        if (assignments.length > 0) {
+          const modId = assignments[0].assignable_id;
+          const modRes = await fetch(`/api/modules/${modId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const modData = await modRes.json();
+          setModuleContent(modData.data?.content || {});
+        }
+      } catch (_) {}
+    };
+    loadAssignedModule();
+  }, [user]);
 
   useEffect(() => {
     const uid = localStorage.getItem('skillforge:userId');
@@ -124,9 +150,21 @@ export default function CareerTwin() {
 
   const { goal, sessions, stats, diagnosticScores } = data;
   const skills = goal?.skills || [];
-  const radarData = forecast?.opportunityRadar || skills.slice(0, 6).map(s => ({
-    skill: s.name, current: s.mastery || 0, target: 85, marketDemand: 75, gap: 85 - (s.mastery || 0),
-  }));
+  
+  // Use module content from DB if available (from assigned module)
+  const moduleSkills = moduleContent?.milestones || moduleContent?.skills || [];
+  const radarData = forecast?.opportunityRadar || (moduleSkills.length > 0 
+    ? moduleSkills.slice(0, 6).map((s, i) => ({
+        skill: typeof s === 'string' ? s : s.name || s.title, 
+        current: Math.min(100, (stats?.avgScore || 40) + i * 8), 
+        target: 85, 
+        marketDemand: 75, 
+        gap: 85 - Math.min(100, (stats?.avgScore || 40) + i * 8),
+      }))
+    : skills.slice(0, 6).map(s => ({
+        skill: s.name, current: s.mastery || 0, target: 85, marketDemand: 75, gap: 85 - (s.mastery || 0),
+      }))
+  );
 
   const masteryScore = stats.avgScore || 0;
   const readiness = forecast?.currentState?.readinessPct || Math.round(masteryScore * 0.8);

@@ -36,11 +36,11 @@ class SmartAgent {
   }
 
   // ── processGoal ───────────────────────────────────────────────────────────
-  async processGoal(goalText, existingUserId, profilingData = null) {
+  async processGoal(goalText, existingUserId, profilingData = null, authUserId = null, jobDescriptionText = null) {
     const userId = existingUserId || randomUUID();
 
     // SkillDecomposer is now async (Gemini-powered)
-    const baseSkillTree = await this.skillDecomposer.decompose(goalText);
+    const baseSkillTree = await this.skillDecomposer.decompose(goalText, jobDescriptionText);
     const enrichedSkills = baseSkillTree.skills.map((skill, index) => ({
       ...skill,
       sequenceOrder: index + 1,
@@ -105,6 +105,7 @@ class SmartAgent {
 
     const session = {
       userId,
+      authUserId: authUserId || null, // Link to authenticated user
       goal: {
         goalText,
         domain: skillTree.domain,
