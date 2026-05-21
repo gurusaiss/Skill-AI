@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+
+const BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
 
 // Dynamic quick skills derived from user goal, with tech fallback
 function getDynamicSkills(goalSkills) {
@@ -57,6 +59,10 @@ function TimelineBar({ items }) {
 
 export default function SimulationLab() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const moduleId = searchParams.get('moduleId');
+
   const userId = localStorage.getItem('skillforge:userId');
   const [skill, setSkill] = useState('');
   const [goalSkills, setGoalSkills] = useState([]);
@@ -69,10 +75,57 @@ export default function SimulationLab() {
   const [compareResult, setCompareResult] = useState(null);
   const [compareLoading, setCompareLoading] = useState(false);
   const [tab, setTab] = useState('whatif');
+  const [moduleBanner, setModuleBanner] = useState('');
+  const autoRunDone = useRef(false);
 
-  // Load user's goal to auto-populate skill fields from real data
+  // Module-aware: fetch module and pre-populate + auto-run
   useEffect(() => {
-    if (!userId) return;
+    if (!moduleId) return;
+    const token = localStorage.getItem('auth_token');
+    fetch(`${BASE_URL}/api/modules/${moduleId}`, {
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+      .then(r => r.json())
+      .then(json => {
+        if (json.success && json.data) {
+          const mod = json.data;
+          const skills = mod.skills || [];
+          const firstSkill = skills[0] || mod.title || '';
+          const secondSkill = skills[1] || '';
+          setModuleBanner(`Simulating: ${mod.title}`);
+          setSkill(firstSkill);
+          if (firstSkill) setCompareA(firstSkill);
+          if (secondSkill) setCompareB(secondSkill);
+          // Auto-run simulation once
+          if (!autoRunDone.current && firstSkill) {
+            autoRunDone.current = true;
+            setLoading(true);
+            setError('');
+            setResult(null);
+            const uid = userId || 'demo';
+            const token2 = localStorage.getItem('auth_token');
+            fetch(`${BASE_URL}/api/simulation/whatif`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...(token2 ? { Authorization: `Bearer ${token2}` } : {}) },
+              body: JSON.stringify({ userId: uid, proposedSkill: firstSkill }),
+            })
+              .then(r => r.json())
+              .then(json2 => {
+                if (!json2.success) throw new Error(typeof json2.error === 'string' ? json2.error : json2.error?.message || 'Simulation failed');
+                setResult(json2.data);
+              })
+              .catch(e => setError(e.message))
+              .finally(() => setLoading(false));
+          }
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moduleId]);
+
+  // Load user's goal to auto-populate skill fields from real data (non-module context)
+  useEffect(() => {
+    if (!userId || moduleId) return;
     const token = localStorage.getItem('auth_token');
     const authHeaders = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
     fetch(`/api/session/dashboard/${userId}`, { headers: authHeaders })
@@ -148,6 +201,12 @@ export default function SimulationLab() {
           <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white text-sm mb-4 flex items-center gap-1">
             ← Back
           </button>
+          {moduleBanner && (
+            <div className="mb-4 rounded-xl border border-violet-500/40 bg-violet-500/10 px-5 py-3 flex items-center gap-3">
+              <span className="text-xl">🔮</span>
+              <span className="text-violet-300 font-semibold text-sm">{moduleBanner}</span>
+            </div>
+          )}
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-xl">🔮</div>
             <div>

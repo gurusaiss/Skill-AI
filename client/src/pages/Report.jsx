@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
 
@@ -376,10 +376,185 @@ function EmployeeReportView({ user, navigate }) {
   );
 }
 
+// ─── Module-specific Report (employee accessing from module context) ──────────
+function ModuleReport({ moduleId, assignmentId, user, navigate }) {
+  const [moduleData, setModuleData] = useState(null);
+  const [assignmentData, setAssignmentData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token');
+    const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    const fetches = [
+      fetch(`${BASE_URL}/api/modules/${moduleId}`, { headers }).then(r => r.json()),
+    ];
+    if (assignmentId) {
+      fetches.push(fetch(`${BASE_URL}/api/assignments/${assignmentId}`, { headers }).then(r => r.json()));
+    }
+    Promise.all(fetches)
+      .then(([modJson, asnJson]) => {
+        if (modJson?.success && modJson.data) setModuleData(modJson.data);
+        if (asnJson?.success && asnJson.data) setAssignmentData(asnJson.data);
+        else if (asnJson?.data) setAssignmentData(asnJson.data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [moduleId, assignmentId]);
+
+  const downloadModuleReportPDF = () => {
+    const mod = moduleData || {};
+    const asn = assignmentData || {};
+    const sessionsCompleted = Object.values(asn.sessionProgress || {}).filter(s => s === 'completed').length;
+    const totalSessions = (mod.sessions || []).length;
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Module Report — ${mod.title || 'Module'}</title>
+<style>
+  body { font-family: Arial, sans-serif; color: #1e293b; padding: 40px; max-width: 800px; margin: 0 auto; }
+  h1 { color: #4f46e5; font-size: 24px; margin-bottom: 4px; }
+  .meta { color: #64748b; font-size: 14px; margin-bottom: 24px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; text-align: center; }
+  .stat-val { font-size: 28px; font-weight: 900; color: #4f46e5; }
+  .stat-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  .footer { margin-top: 40px; text-align: center; color: #94a3b8; font-size: 11px; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body>
+<h1>SkillForge AI — Module Training Report</h1>
+<div class="meta">${mod.title || 'Module'} · ${user?.name || user?.email || ''} · Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+<div class="stat-grid">
+  <div class="stat"><div class="stat-val">${asn.progress || 0}%</div><div class="stat-label">Progress</div></div>
+  <div class="stat"><div class="stat-val">${sessionsCompleted}/${totalSessions || '—'}</div><div class="stat-label">Sessions Completed</div></div>
+  <div class="stat"><div class="stat-val">${asn.status || 'assigned'}</div><div class="stat-label">Status</div></div>
+</div>
+${asn.dueDate ? `<p>Due Date: ${new Date(asn.dueDate).toLocaleDateString()}</p>` : ''}
+<div class="footer">SkillForge AI · Corporate Training Platform · Confidential</div>
+</body>
+</html>`;
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
+    if (win) {
+      win.addEventListener('load', () => {
+        setTimeout(() => { win.print(); URL.revokeObjectURL(url); }, 400);
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
+        <div className="text-center">
+          <div className="animate-spin text-indigo-400 text-4xl mb-4">⟳</div>
+          <div className="text-slate-400 text-sm">Loading module report...</div>
+        </div>
+      </div>
+    );
+  }
+
+  const mod = moduleData || {};
+  const asn = assignmentData || {};
+  const sessionsCompleted = Object.values(asn.sessionProgress || {}).filter(s => s === 'completed').length;
+  const totalSessions = (mod.sessions || []).length;
+  const progress = asn.progress || 0;
+  const statusColor = asn.status === 'completed' ? 'text-emerald-400' : asn.status === 'in_progress' ? 'text-amber-400' : 'text-slate-400';
+
+  return (
+    <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-8 max-w-4xl mx-auto">
+      <button
+        onClick={() => navigate(`/module/${moduleId}/learn${assignmentId ? `?assignmentId=${assignmentId}` : ''}`)}
+        className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2"
+      >
+        ← Back to Module
+      </button>
+
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-black text-white">Module Report</h1>
+          <p className="text-slate-400 text-sm mt-0.5">{mod.title || 'Module Training Report'}</p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={downloadModuleReportPDF}
+            className="px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white text-sm font-medium transition-all"
+          >
+            ↓ Download Report
+          </button>
+          <button
+            onClick={() => navigate(`/module/${moduleId}/learn${assignmentId ? `?assignmentId=${assignmentId}` : ''}`)}
+            className="px-4 py-2 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-sm font-bold transition-all"
+          >
+            ← Back to Module
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-6">
+          <p className="text-xs text-indigo-400 font-bold uppercase tracking-widest mb-1">Overall Progress</p>
+          <p className="text-4xl font-black text-white">{progress}<span className="text-2xl text-indigo-400">%</span></p>
+        </div>
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6">
+          <p className="text-xs text-emerald-400 font-bold uppercase tracking-widest mb-1">Sessions Completed</p>
+          <p className="text-4xl font-black text-white">{sessionsCompleted}<span className="text-2xl text-slate-400">/{totalSessions || '—'}</span></p>
+        </div>
+        <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-6">
+          <p className="text-xs text-purple-400 font-bold uppercase tracking-widest mb-1">Status</p>
+          <p className={`text-2xl font-black capitalize ${statusColor}`}>{asn.status || 'assigned'}</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-8 mb-6">
+        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Module Details</h3>
+        <div className="text-lg font-bold text-white mb-1">{mod.title}</div>
+        {mod.description && <div className="text-sm text-slate-400 mb-3">{mod.description}</div>}
+        {mod.skills?.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            {mod.skills.map((skill, i) => (
+              <span key={i} className="px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold">
+                {skill}
+              </span>
+            ))}
+          </div>
+        )}
+        {asn.dueDate && (
+          <div className="mt-4 text-sm text-slate-400">
+            Due: <span className="text-slate-200 font-semibold">{new Date(asn.dueDate).toLocaleDateString()}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Progress bar */}
+      <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-6 mb-6">
+        <div className="flex justify-between text-sm mb-2">
+          <span className="text-slate-400 font-medium">Module Completion</span>
+          <span className="font-bold text-indigo-400">{progress}%</span>
+        </div>
+        <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 transition-all duration-700"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="text-center text-xs text-slate-500">SkillForge AI · Corporate Training Platform · Confidential</div>
+    </div>
+  );
+}
+
 // ─── Main Export ──────────────────────────────────────────────────────────────
 export default function Report() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const moduleId = searchParams.get('moduleId');
+  const assignmentId = searchParams.get('assignmentId');
 
   useEffect(() => {
     if (!user) navigate('/');
@@ -388,6 +563,11 @@ export default function Report() {
   if (!user) return null;
 
   const isAdminOrManager = user.role === 'admin' || user.role === 'manager';
+
+  // Employee accessing report from inside a module (via URL params)
+  if (!isAdminOrManager && assignmentId) {
+    return <ModuleReport moduleId={moduleId} assignmentId={assignmentId} user={user} navigate={navigate} />;
+  }
 
   if (isAdminOrManager) {
     return <AdminReportView user={user} navigate={navigate} />;
