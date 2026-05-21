@@ -225,7 +225,7 @@ function InfoModal({ info, onClose }) {
             {info.icon}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color: info.color }}>
+            <p className="text-xs font-black uppercase tracking-widest mb-0.5" style={{ color: info.color }}>
               SkillForge System
             </p>
             <h3 className="text-base font-black text-slate-100 leading-tight">{info.title}</h3>
@@ -242,7 +242,7 @@ function InfoModal({ info, onClose }) {
           {(info.points || []).map((pt, i) => (
             <li key={i} className="flex items-start gap-2.5 text-sm text-slate-300">
               <span
-                className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black flex-shrink-0 mt-0.5 border"
+                className="w-5 h-5 rounded-md flex items-center justify-center text-xs font-black flex-shrink-0 mt-0.5 border"
                 style={{ backgroundColor: `${info.color}15`, borderColor: `${info.color}30`, color: info.color }}
               >
                 {i + 1}
@@ -253,7 +253,7 @@ function InfoModal({ info, onClose }) {
         </ul>
         <button
           onClick={onClose}
-          className="mt-5 w-full py-2.5 rounded-xl text-xs font-bold text-slate-400 border border-slate-700 hover:text-slate-200 hover:border-slate-500 transition-all"
+          className="mt-5 w-full py-2.5 rounded-xl text-sm font-bold text-slate-400 border border-slate-700 hover:text-slate-200 hover:border-slate-500 transition-all"
         >
           Got it →
         </button>
@@ -303,17 +303,17 @@ function AgentThoughtStream({ steps, visible, onStepClick }) {
           >
             <span className="text-sm flex-shrink-0">{step.icon}</span>
             <div className="min-w-0 flex-1">
-              <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: step.color }}>
+              <span className="text-xs font-black uppercase tracking-widest" style={{ color: step.color }}>
                 {step.agent}
               </span>
-              <p className="text-[10px] text-slate-400 leading-relaxed">{step.text}</p>
+              <p className="text-xs text-slate-400 leading-relaxed">{step.text}</p>
             </div>
-            <span className="text-[8px] text-slate-600 flex-shrink-0 mt-1 font-bold">ⓘ</span>
+            <span className="text-xs text-slate-600 flex-shrink-0 mt-1 font-bold">ⓘ</span>
           </motion.button>
         ))}
       </AnimatePresence>
       {shown.length === 0 && (
-        <div className="flex flex-col items-center justify-center h-full text-slate-700 text-xs gap-2">
+        <div className="flex flex-col items-center justify-center h-full text-slate-700 text-sm gap-2">
           <div className="text-2xl opacity-40">🧠</div>
           <span>Agent system initializing...</span>
         </div>
@@ -374,7 +374,7 @@ export default function Landing() {
             animate={{ opacity: 1, y: 0 }}
             className="flex justify-center mb-6"
           >
-            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/8 text-xs font-semibold text-indigo-300">
+            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/8 text-sm font-semibold text-indigo-300">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
               Autonomous AI Learning Platform · 9-Agent System
             </div>
@@ -410,8 +410,8 @@ export default function Landing() {
             {/* Info header */}
             <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 p-6 backdrop-blur space-y-5">
               <div>
-                <h3 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-1">Why SkillForge AI</h3>
-                <p className="text-[11px] text-slate-500 leading-snug">The only learning platform that replaces every human instructor with structured AI — from diagnosis to certification.</p>
+                <h3 className="text-base font-black text-slate-300 uppercase tracking-widest mb-1">Why SkillForge AI</h3>
+                <p className="text-sm text-slate-500 leading-snug">The only learning platform that replaces every human instructor with structured AI — from diagnosis to certification.</p>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {[
@@ -432,8 +432,8 @@ export default function Landing() {
                   >
                     <span className="text-sm leading-none mt-0.5">{item.emoji}</span>
                     <div>
-                      <div className="text-[10px] font-bold text-slate-300 leading-tight group-hover:text-white transition-colors">{item.label}</div>
-                      <div className="text-[8.5px] text-slate-500 mt-0.5 leading-snug">{item.desc}</div>
+                      <div className="text-xs font-bold text-slate-300 leading-tight group-hover:text-white transition-colors">{item.label}</div>
+                      <div className="text-xs text-slate-500 mt-0.5 leading-snug">{item.desc}</div>
                     </div>
                   </button>
                 ))}
@@ -456,22 +456,22 @@ export default function Landing() {
                   <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
                   <div className="w-3 h-3 rounded-full bg-green-500/70" />
                 </div>
-                <span className="text-[10px] text-slate-500 font-mono mx-auto">
+                <span className="text-xs text-slate-500 font-mono mx-auto">
                   SkillForge Agent Runtime — Live
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                  <span className="text-[9px] text-emerald-400">RUNNING</span>
+                  <span className="text-xs text-emerald-400">RUNNING</span>
                 </span>
               </div>
 
               <div className="p-4 space-y-3">
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-[9px] text-slate-600 uppercase tracking-widest font-bold">
+                    <p className="text-xs text-slate-600 uppercase tracking-widest font-bold">
                       Multi-Agent Reasoning Stream
                     </p>
-                    <p className="text-[8px] text-slate-700 italic">tap any agent to learn more ⓘ</p>
+                    <p className="text-xs text-slate-700 italic">tap any agent to learn more ⓘ</p>
                   </div>
                   <AgentThoughtStream
                     steps={AGENT_DEMO_STEPS}
@@ -489,12 +489,12 @@ export default function Landing() {
                   ].map(m => (
                     <div key={m.label} className="text-center rounded-lg bg-slate-900 border border-slate-800 p-2">
                       <div className="text-base font-black font-mono" style={{ color: m.color }}>{m.value}</div>
-                      <div className="text-[9px] text-slate-600">{m.label}</div>
+                      <div className="text-xs text-slate-600">{m.label}</div>
                     </div>
                   ))}
                 </div>
 
-                <div className="text-[9px] text-slate-700 text-center pt-1">
+                <div className="text-xs text-slate-700 text-center pt-1">
                   Goal Analysis → Skill Decomposition → Adaptive Planning → Evaluation
                 </div>
               </div>
@@ -509,19 +509,19 @@ export default function Landing() {
           transition={{ delay: 0.5 }}
           className="mt-16 text-center"
         >
-          <p className="text-xs text-slate-600 mb-4 uppercase tracking-widest">What makes SkillForge different</p>
+          <p className="text-sm text-slate-600 mb-4 uppercase tracking-widest">What makes SkillForge different</p>
           <div className="flex flex-wrap justify-center gap-3">
             {Object.keys(TAG_INFO).map(tag => (
               <button
                 key={tag}
                 onClick={() => setPopup(TAG_INFO[tag])}
-                className="px-3 py-1.5 rounded-full text-[11px] font-semibold border border-slate-700/60 bg-slate-900/60 text-slate-400 hover:text-slate-200 hover:border-slate-500 hover:bg-slate-800/60 transition-all active:scale-[0.97]"
+                className="px-3 py-1.5 rounded-full text-sm font-semibold border border-slate-700/60 bg-slate-900/60 text-slate-400 hover:text-slate-200 hover:border-slate-500 hover:bg-slate-800/60 transition-all active:scale-[0.97]"
               >
                 {tag}
               </button>
             ))}
           </div>
-          <p className="text-[9px] text-slate-700 mt-3 italic">Click any tag to learn more</p>
+          <p className="text-xs text-slate-700 mt-3 italic">Click any tag to learn more</p>
         </motion.div>
 
         {/* ── FRONTIER FEATURES GRID ─────────────────────────────────────── */}
@@ -531,7 +531,7 @@ export default function Landing() {
           transition={{ delay: 0.7 }}
           className="mt-16"
         >
-          <p className="text-xs text-slate-600 mb-6 uppercase tracking-widest text-center">Frontier Intelligence Modules</p>
+          <p className="text-sm text-slate-600 mb-6 uppercase tracking-widest text-center">Frontier Intelligence Modules</p>
           <div className="grid md:grid-cols-4 gap-4">
             {[
               { icon: '🧬', label: 'Career Digital Twin', desc: 'Your evolving virtual career model', path: '/career-twin', color: '#6366F1' },
@@ -545,9 +545,9 @@ export default function Landing() {
                   style={{ background: color + '15', border: `1px solid ${color}30` }}>
                   {icon}
                 </div>
-                <div className="font-bold text-slate-200 text-sm group-hover:text-white transition-all">{label}</div>
-                <div className="text-slate-500 text-xs leading-relaxed">{desc}</div>
-                <div className="text-xs font-semibold mt-auto" style={{ color }}>Open →</div>
+                <div className="font-bold text-slate-200 text-base group-hover:text-white transition-all">{label}</div>
+                <div className="text-slate-500 text-sm leading-relaxed">{desc}</div>
+                <div className="text-sm font-semibold mt-auto" style={{ color }}>Open →</div>
               </button>
             ))}
           </div>

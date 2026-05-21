@@ -116,12 +116,17 @@ export default function CareerTwin() {
     const uid = localStorage.getItem('skillforge:userId');
     if (!uid) { setError('No active session. Complete goal setup first.'); setLoading(false); return; }
 
+    const token = localStorage.getItem('auth_token');
+    const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+    setError('');
     Promise.all([
-      fetch(`/api/session/dashboard/${uid}`).then(r => r.json()),
-      fetch(`/api/simulation/forecast/${uid}`).then(r => r.json()),
-      fetch(`/api/market/intelligence/${uid}`).then(r => r.json()),
+      fetch(`/api/session/dashboard/${uid}`, { headers: authHeaders }).then(r => r.json()),
+      fetch(`/api/simulation/forecast/${uid}`, { headers: authHeaders }).then(r => r.json()),
+      fetch(`/api/market/intelligence/${uid}`, { headers: authHeaders }).then(r => r.json()),
     ]).then(([db, fc, mk]) => {
       if (db.success) setData(db.data);
+      else setError(db.error?.message || db.error || 'Failed to load session data');
       if (fc.success) setForecast(fc.data);
       if (mk.success) setMarket(mk.data);
     }).catch(e => setError(e.message))
@@ -166,7 +171,7 @@ export default function CareerTwin() {
       }))
   );
 
-  const masteryScore = stats.avgScore || 0;
+  const masteryScore = stats?.avgScore || 0;
   const readiness = forecast?.currentState?.readinessPct || Math.round(masteryScore * 0.8);
   const velocity = forecast?.currentState?.velocity || 0;
 

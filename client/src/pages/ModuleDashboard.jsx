@@ -59,17 +59,17 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
             </p>
             <div className="flex flex-wrap gap-2">
               {module?.difficulty && (
-                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${getDifficultyColor(module.difficulty)}`}>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${getDifficultyColor(module.difficulty)}`}>
                   {module.difficulty}
                 </span>
               )}
               {module?.duration && (
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-700/40 border border-slate-600/40 text-slate-300">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-700/40 border border-slate-600/40 text-slate-300">
                   ⏱ {module.duration} hrs
                 </span>
               )}
               {sessions.length > 0 && (
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-700/40 border border-slate-600/40 text-slate-300">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-700/40 border border-slate-600/40 text-slate-300">
                   📚 {sessions.length} sessions
                 </span>
               )}
@@ -88,7 +88,7 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
                 <span className="text-lg font-black text-white">{pct}%</span>
               </div>
             </div>
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Progress</p>
+            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Progress</p>
           </div>
         </div>
       </div>
@@ -106,7 +106,7 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
             <div key={s.label} className={`rounded-xl border p-4 ${cls}`}>
               <div className="text-2xl mb-1">{s.icon}</div>
               <p className="text-2xl font-black text-white">{s.value}</p>
-              <p className="text-[10px] font-bold uppercase tracking-widest mt-0.5">{s.label}</p>
+              <p className="text-xs font-bold uppercase tracking-widest mt-0.5">{s.label}</p>
             </div>
           );
         })}
@@ -182,7 +182,7 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onSessio
                     {session.title || session.topic || `Day ${index + 1}`}
                   </p>
                   {isInProgress && (
-                    <span className="text-[10px] font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 px-1.5 py-0.5 rounded-full">In Progress</span>
+                    <span className="text-xs font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 px-1.5 py-0.5 rounded-full">In Progress</span>
                   )}
                 </div>
                 <p className="text-xs text-slate-500 truncate">
@@ -191,7 +191,7 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onSessio
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {session.duration && (
-                  <span className="text-[10px] text-slate-600 hidden sm:block">⏱ {session.duration}</span>
+                  <span className="text-xs text-slate-600 hidden sm:block">⏱ {session.duration}</span>
                 )}
                 {!isUnlocked && !isCompleted ? (
                   <span className="text-slate-600">🔒</span>
@@ -247,10 +247,10 @@ function ProgressTab({ module, sessionStatuses }) {
                       <div className={`h-full rounded-full transition-all ${status === 'completed' ? 'bg-emerald-500' : status === 'in_progress' ? 'bg-indigo-500' : 'bg-slate-700'}`}
                         style={{ width: `${sessionPct}%` }} />
                     </div>
-                    <span className="text-[10px] text-slate-500 w-8">{sessionPct}%</span>
+                    <span className="text-xs text-slate-500 w-8">{sessionPct}%</span>
                   </div>
                 </div>
-                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded-full border ${
                   status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                   : status === 'in_progress' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
                   : 'bg-slate-700/40 text-slate-500 border-slate-700/40'
@@ -299,7 +299,7 @@ function PlanTab({ module }) {
                 <div className="pb-4 flex-1 min-w-0">
                   <p className="text-sm font-bold text-white">{typeof step === 'string' ? step : step.title || step.phase || step.step || JSON.stringify(step)}</p>
                   {step.description && <p className="text-xs text-slate-500 mt-0.5">{step.description}</p>}
-                  {step.duration && <p className="text-[10px] text-slate-600 mt-0.5">⏱ {step.duration}</p>}
+                  {step.duration && <p className="text-xs text-slate-600 mt-0.5">⏱ {step.duration}</p>}
                 </div>
               </div>
             ))}
@@ -337,7 +337,7 @@ function BuildTab({ module }) {
                     <p className="text-sm font-bold text-white">{typeof p === 'string' ? p : p.title || p.name || `Project ${i + 1}`}</p>
                     {p.description && <p className="text-xs text-slate-500 mt-0.5">{p.description}</p>}
                     {p.difficulty && (
-                      <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${getDifficultyColor(p.difficulty)}`}>
+                      <span className={`inline-block mt-1 text-xs font-bold px-2 py-0.5 rounded-full border ${getDifficultyColor(p.difficulty)}`}>
                         {p.difficulty}
                       </span>
                     )}
@@ -371,7 +371,7 @@ function BuildTab({ module }) {
                       {r.url}
                     </a>
                   )}
-                  {r.type && <span className="text-[10px] text-slate-600 block">{r.type}</span>}
+                  {r.type && <span className="text-xs text-slate-600 block">{r.type}</span>}
                 </div>
               </div>
             ))}

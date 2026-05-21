@@ -168,7 +168,7 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
           {/* Assigned Modules */}
           <div>
             <h3 className="text-slate-300 font-semibold text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
-              <span className="w-4 h-4 rounded bg-indigo-500/30 flex items-center justify-center text-indigo-400 text-[10px]">M</span>
+              <span className="w-4 h-4 rounded bg-indigo-500/30 flex items-center justify-center text-indigo-400 text-xs">M</span>
               Assigned Modules
             </h3>
             {userAssignments.length === 0 ? (
@@ -197,7 +197,7 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
           {user.role === 'employee' && (
             <div>
               <h3 className="text-slate-300 font-semibold text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
-                <span className="w-4 h-4 rounded bg-purple-500/30 flex items-center justify-center text-purple-400 text-[10px]">M</span>
+                <span className="w-4 h-4 rounded bg-purple-500/30 flex items-center justify-center text-purple-400 text-xs">M</span>
                 Manager
               </h3>
               <div className="bg-slate-900/60 rounded-xl p-3">
@@ -224,7 +224,7 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
           {user.learningUUID && (
             <div>
               <h3 className="text-slate-300 font-semibold text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
-                <span className="w-4 h-4 rounded bg-emerald-500/30 flex items-center justify-center text-emerald-400 text-[10px]">A</span>
+                <span className="w-4 h-4 rounded bg-emerald-500/30 flex items-center justify-center text-emerald-400 text-xs">A</span>
                 Activity
               </h3>
               <div className="bg-slate-900/60 rounded-xl p-3">
@@ -821,7 +821,7 @@ export default function UserManagement() {
                             <div>
                               <span className="text-white font-semibold text-sm group-hover/name:text-indigo-300 transition-colors leading-tight">
                                 {u.name}
-                                {isSelf && <span className="ml-1.5 text-[10px] text-slate-500">(you)</span>}
+                                {isSelf && <span className="ml-1.5 text-xs text-slate-500">(you)</span>}
                               </span>
                             </div>
                           </button>

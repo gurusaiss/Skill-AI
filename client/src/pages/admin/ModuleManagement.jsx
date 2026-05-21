@@ -342,8 +342,8 @@ export default function ModuleManagement() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
                       <h3 className="text-lg font-bold text-white truncate">{mod.title}</h3>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold capitalize ${mod.difficulty === 'beginner' ? 'bg-green-500/20 text-green-400 border-green-500/30' : mod.difficulty === 'intermediate' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-purple-500/20 text-purple-400 border-purple-500/30'}`}>{mod.difficulty}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">{mod.category}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold capitalize ${mod.difficulty === 'beginner' ? 'bg-green-500/20 text-green-400 border-green-500/30' : mod.difficulty === 'intermediate' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-purple-500/20 text-purple-400 border-purple-500/30'}`}>{mod.difficulty}</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">{mod.category}</span>
                     </div>
                     <p className="text-sm text-slate-400 mb-2 line-clamp-2">{mod.description}</p>
                     <div className="flex flex-wrap gap-2 text-xs text-slate-500">

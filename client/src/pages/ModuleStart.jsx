@@ -225,11 +225,11 @@ function StepHeader({ step, total, answered, label, title, subtitle }) {
   return (
     <div className="mb-6">
       <div className="text-center mb-4">
-        <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">{label}</p>
+        <p className="text-xs font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">{label}</p>
         <h1 className="text-xl font-black text-white">{title}</h1>
         <p className="text-xs text-slate-400 mt-1">{subtitle}</p>
       </div>
-      <div className="flex justify-between text-[10px] text-slate-500 mb-1.5 font-semibold">
+      <div className="flex justify-between text-xs text-slate-500 mb-1.5 font-semibold">
         <span>Question {step + 1} of {total}</span>
         <span>{answered}/{total} answered</span>
       </div>
@@ -463,13 +463,13 @@ function PhaseQuiz({ module, onBack, onDone }) {
 
           {/* Tags */}
           <div className="flex items-center gap-2 flex-wrap mb-4">
-            <span className="px-2.5 py-1 rounded-md bg-slate-800/70 border border-slate-700/60 text-slate-400 text-[10px] font-bold uppercase tracking-wide">
+            <span className="px-2.5 py-1 rounded-md bg-slate-800/70 border border-slate-700/60 text-slate-400 text-xs font-bold uppercase tracking-wide">
               {module?.category || 'General'}
             </span>
-            <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide ${diffColor(diff)}`}>
+            <span className={`px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wide ${diffColor(diff)}`}>
               {diff}
             </span>
-            <span className="px-2.5 py-1 rounded-md bg-indigo-600/10 border border-indigo-500/20 text-indigo-300 text-[10px] font-bold">
+            <span className="px-2.5 py-1 rounded-md bg-indigo-600/10 border border-indigo-500/20 text-indigo-300 text-xs font-bold">
               🤖 AI
             </span>
           </div>

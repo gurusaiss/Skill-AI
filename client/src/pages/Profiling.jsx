@@ -126,7 +126,7 @@ export default function Profiling() {
 
       {/* Header */}
       <div className="text-center mb-6">
-        <p className="text-[10px] font-black text-purple-400 uppercase tracking-[0.3em] mb-1">Step 1 of 2</p>
+        <p className="text-xs font-black text-purple-400 uppercase tracking-[0.3em] mb-1">Step 1 of 2</p>
         <h1 className="text-xl font-black text-slate-100">Tell us about yourself</h1>
         <p className="text-xs text-slate-500 mt-1">
           4 quick questions to personalise your learning roadmap for{' '}
@@ -136,7 +136,7 @@ export default function Profiling() {
 
       {/* Progress */}
       <div className="mb-5">
-        <div className="flex justify-between text-[10px] text-slate-600 mb-1.5 font-semibold">
+        <div className="flex justify-between text-xs text-slate-600 mb-1.5 font-semibold">
           <span>Question {currentQ + 1} of {questions.length}</span>
           <span>{answeredCount}/{questions.length} answered</span>
         </div>

@@ -109,17 +109,17 @@ function SetupPhase({ onStart }) {
         <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4 text-center">
           <div className="text-2xl mb-1">🤖</div>
           <p className="text-xs font-bold text-indigo-300">AI-Powered</p>
-          <p className="text-[10px] text-slate-600 mt-1">Gemini evaluates your answers</p>
+          <p className="text-xs text-slate-600 mt-1">Gemini evaluates your answers</p>
         </div>
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-center">
           <div className="text-2xl mb-1">📊</div>
           <p className="text-xs font-bold text-emerald-300">Real-Time Feedback</p>
-          <p className="text-[10px] text-slate-600 mt-1">Instant scoring & suggestions</p>
+          <p className="text-xs text-slate-600 mt-1">Instant scoring & suggestions</p>
         </div>
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
           <div className="text-2xl mb-1">🎯</div>
           <p className="text-xs font-bold text-amber-300">Role-Specific</p>
-          <p className="text-[10px] text-slate-600 mt-1">Questions match your target role</p>
+          <p className="text-xs text-slate-600 mt-1">Questions match your target role</p>
         </div>
       </div>
     </div>
@@ -192,7 +192,7 @@ function InterviewPhase({ questions, role, onComplete }) {
       {/* Progress header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">
+          <p className="text-xs text-slate-500 uppercase tracking-widest font-black">
             Question {currentIndex + 1} of {questions.length}
           </p>
           <p className="text-base font-black text-slate-100">{role} Interview</p>
@@ -236,7 +236,7 @@ function InterviewPhase({ questions, role, onComplete }) {
 
         {currentQuestion.expectedPoints && currentQuestion.expectedPoints.length > 0 && (
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+            <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
               💡 Key Points to Cover
             </p>
             <ul className="space-y-1">
@@ -433,14 +433,14 @@ function ResultsPhase({ questions, report, role }) {
                 {isExpanded && q.feedback && (
                   <div className="px-4 pb-4 space-y-3 border-t border-slate-700/40">
                     <div className="pt-3">
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                      <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
                         Your Answer
                       </p>
                       <p className="text-xs text-slate-400 leading-relaxed">{q.answer}</p>
                     </div>
 
                     <div>
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                      <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
                         Feedback
                       </p>
                       <p className="text-xs text-slate-300 leading-relaxed">{q.feedback.feedback}</p>
@@ -448,7 +448,7 @@ function ResultsPhase({ questions, report, role }) {
 
                     {q.feedback.strengths && q.feedback.strengths.length > 0 && (
                       <div>
-                        <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">
+                        <p className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">
                           Strengths
                         </p>
                         <ul className="space-y-1">
@@ -464,7 +464,7 @@ function ResultsPhase({ questions, report, role }) {
 
                     {q.feedback.weaknesses && q.feedback.weaknesses.length > 0 && (
                       <div>
-                        <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1">
+                        <p className="text-xs font-black text-amber-400 uppercase tracking-widest mb-1">
                           Weaknesses
                         </p>
                         <ul className="space-y-1">

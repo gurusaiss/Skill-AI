@@ -132,7 +132,7 @@ const typeConfig = {
 const StatusBadge = ({ status }) => {
   const cfg = statusConfig[status] || statusConfig.assigned;
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold uppercase tracking-wider ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-bold uppercase tracking-wider ${cfg.bg} ${cfg.text} ${cfg.border}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} ${status === 'in_progress' ? 'animate-pulse' : ''}`} />
       {cfg.label}
     </span>
@@ -142,7 +142,7 @@ const StatusBadge = ({ status }) => {
 const PriorityBadge = ({ priority }) => {
   const cfg = priorityConfig[priority] || priorityConfig.medium;
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-xs font-bold uppercase tracking-wider ${cfg.bg} ${cfg.text} ${cfg.border}`}>
       {cfg.label}
     </span>
   );
@@ -168,7 +168,7 @@ const StatBox = ({ label, value, icon, gradient, delay }) => (
         <span className="text-2xl">{icon}</span>
       </div>
       <p className="text-3xl font-black text-white mb-1">{value}</p>
-      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{label}</p>
+      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{label}</p>
     </div>
   </div>
 );
@@ -395,7 +395,7 @@ export default function Employee() {
                 {mgrInitial}
               </div>
               <div>
-                <p className="text-[10px] font-bold text-teal-400 uppercase tracking-widest mb-0.5">Your Manager</p>
+                <p className="text-xs font-bold text-teal-400 uppercase tracking-widest mb-0.5">Your Manager</p>
                 <p className="text-base font-bold text-white">{mgrName}</p>
                 {mgrEmail && <p className="text-xs text-slate-400">{mgrEmail}</p>}
               </div>
@@ -495,10 +495,10 @@ export default function Employee() {
                             </div>
                             <div className="flex flex-wrap items-center gap-2 mb-3">
                               <PriorityBadge priority={priority} />
-                              <span className="text-[11px] text-slate-500 font-medium px-2 py-0.5 rounded-md bg-slate-800/60 border border-slate-700/30">
+                              <span className="text-xs text-slate-500 font-medium px-2 py-0.5 rounded-md bg-slate-800/60 border border-slate-700/30">
                                 {typeConfig[type]?.label || type}
                               </span>
-                              <span className="text-[11px] text-slate-500 font-medium">
+                              <span className="text-xs text-slate-500 font-medium">
                                 📅 {formatDate(dueDate)}
                               </span>
                             </div>
@@ -525,7 +525,7 @@ export default function Employee() {
                                  navigate(`/module/${moduleId}/start?assignmentId=${a.id}`);
                                }
                              }}
-                             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600/15 border border-indigo-500/25 text-indigo-300 hover:bg-indigo-600/25 hover:border-indigo-500/40 text-[11px] font-bold transition-all duration-200 hover:shadow-lg hover:shadow-indigo-500/10"
+                             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600/15 border border-indigo-500/25 text-indigo-300 hover:bg-indigo-600/25 hover:border-indigo-500/40 text-xs font-bold transition-all duration-200 hover:shadow-lg hover:shadow-indigo-500/10"
                            >
                              <span>{status === 'in_progress' ? '▶' : status === 'completed' ? '🔁' : '🚀'}</span>
                              {status === 'in_progress' ? 'Continue' : status === 'completed' ? 'Review' : 'Start Module'}
@@ -533,7 +533,7 @@ export default function Employee() {
                           <button
                             onClick={() => handleStatusClick(a.id, status)}
                             disabled={!canAdvance || isCompleted || isCancelled}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 text-white hover:from-indigo-600/30 hover:to-purple-600/30 text-[11px] font-bold transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-indigo-500/10"
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 text-white hover:from-indigo-600/30 hover:to-purple-600/30 text-xs font-bold transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-indigo-500/10"
                           >
                             <span>🏆</span> Get It Win
                           </button>
@@ -570,7 +570,7 @@ export default function Employee() {
                 { label: 'Streak', value: `${dashboardStats.streak || 0}d`, color: '#f59e0b' },
               ].map((item, i) => (
                 <div key={i} className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/30 hover:border-slate-600/50 transition-all">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{item.label}</p>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{item.label}</p>
                   <p className="text-xl font-black" style={{ color: item.color }}>{item.value}</p>
                 </div>
               ))}

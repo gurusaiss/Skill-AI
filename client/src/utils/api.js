@@ -158,6 +158,7 @@ export const api = {
   deleteAssessment: (id) => request(`/api/assessment/${id}`, { method: 'DELETE' }),
   getUserAssessments: (userId) => request(`/api/assessment/user/${userId}`),
   submitAssessment: (id, body) => request(`/api/assessment/${id}/submit`, { method: 'POST', body: JSON.stringify(body) }),
+  generateInterviewQuestions: (body) => request('/api/interview/generate', { method: 'POST', body: JSON.stringify(body) }),
   evaluateInterviewAnswer: (body) => request('/api/interview/evaluate', { method: 'POST', body: JSON.stringify(body) }),
   generateInterviewReport: (body) => request('/api/interview/report', { method: 'POST', body: JSON.stringify(body) }),
 

@@ -21,6 +21,9 @@ router.get('/intelligence/:userId', authenticate, async (req, res) => {
 
     const user = await UserStore.getUserById(req.user.userId);
     const session = smartAgent.loadSession(user.learningUUID);
+    if (!session?.goal) {
+      return res.status(404).json({ success: false, data: null, error: 'No learning goal found. Complete goal setup first.' });
+    }
     const data = await MarketAgent.getIntelligence({
       domain: session.goal.domain,
       goal: session.goal.goalText,

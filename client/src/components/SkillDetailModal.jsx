@@ -116,7 +116,7 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
               🌳
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Skill Detail</p>
+              <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Skill Detail</p>
               <h2 className="text-xl font-black text-white leading-tight mt-0.5">{skill.name}</h2>
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <span
@@ -181,7 +181,7 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
                   { label: 'Demand', value: industry.demand, color: demandColor },
                 ].map(({ label, value, color }) => (
                   <div key={label} className="rounded-xl bg-slate-800/40 border border-slate-700/50 p-3">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">{label}</p>
+                    <p className="text-xs text-slate-500 uppercase tracking-widest mb-1">{label}</p>
                     <p className="text-base font-black capitalize" style={{ color }}>{value}</p>
                   </div>
                 ))}
@@ -239,11 +239,11 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-slate-800/40 border border-slate-700/50 p-4">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Avg. Salary Range</p>
+                  <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Avg. Salary Range</p>
                   <p className="text-sm font-black text-emerald-400">{industry.avgSalary}</p>
                 </div>
                 <div className="rounded-xl bg-slate-800/40 border border-slate-700/50 p-4">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Demand Level</p>
+                  <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Demand Level</p>
                   <p className="text-sm font-black" style={{ color: demandColor }}>{industry.demand}</p>
                 </div>
               </div>
@@ -312,7 +312,7 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
                     style={{ width: `${Math.max(skill.mastery, 2)}%`, backgroundColor: masteryColor }}
                   />
                 </div>
-                <div className="flex justify-between text-[9px] text-slate-600 mt-1">
+                <div className="flex justify-between text-xs text-slate-600 mt-1">
                   <span>0%</span><span>Developing 50%</span><span>Proficient 75%</span><span>Expert 100%</span>
                 </div>
               </div>

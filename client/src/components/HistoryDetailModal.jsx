@@ -55,7 +55,7 @@ export default function HistoryDetailModal({ isOpen, onClose, session }) {
               📝
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Day {session.day} · Session Complete</p>
+              <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Day {session.day} · Session Complete</p>
               <h2 className="text-xl font-black text-white leading-tight mt-0.5">{session.skillName}</h2>
               {(session.topic || session.objective) && (
                 <p className="text-sm text-indigo-300/80 font-medium mt-0.5">{session.topic || session.objective}</p>
@@ -113,7 +113,7 @@ export default function HistoryDetailModal({ isOpen, onClose, session }) {
                   { label: 'Quiz Score',    value: session.quizScore != null ? `${session.quizScore}%` : '—', color: '#6366f1' },
                 ].map(({ label, value, color }) => (
                   <div key={label} className="rounded-xl bg-slate-800/40 border border-slate-700/50 p-4">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">{label}</p>
+                    <p className="text-xs text-slate-500 uppercase tracking-widest mb-1">{label}</p>
                     <p className="text-2xl font-black" style={{ color }}>{value}</p>
                   </div>
                 ))}
@@ -222,7 +222,7 @@ export default function HistoryDetailModal({ isOpen, onClose, session }) {
                     ].map(({ label, value, color }) => (
                       <div key={label} className="text-center">
                         <div className="text-xl font-black" style={{ color }}>{value}</div>
-                        <div className="text-[9px] text-slate-600 uppercase tracking-wide">{label}</div>
+                        <div className="text-xs text-slate-600 uppercase tracking-wide">{label}</div>
                       </div>
                     ))}
                   </div>
@@ -269,7 +269,7 @@ export default function HistoryDetailModal({ isOpen, onClose, session }) {
                     `Error patterns and how to avoid them in ${session.skillName}`,
                   ]).map((item, i) => (
                     <div key={i} className="flex items-start gap-3 rounded-xl bg-indigo-500/8 border border-indigo-500/20 px-3 py-2.5">
-                      <span className="w-5 h-5 rounded-md bg-indigo-600/30 flex items-center justify-center text-[10px] font-black text-indigo-400 flex-shrink-0 mt-0.5">{i + 1}</span>
+                      <span className="w-5 h-5 rounded-md bg-indigo-600/30 flex items-center justify-center text-xs font-black text-indigo-400 flex-shrink-0 mt-0.5">{i + 1}</span>
                       <p className="text-sm text-slate-300 leading-relaxed">{item}</p>
                     </div>
                   ))}
@@ -328,7 +328,7 @@ export default function HistoryDetailModal({ isOpen, onClose, session }) {
                     'Ask for help or seek additional resources',
                   ])).map((rec, i) => (
                     <div key={i} className="flex items-start gap-3 rounded-xl bg-slate-800/40 border border-slate-700/40 px-3 py-2.5">
-                      <span className="w-5 h-5 rounded-md bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-[10px] font-black text-indigo-400 flex-shrink-0">{i + 1}</span>
+                      <span className="w-5 h-5 rounded-md bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-400 flex-shrink-0">{i + 1}</span>
                       <p className="text-sm text-slate-300 leading-relaxed">{rec}</p>
                     </div>
                   ))}

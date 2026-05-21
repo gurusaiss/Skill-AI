@@ -512,11 +512,9 @@
   line-height: 1.4;
 }
 
-/* Make all section labels more visible */
-.text-\[9px\],
-.text-\[10px\] {
-  font-size: max(0.65rem, 9px);
-  font-weight: 700;
+/* Section labels — readable minimum */
+.text-xs {
+  font-weight: 600;
 }
 
 /* Improved text-slate contrast for better readability */

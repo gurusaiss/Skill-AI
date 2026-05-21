@@ -99,9 +99,9 @@ export default function ModuleLearn() {
                 <h1 className="text-2xl font-black text-white mb-1">{module.title}</h1>
                 <p className="text-slate-400 text-sm mb-2">{module.description}</p>
                 <div className="flex flex-wrap gap-2">
-                  {module.difficulty && <span className="text-[10px] px-2 py-0.5 rounded-full border bg-blue-500/10 text-blue-300 border-blue-500/20 capitalize">{module.difficulty}</span>}
-                  {module.estimated_duration && <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">⏱ {module.estimated_duration}</span>}
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">Session {sessionIdx + 1} of {sessions.length}</span>
+                  {module.difficulty && <span className="text-xs px-2 py-0.5 rounded-full border bg-blue-500/10 text-blue-300 border-blue-500/20 capitalize">{module.difficulty}</span>}
+                  {module.estimated_duration && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">⏱ {module.estimated_duration}</span>}
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">Session {sessionIdx + 1} of {sessions.length}</span>
                 </div>
               </div>
             </div>
@@ -124,10 +124,10 @@ export default function ModuleLearn() {
               >
                 <div className="flex items-center gap-2 justify-between">
                   <span className="text-xs font-bold">{i < sessionIdx ? '✅' : i === sessionIdx ? '▶' : '○'} Day {s.day || i + 1}</span>
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded border ${getTypeColor(s.type)}`}>{s.type}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded border ${getTypeColor(s.type)}`}>{s.type}</span>
                 </div>
-                <p className="text-[11px] font-semibold mt-1 truncate">{s.title}</p>
-                <p className="text-[9px] text-slate-500 mt-0.5">{s.duration}</p>
+                <p className="text-xs font-semibold mt-1 truncate">{s.title}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{s.duration}</p>
               </button>
             ))}
           </div>
@@ -136,7 +136,7 @@ export default function ModuleLearn() {
             <div className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-black text-white">{current.title}</h2>
-                <span className={`text-[10px] px-2 py-1 rounded-full border font-bold capitalize ${getTypeColor(current.type)}`}>{current.type} Session</span>
+                <span className={`text-xs px-2 py-1 rounded-full border font-bold capitalize ${getTypeColor(current.type)}`}>{current.type} Session</span>
               </div>
 
               {current.concepts && current.concepts.length > 0 && (

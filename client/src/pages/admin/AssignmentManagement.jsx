@@ -245,7 +245,7 @@ export default function AssignmentManagement() {
             { label: 'Overdue', value: stats.overdue, color: '#ef4444' },
           ].map((s, i) => (
             <div key={i} className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5">
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
               <p className="text-3xl font-black" style={{ color: s.color }}>{s.value}</p>
             </div>
           ))}
@@ -281,7 +281,7 @@ export default function AssignmentManagement() {
           </div>
 
           {/* Table Header */}
-          <div className="hidden md:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_1fr_auto] px-5 py-2 border-b border-slate-700/30 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+          <div className="hidden md:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_1fr_auto] px-5 py-2 border-b border-slate-700/30 text-xs font-bold text-slate-500 uppercase tracking-widest">
             <span>Employee</span>
             <span>Module</span>
             <span>Priority</span>
@@ -326,7 +326,7 @@ export default function AssignmentManagement() {
                     {/* Module */}
                     <div className="min-w-0">
                       <span className="text-sm text-slate-300 truncate block">{getModuleName(moduleId)}</span>
-                      {a.type && <span className="text-[10px] text-slate-600 uppercase">{a.type}</span>}
+                      {a.type && <span className="text-xs text-slate-600 uppercase">{a.type}</span>}
                     </div>
 
                     {/* Priority */}
@@ -349,7 +349,7 @@ export default function AssignmentManagement() {
 
                     {/* Status */}
                     <div>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
                         {cfg.label}
                       </span>
                     </div>
@@ -364,7 +364,7 @@ export default function AssignmentManagement() {
                       {status !== 'completed' && status !== 'cancelled' && (
                         <button
                           onClick={() => cancelAssignment(a.id)}
-                          className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[10px] text-slate-400 hover:text-red-300 hover:border-red-500/30 transition-all"
+                          className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-400 hover:text-red-300 hover:border-red-500/30 transition-all"
                           title="Cancel assignment"
                         >
                           ✕
@@ -413,7 +413,7 @@ export default function AssignmentManagement() {
                   ))}
                 </select>
                 {modules.length === 0 && (
-                  <p className="text-[10px] text-amber-400/70 mt-1">No modules yet — create one first</p>
+                  <p className="text-xs text-amber-400/70 mt-1">No modules yet — create one first</p>
                 )}
               </div>
 
