@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+
+const RATE_LIMIT_KEY = 'skillforge:login_locked_until';
+const RATE_LIMIT_MS = 15 * 60 * 1000; // 15 minutes
 
 export default function Login() {
   const navigate = useNavigate();
@@ -12,6 +15,47 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState(() => {
+    const stored = localStorage.getItem(RATE_LIMIT_KEY);
+    if (stored) {
+      const until = parseInt(stored, 10);
+      return until > Date.now() ? until : null;
+    }
+    return null;
+  });
+  const [countdown, setCountdown] = useState(0);
+  const countdownRef = useRef(null);
+
+  // Manage countdown timer when locked
+  useEffect(() => {
+    if (!lockedUntil) { setCountdown(0); return; }
+    const tick = () => {
+      const remaining = Math.max(0, lockedUntil - Date.now());
+      setCountdown(remaining);
+      if (remaining === 0) {
+        setLockedUntil(null);
+        localStorage.removeItem(RATE_LIMIT_KEY);
+      }
+    };
+    tick();
+    countdownRef.current = setInterval(tick, 1000);
+    return () => clearInterval(countdownRef.current);
+  }, [lockedUntil]);
+
+  const formatCountdown = (ms) => {
+    const totalSec = Math.ceil(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const triggerLockout = () => {
+    const until = Date.now() + RATE_LIMIT_MS;
+    localStorage.setItem(RATE_LIMIT_KEY, String(until));
+    setLockedUntil(until);
+    setFailedAttempts(0);
+  };
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -61,15 +105,37 @@ export default function Login() {
     setError('');
     setSuccessMessage('');
 
+    // Client-side lockout check
+    if (lockedUntil && lockedUntil > Date.now()) return;
+
     if (!validateForm()) return;
 
     setLoading(true);
     try {
       await login(email, password);
+      // Clear any lockout state on successful login
+      setFailedAttempts(0);
+      localStorage.removeItem(RATE_LIMIT_KEY);
       const redirectPath = location.state?.from || getDashboardRoute();
       navigate(redirectPath, { replace: true });
     } catch (err) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+      const msg = err.message || 'Login failed. Please check your credentials.';
+      const isRateLimited = msg.toLowerCase().includes('too many') || msg.includes('rate limit');
+
+      if (isRateLimited) {
+        triggerLockout();
+        setError('');
+      } else {
+        const newAttempts = failedAttempts + 1;
+        setFailedAttempts(newAttempts);
+        // Client-side: lock after 5 consecutive failures (same threshold as server)
+        if (newAttempts >= 5) {
+          triggerLockout();
+          setError('');
+        } else {
+          setError(msg);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -110,10 +176,30 @@ export default function Login() {
             </div>
           )}
 
+          {/* Rate-limit lockout banner */}
+          {lockedUntil && countdown > 0 && (
+            <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/8 p-5 text-center">
+              <div className="text-2xl mb-2">🔒</div>
+              <p className="text-amber-300 font-bold text-sm mb-1">Too many failed attempts</p>
+              <p className="text-amber-400/70 text-xs mb-3">Please wait before trying again</p>
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                <span className="text-amber-300 font-black text-xl tabular-nums">{formatCountdown(countdown)}</span>
+              </div>
+            </div>
+          )}
+
           {/* Error Message */}
-          {error && (
-            <div className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm">
-              {error}
+          {error && !lockedUntil && (
+            <div className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex items-start gap-2">
+              <span className="mt-0.5 flex-shrink-0">⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Failed attempts warning (before lockout) */}
+          {failedAttempts > 0 && failedAttempts < 5 && !lockedUntil && (
+            <div className="mb-4 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20 text-amber-400 text-xs text-center">
+              {5 - failedAttempts} attempt{5 - failedAttempts !== 1 ? 's' : ''} remaining before temporary lockout
             </div>
           )}
 
@@ -130,8 +216,8 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors"
-                disabled={loading}
+                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-40"
+                disabled={loading || (lockedUntil && countdown > 0)}
               />
             </div>
 
@@ -146,8 +232,8 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors"
-                disabled={loading}
+                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-40"
+                disabled={loading || (lockedUntil && countdown > 0)}
               />
             </div>
 
@@ -164,10 +250,12 @@ export default function Login() {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (lockedUntil && countdown > 0)}
               className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
             >
-              {loading ? '⏳ Signing in...' : 'Sign In'}
+              {loading ? '⏳ Signing in…'
+                : (lockedUntil && countdown > 0) ? `🔒 Locked — ${formatCountdown(countdown)}`
+                : 'Sign In'}
             </button>
           </form>
 

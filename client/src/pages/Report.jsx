@@ -125,7 +125,11 @@ function AdminReportView({ user, navigate }) {
       <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black text-white">Training Reports</h1>
-          <p className="text-slate-400 text-sm mt-0.5">Platform-wide employee training completion overview</p>
+          <p className="text-slate-400 text-sm mt-0.5">
+            {user?.role === 'manager'
+              ? 'Your team\'s training completion overview'
+              : 'Platform-wide employee training completion overview'}
+          </p>
         </div>
         <button onClick={loadReports} className="px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white text-sm font-medium transition-all">↻ Refresh</button>
       </div>
@@ -133,7 +137,7 @@ function AdminReportView({ user, navigate }) {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {[
-          { label: 'Total Employees', value: reports.length, color: '#6366f1' },
+          { label: user?.role === 'manager' ? 'Team Members' : 'Total Employees', value: reports.length, color: '#6366f1' },
           { label: 'Avg Completion', value: reports.length ? Math.round(reports.reduce((s, r) => s + r.completionRate, 0) / reports.length) + '%' : '0%', color: '#10b981' },
           { label: 'Fully Completed', value: reports.filter(r => r.completionRate === 100).length, color: '#f59e0b' },
           { label: 'Total Assignments', value: reports.reduce((s, r) => s + r.totalAssignments, 0), color: '#8b5cf6' },

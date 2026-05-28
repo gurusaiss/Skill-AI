@@ -156,7 +156,7 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
             <ul className="space-y-1.5 text-xs text-slate-300">
               <li>• Take notes as you read — writing reinforces memory</li>
               <li>• Try to relate concepts to real-world scenarios you know</li>
-              <li>• The quiz below has 10 questions — score 70%+ to unlock next session</li>
+              <li>• The quiz below has 10 questions — answer all questions to complete this session</li>
             </ul>
           </section>
         </div>
@@ -254,8 +254,11 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
       return { ...q, userAnswer: answers[i] || '', isCorrect };
     });
     const pct = Math.round((correct / questions.length) * 100);
-    setScore({ correct, total: questions.length, pct, results });
+    const scoreData = { correct, total: questions.length, pct, results };
+    setScore(scoreData);
     setSubmitted(true);
+    // Immediately call onComplete with score so parent can save progress + show ScorePhase
+    onComplete(scoreData);
   };
 
   if (loadingQ) {
@@ -270,9 +273,8 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
     );
   }
 
-  if (submitted && score) {
-    return <ScorePhase score={score} sessionTitle={sessionTitle} onComplete={onComplete} />;
-  }
+  // Once submitted, parent ModuleSession takes over with ScorePhase
+  if (submitted) return null;
 
   const q = questions[currentQ];
   if (!q) return null;
@@ -418,9 +420,10 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
 
 // ─── Score phase ──────────────────────────────────────────────────────────────
 
-function ScorePhase({ score, sessionTitle, onComplete }) {
+function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatch, onRetryQuiz, onNextSession, onDashboard, saving }) {
   const { pct, correct, total, results } = score;
   const passed = pct >= 70;
+  const hasNext = sessionIndex + 1 < totalSessions;
 
   const strengths = results.filter(r => r.isCorrect).slice(0, 3);
   const weaknesses = results.filter(r => !r.isCorrect).slice(0, 3);
@@ -433,13 +436,13 @@ function ScorePhase({ score, sessionTitle, onComplete }) {
           <div className="text-6xl mb-4">{pct >= 90 ? '🌟' : pct >= 70 ? '🎉' : '📚'}</div>
           <h1 className="text-4xl font-black text-white mb-2">{pct}%</h1>
           <p className={`text-lg font-bold mb-1 ${passed ? 'text-emerald-400' : 'text-amber-400'}`}>
-            {passed ? 'Session Passed!' : 'Keep Practicing'}
+            {passed ? 'Session Complete!' : 'Session Complete'}
           </p>
           <p className="text-slate-400 text-sm">{correct} correct out of {total} questions</p>
-          {passed ? (
-            <p className="text-emerald-300 text-xs mt-2">Next session is now unlocked 🚀</p>
+          {saving ? (
+            <p className="text-slate-400 text-xs mt-2 animate-pulse">💾 Saving progress…</p>
           ) : (
-            <p className="text-amber-300 text-xs mt-2">Score 70%+ to unlock the next session</p>
+            <p className="text-emerald-300 text-xs mt-2">✓ Progress saved</p>
           )}
         </div>
 
@@ -461,7 +464,7 @@ function ScorePhase({ score, sessionTitle, onComplete }) {
             </div>
           )}
 
-          {/* Weaknesses */}
+          {/* Areas to Review */}
           {weaknesses.length > 0 && (
             <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-5">
               <h3 className="text-xs font-bold text-rose-400 uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -487,14 +490,60 @@ function ScorePhase({ score, sessionTitle, onComplete }) {
           <ul className="space-y-1.5 text-xs text-slate-300">
             {pct >= 90 && <li>• Excellent work! Consider exploring advanced topics in this area.</li>}
             {pct >= 70 && pct < 90 && <li>• Good performance. Review the questions you missed to solidify understanding.</li>}
-            {pct < 70 && <li>• Review the session content again, focusing on the areas you found challenging.</li>}
+            {pct < 70 && <li>• Review the session content again to reinforce these concepts before moving on.</li>}
             {weaknesses.length > 0 && <li>• Focus on: {weaknesses.map(r => r.question.slice(0, 40)).join('; ')}…</li>}
             <li>• Apply what you've learned in a real project or work scenario.</li>
           </ul>
         </div>
 
-        {/* Review answers */}
-        <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden mb-8">
+        {/* Action buttons */}
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <button
+            onClick={onRewatch}
+            className="flex flex-col items-center gap-1.5 py-3.5 px-4 rounded-xl border border-slate-700/50 bg-slate-800/40 hover:bg-slate-700/50 hover:border-slate-600 text-slate-300 hover:text-white transition-all text-sm font-semibold"
+          >
+            <span className="text-lg">🔁</span>
+            <span>Rewatch Session</span>
+            <span className="text-xs text-slate-500 font-normal">Review the material</span>
+          </button>
+          <button
+            onClick={onRetryQuiz}
+            className="flex flex-col items-center gap-1.5 py-3.5 px-4 rounded-xl border border-slate-700/50 bg-slate-800/40 hover:bg-slate-700/50 hover:border-slate-600 text-slate-300 hover:text-white transition-all text-sm font-semibold"
+          >
+            <span className="text-lg">🔄</span>
+            <span>Retry Quiz</span>
+            <span className="text-xs text-slate-500 font-normal">Try for a higher score</span>
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {hasNext && (
+            <button
+              onClick={onNextSession}
+              className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+            >
+              <span>Continue to Day {sessionIndex + 2}</span>
+              <span>→</span>
+            </button>
+          )}
+          <button
+            onClick={onDashboard}
+            className={`w-full py-3 rounded-xl border text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+              hasNext
+                ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:text-white hover:bg-slate-700/40'
+                : 'border-indigo-500/40 bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30'
+            }`}
+          >
+            <span>🏠</span>
+            <span>{hasNext ? 'Back to Module Dashboard' : 'Complete — Back to Dashboard'}</span>
+          </button>
+        </div>
+
+        {/* Divider */}
+        <div className="my-8 border-t border-slate-700/30" />
+
+        {/* Answer review (collapsible feel via scroll) */}
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
           <div className="p-4 border-b border-slate-700/40">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Answer Review</h3>
           </div>
@@ -522,15 +571,6 @@ function ScorePhase({ score, sessionTitle, onComplete }) {
             ))}
           </div>
         </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={onComplete}
-            className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all text-sm"
-          >
-            {passed ? '← Back to Sessions →' : '← Review Content'}
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -552,6 +592,9 @@ export default function ModuleSession() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [quizScore, setQuizScore] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [quizKey, setQuizKey] = useState(0); // increment to force QuizPhase remount on retry
 
   useEffect(() => {
     loadData();
@@ -559,6 +602,8 @@ export default function ModuleSession() {
 
   const loadData = async () => {
     setLoading(true);
+    setPhase('content');
+    setQuizScore(null);
     try {
       const mod = await authFetch(`/api/modules/${moduleId}`);
       if (!mod) throw new Error('Module not found');
@@ -575,22 +620,76 @@ export default function ModuleSession() {
     }
   };
 
-  const handleQuizComplete = async (score) => {
-    // Save progress
-    if (assignmentId && score?.pct >= 70) {
-      try {
-        await authFetch(`/api/assignments/${assignmentId}`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            sessionProgress: { [sessionIndex]: 'completed' },
-            status: 'in_progress',
-            progress: Math.min(100, Math.round(((sessionIndex + 1) / (module?.sessions?.length || 1)) * 100)),
-          }),
-        });
-      } catch (_) {}
+  // Called by QuizPhase when the user submits their answers.
+  // Always saves progress regardless of score, then transitions to score phase.
+  const handleQuizDone = async (score) => {
+    setQuizScore(score);
+    setPhase('score');
+
+    if (!assignmentId) return;
+
+    setSaving(true);
+    try {
+      // Fetch current assignment to get the full existing state
+      const current = await authFetch(`/api/assignments/${assignmentId}`);
+      const existingProgress = current?.sessionProgress || current?.session_progress || {};
+      const existingProgressData = current?.progress_data || {};
+      const existingSessionReports = existingProgressData?.sessionReports || {};
+
+      // Merge session completion — never overwrite previous sessions
+      const mergedProgress = { ...existingProgress, [sessionIndex]: 'completed' };
+
+      // Calculate overall progress
+      const totalSessions = module?.sessions?.length || 1;
+      const completedCount = Object.values(mergedProgress).filter(s => s === 'completed').length;
+      const newProgress = Math.min(100, Math.round((completedCount / totalSessions) * 100));
+      const newStatus = newProgress >= 100 ? 'completed' : 'in_progress';
+
+      // Build per-session report for analytics/reports
+      const sessionReport = {
+        score: score.pct,
+        correct: score.correct,
+        total: score.total,
+        completedAt: new Date().toISOString(),
+        sessionTitle: session?.title || session?.topic || `Day ${sessionIndex + 1}`,
+        strengths: score.results.filter(r => r.isCorrect).map(r => r.question).slice(0, 3),
+        weaknesses: score.results.filter(r => !r.isCorrect).map(r => r.question).slice(0, 3),
+      };
+
+      await authFetch(`/api/assignments/${assignmentId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          sessionProgress: mergedProgress,
+          status: newStatus,
+          progress: newProgress,
+          progress_data: {
+            ...existingProgressData,
+            sessionReports: { ...existingSessionReports, [sessionIndex]: sessionReport },
+          },
+        }),
+      });
+    } catch (_) {
+      // Silently fail — UI still shows score
+    } finally {
+      setSaving(false);
     }
-    // Go back to module dashboard sessions tab
+  };
+
+  const goToDashboard = () => {
     navigate(`/module/${moduleId}/learn${assignmentId ? `?assignmentId=${assignmentId}` : ''}`);
+  };
+
+  const goToNextSession = () => {
+    navigate(`/module/${moduleId}/session/${sessionIndex + 1}${assignmentId ? `?assignmentId=${assignmentId}` : ''}`);
+  };
+
+  const handleRewatch = () => {
+    setPhase('content');
+  };
+
+  const handleRetryQuiz = () => {
+    setQuizKey(k => k + 1); // force QuizPhase to remount and reload fresh questions
+    setPhase('quiz');
   };
 
   if (loading) {
@@ -612,7 +711,7 @@ export default function ModuleSession() {
           <h2 className="text-xl font-black text-white mb-2">Session Not Found</h2>
           <p className="text-slate-400 text-sm mb-6">{error}</p>
           <button
-            onClick={() => navigate(`/module/${moduleId}/learn${assignmentId ? `?assignmentId=${assignmentId}` : ''}`)}
+            onClick={goToDashboard}
             className="px-6 py-3 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all"
           >
             ← Back to Module
@@ -621,6 +720,8 @@ export default function ModuleSession() {
       </div>
     );
   }
+
+  const totalSessions = module?.sessions?.length || 1;
 
   if (phase === 'content') {
     return (
@@ -636,10 +737,27 @@ export default function ModuleSession() {
   if (phase === 'quiz') {
     return (
       <QuizPhase
+        key={quizKey}
         session={session}
         sessionIndex={sessionIndex}
         module={module}
-        onComplete={handleQuizComplete}
+        onComplete={handleQuizDone}
+      />
+    );
+  }
+
+  if (phase === 'score' && quizScore) {
+    return (
+      <ScorePhase
+        score={quizScore}
+        sessionTitle={session?.title || session?.topic || `Day ${sessionIndex + 1}`}
+        sessionIndex={sessionIndex}
+        totalSessions={totalSessions}
+        saving={saving}
+        onRewatch={handleRewatch}
+        onRetryQuiz={handleRetryQuiz}
+        onNextSession={goToNextSession}
+        onDashboard={goToDashboard}
       />
     );
   }

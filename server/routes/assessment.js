@@ -64,14 +64,14 @@ router.get('/', authenticate, requireRole('admin', 'manager'), async (req, res) 
  */
 router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
-    const { title, description, questions, schedule, targetUsers } = req.body;
+    const { title, description, questions, schedule, targetUsers, moduleId } = req.body;
 
-    // Validate required fields
-    if (!title || !description || !questions || !Array.isArray(questions)) {
+    // Validate required fields (description is optional)
+    if (!title || !questions || !Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({
         success: false,
         data: null,
-        error: 'Title, description, and questions array are required'
+        error: 'Title and at least one question are required'
       });
     }
 
@@ -80,10 +80,11 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
     const newAssessment = {
       id: randomUUID(),
       title,
-      description,
+      description: description || '',
+      moduleId: moduleId || null,          // link to module
       questions,
-      schedule: schedule || null, // { type: 'after_session', sessionNumber: 5 } or { type: 'scheduled', date: '2024-01-01' }
-      targetUsers: targetUsers || [], // Array of user IDs or ['all']
+      schedule: schedule || { type: 'manual' },
+      targetUsers: targetUsers || ['all'],
       createdBy: req.user.userId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

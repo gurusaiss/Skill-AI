@@ -69,10 +69,12 @@ function Navbar() {
     || location.pathname.startsWith('/module/');
 
   const NAV_LINKS = [
-    { to: '/admin/dashboard', label: 'Dashboard',  icon: '📊', roles: ['admin'] },
-    { to: '/admin/users',    label: 'User Management', icon: '👑', roles: ['admin'] },
-    { to: '/admin/modules',  label: 'Create Module',  icon: '📚', roles: ['admin', 'manager'] },
-    { to: '/report',         label: 'Reports',        icon: '📄', roles: ['admin', 'manager'] },
+    { to: '/admin/dashboard',   label: 'Dashboard',   icon: '📊', roles: ['admin'] },
+    { to: '/admin/users',       label: 'Users',       icon: '👥', roles: ['admin'] },
+    { to: '/admin/modules',     label: 'Modules',     icon: '📚', roles: ['admin', 'manager'] },
+    { to: '/admin/assignments', label: 'Assignments', icon: '📋', roles: ['admin', 'manager'] },
+    { to: '/admin/assessments', label: 'Assessments', icon: '📝', roles: ['admin', 'manager'] },
+    { to: '/report',            label: 'Reports',     icon: '📄', roles: ['admin', 'manager'] },
   ];
 
   const ROLE_LINKS = {
@@ -83,10 +85,7 @@ function Navbar() {
       { to: '/report',             label: 'Reports',    icon: '📄' },
     ],
     employee: [
-      { to: '/dashboard',     label: 'Dashboard',    icon: '📊' },
-      { to: '/career-twin',   label: 'Career Twin',  icon: '🧬' },
-      { to: '/simulation',    label: 'Simulator',    icon: '🔮' },
-      { to: '/report',        label: 'Report',       icon: '📄' },
+      { to: '/dashboard', label: 'My Learning', icon: '📚' },
     ],
   };
 
@@ -114,8 +113,10 @@ function Navbar() {
           <nav className="hidden md:flex items-center gap-1 text-sm">
             {roleLinks.map(({ to, label, icon }) => (
               <Link key={to} to={to}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all whitespace-nowrap
                   ${location.pathname === to
+                    || location.pathname === '/employee/dashboard' && to === '/dashboard'
+                    || (to !== '/admin/dashboard' && to !== '/dashboard' && to !== '/manager/dashboard' && location.pathname.startsWith(to))
                     ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
                 <span className="text-sm">{icon}</span>
@@ -244,7 +245,8 @@ function Navbar() {
             {roleLinks.map(({ to, label, icon }) => (
               <Link key={to} to={to} onClick={() => setMenuOpen(false)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all
-                  ${location.pathname === to ? 'bg-indigo-600/20 text-indigo-300' : 'text-slate-400'}`}>
+                  ${location.pathname === to || (location.pathname === '/employee/dashboard' && to === '/dashboard')
+                    ? 'bg-indigo-600/20 text-indigo-300' : 'text-slate-400'}`}>
                 {icon} {label}
               </Link>
             ))}

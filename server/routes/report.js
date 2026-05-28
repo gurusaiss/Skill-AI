@@ -70,9 +70,16 @@ router.get('/all', authenticate, async (req, res) => {
     const allUsers = users.status === 'fulfilled' ? (users.value || []) : [];
     const allAssignments = assignmentsRaw.status === 'fulfilled' ? (assignmentsRaw.value || []) : [];
 
-    const targetUsers = req.user.role === 'admin'
-      ? allUsers.filter(u => u.role === 'employee')
-      : allUsers.filter(u => u.role === 'employee'); // managers see all employees for now
+    let targetUsers;
+    if (req.user.role === 'admin') {
+      targetUsers = allUsers.filter(u => u.role === 'employee');
+    } else {
+      // Manager: only show their assigned employees
+      const UserStoreImport = (await import('../services/UserStore.js')).default;
+      const managerEmployees = await UserStoreImport.getManagerEmployees(req.user.userId);
+      const managerEmpIds = new Set(managerEmployees.map(e => e.userId || e.id));
+      targetUsers = allUsers.filter(u => u.role === 'employee' && managerEmpIds.has(u.userId || u.id));
+    }
 
     const reports = targetUsers.map(u => {
       const uid = u.userId || u.id;

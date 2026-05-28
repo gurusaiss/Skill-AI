@@ -275,6 +275,130 @@ router.post('/content', authenticate, async (req, res) => {
 });
 
 /**
+ * GET /api/assignments/dashboard - Get assignment dashboard summary
+ * NOTE: must be registered BEFORE /:id to avoid Express wildcard match
+ */
+router.get('/dashboard', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user.id;
+
+    const allAssignments = await UserStore.getAssignments({});
+    const userAssignments = allAssignments.filter(
+      a => a.assigned_to_user === userId || a.assigned_by === userId
+    );
+
+    const summary = {
+      total: userAssignments.length,
+      assigned: userAssignments.filter(a => a.status === 'assigned').length,
+      inProgress: userAssignments.filter(a => a.status === 'in_progress').length,
+      completed: userAssignments.filter(a => a.status === 'completed').length,
+      overdue: userAssignments.filter(a => a.status === 'overdue').length,
+      avgProgress: userAssignments.length > 0
+        ? Math.round(userAssignments.reduce((sum, a) => sum + (a.progress || 0), 0) / userAssignments.length)
+        : 0,
+    };
+
+    res.json({ success: true, data: { summary, assignments: userAssignments }, error: null });
+  } catch (error) {
+    console.error('[Assignment Routes] Dashboard error:', error.message);
+    res.status(500).json({
+      success: false,
+      data: null,
+      error: { code: 'ASSIGNMENT_ERROR', message: 'Failed to get assignment dashboard' },
+    });
+  }
+});
+
+/**
+ * GET /api/assignments/requests
+ * Admin gets all pending requests
+ * NOTE: must be registered BEFORE /:id to avoid Express wildcard match
+ */
+router.get('/requests', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    // Return all requests; client filters by status
+    const requests = await UserStore.getAssignmentRequests({});
+    res.json({ success: true, data: { requests } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: { message: 'Failed to fetch requests' } });
+  }
+});
+
+/**
+ * POST /api/assignments/requests/:id/approve
+ * Admin approves a request
+ * NOTE: must be registered BEFORE /:id to avoid Express wildcard match
+ */
+router.post('/requests/:id/approve', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await UserStore.updateAssignmentRequest(id, {
+      status: 'approved',
+      decided_by: req.user.userId,
+    });
+
+    // Auto-create the actual assignment
+    await UserStore.createAssignment({
+      type: 'module',
+      assignable_id: updated.module_id,
+      assignable_type: 'module',
+      assigned_to_user: updated.employee_id,
+      assigned_by: req.user.userId,
+      assigned_by_manager: updated.manager_id,
+      status: 'assigned',
+      progress: 0,
+    });
+
+    // Notify the employee
+    try {
+      await db.createNotification({
+        user_id: updated.employee_id,
+        title: 'New Learning Assignment',
+        message: 'A new module has been assigned to you. Check your dashboard to get started.',
+        type: 'assignment',
+        action_url: '/dashboard',
+        read: false,
+      });
+    } catch (_) {}
+
+    res.json({ success: true, data: { request: updated } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: { message: 'Failed to approve' } });
+  }
+});
+
+/**
+ * POST /api/assignments/requests/:id/reject
+ * Admin rejects a request
+ * NOTE: must be registered BEFORE /:id to avoid Express wildcard match
+ */
+router.post('/requests/:id/reject', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await UserStore.updateAssignmentRequest(id, {
+      status: 'rejected',
+      decided_by: req.user.userId,
+    });
+
+    // Notify the manager
+    try {
+      await db.createNotification({
+        user_id: updated.manager_id,
+        title: 'Assignment Request Rejected',
+        message: 'Your module assignment request has been rejected by an administrator.',
+        type: 'rejection',
+        action_url: '/admin/assignments',
+        read: false,
+      });
+    } catch (_) {}
+
+    res.json({ success: true, data: { request: updated } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: { message: 'Failed to reject' } });
+  }
+});
+
+/**
  * GET /api/assignments - Get all assignments (with filters)
  */
 router.get('/', authenticate, async (req, res) => {
@@ -394,6 +518,12 @@ router.put('/:id', authenticate, async (req, res) => {
       });
     }
 
+    // Server-side safety merge: never discard existing session progress
+    if (sessionProgress !== undefined) {
+      const existingProgress = assignment.sessionProgress || assignment.session_progress || {};
+      updates.sessionProgress = { ...existingProgress, ...sessionProgress };
+    }
+
     const updated = await UserStore.updateAssignment(id, updates);
 
     res.json({ success: true, data: { assignment: updated }, error: null });
@@ -408,35 +538,32 @@ router.put('/:id', authenticate, async (req, res) => {
 });
 
 /**
- * GET /api/assignments/dashboard - Get assignment dashboard summary
+ * DELETE /api/assignments/:id - Delete a content assignment (admin only)
  */
-router.get('/dashboard', authenticate, async (req, res) => {
+router.delete('/:id', authenticate, requireRole('admin'), async (req, res) => {
   try {
-    const userId = req.user.userId || req.user.id;
+    const { id } = req.params;
 
-    const allAssignments = await UserStore.getAssignments({});
-    const userAssignments = allAssignments.filter(
-      a => a.assigned_to_user === userId || a.assigned_by === userId
-    );
+    const all = await UserStore.getAssignments({});
+    const assignment = all.find(a => a.id === id);
 
-    const summary = {
-      total: userAssignments.length,
-      assigned: userAssignments.filter(a => a.status === 'assigned').length,
-      inProgress: userAssignments.filter(a => a.status === 'in_progress').length,
-      completed: userAssignments.filter(a => a.status === 'completed').length,
-      overdue: userAssignments.filter(a => a.status === 'overdue').length,
-      avgProgress: userAssignments.length > 0
-        ? Math.round(userAssignments.reduce((sum, a) => sum + (a.progress || 0), 0) / userAssignments.length)
-        : 0,
-    };
+    if (!assignment) {
+      return res.status(404).json({
+        success: false,
+        data: null,
+        error: { code: 'ASSIGNMENT_NOT_FOUND', message: 'Assignment not found' },
+      });
+    }
 
-    res.json({ success: true, data: { summary, assignments: userAssignments }, error: null });
+    await UserStore.deleteAssignment(id);
+
+    res.json({ success: true, data: { id }, error: null });
   } catch (error) {
-    console.error('[Assignment Routes] Dashboard error:', error.message);
+    console.error('[Assignment Routes] Delete assignment error:', error.message);
     res.status(500).json({
       success: false,
       data: null,
-      error: { code: 'ASSIGNMENT_ERROR', message: 'Failed to get assignment dashboard' },
+      error: { code: 'ASSIGNMENT_ERROR', message: 'Failed to delete assignment' },
     });
   }
 });
@@ -474,91 +601,5 @@ async function handleManagerRequest(req, res) {
 
 router.post('/request',  authenticate, requireRole('manager'), handleManagerRequest);
 router.post('/requests', authenticate, requireRole('manager'), handleManagerRequest);
-
-/**
- * GET /api/assignments/requests
- * Admin gets all pending requests
- */
-router.get('/requests', authenticate, requireRole('admin'), async (req, res) => {
-  try {
-    // Return all requests; client filters by status
-    const requests = await UserStore.getAssignmentRequests({});
-    res.json({ success: true, data: { requests } });
-  } catch (error) {
-    res.status(500).json({ success: false, error: { message: 'Failed to fetch requests' } });
-  }
-});
-
-/**
- * POST /api/assignments/requests/:id/approve
- * Admin approves a request
- */
-router.post('/requests/:id/approve', authenticate, requireRole('admin'), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updated = await UserStore.updateAssignmentRequest(id, {
-      status: 'approved',
-      decided_by: req.user.userId,
-    });
-
-    // Auto-create the actual assignment
-    await UserStore.createAssignment({
-      type: 'module',
-      assignable_id: updated.module_id,
-      assignable_type: 'module',
-      assigned_to_user: updated.employee_id,
-      assigned_by: req.user.userId,
-      assigned_by_manager: updated.manager_id,
-      status: 'assigned',
-      progress: 0,
-    });
-
-    // Notify the employee
-    try {
-      await db.createNotification({
-        user_id: updated.employee_id,
-        title: 'New Learning Assignment',
-        message: 'A new module has been assigned to you. Check your dashboard to get started.',
-        type: 'assignment',
-        action_url: '/dashboard',
-        read: false,
-      });
-    } catch (_) {}
-
-    res.json({ success: true, data: { request: updated } });
-  } catch (error) {
-    res.status(500).json({ success: false, error: { message: 'Failed to approve' } });
-  }
-});
-
-/**
- * POST /api/assignments/requests/:id/reject
- * Admin rejects a request
- */
-router.post('/requests/:id/reject', authenticate, requireRole('admin'), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updated = await UserStore.updateAssignmentRequest(id, {
-      status: 'rejected',
-      decided_by: req.user.userId,
-    });
-
-    // Notify the manager
-    try {
-      await db.createNotification({
-        user_id: updated.manager_id,
-        title: 'Assignment Request Rejected',
-        message: 'Your module assignment request has been rejected by an administrator.',
-        type: 'rejection',
-        action_url: '/admin/assignments',
-        read: false,
-      });
-    } catch (_) {}
-
-    res.json({ success: true, data: { request: updated } });
-  } catch (error) {
-    res.status(500).json({ success: false, error: { message: 'Failed to reject' } });
-  }
-});
 
 export default router;

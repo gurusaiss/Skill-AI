@@ -196,7 +196,6 @@ export default function ManagerDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [dashboardStats, setDashboardStats] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -229,45 +228,19 @@ export default function ManagerDashboard() {
     setLoading(true);
     setError('');
     try {
-      const [statsRes, employeesRes, assignmentsRes] = await Promise.allSettled([
-        fetchJSON('/api/assignments/dashboard'),
+      const [employeesRes, assignmentsRes] = await Promise.allSettled([
         user?.userId ? fetchJSON(`/api/assignments/manager/${user.userId}/employees`) : Promise.resolve(null),
         fetchJSON('/api/assignments'),
       ]);
-
-      if (statsRes.status === 'fulfilled' && statsRes.value) {
-        // Server: { success, data: { summary, assignments } }
-        const statsData = statsRes.value?.data?.summary || statsRes.value?.summary || statsRes.value?.data || statsRes.value;
-        setDashboardStats(statsData);
-      }
 
       if (employeesRes.status === 'fulfilled' && employeesRes.value) {
         // Server wraps in { success, data: { employees: [...] } }
         const empData = employeesRes.value?.data?.employees
           || employeesRes.value?.employees
           || (Array.isArray(employeesRes.value) ? employeesRes.value : []);
-        const empList = Array.isArray(empData) ? empData : [];
-        // Fallback: if no assigned employees, fetch all users with employee role
-        if (empList.length === 0) {
-          try {
-            const allUsersRes = await fetchJSON('/api/users?role=employee');
-            const allUsers = allUsersRes?.data?.users || allUsersRes?.users || (Array.isArray(allUsersRes) ? allUsersRes : []);
-            setEmployees(Array.isArray(allUsers) ? allUsers : []);
-          } catch (_) {
-            setEmployees([]);
-          }
-        } else {
-          setEmployees(empList);
-        }
+        setEmployees(Array.isArray(empData) ? empData : []);
       } else {
-        // Fallback: fetch all employees
-        try {
-          const allUsersRes = await fetchJSON('/api/users?role=employee');
-          const allUsers = allUsersRes?.data?.users || allUsersRes?.users || (Array.isArray(allUsersRes) ? allUsersRes : []);
-          setEmployees(Array.isArray(allUsers) ? allUsers : []);
-        } catch (_) {
-          setEmployees([]);
-        }
+        setEmployees([]);
       }
 
       if (assignmentsRes.status === 'fulfilled' && assignmentsRes.value) {
@@ -279,7 +252,7 @@ export default function ManagerDashboard() {
         setAssignments(Array.isArray(assignData) ? assignData : []);
       }
 
-      if (statsRes.status === 'rejected' && employeesRes.status === 'rejected' && assignmentsRes.status === 'rejected') {
+      if (employeesRes.status === 'rejected' && assignmentsRes.status === 'rejected') {
         throw new Error('Failed to load dashboard data');
       }
     } catch (err) {
@@ -330,12 +303,14 @@ export default function ManagerDashboard() {
     })
     .slice(0, 8);
 
-  const stats = dashboardStats || {};
-  const totalEmployees = stats.totalEmployees || employees.length || 0;
-  const activeAssignments = stats.activeAssignments || assignments.filter((a) => a.status === 'in_progress' || a.status === 'active').length || 0;
-  const completedAssignments = stats.completed || assignments.filter((a) => a.status === 'completed').length || 0;
-  const avgProgress = stats.avgProgress || (assignments.length > 0 ? Math.round(assignments.reduce((s, a) => s + (a.progress || 0), 0) / assignments.length) : 0);
-  const overdueAssignments = stats.overdue || assignments.filter((a) => isOverdue(a.dueDate, a.status)).length || 0;
+  // Always compute stats from the scoped assignments array (already filtered to manager's team by server)
+  const totalEmployees = employees.length;
+  const activeAssignments = assignments.filter((a) => a.status === 'in_progress' || a.status === 'active').length;
+  const completedAssignments = assignments.filter((a) => a.status === 'completed').length;
+  const avgProgress = assignments.length > 0
+    ? Math.round(assignments.reduce((s, a) => s + (a.progress || 0), 0) / assignments.length)
+    : 0;
+  const overdueAssignments = assignments.filter((a) => isOverdue(a.dueDate, a.status)).length;
 
   if (!user) return null;
 
@@ -361,7 +336,7 @@ export default function ManagerDashboard() {
     );
   }
 
-  if (error && !dashboardStats && !employees.length && !assignments.length) {
+  if (error && !employees.length && !assignments.length) {
     return (
       <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-6">
         <div className="text-center bg-red-500/10 border border-red-500/30 rounded-2xl p-8 max-w-md">

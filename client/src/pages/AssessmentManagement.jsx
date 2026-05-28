@@ -31,7 +31,7 @@ const Toast = ({ message, type, onClose }) => {
 const GENERATION_STEPS = [
   { icon: '🧠', label: 'Analyzing module content...', color: '#6366F1' },
   { icon: '📋', label: 'Generating questions with AI...', color: '#8B5CF6' },
-  { icon: '✅', label: 'Formatting and validating...', color: '#10B981' },
+  { icon: '💾', label: 'Saving to database...', color: '#10B981' },
 ];
 
 const QUESTION_TYPE_OPTIONS = [
@@ -77,6 +77,7 @@ export default function AssessmentManagement() {
   const [generatedQuestions, setGeneratedQuestions] = useState(null);
   const [editingQuestions, setEditingQuestions] = useState(null); // for review
   const [saving, setSaving] = useState(false);
+  const [savedAssessmentId, setSavedAssessmentId] = useState(null); // ID of the just-saved assessment
   const [viewDetail, setViewDetail] = useState(null); // assessment to view/edit
   const [search, setSearch] = useState('');
 
@@ -118,7 +119,9 @@ export default function AssessmentManagement() {
       ...prev,
       moduleId,
       title: mod ? `${mod.title} Assessment` : prev.title,
-      description: mod ? `Assessment for ${mod.title} — tests understanding of ${(mod.skills || []).slice(0, 3).join(', ')}` : prev.description,
+      description: mod
+        ? `Assessment for ${mod.title}${mod.skills?.length ? ` — tests understanding of ${mod.skills.slice(0, 3).join(', ')}` : ''}`
+        : prev.description,
     }));
   };
 
@@ -131,30 +134,66 @@ export default function AssessmentManagement() {
     });
   };
 
+  // Combined: generate questions → save to DB → update UI. No manual "Save" step needed.
   const runGeneration = async () => {
     const mod = modules.find(m => m.id === form.moduleId);
+    const assessTitle = form.title || (mod ? `${mod.title} Assessment` : '');
+    if (!assessTitle) { showToast('Select a module or enter a title first', 'error'); return; }
+
     setGenStep(0);
-    await new Promise(r => setTimeout(r, 1200));
+    await new Promise(r => setTimeout(r, 800));
     setGenStep(1);
 
     try {
-      const questions = await authFetch('/api/assessments/generate', {
+      // Step 1 — Generate questions via AI
+      const rawQuestions = await authFetch('/api/assessments/generate', {
         method: 'POST',
         body: JSON.stringify({
-          moduleTitle: mod?.title || form.title,
+          moduleTitle: mod?.title || assessTitle,
           moduleDescription: mod?.description || form.description,
           skills: mod?.skills || [],
           numQuestions: form.numQuestions,
           questionTypes: form.questionTypes,
         }),
       });
+
+      const questions = Array.isArray(rawQuestions) ? rawQuestions : [];
+      if (questions.length === 0) throw new Error('AI returned 0 questions — please try again.');
+
       setGenStep(2);
-      await new Promise(r => setTimeout(r, 800));
-      setGeneratedQuestions(Array.isArray(questions) ? questions : []);
-      setEditingQuestions(Array.isArray(questions) ? questions.map(q => ({ ...q })) : []);
+      await new Promise(r => setTimeout(r, 600));
+
+      // Step 2 — Immediately save to DB
+      const schedule = form.scheduleType === 'after_session'
+        ? { type: 'after_session', sessionNumber: parseInt(form.sessionNumber) || 1 }
+        : form.scheduleType === 'scheduled'
+        ? { type: 'scheduled', date: form.scheduledDate }
+        : { type: 'manual' };
+
+      const saved = await authFetch('/api/assessments', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: assessTitle,
+          description: form.description || (mod ? `Assessment for ${mod.title}` : ''),
+          moduleId: form.moduleId || null,
+          questions,
+          schedule,
+          targetUsers: ['all'],
+        }),
+      });
+
+      // Step 3 — Update UI immediately (no refresh needed)
+      const newRecord = saved || { id: Date.now().toString(), title: assessTitle, questions, createdAt: new Date().toISOString() };
+      setAssessments(prev => [newRecord, ...prev]);
+      setGeneratedQuestions(questions);
+      setEditingQuestions(questions.map(q => ({ ...q })));
+      setSavedAssessmentId(newRecord.id || null);
       setGenStep(-1);
+      showToast(`✅ ${questions.length} questions generated & saved!`, 'success');
+
     } catch (e) {
-      showToast(e.message || 'Generation failed', 'error');
+      console.error('[AssessmentManagement] generation error:', e);
+      showToast(e.message || 'Generation failed — check console for details', 'error');
       setGenStep(-1);
     }
   };
@@ -176,32 +215,25 @@ export default function AssessmentManagement() {
     setEditingQuestions(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const saveAssessment = async () => {
-    if (!form.title) { showToast('Please add a title', 'error'); return; }
+  // Save edited questions back (after reviewing the generated assessment)
+  const saveEditedQuestions = async (assessmentId) => {
     if (!editingQuestions || editingQuestions.length === 0) { showToast('No questions to save', 'error'); return; }
     setSaving(true);
     try {
-      const schedule = form.scheduleType === 'after_session'
-        ? { type: 'after_session', sessionNumber: parseInt(form.sessionNumber) || 1 }
-        : form.scheduleType === 'scheduled'
-        ? { type: 'scheduled', date: form.scheduledDate }
-        : { type: 'manual' };
-
-      const payload = {
-        title: form.title,
-        description: form.description,
-        moduleId: form.moduleId || null,
-        questions: editingQuestions,
-        schedule,
-        targetUsers: ['all'],
-      };
-
-      const saved = await authFetch('/api/assessments', { method: 'POST', body: JSON.stringify(payload) });
-      setAssessments(prev => [saved, ...prev]);
-      showToast('Assessment saved successfully', 'success');
+      if (assessmentId) {
+        // Update existing assessment's questions
+        await authFetch(`/api/assessments/${assessmentId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ questions: editingQuestions }),
+        });
+        setAssessments(prev => prev.map(a =>
+          a.id === assessmentId ? { ...a, questions: editingQuestions } : a
+        ));
+      }
+      showToast('Questions updated', 'success');
       closeGenerate();
     } catch (e) {
-      showToast(e.message || 'Failed to save', 'error');
+      showToast(e.message || 'Failed to update questions', 'error');
     } finally {
       setSaving(false);
     }
@@ -224,6 +256,7 @@ export default function AssessmentManagement() {
     setGenStep(-1);
     setGeneratedQuestions(null);
     setEditingQuestions(null);
+    setSavedAssessmentId(null);
   };
 
   const filtered = useMemo(() => {
@@ -262,65 +295,133 @@ export default function AssessmentManagement() {
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4 mb-8">
           {[
-            { label: 'Total Assessments', value: assessments.length, color: '#6366f1' },
-            { label: 'Total Questions', value: assessments.reduce((s, a) => s + (a.questions?.length || 0), 0), color: '#8b5cf6' },
-            { label: 'Modules Covered', value: new Set(assessments.map(a => a.moduleId).filter(Boolean)).size, color: '#10b981' },
+            { label: 'Total Assessments', value: assessments.length, icon: '📝', borderCls: 'border-indigo-500/25', bgCls: 'bg-indigo-500/5', textCls: 'text-indigo-400', numCls: 'text-indigo-300' },
+            { label: 'Total Questions', value: assessments.reduce((s, a) => s + (a.questions?.length || 0), 0), icon: '❓', borderCls: 'border-purple-500/25', bgCls: 'bg-purple-500/5', textCls: 'text-purple-400', numCls: 'text-purple-300' },
+            { label: 'Modules Covered', value: new Set(assessments.map(a => a.moduleId).filter(Boolean)).size, icon: '📚', borderCls: 'border-emerald-500/25', bgCls: 'bg-emerald-500/5', textCls: 'text-emerald-400', numCls: 'text-emerald-300' },
           ].map((s, i) => (
-            <div key={i} className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
-              <p className="text-3xl font-black" style={{ color: s.color }}>{s.value}</p>
+            <div key={i} className={`rounded-2xl border ${s.borderCls} ${s.bgCls} p-5 flex flex-col gap-2`}>
+              <div className="flex items-center justify-between">
+                <p className={`text-xs font-bold ${s.textCls} uppercase tracking-widest`}>{s.label}</p>
+                <span className="text-lg opacity-60">{s.icon}</span>
+              </div>
+              <p className={`text-4xl font-black ${s.numCls} leading-none`}>{s.value}</p>
             </div>
           ))}
         </div>
 
         {/* Table */}
-        <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 overflow-hidden">
-          <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-700/40">
-            <input type="text" placeholder="Search assessments..." value={search} onChange={e => setSearch(e.target.value)}
-              className="flex-1 px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
-            <button onClick={loadAll} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-400 hover:text-white font-semibold transition-all">↻</button>
+        <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden shadow-xl">
+          {/* Toolbar */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4 border-b border-slate-700/50 bg-slate-800/20">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+              <input
+                type="text"
+                placeholder="Search assessments..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 transition-colors"
+              />
+            </div>
+            <button
+              onClick={loadAll}
+              className="px-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-slate-400 hover:text-white hover:border-slate-600 font-semibold transition-all flex items-center gap-2"
+            >
+              <span>↻</span> Refresh
+            </button>
           </div>
 
           {/* Table header */}
-          <div className="hidden md:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_auto] px-5 py-2 border-b border-slate-700/30 text-xs font-bold text-slate-500 uppercase tracking-widest">
-            <span>Title</span><span>Module</span><span>Questions</span><span>Schedule</span><span>Created</span><span></span>
+          <div className="hidden md:grid px-5 py-3 border-b border-slate-700/40 bg-slate-800/30"
+            style={{ gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 120px' }}>
+            {['Assessment', 'Module', 'Questions', 'Schedule', 'Created', 'Actions'].map(h => (
+              <span key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</span>
+            ))}
           </div>
 
           {loading ? (
-            <div className="p-8 text-center text-slate-500">
-              <div className="animate-spin text-3xl mb-2">⟳</div>
-              <p className="text-sm">Loading assessments...</p>
+            <div className="divide-y divide-slate-700/20">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="px-5 py-4 flex items-center gap-4 animate-pulse">
+                  <div className="flex-1 h-4 bg-slate-700/50 rounded" />
+                  <div className="w-32 h-4 bg-slate-700/40 rounded" />
+                  <div className="w-12 h-4 bg-slate-700/50 rounded" />
+                  <div className="w-20 h-4 bg-slate-700/40 rounded" />
+                  <div className="w-20 h-4 bg-slate-700/40 rounded" />
+                  <div className="w-20 h-6 bg-slate-700/50 rounded-lg" />
+                </div>
+              ))}
             </div>
           ) : filtered.length === 0 ? (
-            <div className="py-16 text-center">
-              <div className="text-5xl mb-4 opacity-20">📝</div>
+            <div className="py-20 text-center">
+              <div className="text-6xl mb-4 opacity-20">📝</div>
               <p className="text-lg font-bold text-slate-400 mb-1">No Assessments Yet</p>
               <p className="text-sm text-slate-600">Click "Generate with AI" to create your first assessment.</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-700/30">
+            <div className="divide-y divide-slate-700/20">
               {filtered.map((a) => (
-                <div key={a.id} className="px-5 py-4 grid grid-cols-1 md:grid-cols-[2fr_2fr_1fr_1fr_1fr_auto] items-center gap-3 hover:bg-slate-800/20 transition-all">
-                  <div>
-                    <p className="text-sm font-bold text-white">{a.title}</p>
+                <div
+                  key={a.id}
+                  className="group px-5 py-4 hover:bg-slate-800/30 transition-all"
+                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 120px', alignItems: 'center', gap: '12px' }}
+                >
+                  {/* Assessment title */}
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white truncate leading-tight">{a.title}</p>
                     {a.description && <p className="text-xs text-slate-500 truncate mt-0.5">{a.description}</p>}
                   </div>
-                  <div><span className="text-sm text-slate-300">{getModuleName(a.moduleId)}</span></div>
-                  <div><span className="text-sm font-bold text-indigo-400">{a.questions?.length || 0}</span></div>
-                  <div><span className="text-xs text-slate-400 capitalize">{a.schedule?.type || 'manual'}</span></div>
-                  <div><span className="text-xs text-slate-500">{a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—'}</span></div>
-                  <div className="flex gap-2">
-                    <button onClick={() => setViewDetail(a)}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-semibold transition-all">
+                  {/* Module */}
+                  <div className="min-w-0">
+                    <span className="text-sm text-slate-300 truncate block">{getModuleName(a.moduleId)}</span>
+                  </div>
+                  {/* Questions count */}
+                  <div>
+                    <span className="text-sm font-black text-indigo-400">{a.questions?.length || 0}</span>
+                    <span className="text-xs text-slate-600 ml-1">Qs</span>
+                  </div>
+                  {/* Schedule */}
+                  <div>
+                    <span className="inline-flex px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-700/40 text-slate-400 capitalize">
+                      {a.schedule?.type || 'manual'}
+                    </span>
+                  </div>
+                  {/* Created */}
+                  <div>
+                    <span className="text-xs text-slate-500">
+                      {a.createdAt ? new Date(a.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'}
+                    </span>
+                  </div>
+                  {/* Actions */}
+                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                    <button
+                      onClick={() => setViewDetail(a)}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-bold transition-all"
+                    >
                       View
                     </button>
-                    <button onClick={() => deleteAssessment(a.id)}
-                      className="px-3 py-1.5 rounded-lg bg-red-600/20 border border-red-500/30 text-red-300 hover:bg-red-600/30 text-xs font-semibold transition-all">
+                    <button
+                      onClick={() => deleteAssessment(a.id)}
+                      className="w-7 h-7 rounded-lg bg-slate-700/50 hover:bg-red-500/20 hover:border-red-500/30 border border-transparent text-slate-400 hover:text-red-300 flex items-center justify-center text-xs transition-all"
+                    >
                       ✕
                     </button>
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Footer */}
+          {!loading && filtered.length > 0 && (
+            <div className="px-5 py-3 border-t border-slate-700/30 bg-slate-800/10 flex items-center justify-between">
+              <p className="text-xs text-slate-600">
+                Showing <span className="text-slate-400 font-semibold">{filtered.length}</span> of{' '}
+                <span className="text-slate-400 font-semibold">{assessments.length}</span> assessments
+              </p>
+              <p className="text-xs text-slate-600">
+                {assessments.reduce((s, a) => s + (a.questions?.length || 0), 0)} total questions
+              </p>
             </div>
           )}
         </div>
@@ -419,9 +520,12 @@ export default function AssessmentManagement() {
                   )}
                 </div>
 
-                <button onClick={runGeneration} disabled={!form.title}
+                {!form.title && !form.moduleId && (
+                  <p className="text-xs text-amber-400 text-center">⚠ Select a module or enter a title to continue</p>
+                )}
+                <button onClick={runGeneration} disabled={!form.title && !form.moduleId}
                   className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
-                  ✦ Generate {form.numQuestions} Questions with AI →
+                  ✦ Generate & Save {form.numQuestions} Questions →
                 </button>
               </div>
             )}
@@ -454,15 +558,24 @@ export default function AssessmentManagement() {
             {/* Step: Review & Edit Questions */}
             {editingQuestions && (
               <div className="p-6">
+                {/* Success Banner */}
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 mb-5">
+                  <span className="text-2xl">✅</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-emerald-300">Assessment saved to database!</p>
+                    <p className="text-xs text-emerald-400/70">{editingQuestions.length} questions generated. You can edit below or close.</p>
+                  </div>
+                  <button onClick={() => { setEditingQuestions(null); setGeneratedQuestions(null); setSavedAssessmentId(null); }}
+                    className="text-xs text-slate-400 hover:text-white border border-slate-700 px-3 py-1.5 rounded-lg transition-all flex-shrink-0">
+                    ← New
+                  </button>
+                </div>
+
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h4 className="text-base font-black text-white">Review Generated Questions</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">{editingQuestions.length} questions — edit if needed before saving</p>
+                    <h4 className="text-base font-black text-white">Review & Edit Questions</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">{editingQuestions.length} questions — make changes and click "Update" to save edits</p>
                   </div>
-                  <button onClick={() => { setEditingQuestions(null); setGeneratedQuestions(null); }}
-                    className="text-xs text-slate-400 hover:text-white border border-slate-700 px-3 py-1.5 rounded-lg transition-all">
-                    ← Regenerate
-                  </button>
                 </div>
 
                 <div className="space-y-4 mb-6">
@@ -517,12 +630,14 @@ export default function AssessmentManagement() {
                 </div>
 
                 <div className="flex gap-3">
-                  <button onClick={saveAssessment} disabled={saving}
-                    className="flex-1 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20">
-                    {saving ? 'Saving...' : `Save Assessment (${editingQuestions.length} questions)`}
-                  </button>
-                  <button onClick={closeGenerate} className="px-5 py-3 rounded-xl bg-slate-800 border border-slate-700 text-sm text-slate-400 hover:text-white transition-all">
-                    Cancel
+                  {savedAssessmentId && (
+                    <button onClick={() => saveEditedQuestions(savedAssessmentId)} disabled={saving}
+                      className="flex-1 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20">
+                      {saving ? 'Updating...' : `Update Questions (${editingQuestions.length})`}
+                    </button>
+                  )}
+                  <button onClick={closeGenerate} className="flex-1 py-3 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/30 text-sm font-bold transition-all">
+                    ✓ Done — View in Table
                   </button>
                 </div>
               </div>
