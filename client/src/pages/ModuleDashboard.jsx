@@ -5,7 +5,7 @@
  * Shows Overview, Sessions (day-wise), Progress, Plan, Build tabs.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 
 const BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
@@ -129,7 +129,7 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
   );
 }
 
-function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onSessionComplete, onRegenerate }) {
+function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onRegenerate }) {
   const navigate = useNavigate();
   const sessions = module?.sessions || module?.content?.sessions || [];
 
@@ -215,10 +215,17 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onSessio
   );
 }
 
-function ProgressTab({ module, sessionStatuses }) {
+function ProgressTab({ module, assignment, sessionStatuses }) {
   const sessions = module?.sessions || module?.content?.sessions || [];
   const completed = sessions.filter((_, i) => sessionStatuses[i] === 'completed').length;
   const pct = sessions.length > 0 ? Math.round((completed / sessions.length) * 100) : 0;
+  const sessionReports = assignment?.progress_data?.sessionReports || {};
+
+  // Average score across completed sessions that have a report
+  const reportValues = Object.values(sessionReports);
+  const avgScore = reportValues.length > 0
+    ? Math.round(reportValues.reduce((s, r) => s + (r.score || 0), 0) / reportValues.length)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -231,10 +238,17 @@ function ProgressTab({ module, sessionStatuses }) {
           </div>
           <span className="text-xl font-black text-white w-12 text-right">{pct}%</span>
         </div>
-        <p className="text-sm text-slate-400">{completed} of {sessions.length} sessions completed</p>
+        <div className="flex items-center gap-6">
+          <p className="text-sm text-slate-400">{completed} of {sessions.length} sessions completed</p>
+          {avgScore !== null && (
+            <p className="text-sm text-slate-400">
+              Avg quiz score: <span className={`font-bold ${avgScore >= 70 ? 'text-emerald-400' : 'text-amber-400'}`}>{avgScore}%</span>
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* Per-session progress */}
+      {/* Per-session breakdown */}
       <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
         <div className="p-4 border-b border-slate-700/40">
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Session Breakdown</h3>
@@ -242,27 +256,54 @@ function ProgressTab({ module, sessionStatuses }) {
         <div className="divide-y divide-slate-700/30">
           {sessions.map((session, index) => {
             const status = sessionStatuses[index] || 'pending';
-            const sessionPct = status === 'completed' ? 100 : status === 'in_progress' ? 50 : 0;
+            const report = sessionReports[index];
+            const quizScore = report?.score ?? null;
             return (
-              <div key={index} className="flex items-center gap-4 px-4 py-3">
-                <SessionStatusIcon status={status} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white truncate">{session.title || `Day ${index + 1}`}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className="flex-1 h-1.5 rounded-full bg-slate-700/60 overflow-hidden">
-                      <div className={`h-full rounded-full transition-all ${status === 'completed' ? 'bg-emerald-500' : status === 'in_progress' ? 'bg-indigo-500' : 'bg-slate-700'}`}
-                        style={{ width: `${sessionPct}%` }} />
-                    </div>
-                    <span className="text-xs text-slate-500 w-8">{sessionPct}%</span>
+              <div key={index} className="px-4 py-3">
+                <div className="flex items-center gap-4">
+                  <SessionStatusIcon status={status} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{session.title || `Day ${index + 1}`}</p>
+                    {report?.completedAt && (
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Completed {new Date(report.completedAt).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {quizScore !== null && (
+                      <span className={`text-xs font-black px-2 py-0.5 rounded-full border ${
+                        quizScore >= 90 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : quizScore >= 70 ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+                        : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                      }`}>
+                        {quizScore}%
+                      </span>
+                    )}
+                    <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded-full border ${
+                      status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : status === 'in_progress' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
+                      : 'bg-slate-700/40 text-slate-500 border-slate-700/40'
+                    }`}>
+                      {status.replace(/_/g, ' ')}
+                    </span>
                   </div>
                 </div>
-                <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded-full border ${
-                  status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                  : status === 'in_progress' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
-                  : 'bg-slate-700/40 text-slate-500 border-slate-700/40'
-                }`}>
-                  {status.replace(/_/g, ' ')}
-                </span>
+                {/* Strengths / weaknesses summary if available */}
+                {report && (report.strengths?.length > 0 || report.weaknesses?.length > 0) && (
+                  <div className="mt-2 ml-9 flex gap-4">
+                    {report.strengths?.length > 0 && (
+                      <p className="text-xs text-emerald-500/70 truncate max-w-[200px]">
+                        ✓ Strong: {report.strengths[0]?.slice(0, 50)}…
+                      </p>
+                    )}
+                    {report.weaknesses?.length > 0 && (
+                      <p className="text-xs text-rose-500/70 truncate max-w-[200px]">
+                        ✗ Review: {report.weaknesses[0]?.slice(0, 50)}…
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -505,8 +546,9 @@ export default function ModuleDashboard() {
       if (assignRes.status === 'fulfilled' && assignRes.value) {
         setAssignment(assignRes.value);
         const progress = assignRes.value?.sessionProgress || assignRes.value?.progress_data?.sessions || {};
-        setSessionStatuses(progress);
-        if (!progress[0]) setSessionStatuses({ 0: 'pending' });
+        // Ensure session 0 always has at least a 'pending' status, without losing other progress
+        const initialStatuses = progress[0] !== undefined ? progress : { ...progress, 0: 'pending' };
+        setSessionStatuses(initialStatuses);
       } else {
         setSessionStatuses({ 0: 'pending' });
       }
@@ -554,21 +596,6 @@ export default function ModuleDashboard() {
       setGenerating(false);
     }
   };
-
-  const handleSessionComplete = useCallback((index) => {
-    setSessionStatuses(prev => ({
-      ...prev,
-      [index]: 'completed',
-      [index + 1]: 'pending',
-    }));
-    // Persist progress
-    if (assignmentId) {
-      authFetch(`/api/assignments/${assignmentId}`, {
-        method: 'PUT',
-        body: JSON.stringify({ sessionProgress: { ...sessionStatuses, [index]: 'completed', [index + 1]: 'pending' } }),
-      }).catch(() => {});
-    }
-  }, [assignmentId, sessionStatuses]);
 
   if (loading || generating) {
     return (
@@ -655,12 +682,11 @@ export default function ModuleDashboard() {
             moduleId={moduleId}
             assignmentId={assignmentId}
             sessionStatuses={sessionStatuses}
-            onSessionComplete={handleSessionComplete}
             onRegenerate={() => generateContent(module)}
           />
         )}
         {activeTab === 'progress' && (
-          <ProgressTab module={module} sessionStatuses={sessionStatuses} />
+          <ProgressTab module={module} assignment={assignment} sessionStatuses={sessionStatuses} />
         )}
         {activeTab === 'plan' && (
           <PlanTab module={module} onRegenerate={() => generateContent(module)} />

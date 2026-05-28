@@ -820,29 +820,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── FRONTIER MODULES ────────────────────────────────────────────────── */}
-      <div className="rounded-2xl border border-slate-700/50 bg-slate-900/60 p-5">
-        <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">🔬 Frontier Intelligence</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { icon: '🚀', label: 'Live Demo',      sub: 'Watch 7 agents run',        path: '/demo',        color: '#10B981' },
-            { icon: '🧬', label: 'Career Twin',    sub: 'Your digital career model', path: '/career-twin', color: '#6366F1' },
-            { icon: '🔮', label: 'Simulator',      sub: 'What-if scenarios',         path: '/simulation',  color: '#8B5CF6' },
-            { icon: '🧠', label: 'Explainability', sub: 'Full reasoning chain',      path: '/explain',     color: '#F59E0B' },
-          ].map(({ icon, label, sub, path, color }) => (
-            <button key={path} onClick={() => navigate(path)}
-              className="flex flex-col items-start gap-2 p-4 rounded-xl border border-slate-700/50 hover:border-slate-500 bg-slate-800/30 hover:bg-slate-800/60 transition-all text-left group">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-                style={{ background: color + '15', border: `1px solid ${color}30` }}>
-                {icon}
-              </div>
-              <div className="font-bold text-slate-200 text-sm group-hover:text-white transition-colors">{label}</div>
-              <div className="text-xs text-slate-500 leading-snug">{sub}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* ── GENERATE REPORT ─────────────────────────────────────────────────── */}
       <button
         onClick={handleReport}

@@ -90,18 +90,18 @@ router.post('/', authenticate, async (req, res) => {
 
     const { title, description, category, difficulty, estimatedDuration, skills, tasks, resources, completionCriteria, content } = req.body;
 
-    // Validate required fields
-    if (!title || !description || !category) {
+    // Validate required fields — only title is strictly required
+    if (!title) {
       return res.status(400).json({
         success: false,
-        error: { message: 'Missing required fields' },
+        error: { message: 'Module title is required' },
       });
     }
 
     const newModule = await db.createModule({
       title,
-      description,
-      category,
+      description: description || `Learn ${title}`,
+      category: category || 'General',
       difficulty: difficulty || 'beginner',
       estimatedDuration: estimatedDuration || '7 days',
       skills: skills || [],

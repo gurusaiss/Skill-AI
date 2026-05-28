@@ -274,9 +274,24 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   const [assignModuleId, setAssignModuleId] = useState('');
   const [assignManagerId, setAssignManagerId] = useState('');
   const [assigning, setAssigning] = useState(false);
+  const [currentManagerId, setCurrentManagerId] = useState(null);
 
   const managers = useMemo(() => users.filter(u => u.role === 'manager' && u.userId !== user.userId), [users, user.userId]);
   const isEmployee = form.role === 'employee';
+
+  // Load current manager for employee
+  useEffect(() => {
+    if (user.role !== 'employee') return;
+    authFetch(`/api/assignments/employee/${user.userId}/manager`)
+      .then(d => {
+        if (d?.managerId || d?.userId) {
+          const mgrid = d.managerId || d.userId;
+          setCurrentManagerId(mgrid);
+          setAssignManagerId(mgrid);
+        }
+      })
+      .catch(() => {});
+  }, [user.userId, user.role]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -330,7 +345,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
       });
       const mgr = managers.find(m => m.userId === assignManagerId);
       setToast({ message: `Manager "${mgr?.name || 'Manager'}" assigned`, type: 'success' });
-      setAssignManagerId('');
+      setCurrentManagerId(assignManagerId); // update current manager display
       onSaved();
     } catch (err) {
       setToast({ message: err.message, type: 'error' });
@@ -437,7 +452,12 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
           {/* Employee-only: Assign Manager */}
           {isEmployee && (
             <div>
-              <h3 className="text-slate-300 font-semibold text-sm mb-3">Assign Manager</h3>
+              <h3 className="text-slate-300 font-semibold text-sm mb-1">Assign Manager</h3>
+              {currentManagerId && (
+                <p className="text-xs text-slate-500 mb-2">
+                  Current: <span className="text-indigo-400 font-medium">{managers.find(m => m.userId === currentManagerId)?.name || 'Unknown'}</span>
+                </p>
+              )}
               <div className="flex gap-2">
                 <select
                   value={assignManagerId}
@@ -446,15 +466,15 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                 >
                   <option value="">Select manager…</option>
                   {managers.map(m => (
-                    <option key={m.userId} value={m.userId}>{m.name}</option>
+                    <option key={m.userId} value={m.userId}>{m.name}{m.userId === currentManagerId ? ' (current)' : ''}</option>
                   ))}
                 </select>
                 <button
                   onClick={handleAssignManager}
-                  disabled={!assignManagerId || assigning}
+                  disabled={!assignManagerId || assigning || assignManagerId === currentManagerId}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-white text-sm font-semibold transition-colors"
                 >
-                  Assign
+                  {assigning ? '…' : assignManagerId === currentManagerId ? '✓ Set' : 'Assign'}
                 </button>
               </div>
             </div>
@@ -506,6 +526,7 @@ export default function UserManagement() {
   const [assignments, setAssignments] = useState([]);
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState('staff');
   const [search, setSearch] = useState('');
@@ -527,6 +548,7 @@ export default function UserManagement() {
   // Fetch all data
   const fetchData = async () => {
     setLoading(true);
+    setLastRefreshed(new Date());
     try {
       const [usersData, assignmentsData, modulesData] = await Promise.allSettled([
         authFetch('/api/users'),
@@ -553,7 +575,12 @@ export default function UserManagement() {
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    // Auto-refresh every 30 s so newly-registered users appear without a manual reload
+    const interval = setInterval(fetchData, 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Derived lists
   const staffUsers = useMemo(() => users.filter(u => u.role === 'admin' || u.role === 'manager'), [users]);
@@ -731,23 +758,31 @@ export default function UserManagement() {
             />
           </div>
 
-          <div className="flex items-center text-slate-500 text-sm whitespace-nowrap">
-            {displayedUsers.length} of {activeTab === 'staff' ? staffUsers.length : employeeUsers.length} shown
+          <div className="flex items-center gap-3 text-slate-500 text-sm whitespace-nowrap">
+            <span>{displayedUsers.length} of {activeTab === 'staff' ? staffUsers.length : employeeUsers.length} shown</span>
+            <button
+              onClick={fetchData}
+              title={lastRefreshed ? `Last refreshed ${lastRefreshed.toLocaleTimeString()}` : 'Refresh'}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-700/50 bg-slate-800/40 hover:bg-slate-700/50 hover:text-white transition-all text-xs font-medium"
+            >
+              <span className={loading ? 'animate-spin' : ''}>↻</span>
+              <span>Refresh</span>
+            </button>
           </div>
         </div>
 
         {/* Table */}
         {displayedUsers.length === 0 ? (
-          <div className="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-16 text-center">
-            <div className="text-5xl mb-4 opacity-50">👤</div>
-            <h3 className="text-lg font-bold text-white mb-1">No users found</h3>
-            <p className="text-slate-500 text-sm">Try adjusting your search</p>
+          <div className="bg-[#111827] border border-slate-700/40 rounded-2xl p-16 text-center shadow-xl">
+            <div className="text-5xl mb-4 opacity-20">👤</div>
+            <h3 className="text-lg font-bold text-slate-400 mb-1">No users found</h3>
+            <p className="text-slate-600 text-sm">Try adjusting your search or filter</p>
           </div>
         ) : (
-          <div className="bg-slate-800/50 border border-slate-700/60 rounded-2xl overflow-hidden">
+          <div className="bg-[#111827] border border-slate-700/40 rounded-2xl overflow-hidden shadow-xl">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-slate-900/70 border-b border-slate-700/60">
+                <thead className="bg-slate-800/30 border-b border-slate-700/40">
                   <tr>
                     {/* Name col */}
                     <th className={thClass}>
@@ -800,7 +835,7 @@ export default function UserManagement() {
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700/40">
+                <tbody className="divide-y divide-slate-700/20">
                   {displayedUsers.map(u => {
                     const userAssignments = getUserAssignments(u.userId);
                     const completed = userAssignments.filter(a => a.completed).length;
@@ -808,7 +843,7 @@ export default function UserManagement() {
                     const isSelf = u.userId === user?.userId;
 
                     return (
-                      <tr key={u.userId} className="hover:bg-slate-900/40 transition-colors group">
+                      <tr key={u.userId} className="hover:bg-slate-800/30 transition-colors group">
                         {/* Avatar + Name */}
                         <td className="py-3.5 px-4">
                           <button
@@ -869,7 +904,7 @@ export default function UserManagement() {
 
                         {/* Actions */}
                         <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-1.5 justify-end">
+                          <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
                               onClick={() => openEdit(u)}
                               title="Edit user"
@@ -893,6 +928,20 @@ export default function UserManagement() {
                   })}
                 </tbody>
               </table>
+            </div>
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-slate-700/30 bg-slate-800/10 flex items-center justify-between">
+              <p className="text-xs text-slate-600">
+                Showing <span className="text-slate-400 font-semibold">{displayedUsers.length}</span> of{' '}
+                <span className="text-slate-400 font-semibold">{activeTab === 'staff' ? staffUsers.length : employeeUsers.length}</span>{' '}
+                {activeTab === 'staff' ? 'staff members' : 'employees'}
+              </p>
+              <button
+                onClick={fetchData}
+                className="text-xs text-slate-600 hover:text-slate-400 transition-colors flex items-center gap-1"
+              >
+                ↻ Refresh
+              </button>
             </div>
           </div>
         )}

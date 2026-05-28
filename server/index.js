@@ -137,7 +137,8 @@ app.use('/api/simulation', simulationRouter);
 app.use('/api/market', marketRouter);
 app.use('/api/demo', demoRouter);
 app.use('/api/interview', interviewRouter);
-app.use('/api/assessment', assessmentRouter);
+app.use('/api/assessments', assessmentRouter);  // plural — matches client calls
+app.use('/api/assessment',  assessmentRouter);  // keep singular as alias for back-compat
 
 // Global error handler
 app.use((err, req, res, _next) => {

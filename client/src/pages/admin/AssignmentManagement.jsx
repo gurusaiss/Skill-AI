@@ -81,6 +81,7 @@ export default function AssignmentManagement() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showPendingModal, setShowPendingModal] = useState(false);
 
   const isAdmin = hasRole('admin');
   const isManager = hasRole('manager');
@@ -126,15 +127,27 @@ export default function AssignmentManagement() {
 
   const employees = useMemo(() => users.filter(u => u.role === 'employee'), [users]);
 
+  // Filter out completely invalid/phantom rows (no ID, no employee, no module)
+  const isValidAssignment = useCallback((a) => {
+    const hasId = Boolean(a.id);
+    const hasEmployee = Boolean(a.assigned_to_user || a.employee_id);
+    const hasModule = Boolean(a.assignable_id || a.module_id);
+    return hasId && (hasEmployee || hasModule);
+  }, []);
+
   const filtered = useMemo(() => {
     return assignments.filter(a => {
-      const title = (a.title || a.name || '').toLowerCase();
-      const employeeName = (getUserName(a.assigned_to_user || a.employee_id)).toLowerCase();
-      const matchesSearch = !search || title.includes(search.toLowerCase()) || employeeName.includes(search.toLowerCase());
+      if (!isValidAssignment(a)) return false;
+      const moduleId = a.assignable_id || a.module_id;
+      const moduleName = getModuleName(moduleId).toLowerCase();
+      const employeeName = getUserName(a.assigned_to_user || a.employee_id).toLowerCase();
+      const matchesSearch = !search ||
+        moduleName.includes(search.toLowerCase()) ||
+        employeeName.includes(search.toLowerCase());
       const matchesStatus = filterStatus === 'all' || a.status === filterStatus;
       return matchesSearch && matchesStatus;
     });
-  }, [assignments, search, filterStatus, users]);
+  }, [assignments, search, filterStatus, users, modules, isValidAssignment]);
 
   function getUserName(uid) {
     if (!uid) return '—';
@@ -210,62 +223,87 @@ export default function AssignmentManagement() {
     }
   };
 
+  const deleteAssignment = async (id) => {
+    if (!window.confirm('Permanently delete this assignment? This cannot be undone.')) return;
+    try {
+      await authFetch(`/api/assignments/${id}`, { method: 'DELETE' });
+      setAssignments(prev => prev.filter(a => a.id !== id));
+      showToast('Assignment deleted', 'info');
+    } catch (e) {
+      showToast(e.message || 'Failed to delete assignment', 'error');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
+
+        {/* ── Header ── */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <button onClick={() => navigate(isAdmin ? '/admin/dashboard' : '/manager/dashboard')}
-              className="text-slate-400 hover:text-white text-sm mb-2 flex items-center gap-2">
+              className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-300 text-sm mb-3 transition-colors">
               ← Back to Dashboard
             </button>
-            <h1 className="text-3xl font-black text-white">Assignment Management</h1>
-            <p className="text-slate-400 text-sm mt-0.5">
-              {isAdmin ? 'Create and manage learning assignments across the organization' : 'Request module assignments for your team'}
+            <h1 className="text-3xl font-black text-white tracking-tight">Assignment Management</h1>
+            <p className="text-slate-400 text-sm mt-1">
+              {isAdmin ? 'Create and manage learning assignments across the organisation' : 'Request module assignments for your team'}
             </p>
           </div>
           <button
             onClick={() => setShowCreate(true)}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all shadow-lg shadow-indigo-500/20"
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all shadow-lg shadow-indigo-500/25 flex items-center gap-2"
           >
-            + {isAdmin ? 'New Assignment' : 'Request Assignment'}
+            <span className="text-base">+</span>
+            {isAdmin ? 'New Assignment' : 'Request Assignment'}
           </button>
         </div>
 
-        {/* Stats */}
+        {/* ── Stat Cards ── */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           {[
-            { label: 'Total', value: stats.total, color: '#6366f1' },
-            { label: 'Pending', value: stats.pending, color: '#3b82f6' },
-            { label: 'In Progress', value: stats.active, color: '#f59e0b' },
-            { label: 'Completed', value: stats.completed, color: '#10b981' },
-            { label: 'Overdue', value: stats.overdue, color: '#ef4444' },
+            { label: 'Total', value: stats.total, icon: '📋', borderCls: 'border-indigo-500/25', bgCls: 'bg-indigo-500/5', textCls: 'text-indigo-400', numCls: 'text-indigo-300', clickable: false },
+            { label: 'Pending', value: stats.pending, icon: '⏳', borderCls: 'border-sky-500/25', bgCls: 'bg-sky-500/5', textCls: 'text-sky-400', numCls: 'text-sky-300', clickable: true },
+            { label: 'In Progress', value: stats.active, icon: '⚡', borderCls: 'border-amber-500/25', bgCls: 'bg-amber-500/5', textCls: 'text-amber-400', numCls: 'text-amber-300', clickable: false },
+            { label: 'Completed', value: stats.completed, icon: '✅', borderCls: 'border-emerald-500/25', bgCls: 'bg-emerald-500/5', textCls: 'text-emerald-400', numCls: 'text-emerald-300', clickable: false },
+            { label: 'Overdue', value: stats.overdue, icon: '🚨', borderCls: 'border-red-500/25', bgCls: 'bg-red-500/5', textCls: 'text-red-400', numCls: 'text-red-300', clickable: false },
           ].map((s, i) => (
-            <div key={i} className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
-              <p className="text-3xl font-black" style={{ color: s.color }}>{s.value}</p>
+            <div
+              key={i}
+              onClick={s.clickable ? () => setShowPendingModal(true) : undefined}
+              className={`rounded-2xl border ${s.borderCls} ${s.bgCls} p-5 flex flex-col gap-2 transition-all ${s.clickable ? 'cursor-pointer hover:scale-[1.02] hover:shadow-lg hover:shadow-sky-500/10 hover:border-sky-400/40' : ''}`}
+            >
+              <div className="flex items-center justify-between">
+                <p className={`text-xs font-bold ${s.textCls} uppercase tracking-widest`}>{s.label}</p>
+                <span className="text-lg opacity-60">{s.icon}</span>
+              </div>
+              <p className={`text-4xl font-black ${s.numCls} leading-none`}>{s.value}</p>
+              {s.clickable && <p className="text-xs text-sky-500/60 mt-0.5">Click to view →</p>}
             </div>
           ))}
         </div>
 
-        {/* Table */}
-        <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 overflow-hidden">
-          {/* Filters */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4 border-b border-slate-700/40">
-            <input
-              type="text"
-              placeholder="Search by module or employee..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="flex-1 px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-            />
+        {/* ── Table Card ── */}
+        <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden shadow-xl">
+
+          {/* Toolbar */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-6 py-4 border-b border-slate-700/50 bg-slate-800/20">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+              <input
+                type="text"
+                placeholder="Search by module or employee name..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 transition-colors"
+              />
+            </div>
             <select
               value={filterStatus}
               onChange={e => setFilterStatus(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-300 font-semibold"
+              className="px-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-slate-300 font-semibold focus:outline-none focus:border-indigo-500/60 min-w-[160px]"
             >
               <option value="all">All Status</option>
               <option value="assigned">Assigned</option>
@@ -275,34 +313,34 @@ export default function AssignmentManagement() {
               <option value="overdue">Overdue</option>
               <option value="cancelled">Cancelled</option>
             </select>
-            <button onClick={loadAll} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-400 hover:text-white font-semibold transition-all">
-              ↻ Refresh
+            <button onClick={loadAll} className="px-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-slate-400 hover:text-white hover:border-slate-600 font-semibold transition-all flex items-center gap-2">
+              <span>↻</span> Refresh
             </button>
           </div>
 
-          {/* Table Header */}
-          <div className="hidden md:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_1fr_auto] px-5 py-2 border-b border-slate-700/30 text-xs font-bold text-slate-500 uppercase tracking-widest">
-            <span>Employee</span>
-            <span>Module</span>
-            <span>Priority</span>
-            <span>Due Date</span>
-            <span>Status</span>
-            <span>Assigned By</span>
-            <span></span>
+          {/* Column Headers */}
+          <div className="hidden lg:grid px-6 py-3 border-b border-slate-700/40 bg-slate-800/30"
+            style={{ gridTemplateColumns: '2fr 2.5fr 1fr 1fr 1.2fr 1.5fr 1fr 80px' }}>
+            {['Employee', 'Module', 'Priority', 'Due Date', 'Status', 'Assigned By', 'Created', 'Actions'].map(h => (
+              <div key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</div>
+            ))}
           </div>
 
+          {/* Rows */}
           {loading ? (
-            <div>{Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}</div>
+            <div className="divide-y divide-slate-700/20">
+              {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
+            </div>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="text-5xl mb-4 opacity-20">📋</div>
+            <div className="py-20 text-center">
+              <div className="text-6xl mb-4 opacity-20">📋</div>
               <p className="text-lg font-bold text-slate-400 mb-1">No Assignments Found</p>
               <p className="text-sm text-slate-600">
-                {assignments.length === 0 ? 'Create your first assignment to get started.' : 'Try adjusting your filters.'}
+                {assignments.length === 0 ? 'Create your first assignment to get started.' : 'Try adjusting your search or status filter.'}
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-700/30">
+            <div className="divide-y divide-slate-700/20">
               {filtered.map((a, idx) => {
                 const status = a.status || 'assigned';
                 const priority = a.priority || 'medium';
@@ -311,61 +349,94 @@ export default function AssignmentManagement() {
                 const employeeId = a.assigned_to_user || a.employee_id;
                 const moduleId = a.assignable_id || a.module_id;
                 const isOverdue = status !== 'completed' && a.due_date && new Date(a.due_date) < new Date();
-                const assignedBy = getUserName(a.assigned_by || a.manager_id);
+                const empName = getUserName(employeeId);
+                const empInitial = empName !== '—' ? empName.charAt(0).toUpperCase() : '?';
+                const assignedByName = getUserName(a.assigned_by || a.manager_id);
+                const createdDate = a.created_at || a.createdAt;
 
                 return (
-                  <div key={a.id || idx} className="px-5 py-4 grid grid-cols-1 md:grid-cols-[2fr_2fr_1fr_1fr_1fr_1fr_auto] items-center gap-3 hover:bg-slate-800/20 transition-all">
+                  <div
+                    key={a.id || idx}
+                    className="group px-6 py-4 hover:bg-slate-800/30 transition-all"
+                    style={{ display: 'grid', gridTemplateColumns: '2fr 2.5fr 1fr 1fr 1.2fr 1.5fr 1fr 80px', alignItems: 'center', gap: '12px' }}
+                  >
                     {/* Employee */}
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500/30 to-purple-500/20 border border-indigo-500/20 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0">
-                        {getUserName(employeeId).charAt(0).toUpperCase()}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-600/40 to-purple-600/30 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0 shadow-sm">
+                        {empInitial}
                       </div>
-                      <span className="text-sm font-semibold text-white truncate">{getUserName(employeeId)}</span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white truncate leading-tight">{empName}</p>
+                        <p className="text-xs text-slate-600 truncate">{a.type || 'module'}</p>
+                      </div>
                     </div>
 
                     {/* Module */}
                     <div className="min-w-0">
-                      <span className="text-sm text-slate-300 truncate block">{getModuleName(moduleId)}</span>
-                      {a.type && <span className="text-xs text-slate-600 uppercase">{a.type}</span>}
+                      <p className="text-sm font-medium text-slate-200 truncate leading-tight">{getModuleName(moduleId)}</p>
+                      {a.progress !== undefined && a.progress > 0 && (
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="flex-1 h-1 rounded-full bg-slate-700/60 overflow-hidden">
+                            <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${a.progress || 0}%` }} />
+                          </div>
+                          <span className="text-xs text-slate-500 flex-shrink-0">{a.progress}%</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Priority */}
                     <div className="flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${pcfg.dot}`} />
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${pcfg.dot}`} />
                       <span className={`text-xs font-semibold ${pcfg.text}`}>{pcfg.label}</span>
                     </div>
 
                     {/* Due Date */}
                     <div>
                       {a.due_date ? (
-                        <span className={`text-xs ${isOverdue ? 'text-red-400 font-bold' : 'text-slate-400'}`}>
-                          {new Date(a.due_date).toLocaleDateString()}
-                          {isOverdue && ' ⚠️'}
+                        <span className={`text-xs font-medium ${isOverdue ? 'text-red-400' : 'text-slate-400'}`}>
+                          {new Date(a.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                          {isOverdue && <span className="ml-1 text-red-400">⚠</span>}
                         </span>
                       ) : (
-                        <span className="text-xs text-slate-600">—</span>
+                        <span className="text-xs text-slate-600">No deadline</span>
                       )}
                     </div>
 
-                    {/* Status */}
+                    {/* Status Badge */}
                     <div>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wide border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
                         {cfg.label}
                       </span>
                     </div>
 
                     {/* Assigned By */}
+                    <div className="min-w-0">
+                      <p className="text-sm text-slate-400 truncate">{assignedByName}</p>
+                    </div>
+
+                    {/* Created Date */}
                     <div>
-                      <span className="text-xs text-slate-500 truncate">{assignedBy}</span>
+                      <p className="text-xs text-slate-500">
+                        {createdDate ? new Date(createdDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'}
+                      </p>
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                       {status !== 'completed' && status !== 'cancelled' && (
                         <button
                           onClick={() => cancelAssignment(a.id)}
-                          className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-400 hover:text-red-300 hover:border-red-500/30 transition-all"
                           title="Cancel assignment"
+                          className="w-7 h-7 rounded-lg bg-slate-700/60 hover:bg-amber-500/20 hover:border-amber-500/40 border border-transparent text-slate-400 hover:text-amber-300 flex items-center justify-center text-xs transition-all"
+                        >
+                          ⊘
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => deleteAssignment(a.id)}
+                          title="Delete permanently"
+                          className="w-7 h-7 rounded-lg bg-slate-700/60 hover:bg-red-500/20 hover:border-red-500/40 border border-transparent text-slate-400 hover:text-red-300 flex items-center justify-center text-xs transition-all"
                         >
                           ✕
                         </button>
@@ -376,8 +447,120 @@ export default function AssignmentManagement() {
               })}
             </div>
           )}
+
+          {/* Footer count */}
+          {!loading && filtered.length > 0 && (
+            <div className="px-6 py-3 border-t border-slate-700/30 bg-slate-800/10 flex items-center justify-between">
+              <p className="text-xs text-slate-600">
+                Showing <span className="text-slate-400 font-semibold">{filtered.length}</span> of <span className="text-slate-400 font-semibold">{assignments.length}</span> assignments
+              </p>
+              <p className="text-xs text-slate-600">
+                Last refreshed: {new Date().toLocaleTimeString()}
+              </p>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Pending Assignments Modal */}
+      {showPendingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={e => e.target === e.currentTarget && setShowPendingModal(false)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/25 flex items-center justify-center text-lg">⏳</div>
+                <div>
+                  <h3 className="text-lg font-black text-white">Pending Assignments</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{stats.pending} assignment{stats.pending !== 1 ? 's' : ''} awaiting action</p>
+                </div>
+              </div>
+              <button onClick={() => setShowPendingModal(false)} className="text-slate-500 hover:text-white w-8 h-8 rounded-lg hover:bg-slate-800 flex items-center justify-center transition-colors">✕</button>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-y-auto flex-1">
+              {assignments.filter(a => a.status === 'pending' || a.status === 'assigned').length === 0 ? (
+                <div className="py-16 text-center">
+                  <div className="text-5xl mb-3 opacity-20">✅</div>
+                  <p className="text-slate-400 font-semibold">All caught up!</p>
+                  <p className="text-slate-600 text-sm mt-1">No pending assignments at this time.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Column headers */}
+                  <div className="grid px-6 py-3 border-b border-slate-700/40 bg-slate-800/30 text-xs font-bold text-slate-500 uppercase tracking-widest"
+                    style={{ gridTemplateColumns: '1.8fr 2fr 1fr 1fr 1.2fr' }}>
+                    <span>Employee</span>
+                    <span>Module</span>
+                    <span>Priority</span>
+                    <span>Due Date</span>
+                    <span>Assigned By</span>
+                  </div>
+                  <div className="divide-y divide-slate-700/20">
+                    {assignments
+                      .filter(a => a.status === 'pending' || a.status === 'assigned')
+                      .map((a, idx) => {
+                        const employeeId = a.assigned_to_user || a.employee_id;
+                        const moduleId = a.assignable_id || a.module_id;
+                        const empName = getUserName(employeeId);
+                        const priority = a.priority || 'medium';
+                        const pcfg = priorityConfig[priority] || priorityConfig.medium;
+                        const isOverdue = a.due_date && new Date(a.due_date) < new Date();
+                        return (
+                          <div
+                            key={a.id || idx}
+                            className="grid px-6 py-4 items-center gap-3 hover:bg-slate-800/30 transition-all"
+                            style={{ gridTemplateColumns: '1.8fr 2fr 1fr 1fr 1.2fr' }}
+                          >
+                            {/* Employee */}
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-600/40 to-indigo-600/30 border border-sky-500/30 flex items-center justify-center text-xs font-black text-sky-300 flex-shrink-0">
+                                {empName !== '—' ? empName.charAt(0).toUpperCase() : '?'}
+                              </div>
+                              <p className="text-sm font-semibold text-white truncate">{empName}</p>
+                            </div>
+                            {/* Module */}
+                            <p className="text-sm text-slate-300 truncate">{getModuleName(moduleId)}</p>
+                            {/* Priority */}
+                            <div className="flex items-center gap-1.5">
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${pcfg.dot}`} />
+                              <span className={`text-xs font-semibold ${pcfg.text}`}>{pcfg.label}</span>
+                            </div>
+                            {/* Due Date */}
+                            <div>
+                              {a.due_date ? (
+                                <span className={`text-xs font-medium ${isOverdue ? 'text-red-400' : 'text-slate-400'}`}>
+                                  {new Date(a.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                                  {isOverdue && ' ⚠'}
+                                </span>
+                              ) : <span className="text-xs text-slate-600">No deadline</span>}
+                            </div>
+                            {/* Assigned By */}
+                            <p className="text-xs text-slate-400 truncate">{getUserName(a.assigned_by || a.manager_id)}</p>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-700 shrink-0 flex items-center justify-between">
+              <p className="text-xs text-slate-600">
+                Showing <span className="text-slate-400 font-semibold">{assignments.filter(a => a.status === 'pending' || a.status === 'assigned').length}</span> pending assignment{assignments.filter(a => a.status === 'pending' || a.status === 'assigned').length !== 1 ? 's' : ''}
+              </p>
+              <button
+                onClick={() => setShowPendingModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create Modal */}
       {showCreate && (

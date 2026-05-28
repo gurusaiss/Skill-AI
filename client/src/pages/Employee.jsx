@@ -178,9 +178,6 @@ export default function Employee() {
   const navigate = useNavigate();
 
   const [assignments, setAssignments] = useState([]);
-  const [selectedModule, setSelectedModule] = useState(null);
-  const [moduleContent, setModuleContent] = useState(null);
-  const [showPlanModal, setShowPlanModal] = useState(false);
   const [dashboardStats, setDashboardStats] = useState(null);
   const [managerInfo, setManagerInfo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -234,22 +231,6 @@ export default function Employee() {
       showToast(err.message || 'Failed to load dashboard data', 'error');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const openModulePlan = async (assignment) => {
-    try {
-      const moduleId = assignment.assignable_id || assignment.module_id;
-      if (!moduleId) {
-        showToast('No module linked to this assignment', 'error');
-        return;
-      }
-      const mod = await authFetch(`/api/modules/${moduleId}`);
-      setSelectedModule(mod);
-      setModuleContent(mod.content || {});
-      setShowPlanModal(true);
-    } catch (err) {
-      showToast('Failed to load module content: ' + err.message, 'error');
     }
   };
 

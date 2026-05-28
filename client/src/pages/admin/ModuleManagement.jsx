@@ -189,33 +189,50 @@ export default function ModuleManagement() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.title || !form.description) { setToast({ message: 'Title and description are required', type: 'error' }); return; }
+    const cleanTitle = (form.title || '').trim();
+    const cleanDesc  = (form.description || '').trim();
+    if (!cleanTitle) { setToast({ message: 'Module title is required', type: 'error' }); return; }
+
+    // Strip empty strings from list fields before sending
+    const cleanSkills    = (form.skills    || []).map(s => (typeof s === 'string' ? s.trim() : s?.name || '')).filter(Boolean);
+    const cleanTasks     = (form.tasks     || []).map(s => (typeof s === 'string' ? s.trim() : s)).filter(Boolean);
+    const cleanResources = (form.resources || []).map(s => (typeof s === 'string' ? s.trim() : s)).filter(Boolean);
 
     const modulePayload = {
-      ...form,
+      title: cleanTitle,
+      description: cleanDesc || `Learn ${cleanTitle} with AI-generated content`,
+      category: form.category || 'General',
+      difficulty: form.difficulty || 'beginner',
+      estimatedDuration: form.estimatedDuration || '7 days',
+      skills: cleanSkills.length ? cleanSkills : [cleanTitle],
+      tasks: cleanTasks,
+      resources: cleanResources,
+      completionCriteria: form.completionCriteria || 'Complete all tasks',
+      progressTracking: true,
       content: {
         roadmap: form.roadmap || form.sessions || [],
         sessions: form.sessions || form.roadmap || [],
         quizzes: form.quizzes || [],
-        notes: form.notes || [],
-        milestones: form.milestones || form.skills || [],
+        notes: [],
+        milestones: form.milestones || cleanSkills || [],
         timeline: form.timeline || 14,
-        completionCriteria: form.completionCriteria,
-      }
+        completionCriteria: form.completionCriteria || 'Complete all tasks',
+      },
     };
 
     try {
       if (editing) {
         await authFetch(`/api/modules/${editing.id}`, { method: 'PUT', body: JSON.stringify(modulePayload) });
-        setToast({ message: 'Module updated', type: 'success' });
+        setToast({ message: '✅ Module updated successfully', type: 'success' });
       } else {
-        await authFetch('/api/modules', { method: 'POST', body: JSON.stringify(modulePayload) });
-        setToast({ message: 'Module created with full content', type: 'success' });
+        const created = await authFetch('/api/modules', { method: 'POST', body: JSON.stringify(modulePayload) });
+        setToast({ message: `✅ Module "${created?.title || cleanTitle}" created!`, type: 'success' });
       }
       closeCreate();
       loadModules();
     } catch (e) {
-      setToast({ message: e.message || 'Failed to save', type: 'error' });
+      console.error('[ModuleManagement] save error:', e);
+      setToast({ message: e.message || 'Failed to save module — check console', type: 'error' });
     }
   };
 
@@ -331,33 +348,94 @@ export default function ModuleManagement() {
         </div>
 
         {loading ? (
-          <div className="space-y-4">{Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}</div>
+          <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden">
+            <div className="divide-y divide-slate-700/20">
+              {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+            </div>
+          </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-slate-500">No modules found</div>
+          <div className="rounded-2xl border border-slate-700/40 bg-[#111827] py-20 text-center">
+            <div className="text-6xl mb-4 opacity-20">📚</div>
+            <p className="text-lg font-bold text-slate-400 mb-1">No Modules Found</p>
+            <p className="text-sm text-slate-600">Create your first module to get started.</p>
+          </div>
         ) : (
-          <div className="space-y-4">
-            {filtered.map((mod, idx) => (
-              <div key={mod.id || idx} className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5 hover:border-slate-600 transition-all">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="text-lg font-bold text-white truncate">{mod.title}</h3>
-                      <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold capitalize ${mod.difficulty === 'beginner' ? 'bg-green-500/20 text-green-400 border-green-500/30' : mod.difficulty === 'intermediate' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-purple-500/20 text-purple-400 border-purple-500/30'}`}>{mod.difficulty}</span>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">{mod.category}</span>
+          <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden shadow-xl">
+            {/* Table header */}
+            <div className="hidden lg:grid px-6 py-3 border-b border-slate-700/40 bg-slate-800/30 text-xs font-bold text-slate-500 uppercase tracking-widest"
+              style={{ gridTemplateColumns: '3fr 1.2fr 1fr 1fr 1.5fr 120px' }}>
+              <span>Module</span>
+              <span>Category</span>
+              <span>Difficulty</span>
+              <span>Duration</span>
+              <span>Skills</span>
+              <span className="text-right">Actions</span>
+            </div>
+            <div className="divide-y divide-slate-700/20">
+              {filtered.map((mod, idx) => {
+                const diffColor = mod.difficulty === 'beginner'
+                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                  : mod.difficulty === 'intermediate'
+                  ? 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+                  : 'bg-purple-500/15 text-purple-400 border-purple-500/30';
+                const skills = (mod.skills || []).filter(Boolean);
+                return (
+                  <div key={mod.id || idx}
+                    className="group px-6 py-4 hover:bg-slate-800/30 transition-all"
+                    style={{ display: 'grid', gridTemplateColumns: '3fr 1.2fr 1fr 1fr 1.5fr 120px', alignItems: 'center', gap: '12px' }}>
+                    {/* Module info */}
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-white truncate leading-tight">{mod.title}</p>
+                      <p className="text-xs text-slate-500 mt-0.5 truncate">{mod.description}</p>
                     </div>
-                    <p className="text-sm text-slate-400 mb-2 line-clamp-2">{mod.description}</p>
-                    <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                      <span>⏱ {mod.estimatedDuration}</span>
-                      {mod.skills?.length > 0 && <span>Skills: {mod.skills.filter(Boolean).join(', ')}</span>}
+                    {/* Category */}
+                    <div>
+                      <span className="text-xs font-semibold text-slate-400 bg-slate-700/40 px-2.5 py-1 rounded-lg">
+                        {mod.category || '—'}
+                      </span>
+                    </div>
+                    {/* Difficulty */}
+                    <div>
+                      <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-bold border capitalize ${diffColor}`}>
+                        {mod.difficulty || 'beginner'}
+                      </span>
+                    </div>
+                    {/* Duration */}
+                    <div>
+                      <span className="text-xs text-slate-400">⏱ {mod.estimatedDuration || '—'}</span>
+                    </div>
+                    {/* Skills */}
+                    <div className="min-w-0">
+                      {skills.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {skills.slice(0, 2).map((s, si) => (
+                            <span key={si} className="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-md truncate max-w-[100px]">{s}</span>
+                          ))}
+                          {skills.length > 2 && <span className="text-xs text-slate-500">+{skills.length - 2}</span>}
+                        </div>
+                      ) : <span className="text-xs text-slate-600">—</span>}
+                    </div>
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => openEdit(mod)}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-bold transition-all">
+                        Edit
+                      </button>
+                      <button onClick={() => handleDelete(mod.id)}
+                        className="w-7 h-7 rounded-lg bg-slate-700/50 hover:bg-red-500/20 border border-transparent hover:border-red-500/30 text-slate-400 hover:text-red-300 flex items-center justify-center text-xs transition-all">
+                        ✕
+                      </button>
                     </div>
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button onClick={() => openEdit(mod)} className="px-3 py-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-300 hover:bg-blue-600/30 text-xs font-semibold transition-all">Edit</button>
-                    <button onClick={() => handleDelete(mod.id)} className="px-3 py-1.5 rounded-lg bg-red-600/20 border border-red-500/30 text-red-300 hover:bg-red-600/30 text-xs font-semibold transition-all">Delete</button>
-                  </div>
-                </div>
-              </div>
-            ))}
+                );
+              })}
+            </div>
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-slate-700/30 bg-slate-800/10 flex items-center justify-between">
+              <p className="text-xs text-slate-600">
+                Showing <span className="text-slate-400 font-semibold">{filtered.length}</span> of <span className="text-slate-400 font-semibold">{modules.length}</span> modules
+              </p>
+            </div>
           </div>
         )}
       </div>
