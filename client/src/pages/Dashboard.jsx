@@ -12,6 +12,9 @@ import SkillDetailModal from '../components/SkillDetailModal.jsx';
 import HistoryDetailModal from '../components/HistoryDetailModal.jsx';
 import SkillRadarChart from '../components/SkillRadarChart.jsx';
 import AchievementSystem from '../components/AchievementSystem.jsx';
+import DailyBrief from '../components/DailyBrief.jsx';
+import PlanEvolution from '../components/PlanEvolution.jsx';
+import GoalRefinement from '../components/GoalRefinement.jsx';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
@@ -697,12 +700,16 @@ export default function Dashboard() {
 
           {/* OVERVIEW */}
           {activeTab === 'overview' && (
-            <CareerOverview goal={goal} sessions={sessions} onProjectClick={p => setProjectModal({ isOpen: true, project: p })} />
+            <div>
+              <DailyBrief />
+              <CareerOverview goal={goal} sessions={sessions} onProjectClick={p => setProjectModal({ isOpen: true, project: p })} />
+            </div>
           )}
 
           {/* PLAN */}
           {activeTab === 'plan' && (
             <div>
+              <GoalRefinement goal={goal?.goalText || ''} skills={learningPlan?.skills || goal?.skills || []} stats={stats} />
               <div className="flex items-center justify-between mb-5">
                 <div>
                   <h3 className="text-base font-black text-white">Learning Roadmap</h3>
@@ -711,6 +718,7 @@ export default function Dashboard() {
                 <span className="text-sm font-black text-indigo-400 font-mono">{completionPct}%</span>
               </div>
               <PlanTimeline learningPlan={learningPlan} navigate={navigate} />
+              <PlanEvolution learningPlan={learningPlan} agentDecisions={agentDecisions} />
             </div>
           )}
 
