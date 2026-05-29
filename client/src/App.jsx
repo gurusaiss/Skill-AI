@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import AiTutorChat from './components/AiTutorChat.jsx';
 
 const Landing              = lazy(() => import('./pages/Landing.jsx'));
 const Profiling            = lazy(() => import('./pages/Profiling.jsx'));
@@ -39,6 +40,8 @@ const Settings             = lazy(() => import('./pages/admin/Settings.jsx'));
 const ModuleStart          = lazy(() => import('./pages/ModuleStart.jsx'));
 const ModuleDashboard      = lazy(() => import('./pages/ModuleDashboard.jsx'));
 const ModuleSession        = lazy(() => import('./pages/ModuleSession.jsx'));
+const Certificate          = lazy(() => import('./pages/Certificate.jsx'));
+const SpeedChallenge       = lazy(() => import('./pages/SpeedChallenge.jsx'));
 
 const Loader = () => (
   <div className="mx-auto max-w-4xl px-6 py-14 text-slate-400 text-center">
@@ -173,8 +176,19 @@ const App = () => {
                   <ModuleSession />
                 </ProtectedRoute>
               } />
+              <Route path="/certificate" element={
+                <ProtectedRoute>
+                  <Certificate />
+                </ProtectedRoute>
+              } />
+              <Route path="/speed-challenge" element={
+                <ProtectedRoute>
+                  <SpeedChallenge />
+                </ProtectedRoute>
+              } />
             </Routes>
           </Suspense>
+          <AiTutorChat />
         </div>
       </ErrorBoundary>
     </BrowserRouter>

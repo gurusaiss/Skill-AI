@@ -322,6 +322,266 @@ function AgentThoughtStream({ steps, visible, onStepClick }) {
   );
 }
 
+// ── Section A: Animated Stats Counter ────────────────────────────────────────
+const STAT_DATA = [
+  { icon: '🎯', target: 10000, suffix: '+', label: 'Learning Sessions' },
+  { icon: '📚', target: 500,   suffix: '+', label: 'Skills Available' },
+  { icon: '⚡', target: 94,    suffix: '%', label: 'Completion Rate' },
+  { icon: '🏆', target: 9,     suffix: '',  label: 'AI Agents Working' },
+];
+
+function useCountUp(target, duration = 2000, active = true) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const steps = 60;
+    const increment = target / steps;
+    const interval = duration / steps;
+    let current = 0;
+    const timer = setInterval(() => {
+      current += increment;
+      if (current >= target) { setCount(target); clearInterval(timer); }
+      else setCount(Math.round(current));
+    }, interval);
+    return () => clearInterval(timer);
+  }, [target, duration, active]);
+  return count;
+}
+
+function StatCountItem({ icon, target, suffix, label }) {
+  const ref = useRef(null);
+  const [active, setActive] = useState(false);
+  useEffect(() => {
+    const observer = new IntersectionObserver(([e]) => { if (e.isIntersecting) setActive(true); }, { threshold: 0.3 });
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+  const count = useCountUp(target, 2000, active);
+  const display = count >= 1000 ? (count / 1000).toFixed(count % 1000 === 0 ? 0 : 0) + 'K' : count;
+  return (
+    <div ref={ref} className="flex flex-col items-center gap-2 rounded-2xl border border-slate-700/60 bg-slate-900/70 p-6 backdrop-blur text-center">
+      <span className="text-3xl mb-1">{icon}</span>
+      <div className="text-4xl md:text-5xl font-black bg-gradient-to-br from-indigo-400 to-violet-400 bg-clip-text text-transparent font-mono leading-none">
+        {display}{suffix}
+      </div>
+      <p className="text-sm font-semibold text-slate-400 mt-1">{label}</p>
+    </div>
+  );
+}
+
+function StatsCounter() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-60px' }}
+      transition={{ duration: 0.5 }}
+      className="mt-20"
+    >
+      <p className="text-sm text-slate-600 mb-6 uppercase tracking-widest text-center">Platform at a glance</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {STAT_DATA.map(s => <StatCountItem key={s.label} {...s} />)}
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Section B: How It Works ───────────────────────────────────────────────────
+const HOW_STEPS = [
+  {
+    num: 1,
+    icon: '🎯',
+    title: 'Set Your Goal',
+    desc: 'Tell SkillForge what you want to learn. Our AI agents analyze your goal and instantly build a personalized skill tree.',
+    color: '#6366F1',
+  },
+  {
+    num: 2,
+    icon: '📅',
+    title: 'Follow Your Plan',
+    desc: 'Practice with daily AI-powered challenges, quizzes, and feedback. Our system adapts based on your performance every session.',
+    color: '#8B5CF6',
+  },
+  {
+    num: 3,
+    icon: '🚀',
+    title: 'Land Your Dream Role',
+    desc: 'Complete your plan, get your certificate, and access market intelligence to target the best opportunities.',
+    color: '#06B6D4',
+  },
+];
+
+function HowItWorks() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-60px' }}
+      transition={{ duration: 0.5 }}
+      className="mt-20"
+    >
+      <p className="text-sm text-slate-600 mb-2 uppercase tracking-widest text-center">Simple process</p>
+      <h2 className="text-2xl md:text-3xl font-black text-white text-center mb-10">
+        From Zero to Job-Ready in <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">3 Steps</span>
+      </h2>
+      <div className="flex flex-col md:flex-row gap-4 items-stretch">
+        {HOW_STEPS.map((step, i) => (
+          <React.Fragment key={step.num}>
+            <div className="flex-1 rounded-2xl border border-slate-700/60 bg-slate-900/70 p-6 backdrop-blur flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black border flex-shrink-0"
+                  style={{ background: `${step.color}20`, borderColor: `${step.color}40`, color: step.color }}
+                >
+                  {step.num}
+                </div>
+                <span className="text-2xl">{step.icon}</span>
+              </div>
+              <div>
+                <h3 className="text-base font-black text-white mb-2">{step.title}</h3>
+                <p className="text-sm text-slate-400 leading-relaxed">{step.desc}</p>
+              </div>
+            </div>
+            {i < HOW_STEPS.length - 1 && (
+              <div className="hidden md:flex items-center text-slate-700 text-2xl flex-shrink-0 self-center px-1">
+                →
+              </div>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Section C: Feature Comparison Table ──────────────────────────────────────
+const COMPARISON_ROWS = [
+  { feature: 'Personalized Path',      sf: ['✅', 'AI-generated for you'], lms: ['❌', 'Same for everyone'], yt: ['❌', ''] },
+  { feature: 'Real-time Adaptation',   sf: ['✅', 'Adjusts every session'],  lms: ['❌', 'Static content'],    yt: ['❌', ''] },
+  { feature: 'Interview Practice',      sf: ['✅', 'AI interview simulator'], lms: ['❌', ''],                  yt: ['❌', ''] },
+  { feature: 'Market Intelligence',     sf: ['✅', 'Live career insights'],   lms: ['❌', ''],                  yt: ['❌', ''] },
+  { feature: 'Progress Tracking',       sf: ['✅', '9-agent analytics'],      lms: ['⚠️', 'Basic completion'], yt: ['❌', ''] },
+];
+
+function StatusIcon({ val }) {
+  if (val === '✅') return <span className="text-emerald-400 font-black text-base">✅</span>;
+  if (val === '⚠️') return <span className="text-amber-400 font-black text-base">⚠️</span>;
+  return <span className="text-red-500 font-black text-base">❌</span>;
+}
+
+function ComparisonTable() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-60px' }}
+      transition={{ duration: 0.5 }}
+      className="mt-20"
+    >
+      <p className="text-sm text-slate-600 mb-2 uppercase tracking-widest text-center">Why choose us</p>
+      <h2 className="text-2xl md:text-3xl font-black text-white text-center mb-8">
+        Why SkillForge Beats <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">Traditional Learning</span>
+      </h2>
+      <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 overflow-hidden backdrop-blur">
+        {/* Header */}
+        <div className="grid grid-cols-4 border-b border-slate-700/60">
+          <div className="px-5 py-4 text-xs font-black text-slate-500 uppercase tracking-widest">Feature</div>
+          <div className="px-4 py-4 text-xs font-black text-indigo-400 uppercase tracking-widest text-center">SkillForge AI</div>
+          <div className="px-4 py-4 text-xs font-black text-slate-500 uppercase tracking-widest text-center">Traditional LMS</div>
+          <div className="px-4 py-4 text-xs font-black text-slate-500 uppercase tracking-widest text-center">YouTube/Courses</div>
+        </div>
+        {COMPARISON_ROWS.map((row, i) => (
+          <div
+            key={row.feature}
+            className={`grid grid-cols-4 border-b border-slate-800/60 transition-colors hover:bg-slate-800/30 ${i % 2 === 0 ? 'bg-slate-900/40' : 'bg-slate-800/20'}`}
+          >
+            <div className="px-5 py-4 text-sm font-semibold text-slate-300">{row.feature}</div>
+            <div className="px-4 py-4 flex flex-col items-center gap-0.5">
+              <StatusIcon val={row.sf[0]} />
+              {row.sf[1] && <span className="text-xs text-emerald-400/80 text-center leading-tight">{row.sf[1]}</span>}
+            </div>
+            <div className="px-4 py-4 flex flex-col items-center gap-0.5">
+              <StatusIcon val={row.lms[0]} />
+              {row.lms[1] && <span className="text-xs text-slate-500 text-center leading-tight">{row.lms[1]}</span>}
+            </div>
+            <div className="px-4 py-4 flex flex-col items-center gap-0.5">
+              <StatusIcon val={row.yt[0]} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Section D: Testimonials ───────────────────────────────────────────────────
+const TESTIMONIALS = [
+  {
+    initials: 'PS',
+    name: 'Priya S.',
+    title: 'Junior Developer @ TCS',
+    quote: 'I went from knowing nothing about React to getting a job offer in 6 weeks. The AI adapts to my exact weak spots.',
+    color: '#6366F1',
+  },
+  {
+    initials: 'RM',
+    name: 'Rahul M.',
+    title: 'Data Analyst @ Wipro',
+    quote: 'The market intelligence feature helped me pick Python + SQL — exactly what my employer needed.',
+    color: '#8B5CF6',
+  },
+  {
+    initials: 'AK',
+    name: 'Ananya K.',
+    title: 'Product Manager @ Startup',
+    quote: 'The interview simulator felt more realistic than actual interviews. It prepared me perfectly.',
+    color: '#06B6D4',
+  },
+];
+
+function Testimonials() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-60px' }}
+      transition={{ duration: 0.5 }}
+      className="mt-20 mb-4"
+    >
+      <p className="text-sm text-slate-600 mb-2 uppercase tracking-widest text-center">Success stories</p>
+      <h2 className="text-2xl md:text-3xl font-black text-white text-center mb-8">
+        Learners <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">Love SkillForge</span>
+      </h2>
+      <div className="grid md:grid-cols-3 gap-5">
+        {TESTIMONIALS.map(t => (
+          <div
+            key={t.name}
+            className="flex flex-col gap-4 rounded-2xl border border-slate-700/60 bg-[#1E293B] p-6 backdrop-blur"
+          >
+            {/* Stars */}
+            <div className="text-amber-400 text-sm tracking-wide">⭐⭐⭐⭐⭐</div>
+            {/* Quote */}
+            <p className="text-sm text-slate-300 italic leading-relaxed flex-1">"{t.quote}"</p>
+            {/* Author */}
+            <div className="flex items-center gap-3 pt-2 border-t border-slate-700/40">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 border"
+                style={{ background: `${t.color}20`, borderColor: `${t.color}40`, color: t.color }}
+              >
+                {t.initials}
+              </div>
+              <div>
+                <p className="text-sm font-black text-slate-100">{t.name}</p>
+                <p className="text-xs text-slate-500">{t.title}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
 // ── Main Landing ──────────────────────────────────────────────────────────────
 export default function Landing() {
   const navigate = useNavigate();
@@ -552,6 +812,18 @@ export default function Landing() {
             ))}
           </div>
         </motion.div>
+
+        {/* ── SECTION A: ANIMATED STATS COUNTER ─────────────────────────── */}
+        <StatsCounter />
+
+        {/* ── SECTION B: HOW IT WORKS ───────────────────────────────────── */}
+        <HowItWorks />
+
+        {/* ── SECTION C: COMPARISON TABLE ───────────────────────────────── */}
+        <ComparisonTable />
+
+        {/* ── SECTION D: TESTIMONIALS ───────────────────────────────────── */}
+        <Testimonials />
 
       </div>
 

@@ -126,6 +126,20 @@ function Navbar() {
           </nav>
         )}
 
+        {/* Speed Challenge button — authenticated users only */}
+        {isAuthenticated && !hideNavLinks && (
+          <Link
+            to="/speed-challenge"
+            className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
+              location.pathname === '/speed-challenge'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 border border-transparent hover:border-amber-500/20'
+            }`}
+          >
+            ⚡ Speed
+          </Link>
+        )}
+
         {/* Notification Bell + Profile — always shown when authenticated (except landing/demo) */}
         {isAuthenticated && (location.pathname !== '/' && location.pathname !== '/demo') && (
           <>
@@ -250,6 +264,13 @@ function Navbar() {
                 {icon} {label}
               </Link>
             ))}
+            {isAuthenticated && (
+              <Link to="/speed-challenge" onClick={() => setMenuOpen(false)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all
+                  ${location.pathname === '/speed-challenge' ? 'bg-amber-500/20 text-amber-300' : 'text-amber-400'}`}>
+                ⚡ Speed Challenge
+              </Link>
+            )}
             <button onClick={() => { logout(); setMenuOpen(false); }}
               className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium">
               🚪 Logout

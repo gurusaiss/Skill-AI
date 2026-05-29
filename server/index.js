@@ -1,9 +1,12 @@
 import express from 'express';
 import cors from 'cors';
+import { createServer } from 'http';
+import { Server as SocketServer } from 'socket.io';
 import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { loadEnv } from './config/loadEnv.js';
+import { swaggerSpec } from './swagger.js';
 
 import goalRouter from './routes/goal.js';
 import diagnosticRouter from './routes/diagnostic.js';
@@ -14,6 +17,7 @@ import marketRouter from './routes/market.js';
 import demoRouter from './routes/demo.js';
 import interviewRouter from './routes/interview.js';
 import assessmentRouter from './routes/assessment.js';
+import tutorRouter from './routes/tutor.js';
 
 // Authentication routes
 import authRouter from './routes/auth.js';
@@ -86,6 +90,34 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '2mb' }));
 
+// ── API Documentation ────────────────────────────────────────────────────────────
+app.get('/api/docs.json', (_req, res) => res.json(swaggerSpec));
+app.get('/api/docs', (_req, res) => {
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <title>SkillForge AI — API Docs</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: '/api/docs.json',
+      dom_id: '#swagger-ui',
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+      layout: 'BaseLayout',
+      deepLinking: true,
+      defaultModelsExpandDepth: 2,
+    });
+  </script>
+</body>
+</html>`);
+});
+
 // ── Health check ────────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({
@@ -139,6 +171,7 @@ app.use('/api/demo', demoRouter);
 app.use('/api/interview', interviewRouter);
 app.use('/api/assessments', assessmentRouter);  // plural — matches client calls
 app.use('/api/assessment',  assessmentRouter);  // keep singular as alias for back-compat
+app.use('/api/tutor', tutorRouter);
 
 // Global error handler
 app.use((err, req, res, _next) => {
@@ -150,16 +183,43 @@ app.use((err, req, res, _next) => {
   });
 });
 
-const server = app.listen(PORT, () => {
+const httpServer = createServer(app);
+
+// ── Socket.io — Real-time agent event streaming ───────────────────────────────
+export const io = new SocketServer(httpServer, {
+  cors: { origin: allowedOrigins.length > 2 ? allowedOrigins : '*', credentials: true },
+  transports: ['websocket', 'polling'],
+});
+
+io.on('connection', (socket) => {
+  const userId = socket.handshake.auth?.userId;
+  if (userId) socket.join(`user:${userId}`);
+
+  socket.on('subscribe:session', (sessionId) => socket.join(`session:${sessionId}`));
+  socket.on('subscribe:goal', (goalId) => socket.join(`goal:${goalId}`));
+
+  socket.on('disconnect', () => {
+    if (userId) socket.leave(`user:${userId}`);
+  });
+});
+
+// Helper exported so routes can push real-time events
+export const emitToUser = (userId, event, data) => io.to(`user:${userId}`).emit(event, data);
+export const emitToSession = (sessionId, event, data) => io.to(`session:${sessionId}`).emit(event, data);
+export const emitToGoal = (goalId, event, data) => io.to(`goal:${goalId}`).emit(event, data);
+
+const server = httpServer.listen(PORT, () => {
   console.log(`
-╔══════════════════════════════════════╗
-║       SkillForge AI Server v3        ║
-╠══════════════════════════════════════╣
-║  Port:   ${PORT}                         ║
-║  Gemini: ${geminiEnabled ? '✅ ON  (gemini-2.0-flash)  ' : '❌ OFF (rule-based fallback)'}  ║
-║  DB:     ${process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'placeholder' ? '📦 Supabase' : '📁 File-based'}               ║
-║  Env:    ${process.env.NODE_ENV || 'development'}                    ║
-╚══════════════════════════════════════╝`);
+╔════════════════════════════════════════╗
+║       SkillForge AI Server v3          ║
+╠════════════════════════════════════════╣
+║  Port:    ${PORT}                           ║
+║  Gemini:  ${geminiEnabled ? '✅ ON  (gemini-2.0-flash)' : '❌ OFF (rule-based fallback)'}  ║
+║  WS:      ✅ Socket.io enabled          ║
+║  Docs:    http://localhost:${PORT}/api/docs ║
+║  DB:      ${process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'placeholder' ? '📦 Supabase' : '📁 File-based'}                 ║
+║  Env:     ${process.env.NODE_ENV || 'development'}                     ║
+╚════════════════════════════════════════╝`);
 });
 
 // Graceful shutdown
