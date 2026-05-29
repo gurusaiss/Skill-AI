@@ -8,6 +8,15 @@ import SmartAgent from '../agent/SmartAgent.js';
 import { authenticate } from '../middleware/auth.js';
 import UserStore from '../services/UserStore.js';
 
+// Lazy-import Socket.io emitter to avoid circular dependency at startup
+let _emitToUser;
+async function emitToUser(userId, event, data) {
+  if (!_emitToUser) {
+    try { ({ emitToUser: _emitToUser } = await import('../index.js')); } catch { /* no-op */ }
+  }
+  _emitToUser?.(userId, event, data);
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -96,6 +105,10 @@ router.post('/', authenticate, upload.single('jobDescriptionFile'), async (req, 
         jobDescriptionText = null;
       }
     }
+
+    // Emit real-time progress events to the user's socket room
+    const authUserId = req.user.userId;
+    emitToUser(authUserId, 'agent:progress', { stage: 'decomposing', message: 'Analyzing goal and building skill tree…' });
 
     // Process goal with learningUUID from authenticated user
     // Also pass authUserId to link the session to the authenticated user
