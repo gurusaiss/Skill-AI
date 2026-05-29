@@ -243,6 +243,13 @@ export const api = {
 
   // Health
   getHealth: () => request('/api/health'),
+
+  // AI Tutor
+  tutorChat: (message, context, history = []) =>
+    request('/api/tutor/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, context, history }),
+    }),
 };
 
 export { safeString };

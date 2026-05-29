@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api, scoreColor } from '../utils/api.js';
+import Leaderboard from '../components/Leaderboard.jsx';
 import AgentBrain from '../components/AgentBrain.jsx';
 import SkillDigitalTwin from '../components/SkillDigitalTwin.jsx';
 import PredictiveMasteryForecast from '../components/PredictiveMasteryForecast.jsx';
@@ -9,6 +10,8 @@ import MetricModal from '../components/MetricModal.jsx';
 import ProjectModal from '../components/ProjectModal.jsx';
 import SkillDetailModal from '../components/SkillDetailModal.jsx';
 import HistoryDetailModal from '../components/HistoryDetailModal.jsx';
+import SkillRadarChart from '../components/SkillRadarChart.jsx';
+import AchievementSystem from '../components/AchievementSystem.jsx';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
@@ -138,12 +141,14 @@ function MissionCard({ planDay, adaptations, onLaunch, loading }) {
 // TABS
 // ─────────────────────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'overview',    label: 'Overview',    icon: '🗺️' },
-  { id: 'plan',        label: 'Plan',        icon: '📅' },
-  { id: 'skills',      label: 'Skills',      icon: '🌳' },
-  { id: 'performance', label: 'Performance', icon: '📈' },
-  { id: 'agent',       label: 'Agent Brain', icon: '🧠' },
-  { id: 'history',     label: 'History',     icon: '📝' },
+  { id: 'overview',      label: 'Overview',      icon: '🗺️' },
+  { id: 'plan',          label: 'Plan',          icon: '📅' },
+  { id: 'skills',        label: 'Skills',        icon: '🌳' },
+  { id: 'performance',   label: 'Performance',   icon: '📈' },
+  { id: 'agent',         label: 'Agent Brain',   icon: '🧠' },
+  { id: 'history',       label: 'History',       icon: '📝' },
+  { id: 'achievements',  label: 'Achievements',  icon: '🏆' },
+  { id: 'leaderboard',  label: 'Leaderboard',   icon: '🥇' },
 ];
 
 function TabBar({ active, onChange }) {
@@ -713,6 +718,16 @@ export default function Dashboard() {
           {activeTab === 'skills' && (
             <div>
               <h3 className="text-base font-black text-white mb-4">Skill Mastery</h3>
+              {/* Radar Chart */}
+              {(() => {
+                const skillsForRadar = (goal?.skills || []).map(s => ({
+                  name: s.name?.length > 12 ? s.name.slice(0, 12) + '…' : s.name,
+                  score: Math.round(s.score || s.mastery || 0),
+                  target: 90,
+                }));
+                return <SkillRadarChart skills={skillsForRadar} />;
+              })()}
+              <div className="mt-5">
               <SkillBars skills={goal.skills || []} diagnosticScores={diagnosticScores} onSkillClick={s => setSkillModal({ isOpen: true, skill: s })} />
               {sessions.length > 0 && (
                 <div className="mt-6 pt-5 border-t border-slate-800">
@@ -720,6 +735,7 @@ export default function Dashboard() {
                   <SkillDigitalTwin skills={goal.skills} sessions={sessions} diagnosticScores={diagnosticScores} />
                 </div>
               )}
+              </div>
             </div>
           )}
 
@@ -815,6 +831,24 @@ export default function Dashboard() {
               </div>
               <RecentSessions sessions={sessions} onSessionClick={s => setHistoryModal({ isOpen: true, session: s })} />
             </div>
+          )}
+
+          {/* ACHIEVEMENTS */}
+          {activeTab === 'achievements' && (
+            <AchievementSystem stats={stats} sessions={sessions} plan={{ completedDays: completed, totalDays: total }} />
+          )}
+
+          {/* LEADERBOARD */}
+          {activeTab === 'leaderboard' && (
+            <Leaderboard
+              stats={stats}
+              userName={(() => {
+                try {
+                  const profiling = JSON.parse(localStorage.getItem('skillforge:profiling') || 'null');
+                  return profiling?.name || profiling?.fullName || goal?.profile?.name || 'You';
+                } catch { return 'You'; }
+              })()}
+            />
           )}
 
         </div>
