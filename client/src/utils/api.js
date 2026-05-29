@@ -250,6 +250,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ message, context, history }),
     }),
+
+  // ReAct Agent Chain
+  runReactChain: (goal, sessions, skills, planDay) =>
+    request('/api/react/run', {
+      method: 'POST',
+      body: JSON.stringify({ goal, sessions, skills, planDay }),
+    }),
+  getReactDemo: () => request('/api/react/demo'),
 };
 
 export { safeString };

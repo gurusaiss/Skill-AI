@@ -18,6 +18,8 @@ import demoRouter from './routes/demo.js';
 import interviewRouter from './routes/interview.js';
 import assessmentRouter from './routes/assessment.js';
 import tutorRouter from './routes/tutor.js';
+import reactRouter from './routes/react.js';
+import memoryRouter from './routes/memory.js';
 
 // Authentication routes
 import authRouter from './routes/auth.js';
@@ -31,6 +33,8 @@ import auditRouter from './routes/audit.js';
 import contentRouter from './routes/content.js';
 import orgRouter from './routes/organizations.js';
 import notificationsRouter from './routes/notifications.js';
+import agentControlRouter from './routes/agentcontrol.js';
+import autonomousScheduler from './agent/AutonomousScheduler.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataPath = join(__dirname, 'data');
@@ -172,6 +176,30 @@ app.use('/api/interview', interviewRouter);
 app.use('/api/assessments', assessmentRouter);  // plural — matches client calls
 app.use('/api/assessment',  assessmentRouter);  // keep singular as alias for back-compat
 app.use('/api/tutor', tutorRouter);
+app.use('/api/react', reactRouter);
+app.use('/api/memory', memoryRouter);
+app.use('/api/agent-control', agentControlRouter);
+
+// ── Autonomous Agent Brief routes ──────────────────────────────────────────
+app.get('/api/brief/:userId', (req, res) => {
+  const brief = autonomousScheduler.getBrief(req.params.userId);
+  if (brief) {
+    res.json(brief);
+  } else {
+    res.json({
+      generatedAt: new Date().toISOString(),
+      type: 'daily_brief',
+      streak: 0,
+      completedDays: 0,
+      avgScore: 0,
+      insight: 'Start your first session today to unlock AI-powered personalized insights!',
+      alerts: [],
+      recommendation: { action: 'start', msg: 'Complete your first session to activate the AI analysis engine.' },
+      nextDay: null,
+    });
+  }
+});
+app.get('/api/scheduler/status', (req, res) => res.json(autonomousScheduler.getStatus()));
 
 // Global error handler
 app.use((err, req, res, _next) => {
@@ -209,6 +237,8 @@ export const emitToSession = (sessionId, event, data) => io.to(`session:${sessio
 export const emitToGoal = (goalId, event, data) => io.to(`goal:${goalId}`).emit(event, data);
 
 const server = httpServer.listen(PORT, () => {
+  // Start autonomous background agent
+  autonomousScheduler.start();
   console.log(`
 ╔════════════════════════════════════════╗
 ║       SkillForge AI Server v3          ║
