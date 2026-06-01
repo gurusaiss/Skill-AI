@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 const RATE_LIMIT_KEY = 'skillforge:login_locked_until';
-const RATE_LIMIT_MS = 15 * 60 * 1000; // 15 minutes
+const RATE_LIMIT_MS = 2 * 60 * 1000; // 2 minutes (reduced from 15)
 
 export default function Login() {
   const navigate = useNavigate();
@@ -128,8 +128,8 @@ export default function Login() {
       } else {
         const newAttempts = failedAttempts + 1;
         setFailedAttempts(newAttempts);
-        // Client-side: lock after 5 consecutive failures (same threshold as server)
-        if (newAttempts >= 5) {
+        // Client-side: lock after 10 consecutive failures
+        if (newAttempts >= 10) {
           triggerLockout();
           setError('');
         } else {
@@ -197,9 +197,9 @@ export default function Login() {
           )}
 
           {/* Failed attempts warning (before lockout) */}
-          {failedAttempts > 0 && failedAttempts < 5 && !lockedUntil && (
+          {failedAttempts > 0 && failedAttempts < 10 && !lockedUntil && (
             <div className="mb-4 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20 text-amber-400 text-xs text-center">
-              {5 - failedAttempts} attempt{5 - failedAttempts !== 1 ? 's' : ''} remaining before temporary lockout
+              {10 - failedAttempts} attempt{10 - failedAttempts !== 1 ? 's' : ''} remaining before temporary lockout
             </div>
           )}
 
