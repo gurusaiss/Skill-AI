@@ -99,7 +99,14 @@ class UserStore {
       updatedAt: new Date().toISOString(),
       lastLogin: null,
       managerId: null,
-      googleId: userData.googleId || null
+      googleId: userData.googleId || null,
+      // Extended profile fields
+      jobRole: userData.jobRole || '',
+      department: userData.department || '',
+      jobDescription: userData.jobDescription || '',      // plain text JD
+      jobDescriptionFile: userData.jobDescriptionFile || null, // { name, path, type, size }
+      onboardingComplete: userData.onboardingComplete || false,
+      companyName: userData.companyName || '',
     };
 
     data.users.push(newUser);

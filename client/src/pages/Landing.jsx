@@ -813,17 +813,7 @@ export default function Landing() {
           </div>
         </motion.div>
 
-        {/* ── SECTION A: ANIMATED STATS COUNTER ─────────────────────────── */}
-        <StatsCounter />
-
-        {/* ── SECTION B: HOW IT WORKS ───────────────────────────────────── */}
-        <HowItWorks />
-
-        {/* ── SECTION C: COMPARISON TABLE ───────────────────────────────── */}
-        <ComparisonTable />
-
-        {/* ── SECTION D: TESTIMONIALS ───────────────────────────────────── */}
-        <Testimonials />
+        {/* Sections removed for minimal landing page */}
 
       </div>
 

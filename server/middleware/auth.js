@@ -115,7 +115,7 @@ export const requireRole = (...roles) => {
  */
 export const rateLimitLogin = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 requests per window
+  max: 50, // 50 requests per window — generous for dev/demo, still protects prod
   message: {
     success: false,
     data: null,

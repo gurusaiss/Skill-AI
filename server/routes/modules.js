@@ -6,6 +6,25 @@
 import express from 'express';
 import { authenticate } from '../middleware/auth.js';
 import * as db from '../db/store.js';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { randomUUID } from 'crypto';
+import UserStore from '../services/UserStore.js';
+
+const __moduleDir = dirname(fileURLToPath(import.meta.url));
+const DATA_DIR = join(__moduleDir, '../data');
+const PENDING_MODULES_FILE = join(DATA_DIR, 'pending_modules.json');
+const MODULE_ASSIGNMENTS_FILE = join(DATA_DIR, 'module_assignments.json');
+
+if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+if (!existsSync(PENDING_MODULES_FILE)) writeFileSync(PENDING_MODULES_FILE, JSON.stringify([], null, 2));
+if (!existsSync(MODULE_ASSIGNMENTS_FILE)) writeFileSync(MODULE_ASSIGNMENTS_FILE, JSON.stringify([], null, 2));
+
+const readPending = () => { try { return JSON.parse(readFileSync(PENDING_MODULES_FILE, 'utf-8')); } catch { return []; } };
+const writePending = (d) => writeFileSync(PENDING_MODULES_FILE, JSON.stringify(d, null, 2));
+const readAssignments = () => { try { return JSON.parse(readFileSync(MODULE_ASSIGNMENTS_FILE, 'utf-8')); } catch { return []; } };
+const writeAssignments = (d) => writeFileSync(MODULE_ASSIGNMENTS_FILE, JSON.stringify(d, null, 2));
 
 const router = express.Router();
 
@@ -420,4 +439,276 @@ router.delete('/:id', authenticate, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTO-GENERATED MODULES FROM ASSESSMENT REPORT
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/modules/auto-generate
+ * Auto-generate a module from an assessment report — stored as PENDING (needs approval)
+ * Body: { assessmentReportId, userId, jobRole, weakAreas, assessmentTitle }
+ */
+router.post('/auto-generate', authenticate, async (req, res) => {
+  try {
+    if (!['admin', 'manager'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
+    }
+
+    const { assessmentReportId, userId, jobRole, weakAreas = [], assessmentTitle } = req.body;
+    if (!userId) return res.status(400).json({ success: false, error: { message: 'userId required' } });
+
+    const user = await UserStore.getUserById(userId);
+    const skills = Array.isArray(weakAreas) && weakAreas.length > 0 ? weakAreas : ['Core Skills'];
+
+    // Generate module title and content using AI or fallback
+    let moduleContent = null;
+    try {
+      const groqKey = process.env.GROQ_API_KEY;
+      if (groqKey?.length > 10) {
+        const prompt = `Create a focused training module for an employee who failed these areas in their assessment:
+Role: ${jobRole || 'Employee'}
+Weak areas: ${skills.join(', ')}
+Assessment: ${assessmentTitle || 'Role Assessment'}
+
+Return JSON: { "title": "...", "description": "...", "objectives": ["..."], "sessions": [{"title":"...","topics":["..."],"duration":"30 mins"}], "estimatedDuration": "X days" }`;
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 1500, response_format: { type: 'json_object' } }),
+          signal: AbortSignal.timeout(20000),
+        });
+        if (r.ok) {
+          const d = await r.json();
+          moduleContent = JSON.parse(d.choices?.[0]?.message?.content || '{}');
+        }
+      }
+    } catch (e) { /* fallback below */ }
+
+    const pending = {
+      id: randomUUID(),
+      type: 'auto_generated',
+      isMandatory: true,           // auto-generated = mandatory
+      status: 'pending_approval',  // admin/manager must approve before employee sees it
+      targetUserId: userId,
+      targetUserName: user?.name || '',
+      jobRole: jobRole || '',
+      assessmentReportId: assessmentReportId || null,
+      assessmentTitle: assessmentTitle || '',
+      weakAreas: skills,
+      module: {
+        title: moduleContent?.title || `Remedial Training: ${skills[0]}`,
+        description: moduleContent?.description || `Targeted training for ${jobRole} covering ${skills.join(', ')}`,
+        category: jobRole || 'Training',
+        difficulty: 'intermediate',
+        estimatedDuration: moduleContent?.estimatedDuration || '5 days',
+        skills,
+        objectives: moduleContent?.objectives || [`Improve ${skills.join(', ')} skills`],
+        sessions: moduleContent?.sessions || skills.map(s => ({ title: s, topics: [s], duration: '30 mins' })),
+        isMandatory: true,
+      },
+      createdAt: new Date().toISOString(),
+      createdBy: req.user.userId,
+    };
+
+    const pendings = readPending();
+    pendings.push(pending);
+    writePending(pendings);
+
+    res.status(201).json({ success: true, data: pending, error: null });
+  } catch (e) {
+    console.error('[POST /modules/auto-generate]', e);
+    res.status(500).json({ success: false, error: { message: 'Failed to auto-generate module' } });
+  }
+});
+
+/**
+ * GET /api/modules/pending
+ * Admin/Manager: get all pending auto-generated modules awaiting approval
+ */
+router.get('/pending', authenticate, async (req, res) => {
+  try {
+    if (!['admin', 'manager'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
+    }
+    const pendings = readPending().filter(p => p.status === 'pending_approval');
+    res.json({ success: true, data: pendings, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { message: 'Failed to fetch pending modules' } });
+  }
+});
+
+/**
+ * POST /api/modules/pending/:id/approve
+ * Approve a pending module → creates the real module + assigns to employee
+ */
+router.post('/pending/:id/approve', authenticate, async (req, res) => {
+  try {
+    if (!['admin', 'manager'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
+    }
+
+    const pendings = readPending();
+    const idx = pendings.findIndex(p => p.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ success: false, error: { message: 'Pending module not found' } });
+
+    const pending = pendings[idx];
+
+    // Create the real module
+    const newModule = await db.createModule({
+      title: pending.module.title,
+      description: pending.module.description,
+      category: pending.module.category,
+      difficulty: pending.module.difficulty,
+      estimatedDuration: pending.module.estimatedDuration,
+      skills: pending.module.skills,
+      tasks: pending.module.sessions?.map(s => ({ title: s.title, duration: s.duration, type: 'session' })) || [],
+      resources: [],
+      completionCriteria: 'Complete all sessions',
+      progressTracking: true,
+      content: {
+        isMandatory: true,
+        sessions: pending.module.sessions,
+        objectives: pending.module.objectives,
+        assessmentSource: pending.assessmentReportId,
+      },
+    }, req.user.userId);
+
+    // Assign to the target employee
+    const assignment = {
+      id: randomUUID(),
+      moduleId: newModule.id || newModule,
+      userId: pending.targetUserId,
+      isMandatory: true,
+      assignedAt: new Date().toISOString(),
+      assignedBy: req.user.userId,
+      status: 'assigned',
+    };
+    const assignments = readAssignments();
+    assignments.push(assignment);
+    writeAssignments(assignments);
+
+    // Mark pending as approved
+    pendings[idx] = { ...pending, status: 'approved', approvedAt: new Date().toISOString(), approvedBy: req.user.userId, moduleId: newModule.id || newModule };
+    writePending(pendings);
+
+    res.json({ success: true, data: { module: newModule, assignment }, error: null });
+  } catch (e) {
+    console.error('[POST /modules/pending/:id/approve]', e);
+    res.status(500).json({ success: false, error: { message: 'Failed to approve module' } });
+  }
+});
+
+/**
+ * POST /api/modules/pending/:id/reject
+ * Reject a pending module
+ */
+router.post('/pending/:id/reject', authenticate, async (req, res) => {
+  try {
+    if (!['admin', 'manager'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
+    }
+    const pendings = readPending();
+    const idx = pendings.findIndex(p => p.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ success: false, error: { message: 'Not found' } });
+
+    pendings[idx] = { ...pendings[idx], status: 'rejected', rejectedAt: new Date().toISOString(), rejectedBy: req.user.userId, reason: req.body.reason || '' };
+    writePending(pendings);
+    res.json({ success: true, data: pendings[idx], error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { message: 'Failed to reject' } });
+  }
+});
+
+/**
+ * POST /api/modules/assign
+ * Manually assign modules to users or groups
+ * Body: { moduleIds: [], targetUserIds: [], targetGroupId?, isMandatory: false }
+ */
+router.post('/assign', authenticate, async (req, res) => {
+  try {
+    if (!['admin', 'manager'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
+    }
+
+    const { moduleIds = [], targetUserIds = [], targetGroupId, isMandatory = false } = req.body;
+    if (!moduleIds.length) return res.status(400).json({ success: false, error: { message: 'At least one module required' } });
+
+    let allUserIds = [...targetUserIds];
+
+    // Resolve group members
+    if (targetGroupId) {
+      try {
+        const memberships = JSON.parse(readFileSync(join(DATA_DIR, 'group_memberships.json'), 'utf-8'));
+        const memberIds = (Array.isArray(memberships) ? memberships : memberships.memberships || [])
+          .filter(m => (m.group_id || m.groupId) === targetGroupId)
+          .map(m => m.user_id || m.userId);
+        allUserIds = [...new Set([...allUserIds, ...memberIds])];
+      } catch { /* skip */ }
+    }
+
+    const created = [];
+    const assignments = readAssignments();
+
+    for (const userId of allUserIds) {
+      for (const moduleId of moduleIds) {
+        // Skip duplicates
+        const exists = assignments.some(a => a.moduleId === moduleId && a.userId === userId);
+        if (exists) continue;
+
+        const assignment = {
+          id: randomUUID(),
+          moduleId,
+          userId,
+          isMandatory: !!isMandatory,
+          assignedAt: new Date().toISOString(),
+          assignedBy: req.user.userId,
+          status: 'assigned',
+        };
+        assignments.push(assignment);
+        created.push(assignment);
+      }
+    }
+
+    writeAssignments(assignments);
+    res.json({ success: true, data: { assigned: created.length, assignments: created }, error: null });
+  } catch (e) {
+    console.error('[POST /modules/assign]', e);
+    res.status(500).json({ success: false, error: { message: 'Assignment failed' } });
+  }
+});
+
+/**
+ * GET /api/modules/my-assignments
+ * Employee: get all modules assigned to them (mandatory + optional)
+ */
+router.get('/my-assignments', authenticate, async (req, res) => {
+  try {
+    const assignments = readAssignments().filter(a => a.userId === req.user.userId);
+    const enriched = await Promise.all(assignments.map(async a => {
+      const mod = await db.getModuleById(a.moduleId).catch(() => null);
+      return { ...a, module: mod };
+    }));
+    res.json({ success: true, data: enriched, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { message: 'Failed to fetch assignments' } });
+  }
+});
+
+/**
+ * GET /api/modules/assignments/all
+ * Admin/Manager: all module assignments with progress
+ */
+router.get('/assignments/all', authenticate, async (req, res) => {
+  try {
+    if (!['admin', 'manager'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
+    }
+    const assignments = readAssignments();
+    res.json({ success: true, data: assignments, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { message: 'Failed to fetch' } });
+  }
+});
+
 export default router;
+
