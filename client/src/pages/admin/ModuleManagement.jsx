@@ -87,6 +87,13 @@ export default function ModuleManagement() {
   const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');
 
+  // Pending approvals state
+  const [pendingModules, setPendingModules] = useState([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [rejectingId, setRejectingId] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+
   // New creation flow state
   const [showCreate, setShowCreate] = useState(false);
   const [generateInput, setGenerateInput] = useState('');
@@ -110,7 +117,65 @@ export default function ModuleManagement() {
   useEffect(() => {
     if (!user || !isManagerOrAdmin) { navigate('/dashboard'); return; }
     loadModules();
+    loadPendingCount();
   }, [user, navigate, isManagerOrAdmin]);
+
+  const loadPendingCount = async () => {
+    try {
+      const res = await authFetch('/api/modules/pending');
+      const list = Array.isArray(res) ? res : (res?.modules || []);
+      setPendingCount(list.length);
+    } catch {
+      // silently ignore — count stays 0
+    }
+  };
+
+  const loadPendingModules = async () => {
+    setPendingLoading(true);
+    try {
+      const res = await authFetch('/api/modules/pending');
+      const list = Array.isArray(res) ? res : (res?.modules || []);
+      setPendingModules(list);
+      setPendingCount(list.length);
+    } catch (e) {
+      setToast({ message: e.message || 'Failed to load pending modules', type: 'error' });
+    } finally {
+      setPendingLoading(false);
+    }
+  };
+
+  const handleApprove = async (id) => {
+    try {
+      await authFetch(`/api/modules/pending/${id}/approve`, { method: 'POST' });
+      setToast({ message: '✅ Module approved successfully', type: 'success' });
+      const updated = pendingModules.filter(m => (m.id || m._id) !== id);
+      setPendingModules(updated);
+      setPendingCount(updated.length);
+    } catch (e) {
+      setToast({ message: e.message || 'Failed to approve', type: 'error' });
+    }
+  };
+
+  const handleReject = async (id) => {
+    if (!rejectReason.trim()) {
+      setToast({ message: 'Please enter a rejection reason', type: 'error' });
+      return;
+    }
+    try {
+      await authFetch(`/api/modules/pending/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: rejectReason }),
+      });
+      setToast({ message: '✕ Module rejected', type: 'info' });
+      const updated = pendingModules.filter(m => (m.id || m._id) !== id);
+      setPendingModules(updated);
+      setPendingCount(updated.length);
+      setRejectingId(null);
+      setRejectReason('');
+    } catch (e) {
+      setToast({ message: e.message || 'Failed to reject', type: 'error' });
+    }
+  };
 
   const loadModules = async () => {
     setLoading(true);
@@ -123,6 +188,13 @@ export default function ModuleManagement() {
       setLoading(false);
     }
   };
+
+  // Load pending modules when the pending tab is first activated
+  useEffect(() => {
+    if (activeTab === 'pending') {
+      loadPendingModules();
+    }
+  }, [activeTab]);
 
   const filtered = useMemo(() => {
     return modules.filter(m => {
@@ -341,25 +413,175 @@ export default function ModuleManagement() {
               {cat}
             </button>
           ))}
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-all ${activeTab === 'pending' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30' : 'bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white'}`}
+          >
+            ⏳ Pending Approvals
+            {pendingCount > 0 && (
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white text-xs font-black">
+                {pendingCount > 9 ? '9+' : pendingCount}
+              </span>
+            )}
+          </button>
         </div>
 
         <div className="mb-4">
           <input type="text" placeholder="Search modules..." value={search} onChange={e => setSearch(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
         </div>
 
-        {loading ? (
+        {/* ── Pending Approvals Tab ── */}
+        {activeTab === 'pending' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs text-slate-500 font-semibold uppercase tracking-widest">
+                {pendingCount} module{pendingCount !== 1 ? 's' : ''} awaiting review
+              </p>
+              <button
+                onClick={loadPendingModules}
+                disabled={pendingLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700 text-slate-400 hover:text-white hover:border-slate-600 text-xs font-bold transition-all disabled:opacity-50"
+              >
+                {pendingLoading ? (
+                  <span className="w-3 h-3 border-2 border-slate-500 border-t-white rounded-full animate-spin" />
+                ) : '↻'} Refresh
+              </button>
+            </div>
+
+            {pendingLoading ? (
+              <div className="space-y-4">
+                {[0, 1, 2].map(i => <SkeletonCard key={i} />)}
+              </div>
+            ) : pendingModules.length === 0 ? (
+              <div className="rounded-2xl border border-slate-700/40 bg-[#111827] py-20 text-center">
+                <div className="text-5xl mb-4 opacity-20">✅</div>
+                <p className="text-lg font-bold text-slate-400 mb-1">No Pending Approvals</p>
+                <p className="text-sm text-slate-600">All auto-generated modules have been reviewed.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {pendingModules.map((mod) => {
+                  const id = mod.id || mod._id;
+                  const weakAreas = mod.weakAreas || mod.weak_areas || mod.skills || [];
+                  const isRejecting = rejectingId === id;
+                  const skillColors = [
+                    'bg-indigo-500/15 text-indigo-300 border-indigo-500/30',
+                    'bg-purple-500/15 text-purple-300 border-purple-500/30',
+                    'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+                    'bg-amber-500/15 text-amber-300 border-amber-500/30',
+                    'bg-pink-500/15 text-pink-300 border-pink-500/30',
+                  ];
+                  return (
+                    <div key={id} className="rounded-2xl border border-amber-500/20 bg-[#111827] p-5 shadow-lg">
+                      <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <p className="text-sm font-bold text-white">{mod.employeeName || mod.employee_name || 'Employee'}</p>
+                            {(mod.jobRole || mod.job_role) && (
+                              <span className="px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-bold">
+                                {mod.jobRole || mod.job_role}
+                              </span>
+                            )}
+                          </div>
+                          {(mod.assessmentTitle || mod.assessment_title) && (
+                            <p className="text-xs text-slate-500 mb-3">
+                              Triggered by: <span className="text-slate-300">{mod.assessmentTitle || mod.assessment_title}</span>
+                            </p>
+                          )}
+
+                          {weakAreas.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mb-3">
+                              {weakAreas.map((area, ai) => (
+                                <span
+                                  key={ai}
+                                  className={`px-2 py-0.5 rounded-md border text-xs font-semibold ${skillColors[ai % skillColors.length]}`}
+                                >
+                                  {typeof area === 'string' ? area : area.name || area.area || String(area)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <h3 className="text-base font-black text-white">{mod.title}</h3>
+                            {mod.mandatory && (
+                              <span className="px-2 py-0.5 rounded-md bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-black uppercase">
+                                Mandatory
+                              </span>
+                            )}
+                          </div>
+                          {mod.description && (
+                            <p className="text-xs text-slate-400 leading-relaxed">{mod.description}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Reject reason textarea */}
+                      {isRejecting && (
+                        <div className="mb-4">
+                          <textarea
+                            value={rejectReason}
+                            onChange={e => setRejectReason(e.target.value)}
+                            placeholder="Enter rejection reason..."
+                            rows={3}
+                            className="w-full px-3 py-2.5 bg-slate-800 border border-red-500/30 rounded-xl text-white text-sm placeholder-slate-500 focus:border-red-500 focus:outline-none resize-none transition-all"
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-700/30">
+                        <button
+                          onClick={() => handleApprove(id)}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-bold transition-all"
+                        >
+                          ✓ Approve
+                        </button>
+                        {isRejecting ? (
+                          <>
+                            <button
+                              onClick={() => handleReject(id)}
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30 text-xs font-bold transition-all"
+                            >
+                              Confirm Reject
+                            </button>
+                            <button
+                              onClick={() => { setRejectingId(null); setRejectReason(''); }}
+                              className="px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-700 text-slate-400 hover:text-white text-xs font-bold transition-all"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setRejectingId(id)}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 text-xs font-bold transition-all"
+                          >
+                            ✕ Reject
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Module List (all other tabs) ── */}
+        {activeTab !== 'pending' && loading ? (
           <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden">
             <div className="divide-y divide-slate-700/20">
               {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
             </div>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : activeTab !== 'pending' && filtered.length === 0 ? (
           <div className="rounded-2xl border border-slate-700/40 bg-[#111827] py-20 text-center">
             <div className="text-6xl mb-4 opacity-20">📚</div>
             <p className="text-lg font-bold text-slate-400 mb-1">No Modules Found</p>
             <p className="text-sm text-slate-600">Create your first module to get started.</p>
           </div>
-        ) : (
+        ) : activeTab !== 'pending' ? (
           <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden shadow-xl">
             {/* Table header */}
             <div className="hidden lg:grid px-6 py-3 border-b border-slate-700/40 bg-slate-800/30 text-xs font-bold text-slate-500 uppercase tracking-widest"
@@ -437,7 +659,7 @@ export default function ModuleManagement() {
               </p>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* ── Full-Page Creation Overlay ── */}

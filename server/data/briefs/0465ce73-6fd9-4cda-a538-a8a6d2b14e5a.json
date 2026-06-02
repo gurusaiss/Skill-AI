@@ -1,0 +1,25 @@
+{
+  "userId": "0465ce73-6fd9-4cda-a538-a8a6d2b14e5a",
+  "generatedAt": "2026-06-02T06:59:26.054Z",
+  "type": "daily_brief",
+  "streak": 1,
+  "completedDays": 1,
+  "avgScore": 20,
+  "lastScore": 20,
+  "nextDay": {
+    "day": 2,
+    "topic": "Express.js and routing",
+    "skillName": "Node.js Development"
+  },
+  "insight": "Given that you've just started with one session completed, it's great that you've already established a foundation to build upon, and focusing on small incremental improvements will be key to increasing your average score of 20% over time. To keep your 1-day streak going, try to identify one specific concept or question type from your last session that you struggled with and make a plan to review and practice it before your next session to see a score boost.",
+  "alerts": [
+    {
+      "type": "review",
+      "msg": "Last score was 20%. Agent recommends reviewing before continuing."
+    }
+  ],
+  "recommendation": {
+    "action": "review",
+    "msg": "Schedule a review session before proceeding to new material."
+  }
+}

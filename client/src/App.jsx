@@ -22,6 +22,7 @@ const InterviewSimulator   = lazy(() => import('./pages/InterviewSimulator.jsx')
 // Auth Pages
 const Login                = lazy(() => import('./pages/auth/Login.jsx'));
 const Register             = lazy(() => import('./pages/auth/Register.jsx'));
+const Onboarding           = lazy(() => import('./pages/auth/Onboarding.jsx'));
 const VerifyOTP            = lazy(() => import('./pages/auth/VerifyOTP.jsx'));
 const ForgotPassword       = lazy(() => import('./pages/auth/ForgotPassword.jsx'));
 const ResetPassword        = lazy(() => import('./pages/auth/ResetPassword.jsx'));
@@ -128,6 +129,7 @@ const App = () => {
               {/* Auth Pages - Public */}
               <Route path="/auth/login"           element={<Login />} />
               <Route path="/auth/register"        element={<Register />} />
+              <Route path="/auth/onboarding"      element={<Onboarding />} />
               <Route path="/auth/verify-otp"      element={<VerifyOTP />} />
               <Route path="/auth/forgot-password" element={<ForgotPassword />} />
               <Route path="/auth/reset-password"  element={<ResetPassword />} />

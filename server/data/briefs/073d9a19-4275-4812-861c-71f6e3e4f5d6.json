@@ -1,0 +1,16 @@
+{
+  "userId": "073d9a19-4275-4812-861c-71f6e3e4f5d6",
+  "generatedAt": "2026-06-02T06:59:27.391Z",
+  "type": "daily_brief",
+  "streak": 0,
+  "completedDays": 0,
+  "avgScore": 0,
+  "lastScore": 0,
+  "nextDay": null,
+  "insight": "As you begin your learning journey, remember that every great achievement starts with a single step, and by completing your first session, you'll not only gain valuable knowledge but also establish a foundation for building a streak and improving your scores over time. By focusing on making progress one session at a time, you can break down your learning goals into manageable chunks, track your growth, and develop a sense of accomplishment that will motivate you to continue learning and reaching new heights.",
+  "alerts": [],
+  "recommendation": {
+    "action": "review",
+    "msg": "Schedule a review session before proceeding to new material."
+  }
+}

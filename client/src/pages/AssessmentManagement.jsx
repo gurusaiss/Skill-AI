@@ -19,48 +19,41 @@ const authFetch = async (path, options = {}) => {
 
 const Toast = ({ message, type, onClose }) => {
   useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [onClose]);
-  const colors = { success: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300', error: 'bg-red-500/15 border-red-500/30 text-red-300', info: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300' };
+  const colors = {
+    success: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300',
+    error: 'bg-red-500/15 border-red-500/30 text-red-300',
+    info: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300',
+  };
   return (
-    <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl border backdrop-blur-xl shadow-2xl ${colors[type]}`}>
+    <div className={`fixed top-6 right-6 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-xl border backdrop-blur-xl shadow-2xl ${colors[type]}`}>
       <span className="text-sm font-semibold">{message}</span>
       <button onClick={onClose} className="ml-2 opacity-60 hover:opacity-100 text-lg">&times;</button>
     </div>
   );
 };
 
-const GENERATION_STEPS = [
-  { icon: '🧠', label: 'Analyzing module content...', color: '#6366F1' },
-  { icon: '📋', label: 'Generating questions with AI...', color: '#8B5CF6' },
-  { icon: '💾', label: 'Saving to database...', color: '#10B981' },
-];
-
 const QUESTION_TYPE_OPTIONS = [
-  { value: 'mcq', label: 'Multiple Choice (MCQ)', icon: '🔘' },
-  { value: 'subjective', label: 'Subjective / Open-Ended', icon: '✍️' },
-  { value: 'fill_blank', label: 'Fill in the Blanks', icon: '🔲' },
+  { value: 'mcq', label: 'MCQ' },
+  { value: 'subjective', label: 'Subjective' },
+  { value: 'fill_blank', label: 'Fill in Blank' },
 ];
 
-const SCHEDULE_OPTIONS = [
-  { value: 'manual', label: 'Manual (assign later)' },
-  { value: 'after_session', label: 'After N Sessions' },
-  { value: 'scheduled', label: 'On Specific Date' },
-];
-
-const DIFFICULTY_COLORS = {
-  easy: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-  medium: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-  hard: 'bg-red-500/15 text-red-400 border-red-500/30',
+const STATUS_COLORS = {
+  assigned: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30',
+  submitted: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+  pending: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
 };
 
-const TYPE_LABELS = { mcq: 'MCQ', subjective: 'Subjective', fill_blank: 'Fill Blank' };
-
-const EMPTY_FORM = {
-  moduleId: '', title: '', description: '',
-  numQuestions: 5,
+const EMPTY_MODAL = {
+  step: 1,
+  targetType: 'individual',
+  selectedUsers: [],
+  selectedGroup: '',
+  questionCount: 10,
   questionTypes: ['mcq'],
-  scheduleType: 'manual',
-  sessionNumber: '',
-  scheduledDate: '',
+  assessmentDate: '',
+  duration: 30,
+  title: '',
 };
 
 export default function AssessmentManagement() {
@@ -68,18 +61,19 @@ export default function AssessmentManagement() {
   const { user } = useAuth();
 
   const [assessments, setAssessments] = useState([]);
-  const [modules, setModules] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
-  const [showGenerate, setShowGenerate] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [genStep, setGenStep] = useState(-1); // -1 = idle, 0/1/2 = step
-  const [generatedQuestions, setGeneratedQuestions] = useState(null);
-  const [editingQuestions, setEditingQuestions] = useState(null); // for review
-  const [saving, setSaving] = useState(false);
-  const [savedAssessmentId, setSavedAssessmentId] = useState(null); // ID of the just-saved assessment
-  const [viewDetail, setViewDetail] = useState(null); // assessment to view/edit
   const [search, setSearch] = useState('');
+
+  // Modal state
+  const [showModal, setShowModal] = useState(false);
+  const [modal, setModal] = useState(EMPTY_MODAL);
+  const [creating, setCreating] = useState(false);
+
+  // Detail view
+  const [viewDetail, setViewDetail] = useState(null);
 
   const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
@@ -94,39 +88,56 @@ export default function AssessmentManagement() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [assessRes, modRes] = await Promise.allSettled([
+      const [assessRes, empRes, groupRes] = await Promise.allSettled([
         authFetch('/api/assessments'),
-        authFetch('/api/modules'),
+        authFetch('/api/users?role=employee'),
+        authFetch('/api/content/groups'),
       ]);
       if (assessRes.status === 'fulfilled') {
         const v = assessRes.value;
         setAssessments(Array.isArray(v) ? v : []);
       }
-      if (modRes.status === 'fulfilled') {
-        const v = modRes.value;
-        setModules(Array.isArray(v) ? v : (v?.modules || []));
+      if (empRes.status === 'fulfilled') {
+        const v = empRes.value;
+        const list = Array.isArray(v) ? v : (v?.users || []);
+        setEmployees(list);
+      }
+      if (groupRes.status === 'fulfilled') {
+        const v = groupRes.value;
+        setGroups(Array.isArray(v) ? v : []);
       }
     } catch (e) {
-      showToast(e.message || 'Failed to load', 'error');
+      showToast(e.message || 'Failed to load data', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleModuleSelect = (moduleId) => {
-    const mod = modules.find(m => m.id === moduleId);
-    setForm(prev => ({
+  const openModal = () => {
+    const today = new Date().toISOString().split('T')[0];
+    setModal({ ...EMPTY_MODAL, assessmentDate: today, title: `Assessment - ${today}` });
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setModal(EMPTY_MODAL);
+    setCreating(false);
+  };
+
+  const updateModal = (patch) => setModal(prev => ({ ...prev, ...patch }));
+
+  const toggleEmployee = (id) => {
+    setModal(prev => ({
       ...prev,
-      moduleId,
-      title: mod ? `${mod.title} Assessment` : prev.title,
-      description: mod
-        ? `Assessment for ${mod.title}${mod.skills?.length ? ` — tests understanding of ${mod.skills.slice(0, 3).join(', ')}` : ''}`
-        : prev.description,
+      selectedUsers: prev.selectedUsers.includes(id)
+        ? prev.selectedUsers.filter(u => u !== id)
+        : [...prev.selectedUsers, id],
     }));
   };
 
   const toggleQuestionType = (type) => {
-    setForm(prev => {
+    setModal(prev => {
       const types = prev.questionTypes.includes(type)
         ? prev.questionTypes.filter(t => t !== type)
         : [...prev.questionTypes, type];
@@ -134,108 +145,52 @@ export default function AssessmentManagement() {
     });
   };
 
-  // Combined: generate questions → save to DB → update UI. No manual "Save" step needed.
-  const runGeneration = async () => {
-    const mod = modules.find(m => m.id === form.moduleId);
-    const assessTitle = form.title || (mod ? `${mod.title} Assessment` : '');
-    if (!assessTitle) { showToast('Select a module or enter a title first', 'error'); return; }
+  const handleDateChange = (date) => {
+    updateModal({
+      assessmentDate: date,
+      title: `Assessment - ${date}`,
+    });
+  };
 
-    setGenStep(0);
-    await new Promise(r => setTimeout(r, 800));
-    setGenStep(1);
+  const canProceedStep1 = () => {
+    if (modal.targetType === 'individual') return modal.selectedUsers.length > 0;
+    return !!modal.selectedGroup;
+  };
 
+  const canProceedStep2 = () => {
+    return modal.assessmentDate && modal.questionCount >= 5 && modal.questionCount <= 30 && modal.title.trim();
+  };
+
+  const handleCreate = async () => {
+    setCreating(true);
     try {
-      // Step 1 — Generate questions via AI
-      const rawQuestions = await authFetch('/api/assessments/generate', {
-        method: 'POST',
-        body: JSON.stringify({
-          moduleTitle: mod?.title || assessTitle,
-          moduleDescription: mod?.description || form.description,
-          skills: mod?.skills || [],
-          numQuestions: form.numQuestions,
-          questionTypes: form.questionTypes,
-        }),
-      });
+      const targetUsers = modal.targetType === 'individual'
+        ? modal.selectedUsers
+        : []; // group handled server-side via selectedGroup
 
-      const questions = Array.isArray(rawQuestions) ? rawQuestions : [];
-      if (questions.length === 0) throw new Error('AI returned 0 questions — please try again.');
-
-      setGenStep(2);
-      await new Promise(r => setTimeout(r, 600));
-
-      // Step 2 — Immediately save to DB
-      const schedule = form.scheduleType === 'after_session'
-        ? { type: 'after_session', sessionNumber: parseInt(form.sessionNumber) || 1 }
-        : form.scheduleType === 'scheduled'
-        ? { type: 'scheduled', date: form.scheduledDate }
-        : { type: 'manual' };
+      const payload = {
+        title: modal.title.trim(),
+        targetUsers,
+        questionCount: modal.questionCount,
+        questionTypes: modal.questionTypes,
+        assessmentDate: modal.assessmentDate,
+        duration: modal.duration,
+        ...(modal.targetType === 'group' && modal.selectedGroup ? { groupId: modal.selectedGroup } : {}),
+      };
 
       const saved = await authFetch('/api/assessments', {
         method: 'POST',
-        body: JSON.stringify({
-          title: assessTitle,
-          description: form.description || (mod ? `Assessment for ${mod.title}` : ''),
-          moduleId: form.moduleId || null,
-          questions,
-          schedule,
-          targetUsers: ['all'],
-        }),
+        body: JSON.stringify(payload),
       });
 
-      // Step 3 — Update UI immediately (no refresh needed)
-      const newRecord = saved || { id: Date.now().toString(), title: assessTitle, questions, createdAt: new Date().toISOString() };
+      const newRecord = saved || { id: Date.now().toString(), ...payload, createdAt: new Date().toISOString() };
       setAssessments(prev => [newRecord, ...prev]);
-      setGeneratedQuestions(questions);
-      setEditingQuestions(questions.map(q => ({ ...q })));
-      setSavedAssessmentId(newRecord.id || null);
-      setGenStep(-1);
-      showToast(`✅ ${questions.length} questions generated & saved!`, 'success');
-
+      showToast(`Assessment created for ${modal.selectedUsers.length || 'group'} employee(s)`, 'success');
+      closeModal();
     } catch (e) {
-      console.error('[AssessmentManagement] generation error:', e);
-      showToast(e.message || 'Generation failed — check console for details', 'error');
-      setGenStep(-1);
-    }
-  };
-
-  const updateQuestion = (idx, field, value) => {
-    setEditingQuestions(prev => prev.map((q, i) => i === idx ? { ...q, [field]: value } : q));
-  };
-
-  const updateOption = (qIdx, optIdx, value) => {
-    setEditingQuestions(prev => prev.map((q, i) => {
-      if (i !== qIdx) return q;
-      const opts = [...(q.options || ['A) ', 'B) ', 'C) ', 'D) '])];
-      opts[optIdx] = value;
-      return { ...q, options: opts };
-    }));
-  };
-
-  const removeQuestion = (idx) => {
-    setEditingQuestions(prev => prev.filter((_, i) => i !== idx));
-  };
-
-  // Save edited questions back (after reviewing the generated assessment)
-  const saveEditedQuestions = async (assessmentId) => {
-    if (!editingQuestions || editingQuestions.length === 0) { showToast('No questions to save', 'error'); return; }
-    setSaving(true);
-    try {
-      if (assessmentId) {
-        // Update existing assessment's questions
-        await authFetch(`/api/assessments/${assessmentId}`, {
-          method: 'PUT',
-          body: JSON.stringify({ questions: editingQuestions }),
-        });
-        setAssessments(prev => prev.map(a =>
-          a.id === assessmentId ? { ...a, questions: editingQuestions } : a
-        ));
-      }
-      showToast('Questions updated', 'success');
-      closeGenerate();
-    } catch (e) {
-      showToast(e.message || 'Failed to update questions', 'error');
+      showToast(e.message || 'Failed to create assessment', 'error');
     } finally {
-      setSaving(false);
+      setCreating(false);
     }
   };
 
@@ -250,24 +205,15 @@ export default function AssessmentManagement() {
     }
   };
 
-  const closeGenerate = () => {
-    setShowGenerate(false);
-    setForm(EMPTY_FORM);
-    setGenStep(-1);
-    setGeneratedQuestions(null);
-    setEditingQuestions(null);
-    setSavedAssessmentId(null);
-  };
-
   const filtered = useMemo(() => {
     if (!search) return assessments;
     return assessments.filter(a => (a.title || '').toLowerCase().includes(search.toLowerCase()));
   }, [assessments, search]);
 
-  const getModuleName = (moduleId) => {
-    if (!moduleId) return '—';
-    return modules.find(m => m.id === moduleId)?.title || moduleId;
-  };
+  const selectedEmployeeObjects = useMemo(
+    () => employees.filter(e => modal.selectedUsers.includes(e.id || e._id)),
+    [employees, modal.selectedUsers]
+  );
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
@@ -277,18 +223,20 @@ export default function AssessmentManagement() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <button onClick={() => navigate(user?.role === 'admin' ? '/admin/dashboard' : '/manager/dashboard')}
-              className="text-slate-400 hover:text-white text-sm mb-2 flex items-center gap-2">
+            <button
+              onClick={() => navigate(user?.role === 'admin' ? '/admin/dashboard' : '/manager/dashboard')}
+              className="text-slate-400 hover:text-white text-sm mb-2 flex items-center gap-2 transition-colors"
+            >
               ← Back to Dashboard
             </button>
             <h1 className="text-3xl font-black text-white">Assessment Management</h1>
-            <p className="text-slate-400 text-sm mt-0.5">AI-powered knowledge assessments for your training modules</p>
+            <p className="text-slate-400 text-sm mt-0.5">Create employee-specific assessments based on job roles and JDs</p>
           </div>
           <button
-            onClick={() => setShowGenerate(true)}
+            onClick={openModal}
             className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all shadow-lg shadow-indigo-500/20"
           >
-            ✦ Generate with AI
+            + Create Assessment
           </button>
         </div>
 
@@ -296,8 +244,8 @@ export default function AssessmentManagement() {
         <div className="grid grid-cols-3 gap-4 mb-8">
           {[
             { label: 'Total Assessments', value: assessments.length, icon: '📝', borderCls: 'border-indigo-500/25', bgCls: 'bg-indigo-500/5', textCls: 'text-indigo-400', numCls: 'text-indigo-300' },
-            { label: 'Total Questions', value: assessments.reduce((s, a) => s + (a.questions?.length || 0), 0), icon: '❓', borderCls: 'border-purple-500/25', bgCls: 'bg-purple-500/5', textCls: 'text-purple-400', numCls: 'text-purple-300' },
-            { label: 'Modules Covered', value: new Set(assessments.map(a => a.moduleId).filter(Boolean)).size, icon: '📚', borderCls: 'border-emerald-500/25', bgCls: 'bg-emerald-500/5', textCls: 'text-emerald-400', numCls: 'text-emerald-300' },
+            { label: 'Total Employees Assigned', value: assessments.reduce((s, a) => s + (a.targetUsers?.length || 0), 0), icon: '👥', borderCls: 'border-purple-500/25', bgCls: 'bg-purple-500/5', textCls: 'text-purple-400', numCls: 'text-purple-300' },
+            { label: 'Active Employees', value: employees.length, icon: '🧑‍💼', borderCls: 'border-emerald-500/25', bgCls: 'bg-emerald-500/5', textCls: 'text-emerald-400', numCls: 'text-emerald-300' },
           ].map((s, i) => (
             <div key={i} className={`rounded-2xl border ${s.borderCls} ${s.bgCls} p-5 flex flex-col gap-2`}>
               <div className="flex items-center justify-between">
@@ -331,10 +279,12 @@ export default function AssessmentManagement() {
             </button>
           </div>
 
-          {/* Table header */}
-          <div className="hidden md:grid px-5 py-3 border-b border-slate-700/40 bg-slate-800/30"
-            style={{ gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 120px' }}>
-            {['Assessment', 'Module', 'Questions', 'Schedule', 'Created', 'Actions'].map(h => (
+          {/* Table Header */}
+          <div
+            className="hidden md:grid px-5 py-3 border-b border-slate-700/40 bg-slate-800/30"
+            style={{ gridTemplateColumns: '2.5fr 1.5fr 1fr 1fr 1fr 130px' }}
+          >
+            {['Title', 'Employees', 'Date', 'Questions', 'Status', 'Actions'].map(h => (
               <span key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</span>
             ))}
           </div>
@@ -344,55 +294,55 @@ export default function AssessmentManagement() {
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="px-5 py-4 flex items-center gap-4 animate-pulse">
                   <div className="flex-1 h-4 bg-slate-700/50 rounded" />
-                  <div className="w-32 h-4 bg-slate-700/40 rounded" />
-                  <div className="w-12 h-4 bg-slate-700/50 rounded" />
-                  <div className="w-20 h-4 bg-slate-700/40 rounded" />
-                  <div className="w-20 h-4 bg-slate-700/40 rounded" />
+                  <div className="w-24 h-4 bg-slate-700/40 rounded" />
+                  <div className="w-20 h-4 bg-slate-700/50 rounded" />
+                  <div className="w-12 h-4 bg-slate-700/40 rounded" />
+                  <div className="w-16 h-6 bg-slate-700/50 rounded-lg" />
                   <div className="w-20 h-6 bg-slate-700/50 rounded-lg" />
                 </div>
               ))}
             </div>
           ) : filtered.length === 0 ? (
             <div className="py-20 text-center">
-              <div className="text-6xl mb-4 opacity-20">📝</div>
+              <div className="text-6xl mb-4 opacity-20">📋</div>
               <p className="text-lg font-bold text-slate-400 mb-1">No Assessments Yet</p>
-              <p className="text-sm text-slate-600">Click "Generate with AI" to create your first assessment.</p>
+              <p className="text-sm text-slate-600">Click "Create Assessment" to get started.</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-700/20">
-              {filtered.map((a) => (
+              {filtered.map(a => (
                 <div
                   key={a.id}
                   className="group px-5 py-4 hover:bg-slate-800/30 transition-all"
-                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 120px', alignItems: 'center', gap: '12px' }}
+                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1fr 1fr 130px', alignItems: 'center', gap: '12px' }}
                 >
-                  {/* Assessment title */}
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-white truncate leading-tight">{a.title}</p>
+                    <p className="text-sm font-bold text-white truncate">{a.title}</p>
                     {a.description && <p className="text-xs text-slate-500 truncate mt-0.5">{a.description}</p>}
                   </div>
-                  {/* Module */}
-                  <div className="min-w-0">
-                    <span className="text-sm text-slate-300 truncate block">{getModuleName(a.moduleId)}</span>
-                  </div>
-                  {/* Questions count */}
                   <div>
-                    <span className="text-sm font-black text-indigo-400">{a.questions?.length || 0}</span>
+                    <span className="text-sm text-slate-300">
+                      {a.targetUsers?.length || 0} {(a.targetUsers?.length || 0) === 1 ? 'employee' : 'employees'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-400">
+                      {a.assessmentDate
+                        ? new Date(a.assessmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+                        : a.createdAt
+                        ? new Date(a.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+                        : '—'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-sm font-black text-indigo-400">{a.questionCount || a.questions?.length || '—'}</span>
                     <span className="text-xs text-slate-600 ml-1">Qs</span>
                   </div>
-                  {/* Schedule */}
                   <div>
-                    <span className="inline-flex px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-700/40 text-slate-400 capitalize">
-                      {a.schedule?.type || 'manual'}
+                    <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-semibold border capitalize ${STATUS_COLORS[a.status] || STATUS_COLORS.pending}`}>
+                      {a.status || 'assigned'}
                     </span>
                   </div>
-                  {/* Created */}
-                  <div>
-                    <span className="text-xs text-slate-500">
-                      {a.createdAt ? new Date(a.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'}
-                    </span>
-                  </div>
-                  {/* Actions */}
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                     <button
                       onClick={() => setViewDetail(a)}
@@ -412,73 +362,231 @@ export default function AssessmentManagement() {
             </div>
           )}
 
-          {/* Footer */}
           {!loading && filtered.length > 0 && (
             <div className="px-5 py-3 border-t border-slate-700/30 bg-slate-800/10 flex items-center justify-between">
               <p className="text-xs text-slate-600">
                 Showing <span className="text-slate-400 font-semibold">{filtered.length}</span> of{' '}
                 <span className="text-slate-400 font-semibold">{assessments.length}</span> assessments
               </p>
-              <p className="text-xs text-slate-600">
-                {assessments.reduce((s, a) => s + (a.questions?.length || 0), 0)} total questions
-              </p>
             </div>
           )}
         </div>
       </div>
 
-      {/* === Generate Modal === */}
-      {showGenerate && (
+      {/* ===== CREATE ASSESSMENT MODAL ===== */}
+      {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col">
+
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-slate-900 z-10">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 sticky top-0 bg-[#0F172A] z-10">
               <div>
-                <h3 className="text-lg font-black text-white">✦ Generate Assessment with AI</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Configure your assessment — AI will generate the questions</p>
+                <h3 className="text-lg font-black text-white">Create Assessment</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Assign unique AI-generated assessments to employees</p>
               </div>
-              <button onClick={closeGenerate} className="text-slate-500 hover:text-white text-xl transition-colors">✕</button>
+              <button onClick={closeModal} className="text-slate-500 hover:text-white text-xl transition-colors">✕</button>
             </div>
 
-            {/* Step: Config Form */}
-            {genStep === -1 && !editingQuestions && (
-              <div className="p-6 space-y-5">
-                {/* Module Select */}
+            {/* Step Indicator */}
+            <div className="flex items-center gap-0 px-6 pt-5 pb-4">
+              {[
+                { num: 1, label: 'Select Target' },
+                { num: 2, label: 'Settings' },
+                { num: 3, label: 'Review' },
+              ].map((s, i) => (
+                <React.Fragment key={s.num}>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black border transition-all ${
+                      modal.step > s.num
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                        : modal.step === s.num
+                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                        : 'bg-slate-800 border-slate-700 text-slate-500'
+                    }`}>
+                      {modal.step > s.num ? '✓' : s.num}
+                    </div>
+                    <span className={`text-xs font-semibold transition-colors ${
+                      modal.step === s.num ? 'text-white' : modal.step > s.num ? 'text-emerald-400' : 'text-slate-500'
+                    }`}>{s.label}</span>
+                  </div>
+                  {i < 2 && <div className="flex-1 h-px bg-slate-700/60 mx-3" />}
+                </React.Fragment>
+              ))}
+            </div>
+
+            {/* ── STEP 1: Select Target ── */}
+            {modal.step === 1 && (
+              <div className="p-6 space-y-5 flex-1">
+                {/* Target type radio */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Module</label>
-                  <select value={form.moduleId} onChange={e => handleModuleSelect(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none">
-                    <option value="">— Select a module —</option>
-                    {modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
-                  </select>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Target</label>
+                  <div className="flex gap-3">
+                    {[
+                      { value: 'individual', label: 'Individual Employees' },
+                      { value: 'group', label: 'Group' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => updateModal({ targetType: opt.value, selectedUsers: [], selectedGroup: '' })}
+                        className={`flex-1 py-2.5 px-4 rounded-xl border text-sm font-semibold transition-all ${
+                          modal.targetType === opt.value
+                            ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-300'
+                            : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Individual: employee list */}
+                {modal.targetType === 'individual' && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        Select Employees
+                      </label>
+                      <span className="text-xs text-indigo-400 font-semibold">
+                        {modal.selectedUsers.length} selected
+                      </span>
+                    </div>
+                    {employees.length === 0 ? (
+                      <div className="py-10 text-center text-slate-500 text-sm rounded-xl border border-slate-700/40 bg-slate-800/30">
+                        No employees found
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                        {employees.map(emp => {
+                          const id = emp.id || emp._id;
+                          const checked = modal.selectedUsers.includes(id);
+                          const hasJD = !!(emp.jobDescription || emp.jdUrl || emp.hasJD);
+                          return (
+                            <div
+                              key={id}
+                              onClick={() => toggleEmployee(id)}
+                              className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all ${
+                                checked
+                                  ? 'bg-indigo-600/10 border-indigo-500/40'
+                                  : 'bg-slate-800/40 border-slate-700/50 hover:border-slate-600'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {}}
+                                className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 accent-indigo-500 pointer-events-none"
+                              />
+                              <div className="w-8 h-8 rounded-full bg-indigo-600/30 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0">
+                                {(emp.name || emp.email || '?')[0].toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-white truncate">{emp.name || '—'}</p>
+                                <p className="text-xs text-slate-500 truncate">{emp.email}</p>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {emp.jobRole && (
+                                  <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-700/60 border border-slate-600/50 text-slate-300 truncate max-w-[120px]">
+                                    {emp.jobRole}
+                                  </span>
+                                )}
+                                <span className={`px-2 py-0.5 rounded-md text-xs font-bold border ${
+                                  hasJD
+                                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                                    : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                                }`}>
+                                  {hasJD ? '✓ JD' : '⚠ No JD'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Group: dropdown */}
+                {modal.targetType === 'group' && (
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Select Group</label>
+                    {groups.length === 0 ? (
+                      <div className="py-8 text-center text-slate-500 text-sm rounded-xl border border-slate-700/40 bg-slate-800/30">
+                        No groups found. Create groups in the Groups section.
+                      </div>
+                    ) : (
+                      <select
+                        value={modal.selectedGroup}
+                        onChange={e => updateModal({ selectedGroup: e.target.value })}
+                        className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="">— Select a group —</option>
+                        {groups.map(g => (
+                          <option key={g.id || g._id} value={g.id || g._id}>{g.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={() => updateModal({ step: 2 })}
+                    disabled={!canProceedStep1()}
+                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Next: Settings →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 2: Assessment Settings ── */}
+            {modal.step === 2 && (
+              <div className="p-6 space-y-5 flex-1">
+                {/* Assessment Date */}
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                    Assessment Date <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={modal.assessmentDate}
+                    onChange={e => handleDateChange(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  />
                 </div>
 
                 {/* Title */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Assessment Title *</label>
-                  <input type="text" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-                    placeholder="e.g. JavaScript Fundamentals Assessment"
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                    Title <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={modal.title}
+                    onChange={e => updateModal({ title: e.target.value })}
+                    placeholder="e.g. Assessment - 2024-06-15"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  />
                 </div>
 
-                {/* Description */}
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Description</label>
-                  <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                    placeholder="What does this assessment test?"
-                    rows={2}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none" />
-                </div>
-
-                {/* Number of Questions */}
+                {/* Question Count */}
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
-                    Number of Questions: <span className="text-indigo-400">{form.numQuestions}</span>
+                    Question Count: <span className="text-indigo-400">{modal.questionCount}</span>
+                    <span className="text-slate-600 font-normal ml-1">(5–30)</span>
                   </label>
-                  <input type="range" min="2" max="20" value={form.numQuestions}
-                    onChange={e => setForm(f => ({ ...f, numQuestions: parseInt(e.target.value) }))}
-                    className="w-full accent-indigo-500" />
-                  <div className="flex justify-between text-xs text-slate-600 mt-1"><span>2</span><span>20</span></div>
+                  <input
+                    type="number"
+                    min={5}
+                    max={30}
+                    value={modal.questionCount}
+                    onChange={e => updateModal({ questionCount: Math.min(30, Math.max(5, parseInt(e.target.value) || 5)) })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  />
                 </div>
 
                 {/* Question Types */}
@@ -486,158 +594,162 @@ export default function AssessmentManagement() {
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Question Types</label>
                   <div className="flex flex-wrap gap-2">
                     {QUESTION_TYPE_OPTIONS.map(opt => (
-                      <button key={opt.value} type="button"
+                      <button
+                        key={opt.value}
+                        type="button"
                         onClick={() => toggleQuestionType(opt.value)}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all ${
-                          form.questionTypes.includes(opt.value)
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-xl border text-xs font-semibold transition-all ${
+                          modal.questionTypes.includes(opt.value)
                             ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-300'
                             : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
+                          modal.questionTypes.includes(opt.value)
+                            ? 'bg-indigo-500 border-indigo-400'
+                            : 'border-slate-600'
                         }`}>
-                        {opt.icon} {opt.label}
+                          {modal.questionTypes.includes(opt.value) && <span className="text-white text-[8px] font-black">✓</span>}
+                        </span>
+                        {opt.label}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Schedule Type */}
+                {/* Duration */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Schedule</label>
-                  <select value={form.scheduleType} onChange={e => setForm(f => ({ ...f, scheduleType: e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none">
-                    {SCHEDULE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                  {form.scheduleType === 'after_session' && (
-                    <input type="number" min="1" max="50" value={form.sessionNumber}
-                      onChange={e => setForm(f => ({ ...f, sessionNumber: e.target.value }))}
-                      placeholder="Session number (e.g. 5)"
-                      className="w-full mt-2 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
-                  )}
-                  {form.scheduleType === 'scheduled' && (
-                    <input type="date" value={form.scheduledDate}
-                      onChange={e => setForm(f => ({ ...f, scheduledDate: e.target.value }))}
-                      min={new Date().toISOString().split('T')[0]}
-                      className="w-full mt-2 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
-                  )}
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                    Duration (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={180}
+                    value={modal.duration}
+                    onChange={e => updateModal({ duration: Math.max(5, parseInt(e.target.value) || 30) })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  />
                 </div>
 
-                {!form.title && !form.moduleId && (
-                  <p className="text-xs text-amber-400 text-center">⚠ Select a module or enter a title to continue</p>
-                )}
-                <button onClick={runGeneration} disabled={!form.title && !form.moduleId}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
-                  ✦ Generate & Save {form.numQuestions} Questions →
-                </button>
-              </div>
-            )}
-
-            {/* Step: AI Generation Animation */}
-            {genStep >= 0 && !editingQuestions && (
-              <div className="p-8 flex flex-col items-center justify-center min-h-64">
-                <div className="text-center mb-8">
-                  <div className="text-4xl mb-3 animate-pulse">{GENERATION_STEPS[Math.min(genStep, 2)]?.icon}</div>
-                  <h4 className="text-lg font-black text-white mb-1">{GENERATION_STEPS[Math.min(genStep, 2)]?.label}</h4>
-                  <p className="text-sm text-slate-500">Generating {form.numQuestions} questions...</p>
-                </div>
-                <div className="w-full max-w-xs space-y-3">
-                  {GENERATION_STEPS.map((step, i) => (
-                    <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                      genStep > i ? 'border-emerald-500/30 bg-emerald-500/5' :
-                      genStep === i ? 'border-indigo-500/40 bg-indigo-500/10' :
-                      'border-slate-700/40 bg-slate-800/30 opacity-40'
-                    }`}>
-                      <span className="text-lg">{step.icon}</span>
-                      <span className={`text-xs font-semibold ${genStep > i ? 'text-emerald-400' : genStep === i ? 'text-white' : 'text-slate-500'}`}>{step.label}</span>
-                      {genStep > i && <span className="ml-auto text-emerald-400 text-xs">✓</span>}
-                      {genStep === i && <div className="ml-auto w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Step: Review & Edit Questions */}
-            {editingQuestions && (
-              <div className="p-6">
-                {/* Success Banner */}
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 mb-5">
-                  <span className="text-2xl">✅</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-emerald-300">Assessment saved to database!</p>
-                    <p className="text-xs text-emerald-400/70">{editingQuestions.length} questions generated. You can edit below or close.</p>
-                  </div>
-                  <button onClick={() => { setEditingQuestions(null); setGeneratedQuestions(null); setSavedAssessmentId(null); }}
-                    className="text-xs text-slate-400 hover:text-white border border-slate-700 px-3 py-1.5 rounded-lg transition-all flex-shrink-0">
-                    ← New
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => updateModal({ step: 1 })}
+                    className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white transition-all"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    onClick={() => updateModal({ step: 3 })}
+                    disabled={!canProceedStep2()}
+                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Next: Review →
                   </button>
                 </div>
+              </div>
+            )}
 
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h4 className="text-base font-black text-white">Review & Edit Questions</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">{editingQuestions.length} questions — make changes and click "Update" to save edits</p>
+            {/* ── STEP 3: Review & Create ── */}
+            {modal.step === 3 && (
+              <div className="p-6 flex-1">
+                {/* Summary Card */}
+                <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4 mb-5">
+                  <h4 className="text-sm font-black text-white mb-3">Assessment Summary</h4>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Title</span>
+                      <span className="text-white font-semibold truncate max-w-[140px] text-right">{modal.title}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Date</span>
+                      <span className="text-white font-semibold">{modal.assessmentDate || '—'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Employees</span>
+                      <span className="text-indigo-300 font-bold">{modal.targetType === 'individual' ? modal.selectedUsers.length : 'Group'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Questions each</span>
+                      <span className="text-white font-semibold">{modal.questionCount}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Duration</span>
+                      <span className="text-white font-semibold">{modal.duration} min</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Question types</span>
+                      <span className="text-white font-semibold">{modal.questionTypes.join(', ')}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-4 mb-6">
-                  {editingQuestions.map((q, idx) => (
-                    <div key={idx} className="rounded-xl border border-slate-700/50 bg-slate-800/40 p-4">
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-slate-500">Q{idx + 1}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold border uppercase ${DIFFICULTY_COLORS[q.difficulty] || DIFFICULTY_COLORS.medium}`}>{q.difficulty}</span>
-                          <span className="px-2 py-0.5 rounded-full text-xs font-bold border border-slate-600/50 bg-slate-700/40 text-slate-400 uppercase">{TYPE_LABELS[q.type] || q.type}</span>
-                        </div>
-                        <button onClick={() => removeQuestion(idx)} className="text-slate-600 hover:text-red-400 text-sm transition-colors">✕</button>
-                      </div>
-
-                      <textarea value={q.question} onChange={e => updateQuestion(idx, 'question', e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-700/50 text-white text-sm resize-none focus:border-indigo-500/50 focus:outline-none mb-3"
-                        rows={2} />
-
-                      {q.type === 'mcq' && (
-                        <div className="space-y-1.5 mb-3">
-                          {(q.options || ['A) ', 'B) ', 'C) ', 'D) ']).map((opt, oIdx) => (
-                            <input key={oIdx} value={opt} onChange={e => updateOption(idx, oIdx, e.target.value)}
-                              className="w-full px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-700/50 text-sm text-slate-300 focus:border-indigo-500/50 focus:outline-none" />
-                          ))}
-                          <div className="flex items-center gap-2 mt-2">
-                            <span className="text-xs text-slate-500">Correct:</span>
-                            {['A', 'B', 'C', 'D'].map(l => (
-                              <button key={l} onClick={() => updateQuestion(idx, 'answer', l)}
-                                className={`w-7 h-7 rounded-lg text-xs font-black border transition-all ${q.answer === l ? 'bg-emerald-500/30 border-emerald-500/50 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-white'}`}>
-                                {l}
-                              </button>
-                            ))}
+                {/* Per-employee list */}
+                {modal.targetType === 'individual' && selectedEmployeeObjects.length > 0 && (
+                  <div className="mb-5">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">
+                      Selected Employees ({selectedEmployeeObjects.length})
+                    </label>
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {selectedEmployeeObjects.map(emp => {
+                        const id = emp.id || emp._id;
+                        const hasJD = !!(emp.jobDescription || emp.jdUrl || emp.hasJD);
+                        return (
+                          <div key={id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${
+                            hasJD ? 'bg-slate-800/30 border-slate-700/50' : 'bg-amber-500/5 border-amber-500/20'
+                          }`}>
+                            <div className="w-7 h-7 rounded-full bg-indigo-600/30 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0">
+                              {(emp.name || emp.email || '?')[0].toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-white truncate">{emp.name || '—'}</p>
+                              {emp.jobRole && <p className="text-xs text-slate-500">{emp.jobRole}</p>}
+                            </div>
+                            {!hasJD ? (
+                              <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-amber-500/15 border border-amber-500/30 text-amber-400 flex-shrink-0">
+                                ⚠ No JD — using job role
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-500 italic flex-shrink-0">Will get unique questions from their JD</span>
+                            )}
                           </div>
-                        </div>
-                      )}
-
-                      {(q.type === 'fill_blank' || q.type === 'subjective') && (
-                        <div className="mb-3">
-                          <label className="text-xs text-slate-500 mb-1 block">Expected Answer</label>
-                          <input value={q.answer || ''} onChange={e => updateQuestion(idx, 'answer', e.target.value)}
-                            className="w-full px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-700/50 text-sm text-slate-300 focus:border-indigo-500/50 focus:outline-none" />
-                        </div>
-                      )}
-
-                      <div>
-                        <label className="text-xs text-slate-500 mb-1 block">Explanation</label>
-                        <input value={q.explanation || ''} onChange={e => updateQuestion(idx, 'explanation', e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-700/50 text-sm text-slate-500 focus:border-indigo-500/50 focus:outline-none" />
-                      </div>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+
+                {/* Generating state */}
+                {creating && (
+                  <div className="flex items-center gap-3 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 mb-4">
+                    <div className="w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                    <span className="text-sm text-indigo-300 font-semibold">
+                      Generating unique questions for each employee…
+                    </span>
+                  </div>
+                )}
 
                 <div className="flex gap-3">
-                  {savedAssessmentId && (
-                    <button onClick={() => saveEditedQuestions(savedAssessmentId)} disabled={saving}
-                      className="flex-1 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20">
-                      {saving ? 'Updating...' : `Update Questions (${editingQuestions.length})`}
-                    </button>
-                  )}
-                  <button onClick={closeGenerate} className="flex-1 py-3 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/30 text-sm font-bold transition-all">
-                    ✓ Done — View in Table
+                  <button
+                    onClick={() => updateModal({ step: 2 })}
+                    disabled={creating}
+                    className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white transition-all disabled:opacity-40"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    onClick={handleCreate}
+                    disabled={creating}
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold text-white transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
+                  >
+                    {creating ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Creating…
+                      </>
+                    ) : (
+                      'Generate & Assign →'
+                    )}
                   </button>
                 </div>
               </div>
@@ -646,41 +758,90 @@ export default function AssessmentManagement() {
         </div>
       )}
 
-      {/* === Detail Modal === */}
+      {/* ===== DETAIL MODAL ===== */}
       {viewDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setViewDetail(null)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-slate-900">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setViewDetail(null)}
+        >
+          <div
+            className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-[#0F172A]">
               <div>
                 <h3 className="text-lg font-black text-white">{viewDetail.title}</h3>
-                <p className="text-xs text-slate-500 mt-0.5">{viewDetail.questions?.length || 0} questions · {getModuleName(viewDetail.moduleId)}</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {viewDetail.targetUsers?.length || 0} employees ·{' '}
+                  {viewDetail.questionCount || viewDetail.questions?.length || 0} questions ·{' '}
+                  {viewDetail.duration ? `${viewDetail.duration} min` : ''}
+                </p>
               </div>
-              <button onClick={() => setViewDetail(null)} className="text-slate-500 hover:text-white text-xl">✕</button>
+              <button onClick={() => setViewDetail(null)} className="text-slate-500 hover:text-white text-xl transition-colors">✕</button>
             </div>
-            <div className="p-6 space-y-4">
-              {(viewDetail.questions || []).map((q, i) => (
-                <div key={i} className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-black text-slate-500">Q{i + 1}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold border uppercase ${DIFFICULTY_COLORS[q.difficulty] || DIFFICULTY_COLORS.medium}`}>{q.difficulty}</span>
-                    <span className="text-xs font-bold text-slate-500 uppercase">{TYPE_LABELS[q.type] || q.type}</span>
+
+            <div className="p-6">
+              {/* Assessment details */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                {[
+                  { label: 'Assessment Date', value: viewDetail.assessmentDate ? new Date(viewDetail.assessmentDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '—' },
+                  { label: 'Duration', value: viewDetail.duration ? `${viewDetail.duration} minutes` : '—' },
+                  { label: 'Questions per Employee', value: viewDetail.questionCount || viewDetail.questions?.length || '—' },
+                  { label: 'Question Types', value: viewDetail.questionTypes?.join(', ') || '—' },
+                ].map((item, i) => (
+                  <div key={i} className="rounded-xl bg-slate-800/40 border border-slate-700/40 px-4 py-3">
+                    <p className="text-xs text-slate-500 mb-0.5">{item.label}</p>
+                    <p className="text-sm font-bold text-white">{item.value}</p>
                   </div>
-                  <p className="text-sm text-white mb-3">{q.question}</p>
-                  {q.options && (
-                    <div className="space-y-1 mb-3">
-                      {q.options.map((opt, oi) => (
-                        <div key={oi} className={`px-3 py-1.5 rounded-lg text-xs ${q.answer === String.fromCharCode(65 + oi) ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold' : 'text-slate-400'}`}>{opt}</div>
-                      ))}
-                    </div>
-                  )}
-                  {!q.options && q.answer && (
-                    <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 mb-2">
-                      Answer: {q.answer}
-                    </div>
-                  )}
-                  {q.explanation && <p className="text-xs text-slate-500 italic">{q.explanation}</p>}
+                ))}
+              </div>
+
+              {/* Per-employee assignment status */}
+              {viewDetail.targetUsers && viewDetail.targetUsers.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                    Employee Assignments ({viewDetail.targetUsers.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {viewDetail.targetUsers.map((uid, i) => {
+                      const emp = employees.find(e => (e.id || e._id) === uid);
+                      const assignment = viewDetail.assignments?.find(a => a.userId === uid) || {};
+                      return (
+                        <div
+                          key={uid}
+                          className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-800/30 border border-slate-700/40"
+                        >
+                          <div className="w-7 h-7 rounded-full bg-indigo-600/30 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0">
+                            {emp ? (emp.name || emp.email || '?')[0].toUpperCase() : (i + 1)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-white truncate">{emp?.name || uid}</p>
+                            {emp?.jobRole && <p className="text-xs text-slate-500">{emp.jobRole}</p>}
+                          </div>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            {assignment.score !== undefined && (
+                              <span className="text-xs font-bold text-emerald-300">
+                                Score: {assignment.score}%
+                              </span>
+                            )}
+                            <span className={`px-2 py-0.5 rounded-md text-xs font-semibold border capitalize ${
+                              STATUS_COLORS[assignment.status || 'assigned']
+                            }`}>
+                              {assignment.status || 'assigned'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              ))}
+              )}
+
+              {(!viewDetail.targetUsers || viewDetail.targetUsers.length === 0) && (
+                <div className="py-10 text-center text-slate-500 text-sm">
+                  No employee assignments found for this assessment.
+                </div>
+              )}
             </div>
           </div>
         </div>

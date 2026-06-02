@@ -1,0 +1,20 @@
+{
+  "userId": "08ce2e39-c70d-4067-a2d2-6b785f86a13b",
+  "generatedAt": "2026-06-02T06:59:29.227Z",
+  "type": "daily_brief",
+  "streak": 0,
+  "completedDays": 0,
+  "avgScore": 0,
+  "lastScore": 0,
+  "nextDay": {
+    "day": 1,
+    "topic": "feature engineering",
+    "skillName": "Data Preprocessing"
+  },
+  "insight": "As you begin your learning journey, remember that every great achievement starts with a single step, and by completing your first session, you'll not only earn your first points, but also gain valuable insights into the topics that need your attention. Focus on building a daily habit of learning, even if it's just 10-15 minutes a day, and you'll be surprised at how quickly your scores and streaks will start to reflect your progress, helping you stay motivated and engaged throughout your journey.",
+  "alerts": [],
+  "recommendation": {
+    "action": "review",
+    "msg": "Schedule a review session before proceeding to new material."
+  }
+}

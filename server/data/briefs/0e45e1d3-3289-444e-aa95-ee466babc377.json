@@ -1,0 +1,25 @@
+{
+  "userId": "0e45e1d3-3289-444e-aa95-ee466babc377",
+  "generatedAt": "2026-06-02T06:59:32.913Z",
+  "type": "daily_brief",
+  "streak": 1,
+  "completedDays": 1,
+  "avgScore": 10,
+  "lastScore": 10,
+  "nextDay": {
+    "day": 2,
+    "topic": "routing and request handling",
+    "skillName": "Node.js Development"
+  },
+  "insight": "You've already taken the first step by completing your first session, and now that you have a baseline score of 10%, you can focus on identifying specific areas where you can improve and build upon in your next session. By analyzing what you got right and wrong in your last session, you can create a targeted plan to boost your score and extend your streak beyond just one day, setting yourself up for incremental progress and growth.",
+  "alerts": [
+    {
+      "type": "review",
+      "msg": "Last score was 10%. Agent recommends reviewing before continuing."
+    }
+  ],
+  "recommendation": {
+    "action": "review",
+    "msg": "Schedule a review session before proceeding to new material."
+  }
+}
