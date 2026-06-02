@@ -67,6 +67,9 @@ export default function AssessmentManagement() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterType, setFilterType] = useState('all'); // 'all' | 'individual' | 'group'
+  const [filterJobRole, setFilterJobRole] = useState('all');
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -209,10 +212,36 @@ export default function AssessmentManagement() {
     }
   };
 
+  const jobRoles = useMemo(() => {
+    const roles = new Set();
+    assessments.forEach(a => {
+      a.employeeAssignments?.forEach(ea => { if (ea.jobRole) roles.add(ea.jobRole); });
+    });
+    return [...roles];
+  }, [assessments]);
+
   const filtered = useMemo(() => {
-    if (!search) return assessments;
-    return assessments.filter(a => (a.title || '').toLowerCase().includes(search.toLowerCase()));
-  }, [assessments, search]);
+    return assessments.filter(a => {
+      const q = (search || '').toLowerCase();
+      const matchesSearch = !q || (a.title || '').toLowerCase().includes(q);
+
+      const matchesStatus = filterStatus === 'all' ? true
+        : filterStatus === 'completed' ? a.employeeAssignments?.every(ea => ea.status === 'submitted')
+        : filterStatus === 'pending' ? a.employeeAssignments?.some(ea => ea.status === 'assigned')
+        : filterStatus === 'active' ? a.employeeAssignments?.some(ea => ea.status !== 'submitted')
+        : true;
+
+      const matchesType = filterType === 'all' ? true
+        : filterType === 'group' ? !!a.targetGroup
+        : filterType === 'individual' ? !a.targetGroup
+        : true;
+
+      const matchesJobRole = filterJobRole === 'all' ? true
+        : a.employeeAssignments?.some(ea => ea.jobRole === filterJobRole);
+
+      return matchesSearch && matchesStatus && matchesType && matchesJobRole;
+    });
+  }, [assessments, search, filterStatus, filterType, filterJobRole]);
 
   const selectedEmployeeObjects = useMemo(
     () => employees.filter(e => modal.selectedUsers.includes(e.userId || e.id || e._id)),
@@ -309,6 +338,36 @@ export default function AssessmentManagement() {
             >
               <span>↻</span> Refresh
             </button>
+          </div>
+
+          {/* Filter row */}
+          <div className="flex flex-wrap gap-2 px-5 pb-3">
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors">
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="pending">Pending</option>
+              <option value="completed">Completed</option>
+            </select>
+            <select value={filterType} onChange={e => setFilterType(e.target.value)}
+              className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors">
+              <option value="all">All Types</option>
+              <option value="individual">Individual</option>
+              <option value="group">Group</option>
+            </select>
+            {jobRoles.length > 0 && (
+              <select value={filterJobRole} onChange={e => setFilterJobRole(e.target.value)}
+                className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors">
+                <option value="all">All Job Roles</option>
+                {jobRoles.map(jr => <option key={jr} value={jr}>{jr}</option>)}
+              </select>
+            )}
+            {(filterStatus !== 'all' || filterType !== 'all' || filterJobRole !== 'all') && (
+              <button onClick={() => { setFilterStatus('all'); setFilterType('all'); setFilterJobRole('all'); }}
+                className="px-3 py-1.5 bg-slate-700/50 border border-slate-600/40 rounded-lg text-slate-400 text-xs font-semibold hover:text-white transition-colors">
+                ✕ Clear
+              </button>
+            )}
           </div>
 
           {/* Table Header */}

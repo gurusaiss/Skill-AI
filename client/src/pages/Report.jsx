@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -93,9 +93,13 @@ ${assignments.map(a => `<tr>
 // ─── Admin/Manager Report Table ───────────────────────────────────────────────
 function AdminReportView({ user, navigate }) {
   const [reports, setReports] = useState([]);
+  const [assessmentReports, setAssessmentReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [error, setError] = useState(null);
+  const [filterType, setFilterType] = useState('all'); // 'all' | 'assessment' | 'module'
+  const [filterJobRole, setFilterJobRole] = useState('all');
+  const [filterDateRange, setFilterDateRange] = useState({ from: '', to: '' });
 
   const loadReports = useCallback(async () => {
     setLoading(true);
@@ -108,15 +112,39 @@ function AdminReportView({ user, navigate }) {
     } finally {
       setLoading(false);
     }
+    try {
+      const arData = await authFetch('/api/assessments/reports/all');
+      setAssessmentReports(Array.isArray(arData) ? arData : []);
+    } catch {}
   }, []);
 
   useEffect(() => { loadReports(); }, [loadReports]);
 
-  const filtered = reports.filter(r =>
-    !search ||
-    (r.employeeName || '').toLowerCase().includes(search.toLowerCase()) ||
-    (r.email || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const jobRoles = useMemo(() => {
+    const roles = new Set();
+    reports.forEach(r => { if (r.jobRole || r.role) roles.add(r.jobRole || r.role); });
+    assessmentReports.forEach(r => { if (r.jobRole) roles.add(r.jobRole); });
+    return [...roles].filter(Boolean);
+  }, [reports, assessmentReports]);
+
+  const filtered = useMemo(() => {
+    const base = filterType === 'assessment' ? [] : reports;
+    const arBase = filterType === 'module' ? [] : assessmentReports;
+
+    const combined = [
+      ...base.map(r => ({ ...r, _reportType: 'module' })),
+      ...arBase.map(r => ({ ...r, _reportType: 'assessment', employeeName: r.employeeName || r.userName, completionRate: r.score ?? r.completionRate })),
+    ];
+
+    return combined.filter(r => {
+      const q = search.toLowerCase();
+      const matchesSearch = !q || (r.employeeName || '').toLowerCase().includes(q) || (r.email || '').toLowerCase().includes(q);
+      const matchesJobRole = filterJobRole === 'all' || r.jobRole === filterJobRole;
+      const matchesDate = (!filterDateRange.from || new Date(r.generatedAt || r.completedAt || r.createdAt) >= new Date(filterDateRange.from)) &&
+        (!filterDateRange.to || new Date(r.generatedAt || r.completedAt || r.createdAt) <= new Date(filterDateRange.to + 'T23:59:59'));
+      return matchesSearch && matchesJobRole && matchesDate;
+    });
+  }, [reports, assessmentReports, search, filterType, filterJobRole, filterDateRange]);
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-8 max-w-7xl mx-auto">
@@ -151,9 +179,34 @@ function AdminReportView({ user, navigate }) {
 
       {/* Table */}
       <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-700/40">
+        <div className="flex flex-col gap-3 px-5 py-4 border-b border-slate-700/40">
           <input type="text" placeholder="Search by name or email..." value={search} onChange={e => setSearch(e.target.value)}
-            className="flex-1 px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+            className="w-full px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+          <div className="flex flex-wrap gap-2">
+            <select value={filterType} onChange={e => setFilterType(e.target.value)}
+              className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors">
+              <option value="all">All Reports</option>
+              <option value="module">Module Reports</option>
+              <option value="assessment">Assessment Reports</option>
+            </select>
+            {jobRoles.length > 0 && (
+              <select value={filterJobRole} onChange={e => setFilterJobRole(e.target.value)}
+                className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors">
+                <option value="all">All Job Roles</option>
+                {jobRoles.map(jr => <option key={jr} value={jr}>{jr}</option>)}
+              </select>
+            )}
+            <input type="date" value={filterDateRange.from} onChange={e => setFilterDateRange(p => ({ ...p, from: e.target.value }))}
+              className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs focus:outline-none focus:border-indigo-500" />
+            <input type="date" value={filterDateRange.to} onChange={e => setFilterDateRange(p => ({ ...p, to: e.target.value }))}
+              className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs focus:outline-none focus:border-indigo-500" />
+            {(filterType !== 'all' || filterJobRole !== 'all' || filterDateRange.from || filterDateRange.to) && (
+              <button onClick={() => { setFilterType('all'); setFilterJobRole('all'); setFilterDateRange({ from: '', to: '' }); }}
+                className="px-3 py-1.5 bg-slate-700/50 border border-slate-600/40 rounded-lg text-slate-400 text-xs font-semibold hover:text-white transition-colors">
+                ✕ Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Header */}

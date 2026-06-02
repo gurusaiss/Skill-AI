@@ -86,6 +86,7 @@ export default function ModuleManagement() {
   const [editing, setEditing] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
   const [filterJobRole, setFilterJobRole] = useState('all');
+  const [filterAssignType, setFilterAssignType] = useState('all'); // 'all' | 'auto' | 'manual'
   const [search, setSearch] = useState('');
 
   // Pending approvals state
@@ -204,9 +205,12 @@ export default function ModuleManagement() {
       const matchesTab = activeTab === 'all' || m.category === activeTab;
       const matchesJobRole = filterJobRole === 'all' ||
         (m.content?.jobRole || m.jobRole || m.category) === filterJobRole;
-      return matchesSearch && matchesTab && matchesJobRole;
+      const matchesAssignType = filterAssignType === 'all' ? true
+        : filterAssignType === 'auto' ? (m.content?.isMandatory === true || m.content?.assessmentSource)
+        : !(m.content?.isMandatory === true || m.content?.assessmentSource);
+      return matchesSearch && matchesTab && matchesJobRole && matchesAssignType;
     });
-  }, [modules, activeTab, filterJobRole, search]);
+  }, [modules, activeTab, filterJobRole, filterAssignType, search]);
 
   const categories = [...new Set(modules.map(m => m.category).filter(Boolean))];
   const jobRoles = [...new Set(modules.map(m => m.content?.jobRole || m.jobRole || m.category).filter(Boolean))];
@@ -431,6 +435,17 @@ export default function ModuleManagement() {
             {jobRoles.map(jr => (
               <option key={jr} value={jr}>{jr}</option>
             ))}
+          </select>
+
+          {/* Assign Type dropdown */}
+          <select
+            value={filterAssignType}
+            onChange={e => setFilterAssignType(e.target.value)}
+            className="px-3 py-2 bg-slate-800 border border-slate-700/60 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+          >
+            <option value="all">All Modules</option>
+            <option value="auto">Auto Assigned</option>
+            <option value="manual">Manual Assigned</option>
           </select>
 
           {/* Pending Approvals button (kept as special tab) */}
