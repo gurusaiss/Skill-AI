@@ -41,11 +41,29 @@ const writeJSON = (file, data) => writeFileSync(file, JSON.stringify(data, null,
  * Generate unique questions per employee from job role + JD
  * Uses a seed (userId + assessmentId) to ensure uniqueness even for same JD
  */
-async function generateQuestionsFromJD({ jobRole, jobDescription, questionCount, questionTypes, employeeSeed }) {
+async function generateQuestionsFromJD({ jobRole, jobDescription, jobDescriptionFile, questionCount, questionTypes, employeeSeed }) {
   const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 30);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
-  const jdText = (jobDescription || '').slice(0, 4000); // no char limit — just cap for prompt
   const seed = employeeSeed || randomUUID().slice(0, 8);
+
+  // Try to get richer JD text from uploaded file
+  let jdContent = (jobDescription || '').slice(0, 4000);
+  if (jobDescriptionFile?.path && jdContent.length < 200) {
+    try {
+      const { parseJDFile } = await import('../utils/parseJDFile.js');
+      const fileText = await parseJDFile(
+        jobDescriptionFile.path,
+        jobDescriptionFile.name || ''
+      );
+      if (fileText && fileText.length > 50) {
+        jdContent = fileText.slice(0, 4000);
+        console.log(`[Assessment] Using JD file content (${fileText.length} chars) for question generation`);
+      }
+    } catch (e) {
+      console.warn('[Assessment] JD file parse failed, using text fallback:', e.message);
+    }
+  }
+  const jdText = jdContent;
 
   const prompt = `Generate exactly ${num} assessment questions for an employee with this profile.
 
@@ -275,6 +293,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       const questions = await generateQuestionsFromJD({
         jobRole: user.jobRole || 'Employee',
         jobDescription: user.jobDescription || '',
+        jobDescriptionFile: user.jobDescriptionFile || null,
         questionCount,
         questionTypes,
         employeeSeed: `${userId}-${Date.now()}`, // unique per employee per creation

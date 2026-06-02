@@ -450,4 +450,41 @@ router.get('/:userId/assignments', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/users/:userId/jd-file
+ * Download the uploaded JD file for a user
+ */
+router.get('/:userId/jd-file', authenticate, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const isSelf = req.user.userId === userId;
+    const isAdmin = req.user.role === 'admin';
+    const isManager = req.user.role === 'manager';
+    if (!isSelf && !isAdmin && !isManager) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const user = await UserStore.getUserById(userId);
+    if (!user?.jobDescriptionFile) {
+      return res.status(404).json({ success: false, error: 'No JD file uploaded' });
+    }
+
+    const filePath = user.jobDescriptionFile.path || user.jobDescriptionFile.storagePath;
+    if (!filePath) return res.status(404).json({ success: false, error: 'File path not found' });
+
+    if (!existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: 'File not found on disk' });
+    }
+
+    res.download(filePath, user.jobDescriptionFile.name || 'jd-file', (err) => {
+      if (err && !res.headersSent) {
+        res.status(500).json({ success: false, error: 'Download failed' });
+      }
+    });
+  } catch (error) {
+    console.error('[User Routes] JD file download error:', error.message);
+    if (!res.headersSent) res.status(500).json({ success: false, error: 'Download failed' });
+  }
+});
+
 export default router;

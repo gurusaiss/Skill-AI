@@ -123,7 +123,13 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
     if (user.role !== 'employee') return;
     setLoadingManager(true);
     authFetch(`/api/assignments/employee/${user.userId}/manager`)
-      .then(d => setManager(d)).catch(() => setManager(null)).finally(() => setLoadingManager(false));
+      .then(d => {
+        // Handle various response shapes from the API
+        const mgr = d?.manager || d?.data?.manager || d?.managerData || d;
+        setManager(mgr && (mgr.name || mgr.managerName || mgr.email) ? mgr : null);
+      })
+      .catch(() => setManager(null))
+      .finally(() => setLoadingManager(false));
   }, [user.userId, user.role]);
 
   const handleDelete = async () => {
@@ -203,7 +209,30 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
                       <p className="text-white text-sm font-medium truncate">{user.jobDescriptionFile.name}</p>
                       <p className="text-slate-500 text-xs">{formatBytes(user.jobDescriptionFile.size)} · {formatDate(user.jobDescriptionFile.uploadedAt)}</p>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Uploaded</span>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const token = localStorage.getItem('auth_token');
+                          const base = import.meta.env.PROD ? '' : 'http://localhost:3001';
+                          const res = await fetch(`${base}/api/users/${user.userId}/jd-file`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                          });
+                          if (!res.ok) throw new Error('Download failed');
+                          const blob = await res.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = user.jobDescriptionFile.name;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } catch (err) {
+                          alert('Download failed: ' + err.message);
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-indigo-300 text-xs font-semibold transition-colors shrink-0"
+                    >
+                      ⬇ Download
+                    </button>
                   </div>
                 )}
                 {user.jobDescription && (
@@ -266,7 +295,7 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
                       </div>
                       <div>
                         <p className="text-white text-sm font-medium">{manager.name || manager.managerName}</p>
-                        <p className="text-slate-500 text-xs">{manager.email || ''}</p>
+                        <p className="text-slate-500 text-xs">{manager.role ? `${manager.role} · ` : ''}{manager.email || ''}</p>
                       </div>
                     </div>
                   ) : <p className="text-slate-500 text-sm italic">No manager assigned</p>}

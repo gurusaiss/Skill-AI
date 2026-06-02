@@ -1,6 +1,6 @@
 {
   "userId": "0e45e1d3-3289-444e-aa95-ee466babc377",
-  "generatedAt": "2026-06-02T08:05:34.565Z",
+  "generatedAt": "2026-06-02T08:37:34.672Z",
   "type": "daily_brief",
   "streak": 1,
   "completedDays": 1,
@@ -11,7 +11,7 @@
     "topic": "routing and request handling",
     "skillName": "Node.js Development"
   },
-  "insight": "You've taken the first step by completing your initial session, and now it's time to build on that momentum by focusing on understanding the concepts that challenged you, which will help increase your average score beyond 10%. Since your last score and average score are currently the same, concentrating on improving just one aspect of the material in your next session could be the key to unlocking a higher score and starting a longer streak.",
+  "insight": "You've taken the first step by completing your initial session, and now it's time to build on that momentum by focusing on specific areas where you can improve, even if it's just a small increment from your current 10% average score. Given that you've already started with a 1-day streak, try to maintain that daily habit and aim to increase your score by just 1-2% in the next session, which can help you establish a sense of progress and motivation to continue learning.",
   "alerts": [
     {
       "type": "review",

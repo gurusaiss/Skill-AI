@@ -79,6 +79,8 @@ export default function AssignmentManagement() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterMandatory, setFilterMandatory] = useState('all'); // 'all' | 'mandatory' | 'optional'
+  const [filterEmployee, setFilterEmployee] = useState('all'); // 'all' | employeeId
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showPendingModal, setShowPendingModal] = useState(false);
@@ -147,9 +149,15 @@ export default function AssignmentManagement() {
         moduleName.includes(search.toLowerCase()) ||
         employeeName.includes(search.toLowerCase());
       const matchesStatus = filterStatus === 'all' || a.status === filterStatus;
-      return matchesSearch && matchesStatus;
+      const matchesMandatory = filterMandatory === 'all' ? true
+        : filterMandatory === 'mandatory' ? (a.isMandatory === true || a.mandatory === true)
+        : (a.isMandatory !== true && a.mandatory !== true);
+      const employeeId = a.assigned_to_user || a.employee_id;
+      const matchesEmployee = filterEmployee === 'all' ? true
+        : (employeeId === filterEmployee || a.assignedTo === filterEmployee);
+      return matchesSearch && matchesStatus && matchesMandatory && matchesEmployee;
     });
-  }, [assignments, search, filterStatus, users, modules, isValidAssignment]);
+  }, [assignments, search, filterStatus, filterMandatory, filterEmployee, users, modules, isValidAssignment]);
 
   function getUserName(uid) {
     if (!uid) return '—';
@@ -315,6 +323,33 @@ export default function AssignmentManagement() {
               <option value="overdue">Overdue</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            <select
+              value={filterMandatory}
+              onChange={e => setFilterMandatory(e.target.value)}
+              className="px-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-slate-300 font-semibold focus:outline-none focus:border-indigo-500/60"
+            >
+              <option value="all">All Types</option>
+              <option value="mandatory">Mandatory</option>
+              <option value="optional">Optional</option>
+            </select>
+            <select
+              value={filterEmployee}
+              onChange={e => setFilterEmployee(e.target.value)}
+              className="px-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-slate-300 font-semibold focus:outline-none focus:border-indigo-500/60 min-w-[160px]"
+            >
+              <option value="all">All Employees</option>
+              {employees.map(emp => (
+                <option key={emp.userId || emp.id} value={emp.userId || emp.id}>{emp.name || emp.email}</option>
+              ))}
+            </select>
+            {(filterStatus !== 'all' || filterMandatory !== 'all' || filterEmployee !== 'all') && (
+              <button
+                onClick={() => { setFilterStatus('all'); setFilterMandatory('all'); setFilterEmployee('all'); }}
+                className="px-4 py-2 rounded-xl bg-slate-700/50 border border-slate-600/40 text-sm text-slate-400 font-semibold hover:text-white transition-colors"
+              >
+                ✕ Clear
+              </button>
+            )}
             <button onClick={loadAll} className="px-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-slate-400 hover:text-white hover:border-slate-600 font-semibold transition-all flex items-center gap-2">
               <span>↻</span> Refresh
             </button>
