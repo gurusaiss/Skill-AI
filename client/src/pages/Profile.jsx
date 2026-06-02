@@ -43,6 +43,10 @@ export default function Profile() {
   const [employeeCount, setEmployeeCount] = useState(null);
   const [loadingRelations, setLoadingRelations] = useState(true);
 
+  // Extended profile (jobRole, department, JD)
+  const [workProfile, setWorkProfile] = useState(null);
+  const [showFullJD, setShowFullJD] = useState(false);
+
   // Fetch manager/employee relationships on mount
   React.useEffect(() => {
     const fetchRelationships = async () => {
@@ -79,6 +83,17 @@ export default function Profile() {
     };
 
     fetchRelationships();
+  }, [user]);
+
+  // Fetch full work profile (jobRole, department, JD)
+  React.useEffect(() => {
+    if (!user) return;
+    const token = localStorage.getItem('auth_token');
+    const baseUrl = import.meta.env.PROD ? '' : 'http://localhost:3001';
+    fetch(`${baseUrl}/api/users/${user.userId}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.data || d) setWorkProfile(d?.data ?? d); })
+      .catch(() => {});
   }, [user]);
 
   // Handle name update
@@ -424,6 +439,62 @@ export default function Profile() {
               {user.role}
             </span>
           </div>
+
+          {/* Work Profile — Job Role, Department, JD (employees only) */}
+          {user.role === 'employee' && workProfile && (workProfile.jobRole || workProfile.department || workProfile.jobDescription || workProfile.jobDescriptionFile) && (
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-slate-300 mb-3">Work Profile</label>
+              <div className="space-y-3">
+                {/* Job Role + Department row */}
+                {(workProfile.jobRole || workProfile.department) && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {workProfile.jobRole && (
+                      <div className="p-3 bg-[#060B14] border border-slate-700 rounded-xl">
+                        <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Job Role</p>
+                        <p className="text-white font-semibold text-sm">{workProfile.jobRole}</p>
+                      </div>
+                    )}
+                    {workProfile.department && (
+                      <div className="p-3 bg-[#060B14] border border-slate-700 rounded-xl">
+                        <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Department</p>
+                        <p className="text-white font-semibold text-sm">{workProfile.department}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* JD File */}
+                {workProfile.jobDescriptionFile && (
+                  <div className="flex items-center gap-3 p-3 bg-[#060B14] border border-slate-700 rounded-xl">
+                    <span className="text-2xl">📎</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">{workProfile.jobDescriptionFile.name}</p>
+                      <p className="text-slate-500 text-xs">
+                        {workProfile.jobDescriptionFile.size ? `${(workProfile.jobDescriptionFile.size / 1024).toFixed(1)} KB · ` : ''}
+                        Uploaded JD
+                      </p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">✓ JD</span>
+                  </div>
+                )}
+
+                {/* JD Text */}
+                {workProfile.jobDescription && (
+                  <div className="p-3 bg-[#060B14] border border-slate-700 rounded-xl">
+                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Job Description</p>
+                    <p className={`text-slate-300 text-sm leading-relaxed whitespace-pre-wrap ${!showFullJD && workProfile.jobDescription.length > 300 ? 'line-clamp-4' : ''}`}>
+                      {workProfile.jobDescription}
+                    </p>
+                    {workProfile.jobDescription.length > 300 && (
+                      <button onClick={() => setShowFullJD(v => !v)} className="text-indigo-400 text-xs mt-2 hover:text-indigo-300 transition-colors">
+                        {showFullJD ? '▲ Show less' : '▼ View full job description'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Manager Info (for employees) */}
           {user.role === 'employee' && (
