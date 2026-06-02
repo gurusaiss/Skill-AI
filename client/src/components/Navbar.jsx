@@ -71,15 +71,16 @@ function Navbar() {
   const NAV_LINKS = [
     { to: '/admin/dashboard',   label: 'Dashboard',   icon: '📊', roles: ['admin'] },
     { to: '/admin/users',       label: 'Users',       icon: '👥', roles: ['admin'] },
+    { to: '/admin/assessments', label: 'Assessment',  icon: '📝', roles: ['admin', 'manager'] },
     { to: '/admin/modules',     label: 'Modules',     icon: '📚', roles: ['admin', 'manager'] },
     { to: '/admin/assignments', label: 'Assignments', icon: '📋', roles: ['admin', 'manager'] },
-    { to: '/admin/assessments', label: 'Assessments', icon: '📝', roles: ['admin', 'manager'] },
     { to: '/report',            label: 'Reports',     icon: '📄', roles: ['admin', 'manager'] },
   ];
 
   const ROLE_LINKS = {
     manager: [
       { to: '/manager/dashboard',  label: 'Dashboard',  icon: '📊' },
+      { to: '/admin/assessments',  label: 'Assessment', icon: '📝' },
       { to: '/admin/modules',      label: 'Modules',    icon: '📚' },
       { to: '/admin/assignments',  label: 'Assign',     icon: '📋' },
       { to: '/report',             label: 'Reports',    icon: '📄' },

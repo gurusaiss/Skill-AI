@@ -89,17 +89,19 @@ export default function AdminDashboard() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [usersRes, modulesRes, assignmentsRes, requestsRes] = await Promise.allSettled([
+      const [usersRes, modulesRes, assignmentsRes, requestsRes, reportsRes] = await Promise.allSettled([
         authFetch('/api/users'),
         authFetch('/api/modules'),
         authFetch('/api/assignments'),
         authFetch('/api/assignments/requests'),
+        authFetch('/api/assessments/reports/all').catch(() => []),
       ]);
 
       const usersData = usersRes.status === 'fulfilled' ? (usersRes.value?.users || usersRes.value || []) : [];
       const modulesData = modulesRes.status === 'fulfilled' ? (modulesRes.value?.modules || modulesRes.value || []) : [];
       const assignmentsData = assignmentsRes.status === 'fulfilled' ? (assignmentsRes.value?.assignments || assignmentsRes.value || []) : [];
       const requestsData = requestsRes.status === 'fulfilled' ? (requestsRes.value?.requests || requestsRes.value || []) : [];
+      const reportsData = reportsRes.status === 'fulfilled' ? (reportsRes.value || []) : [];
 
       setUsers(Array.isArray(usersData) ? usersData : []);
       setModules(Array.isArray(modulesData) ? modulesData : []);
@@ -108,20 +110,31 @@ export default function AdminDashboard() {
       setPendingRequests(reqArr.filter(r => r.status === 'pending'));
 
       const aList = Array.isArray(assignmentsData) ? assignmentsData : [];
+      const reportsArr = Array.isArray(reportsData) ? reportsData : [];
+
+      const completedCount = aList.filter(a => a.status === 'completed' || a.completed === true).length;
+      const totalCount = aList.length;
+      const avgCompletionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+      const avgAssessmentScore = reportsArr.length > 0
+        ? Math.round(reportsArr.reduce((s, r) => s + (r.score || 0), 0) / reportsArr.length)
+        : 0;
+
       setStats({
         totalUsers: usersData.length,
         totalAdmins: usersData.filter(u => u.role === 'admin').length,
         totalManagers: usersData.filter(u => u.role === 'manager').length,
         totalEmployees: usersData.filter(u => u.role === 'employee').length,
         activeSessions: aList.filter(a => a.status === 'in_progress').length,
-        completedModules: aList.filter(a => a.status === 'completed').length,
+        completedModules: completedCount,
         totalModules: modulesData.length,
-        avgCompletionRate: aList.length > 0
-          ? Math.round(aList.reduce((s, a) => s + (a.progress || 0), 0) / aList.length)
-          : 0,
+        avgCompletionRate,
         totalAssignments: aList.length,
         pendingAssignments: aList.filter(a => a.status === 'assigned').length,
         pendingRequests: requestsData.filter(r => r.status === 'pending').length,
+        totalAssessmentReports: reportsArr.length,
+        avgAssessmentScore,
+        assessmentsCompleted: reportsArr.length,
       });
     } catch (err) {
       showToast(err.message || 'Failed to load dashboard', 'error');
@@ -171,6 +184,8 @@ export default function AdminDashboard() {
     { label: 'Avg Completion', value: stats ? `${stats.avgCompletionRate}%` : '—', icon: '📊', borderClass: 'border-cyan-500/20', bgClass: 'bg-cyan-500/5', textClass: 'text-cyan-400' },
     { label: 'Completed', value: stats?.completedModules ?? '—', icon: '✅', borderClass: 'border-emerald-500/20', bgClass: 'bg-emerald-500/5', textClass: 'text-emerald-400' },
     { label: 'Pending Approvals', value: stats?.pendingRequests ?? '—', icon: '⏳', borderClass: 'border-rose-500/20', bgClass: 'bg-rose-500/5', textClass: 'text-rose-400' },
+    { label: 'Assessments Done', value: stats?.assessmentsCompleted ?? '—', icon: '📝', borderClass: 'border-amber-500/20', bgClass: 'bg-amber-500/5', textClass: 'text-amber-400' },
+    { label: 'Avg Score', value: stats?.avgAssessmentScore ? `${stats.avgAssessmentScore}%` : '—', icon: '🎯', borderClass: 'border-indigo-500/20', bgClass: 'bg-indigo-500/5', textClass: 'text-indigo-400' },
   ];
 
   const tabs = [

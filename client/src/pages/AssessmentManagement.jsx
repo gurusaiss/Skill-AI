@@ -53,6 +53,7 @@ const EMPTY_MODAL = {
   questionTypes: ['mcq'],
   assessmentDate: '',
   duration: 30,
+  deadline: '',
   title: '',
 };
 
@@ -74,6 +75,8 @@ export default function AssessmentManagement() {
 
   // Detail view
   const [viewDetail, setViewDetail] = useState(null);
+  const [viewReport, setViewReport] = useState(null);
+  const [assigningModuleId, setAssigningModuleId] = useState(null);
 
   const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
@@ -175,6 +178,7 @@ export default function AssessmentManagement() {
         questionTypes: modal.questionTypes,
         assessmentDate: modal.assessmentDate,
         duration: modal.duration,
+        deadline: modal.deadline,
         ...(modal.targetType === 'group' && modal.selectedGroup ? { groupId: modal.selectedGroup } : {}),
       };
 
@@ -211,9 +215,37 @@ export default function AssessmentManagement() {
   }, [assessments, search]);
 
   const selectedEmployeeObjects = useMemo(
-    () => employees.filter(e => modal.selectedUsers.includes(e.id || e._id)),
+    () => employees.filter(e => modal.selectedUsers.includes(e.userId || e.id || e._id)),
     [employees, modal.selectedUsers]
   );
+
+  const handleAutoAssignModule = async (assessment) => {
+    setAssigningModuleId(assessment.id);
+    try {
+      const submitted = assessment.employeeAssignments?.filter(ea => ea.status === 'submitted') || [];
+      for (const ea of submitted) {
+        const weakAreas = ea.scoring?.weakAreas || [];
+        const pending = await authFetch('/api/modules/auto-generate', {
+          method: 'POST',
+          body: JSON.stringify({
+            userId: ea.userId,
+            jobRole: ea.jobRole || '',
+            weakAreas,
+            assessmentTitle: assessment.title,
+            assessmentReportId: ea.userId + '-' + assessment.id,
+          }),
+        });
+        if (pending?.id) {
+          await authFetch(`/api/modules/pending/${pending.id}/approve`, { method: 'POST' });
+        }
+      }
+      showToast(`✅ Training module generated and assigned to ${submitted.length} employee(s)`, 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to assign module', 'error');
+    } finally {
+      setAssigningModuleId(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
@@ -282,9 +314,9 @@ export default function AssessmentManagement() {
           {/* Table Header */}
           <div
             className="hidden md:grid px-5 py-3 border-b border-slate-700/40 bg-slate-800/30"
-            style={{ gridTemplateColumns: '2.5fr 1.5fr 1fr 1fr 1fr 130px' }}
+            style={{ gridTemplateColumns: '2.5fr 1.5fr 1fr 1fr 140px 150px' }}
           >
-            {['Title', 'Employees', 'Date', 'Questions', 'Status', 'Actions'].map(h => (
+            {['Title', 'Employees', 'Date', 'Status', 'Report', 'Assign Module'].map(h => (
               <span key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</span>
             ))}
           </div>
@@ -314,7 +346,7 @@ export default function AssessmentManagement() {
                 <div
                   key={a.id}
                   className="group px-5 py-4 hover:bg-slate-800/30 transition-all"
-                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1fr 1fr 130px', alignItems: 'center', gap: '12px' }}
+                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1fr 140px 150px', alignItems: 'center', gap: '12px' }}
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-white truncate">{a.title}</p>
@@ -335,27 +367,36 @@ export default function AssessmentManagement() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-sm font-black text-indigo-400">{a.questionCount || a.questions?.length || '—'}</span>
-                    <span className="text-xs text-slate-600 ml-1">Qs</span>
-                  </div>
-                  <div>
                     <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-semibold border capitalize ${STATUS_COLORS[a.status] || STATUS_COLORS.pending}`}>
                       {a.status || 'assigned'}
                     </span>
                   </div>
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
-                    <button
-                      onClick={() => setViewDetail(a)}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-bold transition-all"
-                    >
-                      View
-                    </button>
-                    <button
-                      onClick={() => deleteAssessment(a.id)}
-                      className="w-7 h-7 rounded-lg bg-slate-700/50 hover:bg-red-500/20 hover:border-red-500/30 border border-transparent text-slate-400 hover:text-red-300 flex items-center justify-center text-xs transition-all"
-                    >
-                      ✕
-                    </button>
+                  <div>
+                    {a.employeeAssignments?.some(ea => ea.status === 'submitted') ? (
+                      <button
+                        onClick={() => setViewReport(a)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-indigo-300 text-xs font-semibold transition-colors"
+                      >
+                        📄 View Report
+                      </button>
+                    ) : (
+                      <span className="text-slate-600 text-xs">—</span>
+                    )}
+                  </div>
+                  <div>
+                    {a.employeeAssignments?.some(ea => ea.status === 'submitted') ? (
+                      <button
+                        onClick={() => handleAutoAssignModule(a)}
+                        disabled={assigningModuleId === a.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/30 rounded-lg text-emerald-300 text-xs font-semibold transition-colors disabled:opacity-50"
+                      >
+                        {assigningModuleId === a.id ? '⏳ Generating…' : '📦 Assign Module'}
+                      </button>
+                    ) : (
+                      <button disabled className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700/30 border border-slate-600/30 rounded-lg text-slate-600 text-xs font-semibold cursor-not-allowed">
+                        📦 Assign Module
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -459,7 +500,7 @@ export default function AssessmentManagement() {
                     ) : (
                       <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                         {employees.map(emp => {
-                          const id = emp.id || emp._id;
+                          const id = emp.userId || emp.id || emp._id;
                           const checked = modal.selectedUsers.includes(id);
                           const hasJD = !!(emp.jobDescription || emp.jdUrl || emp.hasJD);
                           return (
@@ -632,6 +673,20 @@ export default function AssessmentManagement() {
                   />
                 </div>
 
+                {/* Deadline */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Deadline <span className="text-slate-600 font-normal normal-case">(date + time)</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={modal.deadline || ''}
+                    onChange={e => updateModal({ deadline: e.target.value })}
+                    className="w-full px-3 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                  />
+                  <p className="text-slate-600 text-xs mt-1">Employee cannot submit after this time</p>
+                </div>
+
                 <div className="flex gap-3 pt-2">
                   <button
                     onClick={() => updateModal({ step: 1 })}
@@ -692,7 +747,7 @@ export default function AssessmentManagement() {
                     </label>
                     <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                       {selectedEmployeeObjects.map(emp => {
-                        const id = emp.id || emp._id;
+                        const id = emp.userId || emp.id || emp._id;
                         const hasJD = !!(emp.jobDescription || emp.jdUrl || emp.hasJD);
                         return (
                           <div key={id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${
@@ -754,6 +809,77 @@ export default function AssessmentManagement() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== REPORT PREVIEW MODAL ===== */}
+      {viewReport && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setViewReport(null)}
+        >
+          <div
+            className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-[#0F172A]">
+              <div>
+                <h3 className="text-lg font-black text-white">{viewReport.title} — Report</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Submitted employee results</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/40 text-xs font-bold transition-colors"
+                >
+                  🖨 Download PDF
+                </button>
+                <button onClick={() => setViewReport(null)} className="text-slate-500 hover:text-white text-xl transition-colors">✕</button>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              {(viewReport.employeeAssignments?.filter(ea => ea.status === 'submitted') || []).length === 0 ? (
+                <p className="text-slate-500 text-sm text-center py-10">No submitted results yet.</p>
+              ) : (
+                viewReport.employeeAssignments
+                  .filter(ea => ea.status === 'submitted')
+                  .map((ea, i) => {
+                    const score = ea.scoring?.score ?? ea.score;
+                    const grade = ea.scoring?.grade ?? ea.grade;
+                    const strengths = ea.scoring?.strengths || [];
+                    const weakAreas = ea.scoring?.weakAreas || [];
+                    const emp = employees.find(e => (e.userId || e.id || e._id) === ea.userId);
+                    return (
+                      <div key={i} className="rounded-xl border border-slate-700/50 bg-slate-800/30 px-5 py-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-bold text-white">{emp?.name || ea.userId}</p>
+                          <div className="flex items-center gap-2">
+                            {score !== undefined && (
+                              <span className="text-xs font-black text-emerald-300">{score}%</span>
+                            )}
+                            {grade && (
+                              <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">{grade}</span>
+                            )}
+                          </div>
+                        </div>
+                        {strengths.length > 0 && (
+                          <p className="text-xs text-slate-400 mb-1">
+                            <span className="text-emerald-400 font-semibold">Strengths: </span>
+                            {strengths.join(', ')}
+                          </p>
+                        )}
+                        {weakAreas.length > 0 && (
+                          <p className="text-xs text-slate-400">
+                            <span className="text-amber-400 font-semibold">Weak Areas: </span>
+                            {weakAreas.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })
+              )}
+            </div>
           </div>
         </div>
       )}
