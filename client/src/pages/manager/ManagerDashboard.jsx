@@ -198,6 +198,7 @@ export default function ManagerDashboard() {
   const [error, setError] = useState('');
   const [employees, setEmployees] = useState([]);
   const [assignments, setAssignments] = useState([]);
+  const [assessmentReports, setAssessmentReports] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [employeeDetailLoading, setEmployeeDetailLoading] = useState(false);
@@ -228,9 +229,10 @@ export default function ManagerDashboard() {
     setLoading(true);
     setError('');
     try {
-      const [employeesRes, assignmentsRes] = await Promise.allSettled([
+      const [employeesRes, assignmentsRes, reportsRes] = await Promise.allSettled([
         user?.userId ? fetchJSON(`/api/assignments/manager/${user.userId}/employees`) : Promise.resolve(null),
         fetchJSON('/api/assignments'),
+        fetchJSON('/api/assessments/reports/all'),
       ]);
 
       if (employeesRes.status === 'fulfilled' && employeesRes.value) {
@@ -250,6 +252,11 @@ export default function ManagerDashboard() {
           || assignmentsRes.value?.assignments
           || (Array.isArray(assignmentsRes.value) ? assignmentsRes.value : []);
         setAssignments(Array.isArray(assignData) ? assignData : []);
+      }
+
+      if (reportsRes.status === 'fulfilled' && reportsRes.value) {
+        const rd = reportsRes.value;
+        setAssessmentReports(Array.isArray(rd) ? rd : rd?.data || []);
       }
 
       if (employeesRes.status === 'rejected' && assignmentsRes.status === 'rejected') {
@@ -311,6 +318,15 @@ export default function ManagerDashboard() {
     ? Math.round(assignments.reduce((s, a) => s + (a.progress || 0), 0) / assignments.length)
     : 0;
   const overdueAssignments = assignments.filter((a) => isOverdue(a.dueDate, a.status)).length;
+
+  // Assessment report stats
+  const teamEmployeeIds = new Set(employees.map(e => e.userId || e.id));
+  const teamReports = assessmentReports.filter(r => teamEmployeeIds.has(r.userId));
+  const avgAssessmentScore = teamReports.length > 0
+    ? Math.round(teamReports.reduce((s, r) => s + (r.score || 0), 0) / teamReports.length)
+    : null;
+  const passedReports = teamReports.filter(r => (r.score || 0) >= 60).length;
+  const needsAttention = teamReports.filter(r => (r.score || 0) < 60);
 
   if (!user) return null;
 
@@ -504,6 +520,71 @@ export default function ManagerDashboard() {
         <StatCard label="Avg Progress" value={`${avgProgress}%`} icon="📊" accent="purple" />
         <StatCard label="Overdue" value={overdueAssignments} icon="⚠️" accent="red" />
       </div>
+
+      {/* ── Assessment Reports Summary ─────────────────────────────── */}
+      {teamReports.length > 0 && (
+        <div className="mb-6 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-2">
+              <span>📝</span> Team Assessment Reports
+            </h3>
+            <span className="text-xs text-slate-500">{teamReports.length} submission{teamReports.length !== 1 ? 's' : ''}</span>
+          </div>
+
+          {/* Summary stats */}
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="bg-slate-900/60 rounded-xl p-3 text-center">
+              <p className={`text-2xl font-black ${avgAssessmentScore >= 80 ? 'text-emerald-400' : avgAssessmentScore >= 60 ? 'text-amber-400' : 'text-red-400'}`}>
+                {avgAssessmentScore}%
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">Team Avg Score</p>
+            </div>
+            <div className="bg-slate-900/60 rounded-xl p-3 text-center">
+              <p className="text-2xl font-black text-emerald-400">{passedReports}</p>
+              <p className="text-xs text-slate-500 mt-0.5">Passed (≥60%)</p>
+            </div>
+            <div className="bg-slate-900/60 rounded-xl p-3 text-center">
+              <p className={`text-2xl font-black ${needsAttention.length > 0 ? 'text-red-400' : 'text-slate-400'}`}>{needsAttention.length}</p>
+              <p className="text-xs text-slate-500 mt-0.5">Needs Attention</p>
+            </div>
+          </div>
+
+          {/* Per-employee report rows */}
+          <div className="space-y-2 max-h-56 overflow-y-auto">
+            {teamReports.slice().sort((a, b) => (a.score || 0) - (b.score || 0)).map((r) => {
+              const scoreColor = (r.score || 0) >= 80 ? 'text-emerald-400' : (r.score || 0) >= 60 ? 'text-amber-400' : 'text-red-400';
+              const gradeBg = (r.score || 0) >= 80 ? 'bg-emerald-500/15 border-emerald-500/30' : (r.score || 0) >= 60 ? 'bg-amber-500/15 border-amber-500/30' : 'bg-red-500/15 border-red-500/30';
+              return (
+                <div key={r.id} className="flex items-center gap-3 px-3 py-2.5 bg-slate-900/50 rounded-lg border border-slate-700/40">
+                  <div className="w-7 h-7 rounded-lg bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 shrink-0">
+                    {(r.userName || '?')[0]?.toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium truncate">{r.userName || 'Employee'}</p>
+                    <p className="text-slate-500 text-xs truncate">{r.assessmentTitle || 'Assessment'} · {r.jobRole || ''}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {r.weakAreas?.length > 0 && (
+                      <span className="text-xs text-amber-400 hidden sm:block">⚠ {r.weakAreas.slice(0,2).join(', ')}</span>
+                    )}
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${gradeBg}`}>
+                      <span className={scoreColor}>{r.score || 0}%</span>
+                      <span className="text-slate-500 ml-1">{r.grade}</span>
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {needsAttention.length > 0 && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+              <span>⚠</span>
+              <span><strong>{needsAttention.length}</strong> employee{needsAttention.length !== 1 ? 's' : ''} scored below 60% — consider approving auto-generated training modules.</span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-2 mb-6 overflow-x-auto pb-1 scrollbar-hide">
         {[
