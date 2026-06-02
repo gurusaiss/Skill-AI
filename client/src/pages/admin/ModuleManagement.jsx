@@ -85,6 +85,7 @@ export default function ModuleManagement() {
   const [toast, setToast] = useState(null);
   const [editing, setEditing] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
+  const [filterJobRole, setFilterJobRole] = useState('all');
   const [search, setSearch] = useState('');
 
   // Pending approvals state
@@ -198,14 +199,17 @@ export default function ModuleManagement() {
 
   const filtered = useMemo(() => {
     return modules.filter(m => {
-      const title = (m.title || '').toLowerCase();
-      const matchesSearch = !search || title.includes(search.toLowerCase());
+      const q = search.toLowerCase();
+      const matchesSearch = !q || m.title?.toLowerCase().includes(q) || m.description?.toLowerCase().includes(q);
       const matchesTab = activeTab === 'all' || m.category === activeTab;
-      return matchesSearch && matchesTab;
+      const matchesJobRole = filterJobRole === 'all' ||
+        (m.content?.jobRole || m.jobRole || m.category) === filterJobRole;
+      return matchesSearch && matchesTab && matchesJobRole;
     });
-  }, [modules, search, activeTab]);
+  }, [modules, activeTab, filterJobRole, search]);
 
   const categories = [...new Set(modules.map(m => m.category).filter(Boolean))];
+  const jobRoles = [...new Set(modules.map(m => m.content?.jobRole || m.jobRole || m.category).filter(Boolean))];
 
   const resetForm = () => setForm({
     title: '', description: '', category: 'Web Development', difficulty: 'beginner',
@@ -404,15 +408,32 @@ export default function ModuleManagement() {
           </button>
         </div>
 
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          <button onClick={() => setActiveTab('all')} className={`px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-all ${activeTab === 'all' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white'}`}>
-            All ({modules.length})
-          </button>
-          {categories.map(cat => (
-            <button key={cat} onClick={() => setActiveTab(cat)} className={`px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-all ${activeTab === cat ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white'}`}>
-              {cat}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          {/* Category dropdown */}
+          <select
+            value={activeTab}
+            onChange={e => setActiveTab(e.target.value)}
+            className="px-3 py-2 bg-slate-800 border border-slate-700/60 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+          >
+            <option value="all">All Types</option>
+            {categories.map(cat => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+
+          {/* Job Role dropdown */}
+          <select
+            value={filterJobRole}
+            onChange={e => setFilterJobRole(e.target.value)}
+            className="px-3 py-2 bg-slate-800 border border-slate-700/60 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500"
+          >
+            <option value="all">All Job Roles</option>
+            {jobRoles.map(jr => (
+              <option key={jr} value={jr}>{jr}</option>
+            ))}
+          </select>
+
+          {/* Pending Approvals button (kept as special tab) */}
           <button
             onClick={() => setActiveTab('pending')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-all ${activeTab === 'pending' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30' : 'bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white'}`}

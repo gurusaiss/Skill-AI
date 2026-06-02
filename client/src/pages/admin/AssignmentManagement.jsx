@@ -91,6 +91,8 @@ export default function AssignmentManagement() {
   useEffect(() => {
     if (!user || (!isAdmin && !isManager)) { navigate('/dashboard'); return; }
     loadAll();
+    const interval = setInterval(loadAll, 30000); // refresh every 30s
+    return () => clearInterval(interval);
   }, [user, navigate, isAdmin, isManager]);
 
   const loadAll = async () => {
@@ -163,10 +165,10 @@ export default function AssignmentManagement() {
 
   const stats = useMemo(() => ({
     total: assignments.length,
-    active: assignments.filter(a => a.status === 'in_progress').length,
-    completed: assignments.filter(a => a.status === 'completed').length,
-    pending: assignments.filter(a => a.status === 'pending' || a.status === 'assigned').length,
-    overdue: assignments.filter(a => a.status !== 'completed' && a.due_date && new Date(a.due_date) < new Date()).length,
+    active: assignments.filter(a => a.status === 'in_progress' || a.status === 'active').length,
+    completed: assignments.filter(a => a.status === 'completed' || a.completed === true).length,
+    pending: assignments.filter(a => a.status === 'assigned' || a.status === 'pending').length,
+    overdue: assignments.filter(a => a.status !== 'completed' && a.completed !== true && a.due_date && new Date(a.due_date) < new Date()).length,
   }), [assignments]);
 
   const handleCreate = async (e) => {
@@ -342,10 +344,24 @@ export default function AssignmentManagement() {
           ) : (
             <div className="divide-y divide-slate-700/20">
               {filtered.map((a, idx) => {
-                const status = a.status || 'assigned';
+                // Normalise status: treat 'active' as 'in_progress', treat completed===true as 'completed'
+                const rawStatus = a.status || 'assigned';
+                const status = (a.completed === true && rawStatus !== 'completed')
+                  ? 'completed'
+                  : rawStatus === 'active'
+                  ? 'in_progress'
+                  : rawStatus;
                 const priority = a.priority || 'medium';
                 const cfg = statusConfig[status] || statusConfig.assigned;
                 const pcfg = priorityConfig[priority] || priorityConfig.medium;
+                // Progress percentage
+                const pct = typeof a.progress === 'number' && a.progress > 0
+                  ? a.progress
+                  : status === 'completed'
+                    ? 100
+                    : status === 'in_progress'
+                      ? 50
+                      : 0;
                 const employeeId = a.assigned_to_user || a.employee_id;
                 const moduleId = a.assignable_id || a.module_id;
                 const isOverdue = status !== 'completed' && a.due_date && new Date(a.due_date) < new Date();
@@ -374,12 +390,12 @@ export default function AssignmentManagement() {
                     {/* Module */}
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-slate-200 truncate leading-tight">{getModuleName(moduleId)}</p>
-                      {a.progress !== undefined && a.progress > 0 && (
+                      {pct > 0 && (
                         <div className="flex items-center gap-2 mt-1">
                           <div className="flex-1 h-1 rounded-full bg-slate-700/60 overflow-hidden">
-                            <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${a.progress || 0}%` }} />
+                            <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${pct}%` }} />
                           </div>
-                          <span className="text-xs text-slate-500 flex-shrink-0">{a.progress}%</span>
+                          <span className="text-xs text-slate-500 flex-shrink-0">{pct}%</span>
                         </div>
                       )}
                     </div>

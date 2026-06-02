@@ -929,8 +929,8 @@ export default function UserManagement() {
                   <div className="text-slate-500 text-xs">Employees</div>
                 </div>
                 <div className="bg-slate-800 border border-slate-700/60 rounded-xl px-3 py-2 text-center">
-                  <div className="text-xl font-bold text-amber-300">{employeeUsers.filter(u => u.jobRole).length}</div>
-                  <div className="text-slate-500 text-xs">With JR</div>
+                  <div className="text-xl font-bold text-sky-300">{staffUsers.length}</div>
+                  <div className="text-slate-500 text-xs">Staff</div>
                 </div>
               </div>
               {/* Create button */}
