@@ -175,8 +175,8 @@ export default function Assessment() {
         setReport(scoring);
       }
 
-      // Init timer
-      if (found.duration && !scoring) {
+      // Init timer — only if visible, not expired, not submitted
+      if (found.duration && !scoring && found.isVisible !== false && found.status !== 'expired') {
         setTimeLeft(found.duration * 60);
       }
     } catch (e) {
@@ -453,6 +453,50 @@ export default function Assessment() {
           <h2 className="text-xl font-black text-white mb-2">No Assessments Assigned</h2>
           <p className="text-slate-400 text-sm mb-6">There are no assessments assigned to you right now.</p>
           <button onClick={() => navigate('/dashboard')} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition-all">
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Timing gate: not yet available ──────────────────────────────────────
+  if (assessment.isVisible === false) {
+    return (
+      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-4">
+        <div className="text-center max-w-sm">
+          <div className="text-5xl mb-4">🕐</div>
+          <h2 className="text-xl font-black text-white mb-2">Assessment Not Available Yet</h2>
+          <p className="text-slate-400 text-sm mb-2">This assessment is scheduled for:</p>
+          <div className="bg-slate-800 border border-slate-700 rounded-xl px-5 py-3 mb-6">
+            <p className="text-indigo-300 font-bold text-lg">
+              {assessment.assessmentDate
+                ? new Date(assessment.assessmentDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                : 'TBD'}
+            </p>
+          </div>
+          <button onClick={() => navigate('/dashboard')} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition-all">
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Timing gate: deadline expired ────────────────────────────────────────
+  if (assessment.isExpired && assessment.status !== 'submitted') {
+    return (
+      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-4">
+        <div className="text-center max-w-sm">
+          <div className="text-5xl mb-4">⏰</div>
+          <h2 className="text-xl font-black text-white mb-2">Submission Deadline Passed</h2>
+          <p className="text-slate-400 text-sm mb-2">The deadline for this assessment was:</p>
+          <div className="bg-red-900/30 border border-red-500/30 rounded-xl px-5 py-3 mb-6">
+            <p className="text-red-300 font-bold">
+              {new Date(assessment.deadline).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}
+            </p>
+          </div>
+          <button onClick={() => navigate('/dashboard')} className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold transition-all">
             Back to Dashboard
           </button>
         </div>

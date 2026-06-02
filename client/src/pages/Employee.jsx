@@ -426,43 +426,50 @@ export default function Employee() {
                 {myAssessments.map((a) => {
                   const id = a.id || a._id;
                   const isSubmitted = a.status === 'submitted' || a.status === 'completed';
+                  const isExpired = a.isExpired && !isSubmitted;
+                  const isNotYet = a.isVisible === false;
                   const score = a.submission?.scoring?.score ?? a.scoring?.score ?? a.score ?? null;
                   const pctScore = score !== null ? Math.round(score) : null;
                   const scoreBg = pctScore !== null
                     ? pctScore >= 80 ? 'text-emerald-400' : pctScore >= 60 ? 'text-amber-400' : 'text-red-400'
                     : '';
+                  const statusBadge = isSubmitted
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                    : isExpired
+                      ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                      : isNotYet
+                        ? 'bg-slate-700/40 border-slate-600/30 text-slate-500'
+                        : 'bg-blue-500/10 border-blue-500/20 text-blue-400';
+                  const statusLabel = isSubmitted ? 'Submitted' : isExpired ? 'Expired' : isNotYet ? 'Scheduled' : 'Available';
                   return (
-                    <div
-                      key={id}
-                      className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-800/40 border border-slate-700/30 hover:border-slate-600/50 transition-all"
-                    >
+                    <div key={id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-800/40 border border-slate-700/30 hover:border-slate-600/50 transition-all">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-white truncate">{a.title}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {(a.scheduledDate || a.date || a.createdAt) && (
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {a.assessmentDate && (
                             <span className="text-xs text-slate-500">
-                              {new Date(a.scheduledDate || a.date || a.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              📅 {new Date(a.assessmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                             </span>
                           )}
-                          <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${
-                            isSubmitted
-                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                              : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
-                          }`}>
-                            {isSubmitted ? 'Submitted' : 'Assigned'}
-                          </span>
-                          {pctScore !== null && (
-                            <span className={`text-xs font-black ${scoreBg}`}>{pctScore}%</span>
+                          {a.deadline && !isSubmitted && (
+                            <span className={`text-xs ${isExpired ? 'text-red-400' : 'text-slate-500'}`}>
+                              ⏰ {new Date(a.deadline).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </span>
                           )}
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${statusBadge}`}>{statusLabel}</span>
+                          {pctScore !== null && <span className={`text-xs font-black ${scoreBg}`}>{pctScore}%</span>}
                         </div>
                       </div>
-                      {!isSubmitted && (
-                        <button
-                          onClick={() => navigate(`/assessment/${id}`)}
-                          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-bold transition-all whitespace-nowrap"
-                        >
+                      {!isSubmitted && !isExpired && !isNotYet && (
+                        <button onClick={() => navigate(`/assessment/${id}`)}
+                          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-bold transition-all whitespace-nowrap">
                           Start →
                         </button>
+                      )}
+                      {isNotYet && a.assessmentDate && (
+                        <span className="text-xs text-slate-600 shrink-0">
+                          Opens {new Date(a.assessmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
                       )}
                     </div>
                   );
