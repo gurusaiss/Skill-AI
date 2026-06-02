@@ -42,10 +42,6 @@ const ModuleStart          = lazy(() => import('./pages/ModuleStart.jsx'));
 const ModuleDashboard      = lazy(() => import('./pages/ModuleDashboard.jsx'));
 const ModuleSession        = lazy(() => import('./pages/ModuleSession.jsx'));
 const Certificate          = lazy(() => import('./pages/Certificate.jsx'));
-const SpeedChallenge       = lazy(() => import('./pages/SpeedChallenge.jsx'));
-const ReactChainPage       = lazy(() => import('./pages/ReactChainPage.jsx'));
-const SkillDNA             = lazy(() => import('./pages/SkillDNA.jsx'));
-const AgentControlRoom     = lazy(() => import('./pages/AgentControlRoom.jsx'));
 
 const Loader = () => (
   <div className="mx-auto max-w-4xl px-6 py-14 text-slate-400 text-center">
@@ -184,26 +180,6 @@ const App = () => {
               <Route path="/certificate" element={
                 <ProtectedRoute>
                   <Certificate />
-                </ProtectedRoute>
-              } />
-              <Route path="/speed-challenge" element={
-                <ProtectedRoute>
-                  <SpeedChallenge />
-                </ProtectedRoute>
-              } />
-              <Route path="/react-chain" element={
-                <ProtectedRoute>
-                  <ReactChainPage />
-                </ProtectedRoute>
-              } />
-              <Route path="/skill-dna" element={
-                <ProtectedRoute>
-                  <SkillDNA />
-                </ProtectedRoute>
-              } />
-              <Route path="/agent-control-room" element={
-                <ProtectedRoute>
-                  <AgentControlRoom />
                 </ProtectedRoute>
               } />
             </Routes>

@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from 'recharts';
 
 const BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
 
@@ -181,6 +184,143 @@ function ModuleCareerTwin({ module, assignment, navigate, moduleId, assignmentId
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Animated trait bar for Learning DNA ──────────────────────────────────────
+function AnimatedTraitBar({ label, value, color }) {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setWidth(value), 100);
+    return () => clearTimeout(t);
+  }, [value]);
+  return (
+    <div>
+      <div className="flex justify-between text-xs mb-1">
+        <span className="text-slate-300 font-medium">{label}</span>
+        <span className="font-bold" style={{ color }}>{value}%</span>
+      </div>
+      <div className="h-2 bg-slate-700/60 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-700 ease-out"
+          style={{ width: `${width}%`, background: color }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ── Learning DNA + Velocity sections (employee-only) ─────────────────────────
+function LearningDNASection({ sessions }) {
+  const scores = sessions.map(s => s.score || 0);
+  const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 65;
+  const scoreVariance = scores.length > 1
+    ? Math.sqrt(scores.reduce((s, v) => s + Math.pow(v - avgScore, 2), 0) / scores.length)
+    : 0;
+  const consistency = sessions.length / Math.max(1, 21);
+
+  let dnaType;
+  if (avgScore > 80 && sessions.length < 10) {
+    dnaType = { emoji: '🦅', name: 'Eagle Learner', color: '#6366F1', desc: 'High scores, fast progress — you absorb concepts quickly with few sessions needed.', superpower: 'Speed & Accuracy', traits: { speed: 90, consistency: 60, depth: 75 } };
+  } else if (consistency > 0.7 && scoreVariance < 15) {
+    dnaType = { emoji: '🐢', name: 'Deep Diver', color: '#14B8A6', desc: 'Slow and thorough — you build rock-solid understanding through consistent, steady practice.', superpower: 'Consistency & Depth', traits: { speed: 45, consistency: 95, depth: 90 } };
+  } else if (scoreVariance > 20) {
+    dnaType = { emoji: '🦊', name: 'Adaptive Learner', color: '#F59E0B', desc: 'Variable performance — you adapt quickly to new topics and thrive in dynamic environments.', superpower: 'Flexibility & Adaptability', traits: { speed: 70, consistency: 55, depth: 65 } };
+  } else {
+    dnaType = { emoji: '🔥', name: 'Sprint Learner', color: '#EC4899', desc: 'Bursts of intense learning followed by breaks — you perform best under focused, time-boxed sessions.', superpower: 'Focus & Intensity', traits: { speed: 75, consistency: 60, depth: 70 } };
+  }
+
+  return (
+    <div
+      className="rounded-2xl border border-slate-700/50 p-6 mb-6"
+      style={{ background: `linear-gradient(135deg, ${dnaType.color}18 0%, #1E293B 60%)` }}
+    >
+      <h3 className="text-slate-200 font-semibold text-lg mb-4">🧬 Your Learning DNA</h3>
+      {sessions.length === 0 ? (
+        <p className="text-slate-400 text-sm">Complete your first session to discover your Learning DNA</p>
+      ) : (
+        <div className="flex flex-wrap gap-6 items-start">
+          {/* Emoji + name */}
+          <div className="flex flex-col items-center gap-2 min-w-[100px]">
+            <span style={{ fontSize: 80, lineHeight: 1 }}>{dnaType.emoji}</span>
+            <span
+              className="font-extrabold text-base text-center bg-clip-text text-transparent"
+              style={{ backgroundImage: `linear-gradient(90deg, ${dnaType.color}, #fff)` }}
+            >
+              {dnaType.name}
+            </span>
+          </div>
+          {/* Details */}
+          <div className="flex-1 min-w-[200px] space-y-4">
+            <p className="text-slate-300 text-sm">{dnaType.desc}</p>
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-widest text-slate-500 mr-2">Your Superpower:</span>
+              <span
+                className="text-xs font-bold px-3 py-1 rounded-full"
+                style={{ background: dnaType.color + '30', color: dnaType.color, border: `1px solid ${dnaType.color}50` }}
+              >
+                {dnaType.superpower}
+              </span>
+            </div>
+            <div className="space-y-2">
+              <AnimatedTraitBar label="Speed" value={dnaType.traits.speed} color={dnaType.color} />
+              <AnimatedTraitBar label="Consistency" value={dnaType.traits.consistency} color={dnaType.color} />
+              <AnimatedTraitBar label="Depth" value={dnaType.traits.depth} color={dnaType.color} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LearningVelocitySection({ sessions }) {
+  const velocityData = sessions.slice(-10).map((s, i) => ({
+    session: `S${i + 1}`,
+    score: s.score || 0,
+    target: 70,
+  }));
+
+  return (
+    <div className="bg-[#1E293B] border border-slate-700/50 rounded-2xl p-6 mb-6">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-slate-200 font-semibold text-lg">📈 Learning Velocity</h3>
+      </div>
+      <p className="text-slate-500 text-xs mb-4">Score per session — last 10 sessions</p>
+      {sessions.length < 2 ? (
+        <p className="text-slate-400 text-sm">Complete more sessions to see your velocity chart</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={200}>
+          <LineChart data={velocityData} margin={{ top: 5, right: 10, left: -30, bottom: 0 }}>
+            <XAxis dataKey="session" tick={{ fill: '#64748B', fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis domain={[0, 100]} hide />
+            <Tooltip
+              contentStyle={{ background: '#0F172A', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
+              labelStyle={{ color: '#94A3B8' }}
+              itemStyle={{ color: '#CBD5E1' }}
+            />
+            <Line
+              type="monotone"
+              dataKey="score"
+              name="Score"
+              stroke="#6366F1"
+              strokeWidth={2}
+              dot={{ r: 3, fill: '#6366F1' }}
+              activeDot={{ r: 5 }}
+            />
+            <Line
+              type="monotone"
+              dataKey="target"
+              name="Target"
+              stroke="#F59E0B"
+              strokeWidth={1.5}
+              strokeDasharray="5 5"
+              dot={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }
@@ -402,6 +542,19 @@ export default function CareerTwin() {
             </div>
           </div>
         </div>
+
+        {/* Employee-only: Learning DNA + Velocity */}
+        {user?.role === 'employee' && (() => {
+          const userId = localStorage.getItem('skillforge:userId');
+          const stored = userId ? JSON.parse(localStorage.getItem(`sf_data_${userId}`) || '{}') : {};
+          const localSessions = stored.sessions || [];
+          return (
+            <>
+              <LearningDNASection sessions={localSessions} />
+              <LearningVelocitySection sessions={localSessions} />
+            </>
+          );
+        })()}
 
         <div className="grid md:grid-cols-3 gap-6">
 
