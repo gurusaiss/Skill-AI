@@ -15,7 +15,7 @@ const BRIEFS_DIR = join(__dirname, '../data/briefs');
 
 class AutonomousScheduler {
   constructor() {
-    this.gemini = new GeminiService();
+    this.gemini = GeminiService; // singleton instance, not a class
     this.isRunning = false;
     this.lastRun = null;
     this.intervalMs = 6 * 60 * 60 * 1000; // every 6 hours
