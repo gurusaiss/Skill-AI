@@ -237,6 +237,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       questionCount = 10,
       questionTypes = ['mcq'],
       assessmentDate,
+      deadline,           // datetime string — employee cannot submit after this
       duration = 30,      // minutes
     } = req.body;
 
@@ -301,6 +302,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       questionCount,
       questionTypes,
       assessmentDate: assessmentDate || null,
+      deadline: deadline || null,   // employee cannot submit after this datetime
       duration,
       createdBy: req.user.userId,
       createdAt: new Date().toISOString(),
@@ -361,20 +363,36 @@ router.post('/generate-from-jd', authenticate, requireRole('admin', 'manager'), 
 router.get('/my', authenticate, async (req, res) => {
   try {
     const assessments = readJSON(ASSESSMENTS_FILE);
+    const now = new Date();
+
     const myAssessments = assessments
       .filter(a => a.employeeAssignments?.some(ea => ea.userId === req.user.userId))
       .map(a => {
         const myAssignment = a.employeeAssignments.find(ea => ea.userId === req.user.userId);
+
+        // Timing logic
+        const assessmentDate = a.assessmentDate ? new Date(a.assessmentDate) : null;
+        const deadline = a.deadline ? new Date(a.deadline) : null;
+
+        // Employee can see assessment only on/after assessmentDate (if set)
+        const isVisible = !assessmentDate || now >= assessmentDate;
+        // Employee cannot submit after deadline
+        const isExpired = deadline ? now > deadline : false;
+
         return {
           id: a.id,
           title: a.title,
           assessmentDate: a.assessmentDate,
+          deadline: a.deadline || null,
           duration: a.duration,
-          status: myAssignment.status,
-          questions: myAssignment.questions,
+          status: isExpired && myAssignment.status !== 'submitted' ? 'expired' : myAssignment.status,
+          questions: isVisible ? myAssignment.questions : null, // hide questions until date
           assignedAt: myAssignment.assignedAt,
           submittedAt: myAssignment.submittedAt,
           jobRole: myAssignment.jobRole,
+          isVisible,        // frontend uses this to show "Available on [date]" or actual quiz
+          isExpired,        // frontend shows "Deadline passed"
+          scoring: myAssignment.status === 'submitted' ? myAssignment.scoring : null,
         };
       });
 
@@ -430,6 +448,11 @@ router.post('/:id/submit', authenticate, async (req, res) => {
     const assignment = assessment.employeeAssignments[assignmentIdx];
     if (assignment.status === 'submitted') {
       return res.status(400).json({ success: false, data: null, error: 'Assessment already submitted' });
+    }
+
+    // Deadline enforcement
+    if (assessment.deadline && new Date() > new Date(assessment.deadline)) {
+      return res.status(403).json({ success: false, data: null, error: 'Submission deadline has passed' });
     }
 
     // Score the submission
