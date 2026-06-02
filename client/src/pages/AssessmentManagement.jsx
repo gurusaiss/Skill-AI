@@ -561,7 +561,7 @@ export default function AssessmentManagement() {
                         {employees.map(emp => {
                           const id = emp.userId || emp.id || emp._id;
                           const checked = modal.selectedUsers.includes(id);
-                          const hasJD = !!(emp.jobDescription || emp.jdUrl || emp.hasJD);
+                          const hasJD = !!(emp.jobDescription || emp.jobDescriptionFile || emp.jdUrl || emp.hasJD);
                           return (
                             <div
                               key={id}
@@ -807,7 +807,7 @@ export default function AssessmentManagement() {
                     <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                       {selectedEmployeeObjects.map(emp => {
                         const id = emp.userId || emp.id || emp._id;
-                        const hasJD = !!(emp.jobDescription || emp.jdUrl || emp.hasJD);
+                        const hasJD = !!(emp.jobDescription || emp.jobDescriptionFile || emp.jdUrl || emp.hasJD);
                         return (
                           <div key={id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${
                             hasJD ? 'bg-slate-800/30 border-slate-700/50' : 'bg-amber-500/5 border-amber-500/20'
