@@ -1,0 +1,20 @@
+{
+  "userId": "0e35d101-d1d5-44f2-a053-60edb63ad18a",
+  "generatedAt": "2026-06-02T06:59:31.913Z",
+  "type": "daily_brief",
+  "streak": 0,
+  "completedDays": 0,
+  "avgScore": 0,
+  "lastScore": 0,
+  "nextDay": {
+    "day": 1,
+    "topic": "cellular respiration",
+    "skillName": "Physiology and Biochemistry"
+  },
+  "insight": "As you begin your learning journey, remember that every great accomplishment starts with a single step, and by completing your first session, you'll not only gain valuable knowledge but also establish a foundation for building a consistent study routine. By focusing on making progress one session at a time, you can quickly turn your 0-day streak into a momentum-building habit, and start seeing improvements in your scores and overall understanding of the material.",
+  "alerts": [],
+  "recommendation": {
+    "action": "review",
+    "msg": "Schedule a review session before proceeding to new material."
+  }
+}

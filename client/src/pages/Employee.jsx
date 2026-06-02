@@ -188,6 +188,10 @@ export default function Employee() {
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, assignmentId: null, newStatus: null, title: '', message: '' });
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
+  // Assessments
+  const [myAssessments, setMyAssessments] = useState([]);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(true);
+
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, id: Date.now() });
   }, []);
@@ -212,6 +216,7 @@ export default function Employee() {
         authFetch('/api/assignments/dashboard'),
         authFetch(`/api/assignments/employee/${userId}/manager`),
       ]);
+      loadAssessments();
 
       if (assignmentsData.status === 'fulfilled') {
         const data = assignmentsData.value;
@@ -231,6 +236,19 @@ export default function Employee() {
       showToast(err.message || 'Failed to load dashboard data', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAssessments = async () => {
+    setAssessmentsLoading(true);
+    try {
+      const res = await authFetch('/api/assessments/my');
+      const list = Array.isArray(res) ? res : (res?.assessments || []);
+      setMyAssessments(list);
+    } catch {
+      // silently ignore — assessments card just shows empty
+    } finally {
+      setAssessmentsLoading(false);
     }
   };
 
@@ -383,6 +401,76 @@ export default function Employee() {
             </div>
           </div>
         ) : null}
+
+        {/* ── My Assessments ── */}
+        <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 backdrop-blur-sm overflow-hidden mb-6 card-enter" style={{ animationDelay: '150ms' }}>
+          <div className="border-b border-slate-700/40 px-5 py-4 flex items-center justify-between">
+            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">📝 My Assessments</h3>
+            {myAssessments.length > 0 && (
+              <span className="text-xs text-slate-500">{myAssessments.length} assigned</span>
+            )}
+          </div>
+          <div className="p-4">
+            {assessmentsLoading ? (
+              <div className="space-y-2">
+                {[0, 1].map(i => (
+                  <div key={i} className="h-12 rounded-xl bg-slate-800/40 animate-pulse" />
+                ))}
+              </div>
+            ) : myAssessments.length === 0 ? (
+              <div className="py-6 text-center">
+                <p className="text-sm text-slate-500">No assessments yet</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {myAssessments.map((a) => {
+                  const id = a.id || a._id;
+                  const isSubmitted = a.status === 'submitted' || a.status === 'completed';
+                  const score = a.submission?.scoring?.score ?? a.scoring?.score ?? a.score ?? null;
+                  const pctScore = score !== null ? Math.round(score) : null;
+                  const scoreBg = pctScore !== null
+                    ? pctScore >= 80 ? 'text-emerald-400' : pctScore >= 60 ? 'text-amber-400' : 'text-red-400'
+                    : '';
+                  return (
+                    <div
+                      key={id}
+                      className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-800/40 border border-slate-700/30 hover:border-slate-600/50 transition-all"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">{a.title}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {(a.scheduledDate || a.date || a.createdAt) && (
+                            <span className="text-xs text-slate-500">
+                              {new Date(a.scheduledDate || a.date || a.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                          )}
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${
+                            isSubmitted
+                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                              : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                          }`}>
+                            {isSubmitted ? 'Submitted' : 'Assigned'}
+                          </span>
+                          {pctScore !== null && (
+                            <span className={`text-xs font-black ${scoreBg}`}>{pctScore}%</span>
+                          )}
+                        </div>
+                      </div>
+                      {!isSubmitted && (
+                        <button
+                          onClick={() => navigate(`/assessment/${id}`)}
+                          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-bold transition-all whitespace-nowrap"
+                        >
+                          Start →
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
 
         <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 backdrop-blur-sm overflow-hidden mb-6">
           <div className="border-b border-slate-700/40 px-5 py-4">

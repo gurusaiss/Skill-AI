@@ -111,13 +111,9 @@ export default function Register() {
     setLoading(true);
     try {
       const result = await register(formData.email, formData.password, formData.name);
-      
-      // OTP verification disabled for development - redirect directly to login
-      // TODO: Re-enable OTP verification in production
-      navigate('/auth/login', {
-        state: {
-          message: 'Registration successful! You can now sign in with your credentials.',
-        },
+
+      navigate('/auth/onboarding', {
+        state: { userId: result.userId, email: formData.email, name: formData.name },
       });
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
