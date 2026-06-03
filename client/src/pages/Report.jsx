@@ -165,10 +165,10 @@ function AdminReportView({ user, navigate }) {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {[
-          { label: user?.role === 'manager' ? 'Team Members' : 'Total Employees', value: reports.length, color: '#6366f1' },
-          { label: 'Avg Completion', value: reports.length ? Math.round(reports.reduce((s, r) => s + r.completionRate, 0) / reports.length) + '%' : '0%', color: '#10b981' },
-          { label: 'Fully Completed', value: reports.filter(r => r.completionRate === 100).length, color: '#f59e0b' },
-          { label: 'Total Assignments', value: reports.reduce((s, r) => s + r.totalAssignments, 0), color: '#8b5cf6' },
+          { label: user?.role === 'manager' ? 'Team Members' : 'Module Reports', value: reports.length, color: '#6366f1' },
+          { label: 'Avg Module Completion', value: reports.length ? Math.round(reports.reduce((s, r) => s + (r.completionRate || 0), 0) / reports.length) + '%' : '0%', color: '#10b981' },
+          { label: 'Assessment Reports', value: assessmentReports.length, color: '#f59e0b' },
+          { label: 'Avg Assessment Score', value: assessmentReports.length ? Math.round(assessmentReports.reduce((s, r) => s + (r.score || 0), 0) / assessmentReports.length) + '%' : '—', color: '#8b5cf6' },
         ].map((s, i) => (
           <div key={i} className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5">
             <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
@@ -230,40 +230,80 @@ function AdminReportView({ user, navigate }) {
         ) : (
           <div className="divide-y divide-slate-700/30">
             {filtered.map((r, i) => {
-              const rateColor = r.completionRate >= 80 ? 'text-emerald-400' : r.completionRate >= 50 ? 'text-amber-400' : 'text-red-400';
+              const isAssessment = r._reportType === 'assessment';
+              const displayValue = isAssessment ? (r.score ?? r.completionRate ?? 0) : (r.completionRate ?? 0);
+              const valueColor = displayValue >= 80 ? 'text-emerald-400' : displayValue >= 50 ? 'text-amber-400' : 'text-red-400';
+              const valueLabel = isAssessment ? 'Score' : 'Completion';
               return (
-                <div key={r.userId || i} className="px-5 py-4 grid grid-cols-1 md:grid-cols-[2fr_2fr_1fr_1fr_1fr_1fr_auto] items-center gap-3 hover:bg-slate-800/20 transition-all">
-                  {/* Employee */}
+                <div key={r.id || r.userId || i} className="px-5 py-4 flex flex-wrap md:grid md:grid-cols-[2fr_2fr_1fr_1fr_1fr_auto] items-center gap-3 hover:bg-slate-800/20 transition-all">
+                  {/* Employee + type badge */}
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500/30 to-purple-500/20 border border-indigo-500/20 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0">
                       {(r.employeeName || '?').charAt(0).toUpperCase()}
                     </div>
-                    <span className="text-sm font-semibold text-white truncate">{r.employeeName}</span>
-                  </div>
-
-                  <span className="text-xs text-slate-400 truncate">{r.email}</span>
-                  <span className="text-sm font-bold text-slate-300">{r.totalAssignments}</span>
-                  <span className="text-sm font-bold text-emerald-400">{r.completedAssignments}</span>
-
-                  {/* Completion % with bar */}
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 rounded-full bg-slate-700 overflow-hidden">
-                        <div className="h-full rounded-full transition-all" style={{ width: `${r.completionRate}%`, background: r.completionRate >= 80 ? '#10b981' : r.completionRate >= 50 ? '#f59e0b' : '#ef4444' }} />
+                    <div className="min-w-0">
+                      <span className="text-sm font-semibold text-white truncate block">{r.employeeName}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className={`text-xs px-1.5 py-0.5 rounded font-bold border ${
+                          isAssessment
+                            ? 'bg-amber-500/15 text-amber-300 border-amber-500/25'
+                            : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/25'
+                        }`}>
+                          {isAssessment ? '📝 Assessment' : '📚 Module'}
+                        </span>
+                        {r.jobRole && <span className="text-xs text-slate-600 truncate">{r.jobRole}</span>}
                       </div>
-                      <span className={`text-xs font-bold ${rateColor}`}>{r.completionRate}%</span>
                     </div>
                   </div>
 
-                  <span className="text-xs text-slate-500">
-                    {r.lastActivity ? new Date(r.lastActivity).toLocaleDateString() : '—'}
+                  {/* Assessment title or email */}
+                  <span className="text-xs text-slate-400 truncate">
+                    {isAssessment ? (r.assessmentTitle || r.title || '—') : (r.email || '—')}
                   </span>
 
+                  {/* Module/assessment specific info */}
+                  {isAssessment ? (
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded border ${
+                      (r.grade === 'A' || r.grade === 'B') ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'
+                      : r.grade === 'C' ? 'bg-amber-500/15 text-amber-400 border-amber-500/25'
+                      : 'bg-red-500/15 text-red-400 border-red-500/25'
+                    }`}>
+                      Grade {r.grade || '—'}
+                    </span>
+                  ) : (
+                    <span className="text-sm font-bold text-slate-300">{r.totalAssignments ?? '—'}</span>
+                  )}
+
+                  {/* Score/Completion bar */}
+                  <div>
+                    <p className="text-xs text-slate-500 mb-1">{valueLabel}</p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(displayValue, 100)}%`, background: displayValue >= 80 ? '#10b981' : displayValue >= 50 ? '#f59e0b' : '#ef4444' }} />
+                      </div>
+                      <span className={`text-xs font-bold ${valueColor}`}>{Math.round(displayValue)}%</span>
+                    </div>
+                  </div>
+
+                  {/* Date */}
+                  <span className="text-xs text-slate-500">
+                    {(r.generatedAt || r.submittedAt || r.lastActivity)
+                      ? new Date(r.generatedAt || r.submittedAt || r.lastActivity).toLocaleDateString()
+                      : '—'}
+                  </span>
+
+                  {/* Actions */}
                   <button
-                    onClick={() => downloadReportPDF(r)}
-                    className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-semibold transition-all whitespace-nowrap"
+                    onClick={() => isAssessment ? null : downloadReportPDF(r)}
+                    disabled={isAssessment}
+                    title={isAssessment ? 'Assessment report' : 'Download PDF'}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all whitespace-nowrap ${
+                      isAssessment
+                        ? 'bg-slate-700/30 border-slate-600/30 text-slate-600 cursor-default'
+                        : 'bg-indigo-600/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30'
+                    }`}
                   >
-                    ↓ PDF
+                    {isAssessment ? '📊 Score' : '↓ PDF'}
                   </button>
                 </div>
               );
