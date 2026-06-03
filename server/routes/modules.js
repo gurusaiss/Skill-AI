@@ -6,6 +6,7 @@
 import express from 'express';
 import { authenticate } from '../middleware/auth.js';
 import * as db from '../db/store.js';
+import UserStore from '../services/UserStore.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -460,29 +461,66 @@ router.post('/auto-generate', authenticate, async (req, res) => {
     const user = await UserStore.getUserById(userId);
     const skills = Array.isArray(weakAreas) && weakAreas.length > 0 ? weakAreas : ['Core Skills'];
 
-    // Generate module title and content using AI or fallback
+    // Get JD text for richer module generation
+    let jdContext = user?.jobDescription || '';
+    if (!jdContext && user?.jobDescriptionFile?.path) {
+      try {
+        const { parseJDFile } = await import('../utils/parseJDFile.js');
+        jdContext = (await parseJDFile(user.jobDescriptionFile.path, user.jobDescriptionFile.name || '')).slice(0, 2000);
+      } catch {}
+    }
+
+    // Generate rich module content using AI — with sessions + quizzes per session
     let moduleContent = null;
     try {
       const groqKey = process.env.GROQ_API_KEY;
       if (groqKey?.length > 10) {
-        const prompt = `Create a focused training module for an employee who failed these areas in their assessment:
+        const prompt = `Create a focused training module for an employee who needs improvement in these areas:
 Role: ${jobRole || 'Employee'}
-Weak areas: ${skills.join(', ')}
+Weak areas from assessment: ${skills.join(', ')}
 Assessment: ${assessmentTitle || 'Role Assessment'}
+${jdContext ? `Job Description context:\n${jdContext.slice(0, 800)}` : ''}
 
-Return JSON: { "title": "...", "description": "...", "objectives": ["..."], "sessions": [{"title":"...","topics":["..."],"duration":"30 mins"}], "estimatedDuration": "X days" }`;
+Create a comprehensive training module with 3-5 sessions. Each session should have:
+- Clear title and learning objectives
+- Key topics to cover
+- A short quiz (3 MCQ questions) to verify understanding
+
+Return JSON:
+{
+  "title": "string",
+  "description": "string",
+  "objectives": ["string"],
+  "estimatedDuration": "X days",
+  "sessions": [
+    {
+      "title": "string",
+      "duration": "30 mins",
+      "topics": ["string"],
+      "keyPoints": ["string"],
+      "quiz": [
+        {
+          "question": "string",
+          "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+          "answer": "A",
+          "explanation": "string"
+        }
+      ]
+    }
+  ]
+}`;
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
-          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 1500, response_format: { type: 'json_object' } }),
-          signal: AbortSignal.timeout(20000),
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 3000, response_format: { type: 'json_object' } }),
+          signal: AbortSignal.timeout(30000),
         });
         if (r.ok) {
           const d = await r.json();
           moduleContent = JSON.parse(d.choices?.[0]?.message?.content || '{}');
         }
       }
-    } catch (e) { /* fallback below */ }
+    } catch (e) { console.warn('[auto-generate] AI failed:', e.message); }
 
     const pending = {
       id: randomUUID(),
@@ -573,25 +611,57 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
       },
     }, req.user.userId);
 
-    // Assign to the target employee
-    const assignment = {
+    const moduleId = newModule.id || newModule;
+
+    // Write to module_assignments.json (used by /api/modules/my-assignments)
+    const moduleAssignment = {
       id: randomUUID(),
-      moduleId: newModule.id || newModule,
+      moduleId,
       userId: pending.targetUserId,
       isMandatory: true,
       assignedAt: new Date().toISOString(),
       assignedBy: req.user.userId,
       status: 'assigned',
     };
-    const assignments = readAssignments();
-    assignments.push(assignment);
-    writeAssignments(assignments);
+    const mAssignments = readAssignments();
+    mAssignments.push(moduleAssignment);
+    writeAssignments(mAssignments);
+
+    // Also write to main assignments system (used by Employee.jsx /api/assignments)
+    try {
+      const moduleTitle = pending.module.title || `Training: ${pending.weakAreas?.[0] || pending.jobRole || 'Skills'}`;
+      await UserStore.createAssignment({
+        type: 'module',
+        assignable_id: moduleId,
+        assignable_type: 'module',
+        assigned_by: req.user.userId,
+        assigned_to_user: pending.targetUserId,
+        priority: 'high',
+        status: 'assigned',
+        progress: 0,
+        isMandatory: true,
+        title: moduleTitle,
+        name: moduleTitle,
+        module_name: moduleTitle,
+        description: pending.module.description || '',
+        // Store module reference for detail view
+        moduleRef: {
+          id: moduleId,
+          title: moduleTitle,
+          skills: pending.module.skills || [],
+          estimatedDuration: pending.module.estimatedDuration || '5 days',
+        },
+      });
+    } catch (e) {
+      console.warn('[modules/approve] Could not write to main assignments:', e.message);
+      // Non-fatal — module_assignments.json was already written
+    }
 
     // Mark pending as approved
-    pendings[idx] = { ...pending, status: 'approved', approvedAt: new Date().toISOString(), approvedBy: req.user.userId, moduleId: newModule.id || newModule };
+    pendings[idx] = { ...pending, status: 'approved', approvedAt: new Date().toISOString(), approvedBy: req.user.userId, moduleId };
     writePending(pendings);
 
-    res.json({ success: true, data: { module: newModule, assignment }, error: null });
+    res.json({ success: true, data: { module: newModule, assignment: moduleAssignment }, error: null });
   } catch (e) {
     console.error('[POST /modules/pending/:id/approve]', e);
     res.status(500).json({ success: false, error: { message: 'Failed to approve module' } });

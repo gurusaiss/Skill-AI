@@ -417,6 +417,48 @@ export default function Assessment() {
               Back to Dashboard
             </button>
           </div>
+
+          {/* ── Question-by-Question Review ── */}
+          {(report.breakdown?.length > 0) && (
+            <div className="rounded-2xl border border-slate-700/50 bg-[#1E293B] p-6 shadow-xl mt-4">
+              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-5">📋 Answer Review</h3>
+              <div className="space-y-4">
+                {report.breakdown.map((b, i) => (
+                  <div key={i} className={`rounded-xl border p-4 ${b.isCorrect ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+                    {/* Question header */}
+                    <div className="flex items-start gap-3 mb-3">
+                      <span className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-black border ${b.isCorrect ? 'bg-emerald-600/30 border-emerald-500/40 text-emerald-300' : 'bg-red-600/30 border-red-500/40 text-red-300'}`}>
+                        {b.isCorrect ? '✓' : '✗'}
+                      </span>
+                      <p className="text-white text-sm font-semibold leading-snug">Q{i + 1}. {b.question}</p>
+                    </div>
+
+                    {/* Answers */}
+                    <div className="ml-10 space-y-1.5">
+                      {/* User's answer */}
+                      <div className={`flex items-start gap-2 text-xs rounded-lg px-3 py-2 ${b.isCorrect ? 'bg-emerald-500/10 text-emerald-300' : 'bg-red-500/10 text-red-300'}`}>
+                        <span className="font-bold shrink-0">Your answer:</span>
+                        <span>{b.userAnswer || '(no answer)'}</span>
+                      </div>
+
+                      {/* Correct answer — always show */}
+                      <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2 bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                        <span className="font-bold shrink-0">✓ Correct:</span>
+                        <span>{b.correctOptionText || b.correctAnswer}</span>
+                      </div>
+
+                      {/* Skill area tag */}
+                      {b.skillArea && b.skillArea !== 'General' && (
+                        <span className="inline-block text-xs px-2 py-0.5 rounded-md bg-slate-700/60 text-slate-400 border border-slate-600/40 mt-1">
+                          {b.skillArea}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );

@@ -180,7 +180,9 @@ function scoreSubmission(questions, responses) {
     let isCorrect = false;
 
     if (q.type === 'mcq') {
-      isCorrect = (resp.answer || '').toUpperCase().trim() === (q.answer || '').toUpperCase().trim();
+      // Extract just the letter: "A) full text..." → "A", "A" → "A"
+      const extractLetter = s => (s || '').trim().toUpperCase().replace(/^([A-D])[)\s.].*$/, '$1').charAt(0);
+      isCorrect = extractLetter(resp.answer) === extractLetter(q.answer);
       total++;
       if (isCorrect) correct++;
     } else {
@@ -194,7 +196,11 @@ function scoreSubmission(questions, responses) {
       if (isCorrect) correct++;
     }
 
-    breakdown.push({ questionIndex: i, question: q.question, type: q.type, userAnswer: resp.answer, correctAnswer: q.answer, isCorrect, skillArea: q.skillArea || 'General' });
+    // For MCQ, also store the full correct option text for display
+    const correctOptionText = q.type === 'mcq' && q.options
+      ? (q.options.find(opt => opt.toUpperCase().startsWith(q.answer?.toUpperCase())) || q.answer)
+      : q.answer;
+    breakdown.push({ questionIndex: i, question: q.question, type: q.type, userAnswer: resp.answer, correctAnswer: q.answer, correctOptionText, isCorrect, skillArea: q.skillArea || 'General' });
   });
 
   const score = total > 0 ? Math.round((correct / total) * 100) : 0;
