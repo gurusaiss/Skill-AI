@@ -1,6 +1,6 @@
 {
   "userId": "0465ce73-6fd9-4cda-a538-a8a6d2b14e5a",
-  "generatedAt": "2026-06-02T08:37:27.413Z",
+  "generatedAt": "2026-06-03T15:11:43.245Z",
   "type": "daily_brief",
   "streak": 1,
   "completedDays": 1,
@@ -11,7 +11,7 @@
     "topic": "Express.js and routing",
     "skillName": "Node.js Development"
   },
-  "insight": "As you've just completed your first session, you've taken the initial step towards building a consistent learning habit, and with a 1-day streak, you're off to a great start - now focus on analyzing what you learned in this first session to identify areas where you can improve. Given that your average score and last score are both 20%, your next goal should be to target a specific concept or topic that you struggled with and aim to increase your understanding of it by 10% in the next session, setting a achievable benchmark for progress.",
+  "insight": "Given that you've just started with one session completed, the fact that you've already established a 1-day streak shows that you're taking immediate action, and now it's time to build on that momentum by focusing on specific areas where you can improve from your current 20% average score. To boost your progress, try to identify one key concept or question type from your last session where you scored 20% and make a plan to review and practice it every day for the next few days to see tangible improvement.",
   "alerts": [
     {
       "type": "review",

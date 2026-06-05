@@ -11,7 +11,6 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
-import UserStore from '../services/UserStore.js';
 
 const __moduleDir = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__moduleDir, '../data');

@@ -35,6 +35,7 @@ import orgRouter from './routes/organizations.js';
 import notificationsRouter from './routes/notifications.js';
 import agentControlRouter from './routes/agentcontrol.js';
 import autonomousScheduler from './agent/AutonomousScheduler.js';
+import superadminRouter from './routes/superadmin.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataPath = join(__dirname, 'data');
@@ -159,6 +160,9 @@ app.use('/api/audit', auditRouter);
 
 // Content management routes (protected)
 app.use('/api/content', contentRouter);
+
+// Super Admin platform management
+app.use('/api/superadmin', superadminRouter);
 
 // Enterprise org structure
 app.use('/api/org', orgRouter);

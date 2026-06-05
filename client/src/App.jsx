@@ -28,6 +28,10 @@ const ForgotPassword       = lazy(() => import('./pages/auth/ForgotPassword.jsx'
 const ResetPassword        = lazy(() => import('./pages/auth/ResetPassword.jsx'));
 const OAuthCallback        = lazy(() => import('./pages/auth/OAuthCallback.jsx'));
 
+// Super Admin Pages
+const SuperAdminDashboard  = lazy(() => import('./pages/superadmin/SuperAdminDashboard.jsx'));
+const AdminManagement      = lazy(() => import('./pages/superadmin/AdminManagement.jsx'));
+
 // Profile & Admin Pages
 const Profile              = lazy(() => import('./pages/Profile.jsx'));
 const UserManagement       = lazy(() => import('./pages/admin/UserManagement.jsx'));
@@ -64,6 +68,18 @@ const App = () => {
               <Route path="/settings"    element={
                 <ProtectedRoute requiredRole="admin">
                   <Settings />
+                </ProtectedRoute>
+              } />
+
+              {/* Super Admin Routes */}
+              <Route path="/superadmin/dashboard" element={
+                <ProtectedRoute requiredRole="superadmin">
+                  <SuperAdminDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/superadmin/admins" element={
+                <ProtectedRoute requiredRole="superadmin">
+                  <AdminManagement />
                 </ProtectedRoute>
               } />
 

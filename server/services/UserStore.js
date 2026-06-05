@@ -18,7 +18,7 @@ class UserStore {
     this.usersFilePath = path.join(__dirname, '../data/users.json');
     this.assignmentsFilePath = path.join(__dirname, '../data/assignments.json');
     this.auditFilePath = path.join(__dirname, '../data/audit.json');
-    this.validRoles = ['admin', 'manager', 'employee'];
+    this.validRoles = ['superadmin', 'admin', 'manager', 'employee'];
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -107,6 +107,7 @@ class UserStore {
       jobDescriptionFile: userData.jobDescriptionFile || null, // { name, path, type, size }
       onboardingComplete: userData.onboardingComplete || false,
       companyName: userData.companyName || '',
+      companyId: userData.companyId || 'default',
     };
 
     data.users.push(newUser);
@@ -629,6 +630,16 @@ class UserStore {
 
     await this.writeAssignmentsFile(data);
     return true;
+  }
+
+  /**
+   * Get all users belonging to a specific company
+   * @param {string} companyId - Company ID
+   * @returns {Promise<Array>} Array of users in that company
+   */
+  async getUsersByCompany(companyId) {
+    const data = await this.readUsersFile();
+    return data.users.filter(u => (u.companyId || 'default') === companyId);
   }
 }
 
