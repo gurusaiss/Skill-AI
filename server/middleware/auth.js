@@ -94,6 +94,9 @@ export const requireRole = (...roles) => {
       });
     }
 
+    // superadmin has access to everything
+    if (req.user.role === 'superadmin') return next();
+
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,
@@ -107,6 +110,21 @@ export const requireRole = (...roles) => {
 
     next();
   };
+};
+
+/**
+ * Super Admin only middleware
+ * Rejects any request from a non-superadmin user
+ */
+export const requireSuperAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== 'superadmin') {
+    return res.status(403).json({
+      success: false,
+      data: null,
+      error: { code: 'FORBIDDEN', message: 'Super Admin access required' }
+    });
+  }
+  next();
 };
 
 /**

@@ -65,6 +65,9 @@ const ProtectedRoute = ({ children, requiredRole = null, redirectTo = '/dashboar
     );
   }
 
+  // superadmin bypasses all role requirements
+  if (user?.role === 'superadmin') return <>{children}</>;
+
   // Check role requirements if specified
   if (requiredRole) {
     const hasRequiredRole = hasRole(requiredRole);

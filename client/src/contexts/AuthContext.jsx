@@ -323,12 +323,15 @@ export const AuthProvider = ({ children }) => {
   // Check if user has a specific role
   const hasRole = (role) => {
     if (!user) return false;
-    
+
+    // superadmin has access to all roles
+    if (user.role === 'superadmin' && (role === 'admin' || role === 'manager')) return true;
+
     // Support multiple role checks (array or single role)
     if (Array.isArray(role)) {
       return role.includes(user.role);
     }
-    
+
     return user.role === role;
   };
 
@@ -338,6 +341,25 @@ export const AuthProvider = ({ children }) => {
 
     // Define role-based permissions
     const rolePermissions = {
+      superadmin: [
+        'manage_platform',
+        'manage_companies',
+        'manage_admins',
+        'view_all',
+        'create_companies',
+        // inherits all admin permissions too
+        'manage_users', 'create_content', 'assign_managers',
+        'manage_employees', 'view_all_reports', 'manage_modules',
+        // also inherits standard admin permissions
+        'create_tasks',
+        'create_plans',
+        'view_all_users',
+        'modify_roles',
+        'view_all_data',
+        'access_learning',
+        'manage_assessments',
+        'view_analytics',
+      ],
       admin: [
         'create_content',
         'create_tasks',
@@ -379,6 +401,8 @@ export const AuthProvider = ({ children }) => {
     if (!user) return '/';
 
     switch (user.role) {
+      case 'superadmin':
+        return '/superadmin/dashboard';
       case 'admin':
         return '/admin/dashboard';
       case 'manager':

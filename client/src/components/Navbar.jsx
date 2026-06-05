@@ -78,6 +78,12 @@ function Navbar() {
   ];
 
   const ROLE_LINKS = {
+    superadmin: [
+      { to: '/superadmin/dashboard', label: 'Platform',   icon: '🌐' },
+      { to: '/superadmin/admins',    label: 'Admins',     icon: '👑' },
+      { to: '/admin/dashboard',      label: 'Admin View', icon: '📊' },
+      { to: '/report',               label: 'Reports',    icon: '📄' },
+    ],
     manager: [
       { to: '/manager/dashboard',  label: 'Dashboard',  icon: '📊' },
       { to: '/admin/assessments',  label: 'Assessment', icon: '📝' },
@@ -90,9 +96,11 @@ function Navbar() {
     ],
   };
 
-  const roleLinks = user?.role === 'admin'
-    ? NAV_LINKS.filter(l => l.roles?.includes('admin'))
-    : (ROLE_LINKS[user?.role] || []);
+  const roleLinks = user?.role === 'superadmin'
+    ? ROLE_LINKS.superadmin
+    : user?.role === 'admin'
+      ? NAV_LINKS.filter(l => l.roles?.includes('admin'))
+      : (ROLE_LINKS[user?.role] || []);
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#1E293B] bg-[#0F172A]/90 backdrop-blur">
