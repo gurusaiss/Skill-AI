@@ -29,10 +29,10 @@ export const useAuth = () => {
 };
 
 // Determine API base URL based on environment
+// VITE_API_URL is set on Vercel to point to the Render backend
 const getApiBaseUrl = () => {
-  if (import.meta.env.PROD) {
-    return '';
-  }
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (import.meta.env.PROD) return '';
   return 'http://localhost:3001';
 };
 
