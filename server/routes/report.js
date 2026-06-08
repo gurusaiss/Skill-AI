@@ -87,11 +87,16 @@ router.get('/all', authenticate, async (req, res) => {
         (adminCompanyId === 'default' || (u.companyId || 'default') === adminCompanyId)
       );
     } else {
-      // Manager: only show their assigned employees
+      // Manager: only show their assigned employees — and only within their company
       const UserStoreImport = (await import('../services/UserStore.js')).default;
       const managerEmployees = await UserStoreImport.getManagerEmployees(req.user.userId);
       const managerEmpIds = new Set(managerEmployees.map(e => e.userId || e.id));
-      targetUsers = allUsers.filter(u => u.role === 'employee' && managerEmpIds.has(u.userId || u.id));
+      const managerCompanyId = req.user.companyId || 'default';
+      targetUsers = allUsers.filter(u =>
+        u.role === 'employee' &&
+        managerEmpIds.has(u.userId || u.id) &&
+        (managerCompanyId === 'default' || (u.companyId || 'default') === managerCompanyId)
+      );
     }
 
     const reports = targetUsers.map(u => {

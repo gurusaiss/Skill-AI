@@ -107,7 +107,22 @@ router.get('/assignments/all', authenticate, async (req, res) => {
       return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
     }
     const assignments = await ModuleAssignments.getAll();
-    res.json({ success: true, data: assignments, error: null });
+    const companyId = req.user?.companyId || 'default';
+
+    if (companyId === 'default') {
+      return res.json({ success: true, data: assignments, error: null });
+    }
+
+    // Filter by company user membership
+    const UserStore = (await import('../services/UserStore.js')).default;
+    const allUsers = await UserStore.getAllUsers({});
+    const companyUserIds = new Set(
+      allUsers
+        .filter(u => (u.companyId || 'default') === companyId)
+        .map(u => u.userId || u.id)
+    );
+    const filtered = assignments.filter(a => companyUserIds.has(a.userId || a.assigned_to_user));
+    res.json({ success: true, data: filtered, error: null });
   } catch (e) {
     res.status(500).json({ success: false, error: { message: 'Failed to fetch' } });
   }
