@@ -31,6 +31,7 @@ const OAuthCallback        = lazy(() => import('./pages/auth/OAuthCallback.jsx')
 // Super Admin Pages
 const SuperAdminDashboard  = lazy(() => import('./pages/superadmin/SuperAdminDashboard.jsx'));
 const AdminManagement      = lazy(() => import('./pages/superadmin/AdminManagement.jsx'));
+const SuperAdminReports    = lazy(() => import('./pages/superadmin/SuperAdminReports.jsx'));
 
 // Profile & Admin Pages
 const Profile              = lazy(() => import('./pages/Profile.jsx'));
@@ -80,6 +81,11 @@ const App = () => {
               <Route path="/superadmin/admins" element={
                 <ProtectedRoute requiredRole="superadmin">
                   <AdminManagement />
+                </ProtectedRoute>
+              } />
+              <Route path="/superadmin/reports" element={
+                <ProtectedRoute requiredRole="superadmin">
+                  <SuperAdminReports />
                 </ProtectedRoute>
               } />
 

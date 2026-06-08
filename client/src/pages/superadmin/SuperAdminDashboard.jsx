@@ -496,6 +496,17 @@ export default function SuperAdminDashboard() {
     }
   };
 
+  const handleDeleteCompany = async (company) => {
+    if (!window.confirm(`Delete "${company.name || company.companyName}"? This cannot be undone.`)) return;
+    try {
+      await authFetch(`/api/superadmin/companies/${company.id}`, { method: 'DELETE' });
+      setToast({ message: 'Company deleted', type: 'success' });
+      fetchData();
+    } catch (err) {
+      setToast({ message: err.message, type: 'error' });
+    }
+  };
+
   const handleCompanyCreated = (result) => {
     fetchData();
     if (result?.tempPassword) {
@@ -562,12 +573,12 @@ export default function SuperAdminDashboard() {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-          <StatCard icon="🏢" label="Total Companies"  value={stats?.totalCompanies}         color="violet" />
-          <StatCard icon="✅" label="Active Companies" value={stats?.activeCompanies}         color="emerald" />
-          <StatCard icon="👑" label="Total Admins"     value={stats?.totalAdmins}             color="purple" />
-          <StatCard icon="👥" label="Total Employees"  value={stats?.totalEmployees}          color="blue" />
-          <StatCard icon="📊" label="Standard Plan"    value={stats?.byPlan?.standard ?? 0}  color="indigo" />
-          <StatCard icon="⚡" label="Enterprise Plan"  value={stats?.byPlan?.enterprise ?? 0} color="amber" />
+          <StatCard icon="🏢" label="Total Companies"  value={stats?.totalCompanies}          color="violet" />
+          <StatCard icon="✅" label="Active"           value={stats?.activeCompanies}          color="emerald" />
+          <StatCard icon="⛔" label="Suspended"        value={stats?.suspendedCompanies ?? 0} color="blue" />
+          <StatCard icon="👑" label="Total Admins"     value={stats?.totalAdmins}              color="purple" />
+          <StatCard icon="📊" label="Standard Plan"   value={stats?.byPlan?.standard ?? 0}   color="indigo" />
+          <StatCard icon="⚡" label="Enterprise Plan" value={stats?.byPlan?.enterprise ?? 0}  color="amber" />
         </div>
 
         {/* Companies Table */}
@@ -644,6 +655,12 @@ export default function SuperAdminDashboard() {
                               className="px-3 py-1.5 rounded-lg bg-violet-900/40 hover:bg-violet-900/60 text-violet-400 hover:text-violet-300 text-xs font-semibold transition-colors"
                             >
                               Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCompany(company)}
+                              className="px-3 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 text-xs font-semibold transition-colors"
+                            >
+                              Delete
                             </button>
                           </div>
                         </td>
