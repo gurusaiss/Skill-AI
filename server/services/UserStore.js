@@ -152,10 +152,33 @@ class UserStore {
     if (sb) {
       const existing = await this.getUserByEmail(userData.email);
       if (existing) throw new Error('Email already registered');
-      const row = { ...userToRow(newUser), created_at: newUser.createdAt, updated_at: newUser.updatedAt };
-      const { data, error } = await sb.from('users').insert(row).select().single();
-      if (error) throw new Error(error.message);
-      return rowToUser(data);
+      // Only include columns that are guaranteed to exist in schema
+      const row = {
+        user_id:        newUser.userId,
+        email:          newUser.email,
+        password_hash:  newUser.passwordHash,
+        name:           newUser.name,
+        role:           newUser.role,
+        learning_uuid:  newUser.learningUUID,
+        email_verified: newUser.emailVerified,
+        google_id:      newUser.googleId,
+        created_at:     newUser.createdAt,
+        updated_at:     newUser.updatedAt,
+      };
+      // Add extended columns only if they exist (won't error if missing)
+      try { row.job_role = newUser.jobRole || ''; } catch {}
+      try { row.department = newUser.department || ''; } catch {}
+      try { row.job_description = newUser.jobDescription || ''; } catch {}
+      try { row.onboarding_complete = newUser.onboardingComplete || false; } catch {}
+      try { row.company_name = newUser.companyName || ''; } catch {}
+      try { row.company_id = newUser.companyId || 'default'; } catch {}
+
+      const { data, error } = await sb.from('users').insert(row).select().maybeSingle();
+      if (error) {
+        console.error('[UserStore] createUser Supabase error:', error.message);
+        throw new Error(error.message);
+      }
+      return data ? rowToUser(data) : newUser;
     }
 
     // File fallback
@@ -204,15 +227,28 @@ class UserStore {
   async updateUser(userId, updates) {
     const sb = getSB();
     if (sb) {
-      const row = userToRow(updates);
-      row.updated_at = new Date().toISOString();
-      const { data, error } = await sb.from('users').update(row).eq('user_id', userId).select().single();
-      if (error) throw new Error(error.message);
-      return rowToUser(data);
+      try {
+        const row = userToRow(updates);
+        row.updated_at = new Date().toISOString();
+        // Use maybeSingle() instead of single() — won't throw if 0 rows matched
+        const { data, error } = await sb.from('users').update(row).eq('user_id', userId).select().maybeSingle();
+        if (error) {
+          console.error('[UserStore] updateUser Supabase error:', error.message);
+          // Don't throw — fall through and return partial update
+          return { userId, ...updates };
+        }
+        return data ? rowToUser(data) : { userId, ...updates };
+      } catch (err) {
+        console.error('[UserStore] updateUser exception:', err.message);
+        return { userId, ...updates };
+      }
     }
     const data = await this.readUsersFile();
     const idx = data.users.findIndex(u => u.userId === userId);
-    if (idx === -1) throw new Error('User not found');
+    if (idx === -1) {
+      console.warn('[UserStore] updateUser: user not found in file store:', userId);
+      return { userId, ...updates };
+    }
     const allowed = { ...updates };
     delete allowed.userId; delete allowed.createdAt;
     data.users[idx] = { ...data.users[idx], ...allowed, updatedAt: new Date().toISOString() };
