@@ -1,10 +1,14 @@
 /**
  * DataStore.js — Supabase-first store for all non-user data
  * Covers: assessments, submissions, reports, pending_modules,
- *         module_assignments, companies, organizations
+ *         module_assignments, companies, organizations, departments, teams
  *
  * Uses JSONB `data` column pattern for flexibility.
- * Falls back to local JSON files when Supabase is not configured.
+ * Falls back to local JSON files when Supabase is not configured OR when
+ * Supabase returns an error (e.g. table doesn't exist yet).
+ *
+ * CRITICAL: getAll/getById MUST fall back to file when sbGetAll/sbGetById
+ * returns null — otherwise data written to file can never be read back.
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -47,13 +51,11 @@ function writeFile(name, data) {
 // All Supabase tables follow: { id TEXT PK, data JSONB, created_at, updated_at }
 // The `data` column stores the full document.
 
-async function sbGetAll(table, filters = {}) {
+async function sbGetAll(table) {
   const sb = getSB();
   if (!sb) return null;
   try {
-    let q = sb.from(table).select('id, data, created_at, updated_at');
-    // Support filtering by top-level JSONB fields via ->> operator
-    const { data, error } = await q;
+    const { data, error } = await sb.from(table).select('id, data, created_at, updated_at');
     if (error) { console.error(`[DataStore] ${table} getAll:`, error.message); return null; }
     // Merge id + data fields for convenience
     return (data || []).map(row => ({ id: row.id, ...row.data, _created: row.created_at, _updated: row.updated_at }));
@@ -67,14 +69,14 @@ async function sbGetById(table, id) {
     const { data, error } = await sb.from(table).select('id, data').eq('id', id).maybeSingle();
     if (error) { console.error(`[DataStore] ${table} getById:`, error.message); return null; }
     return data ? { id: data.id, ...data.data } : null;
-  } catch (e) { return null; }
+  } catch (e) { console.error(`[DataStore] ${table} getById exception:`, e.message); return null; }
 }
 
 async function sbInsert(table, id, doc) {
   const sb = getSB();
   if (!sb) return null;
   try {
-    const { id: _id, ...rest } = doc;
+    const { id: _id, _created, _updated, ...rest } = doc;
     const { data, error } = await sb.from(table)
       .insert({ id, data: rest })
       .select('id, data')
@@ -90,8 +92,9 @@ async function sbUpdate(table, id, updates) {
   try {
     // Merge with existing data
     const existing = await sbGetById(table, id);
-    const merged = { ...(existing || {}), ...updates };
-    const { id: _id, _created, _updated, ...rest } = merged;
+    const { _created, _updated, id: _id, ...cleanUpdates } = updates;
+    const merged = { ...(existing || {}), ...cleanUpdates };
+    const { id: __id, _created: _c, _updated: _u, ...rest } = merged;
     const { data, error } = await sb.from(table)
       .update({ data: rest, updated_at: new Date().toISOString() })
       .eq('id', id)
@@ -112,27 +115,24 @@ async function sbDelete(table, id) {
   } catch (e) { return false; }
 }
 
-// Filter helper — run server-side after fetch (Supabase JSONB filtering is complex)
-function applyFilters(rows, filters) {
-  return rows.filter(row => {
-    for (const [k, v] of Object.entries(filters)) {
-      if (row[k] !== v) return false;
-    }
-    return true;
-  });
-}
-
 // ── ASSESSMENTS ───────────────────────────────────────────────────────────────
 
 export const Assessments = {
-  getAll() {
+  async getAll() {
     const sb = getSB();
-    if (sb) return sbGetAll('assessments');
+    if (sb) {
+      const result = await sbGetAll('assessments');
+      if (result !== null) return result;   // ✅ only use Supabase if it worked
+      console.warn('[DataStore] assessments.getAll: Supabase error, using file fallback');
+    }
     return readFile('assessments.json');
   },
   async getById(id) {
     const sb = getSB();
-    if (sb) return sbGetById('assessments', id);
+    if (sb) {
+      const result = await sbGetById('assessments', id);
+      if (result) return result;  // truthy = found; null (error or not-found) falls through to file
+    }
     const all = readFile('assessments.json');
     return all.find(a => a.id === id) || null;
   },
@@ -145,6 +145,7 @@ export const Assessments = {
     if (sb) {
       const result = await sbInsert('assessments', doc.id, doc);
       if (result) return result;
+      console.warn('[DataStore] assessments.create: Supabase insert failed, using file fallback');
     }
     // File fallback
     const all = readFile('assessments.json');
@@ -165,9 +166,11 @@ export const Assessments = {
   },
   async delete(id) {
     const sb = getSB();
-    if (sb) { await sbDelete('assessments', id); return; }
-    const all = readFile('assessments.json').filter(a => a.id !== id);
-    writeFile('assessments.json', all);
+    if (sb) {
+      const ok = await sbDelete('assessments', id);
+      if (ok) return;
+    }
+    writeFile('assessments.json', readFile('assessments.json').filter(a => a.id !== id));
   },
 };
 
@@ -176,20 +179,24 @@ export const Assessments = {
 export const Submissions = {
   async getAll() {
     const sb = getSB();
-    if (sb) return (await sbGetAll('assessment_submissions')) || [];
+    if (sb) {
+      const result = await sbGetAll('assessment_submissions');
+      if (result !== null) return result;
+      console.warn('[DataStore] assessment_submissions.getAll: Supabase error, using file fallback');
+    }
     return readFile('assessment_submissions.json');
   },
   async getByUserId(userId) {
     const all = await this.getAll();
-    return all.filter(s => s.employeeId === userId || s.userId === userId);
+    return (all || []).filter(s => s.employeeId === userId || s.userId === userId);
   },
   async getByAssessmentId(assessmentId) {
     const all = await this.getAll();
-    return all.filter(s => s.assessmentId === assessmentId);
+    return (all || []).filter(s => s.assessmentId === assessmentId);
   },
   async getOne(assessmentId, userId) {
     const all = await this.getAll();
-    return all.find(s => s.assessmentId === assessmentId && (s.employeeId === userId || s.userId === userId)) || null;
+    return (all || []).find(s => s.assessmentId === assessmentId && (s.employeeId === userId || s.userId === userId)) || null;
   },
   async create(doc) {
     const sb = getSB();
@@ -220,16 +227,20 @@ export const Submissions = {
 export const Reports = {
   async getAll() {
     const sb = getSB();
-    if (sb) return (await sbGetAll('assessment_reports')) || [];
+    if (sb) {
+      const result = await sbGetAll('assessment_reports');
+      if (result !== null) return result;
+      console.warn('[DataStore] assessment_reports.getAll: Supabase error, using file fallback');
+    }
     return readFile('assessment_reports.json');
   },
   async getByUserId(userId) {
     const all = await this.getAll();
-    return all.filter(r => r.employeeId === userId || r.userId === userId);
+    return (all || []).filter(r => r.employeeId === userId || r.userId === userId);
   },
   async getByAssessmentId(assessmentId) {
     const all = await this.getAll();
-    return all.filter(r => r.assessmentId === assessmentId);
+    return (all || []).filter(r => r.assessmentId === assessmentId);
   },
   async create(doc) {
     const sb = getSB();
@@ -260,12 +271,19 @@ export const Reports = {
 export const PendingModules = {
   async getAll() {
     const sb = getSB();
-    if (sb) return (await sbGetAll('pending_modules')) || [];
+    if (sb) {
+      const result = await sbGetAll('pending_modules');
+      if (result !== null) return result;
+      console.warn('[DataStore] pending_modules.getAll: Supabase error, using file fallback');
+    }
     return readFile('pending_modules.json');
   },
   async getById(id) {
     const sb = getSB();
-    if (sb) return sbGetById('pending_modules', id);
+    if (sb) {
+      const result = await sbGetById('pending_modules', id);
+      if (result) return result;
+    }
     return readFile('pending_modules.json').find(m => m.id === id) || null;
   },
   async create(doc) {
@@ -302,12 +320,16 @@ export const PendingModules = {
 export const ModuleAssignments = {
   async getAll() {
     const sb = getSB();
-    if (sb) return (await sbGetAll('module_assignments')) || [];
+    if (sb) {
+      const result = await sbGetAll('module_assignments');
+      if (result !== null) return result;
+      console.warn('[DataStore] module_assignments.getAll: Supabase error, using file fallback');
+    }
     return readFile('module_assignments.json');
   },
   async getByUserId(userId) {
     const all = await this.getAll();
-    return all.filter(a => a.userId === userId || a.employeeId === userId || a.targetUserId === userId);
+    return (all || []).filter(a => a.userId === userId || a.employeeId === userId || a.targetUserId === userId);
   },
   async create(doc) {
     const sb = getSB();
@@ -338,12 +360,19 @@ export const ModuleAssignments = {
 export const Companies = {
   async getAll() {
     const sb = getSB();
-    if (sb) return (await sbGetAll('companies')) || [];
+    if (sb) {
+      const result = await sbGetAll('companies');
+      if (result !== null) return result;
+      console.warn('[DataStore] companies.getAll: Supabase error, using file fallback');
+    }
     return readFile('companies.json');
   },
   async getById(id) {
     const sb = getSB();
-    if (sb) return sbGetById('companies', id);
+    if (sb) {
+      const result = await sbGetById('companies', id);
+      if (result) return result;
+    }
     return readFile('companies.json').find(c => c.id === id) || null;
   },
   async create(doc) {
@@ -375,7 +404,11 @@ export const Companies = {
 export const Organizations = {
   async getAll() {
     const sb = getSB();
-    if (sb) return (await sbGetAll('organizations')) || [];
+    if (sb) {
+      const result = await sbGetAll('organizations');
+      if (result !== null) return result;
+      console.warn('[DataStore] organizations.getAll: Supabase error, using file fallback');
+    }
     try {
       const raw = JSON.parse(readFileSync(join(DATA_DIR, 'organizations.json'), 'utf-8'));
       return raw.organizations || raw || [];
@@ -411,8 +444,11 @@ export const Departments = {
   async getAll(orgId) {
     const sb = getSB();
     if (sb) {
-      const all = (await sbGetAll('departments')) || [];
-      return orgId ? all.filter(d => d.org_id === orgId) : all;
+      const result = await sbGetAll('departments');
+      if (result !== null) {
+        return orgId ? result.filter(d => d.org_id === orgId) : result;
+      }
+      console.warn('[DataStore] departments.getAll: Supabase error, using file fallback');
     }
     try {
       const raw = JSON.parse(readFileSync(join(DATA_DIR, 'departments.json'), 'utf-8'));
@@ -450,10 +486,14 @@ export const Teams = {
   async getAll(deptId, managerId) {
     const sb = getSB();
     if (sb) {
-      let all = (await sbGetAll('teams')) || [];
-      if (deptId) all = all.filter(t => t.dept_id === deptId);
-      if (managerId) all = all.filter(t => t.manager_id === managerId);
-      return all;
+      const result = await sbGetAll('teams');
+      if (result !== null) {
+        let all = result;
+        if (deptId) all = all.filter(t => t.dept_id === deptId);
+        if (managerId) all = all.filter(t => t.manager_id === managerId);
+        return all;
+      }
+      console.warn('[DataStore] teams.getAll: Supabase error, using file fallback');
     }
     try {
       const raw = JSON.parse(readFileSync(join(DATA_DIR, 'teams.json'), 'utf-8'));
@@ -465,7 +505,7 @@ export const Teams = {
   },
   async getById(id) {
     const all = await this.getAll();
-    return all.find(t => t.id === id) || null;
+    return (all || []).find(t => t.id === id) || null;
   },
   async create(doc) {
     const sb = getSB();

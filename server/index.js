@@ -37,6 +37,7 @@ import agentControlRouter from './routes/agentcontrol.js';
 import autonomousScheduler from './agent/AutonomousScheduler.js';
 import superadminRouter from './routes/superadmin.js';
 import { autoSeed } from './utils/autoSeed.js';
+import { migrateDB } from './utils/migrateDB.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataPath = join(__dirname, 'data');
@@ -70,6 +71,8 @@ import('./db/store.js').then(async db => {
                           || process.env.SUPABASE_KEY);
     await db.initContentFiles();
     console.log('[DB] Store initialized:', db.supabaseEnabled() ? 'Supabase' : 'File-based');
+    // Check + warn about missing DataStore tables (assessments, companies, etc.)
+    await migrateDB();
     // Auto-seed demo accounts if none exist (runs once on first deploy)
     await autoSeed();
   } catch (err) {
