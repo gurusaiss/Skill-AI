@@ -2,559 +2,444 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
+import { createClient } from '@supabase/supabase-js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**
- * UserStore - Manages user data persistence
- * - User CRUD operations
- * - Role management
- * - Manager-Employee assignments
- * - Audit logging
- */
+// ── Supabase client (lazy) ────────────────────────────────────────────────────
+let _sb = null;
+function getSB() {
+  if (_sb) return _sb;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASESERVICE_ROLE_KEY
+           || process.env.SUPABASE_SECRET_KEY
+           || process.env.SUPABASE_KEY;
+  if (url && key && url.startsWith('http') && key.length > 20) {
+    _sb = createClient(url, key, { auth: { persistSession: false } });
+    console.log('[UserStore] Using Supabase');
+  }
+  return _sb;
+}
+const useSupabase = () => !!getSB();
+
+// ── Row ↔ App field mapping ───────────────────────────────────────────────────
+function rowToUser(row) {
+  if (!row) return null;
+  return {
+    userId:              row.user_id,
+    email:               row.email,
+    passwordHash:        row.password_hash,
+    name:                row.name || '',
+    role:                row.role || 'employee',
+    learningUUID:        row.learning_uuid || null,
+    emailVerified:       row.email_verified || false,
+    managerId:           row.manager_id || null,
+    googleId:            row.google_id || null,
+    createdAt:           row.created_at,
+    updatedAt:           row.updated_at,
+    lastLogin:           row.last_login || null,
+    // Extended profile
+    jobRole:             row.job_role || '',
+    department:          row.department || '',
+    jobDescription:      row.job_description || '',
+    jobDescriptionFile:  row.job_description_file || null,
+    onboardingComplete:  row.onboarding_complete || false,
+    companyName:         row.company_name || '',
+    companyId:           row.company_id || 'default',
+    // Auth fields
+    otp:                 row.otp || null,
+    otpExpires:          row.otp_expires || null,
+    resetToken:          row.reset_token || null,
+    resetTokenExpires:   row.reset_token_expires || null,
+  };
+}
+
+function userToRow(u) {
+  const row = {};
+  if (u.userId       !== undefined) row.user_id            = u.userId;
+  if (u.email        !== undefined) row.email              = u.email;
+  if (u.passwordHash !== undefined) row.password_hash      = u.passwordHash;
+  if (u.name         !== undefined) row.name               = u.name;
+  if (u.role         !== undefined) row.role               = u.role;
+  if (u.learningUUID !== undefined) row.learning_uuid      = u.learningUUID;
+  if (u.emailVerified!== undefined) row.email_verified     = u.emailVerified;
+  if (u.managerId    !== undefined) row.manager_id         = u.managerId;
+  if (u.googleId     !== undefined) row.google_id          = u.googleId;
+  if (u.lastLogin    !== undefined) row.last_login         = u.lastLogin;
+  if (u.jobRole      !== undefined) row.job_role           = u.jobRole;
+  if (u.department   !== undefined) row.department         = u.department;
+  if (u.jobDescription !== undefined) row.job_description  = u.jobDescription;
+  if (u.jobDescriptionFile !== undefined) row.job_description_file = u.jobDescriptionFile;
+  if (u.onboardingComplete !== undefined) row.onboarding_complete  = u.onboardingComplete;
+  if (u.companyName  !== undefined) row.company_name       = u.companyName;
+  if (u.companyId    !== undefined) row.company_id         = u.companyId;
+  if (u.otp          !== undefined) row.otp                = u.otp;
+  if (u.otpExpires   !== undefined) row.otp_expires        = u.otpExpires;
+  if (u.resetToken   !== undefined) row.reset_token        = u.resetToken;
+  if (u.resetTokenExpires !== undefined) row.reset_token_expires = u.resetTokenExpires;
+  return row;
+}
+
 class UserStore {
   constructor() {
-    this.usersFilePath = path.join(__dirname, '../data/users.json');
+    this.usersFilePath       = path.join(__dirname, '../data/users.json');
     this.assignmentsFilePath = path.join(__dirname, '../data/assignments.json');
-    this.auditFilePath = path.join(__dirname, '../data/audit.json');
-    this.validRoles = ['superadmin', 'admin', 'manager', 'employee'];
+    this.auditFilePath       = path.join(__dirname, '../data/audit.json');
+    this.validRoles          = ['superadmin', 'admin', 'manager', 'employee'];
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // File I/O Helpers
-  // ────────────────────────────────────────────────────────────────────────────
+  // ── File I/O helpers (fallback) ───────────────────────────────────────────
 
   async readUsersFile() {
     try {
       const data = await fs.readFile(this.usersFilePath, 'utf-8');
       return JSON.parse(data);
-    } catch (error) {
-      // If file doesn't exist, return default structure
-      return { users: [], nextUserId: 1 };
-    }
+    } catch { return { users: [], nextUserId: 1 }; }
   }
-
   async writeUsersFile(data) {
     await fs.writeFile(this.usersFilePath, JSON.stringify(data, null, 2), 'utf-8');
   }
-
   async readAssignmentsFile() {
     try {
       const data = await fs.readFile(this.assignmentsFilePath, 'utf-8');
       return JSON.parse(data);
-    } catch (error) {
-      return { assignments: [], nextAssignmentId: 1 };
-    }
+    } catch { return { assignments: [], nextAssignmentId: 1 }; }
   }
-
   async writeAssignmentsFile(data) {
     await fs.writeFile(this.assignmentsFilePath, JSON.stringify(data, null, 2), 'utf-8');
   }
-
   async readAuditFile() {
     try {
       const data = await fs.readFile(this.auditFilePath, 'utf-8');
       return JSON.parse(data);
-    } catch (error) {
-      return { logs: [], nextLogId: 1 };
-    }
+    } catch { return { logs: [], nextLogId: 1 }; }
   }
-
   async writeAuditFile(data) {
     await fs.writeFile(this.auditFilePath, JSON.stringify(data, null, 2), 'utf-8');
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // User CRUD Operations
-  // ────────────────────────────────────────────────────────────────────────────
+  // ── User CRUD ─────────────────────────────────────────────────────────────
 
-  /**
-   * Create a new user
-   * @param {Object} userData - User data
-   * @returns {Promise<Object>} Created user
-   */
   async createUser(userData) {
-    const data = await this.readUsersFile();
-
-    // Check if email already exists
-    const existingUser = data.users.find(u => u.email === userData.email);
-    if (existingUser) {
-      throw new Error('Email already registered');
-    }
-
+    const sb = getSB();
     const newUser = {
-      userId: `auth_user_${String(data.nextUserId).padStart(3, '0')}`,
-      email: userData.email,
-      passwordHash: userData.passwordHash,
-      name: userData.name || '',
-      role: userData.role || 'employee',
-      learningUUID: userData.learningUUID || uuidv4(),
-      emailVerified: userData.emailVerified || false,
-      otp: null,
-      otpExpires: null,
-      resetToken: null,
-      resetTokenExpires: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      lastLogin: null,
-      managerId: null,
-      googleId: userData.googleId || null,
-      // Extended profile fields
-      jobRole: userData.jobRole || '',
-      department: userData.department || '',
-      jobDescription: userData.jobDescription || '',      // plain text JD
-      jobDescriptionFile: userData.jobDescriptionFile || null, // { name, path, type, size }
+      userId:             `auth_user_${uuidv4().slice(0, 8)}`,
+      email:              userData.email,
+      passwordHash:       userData.passwordHash,
+      name:               userData.name || '',
+      role:               userData.role || 'employee',
+      learningUUID:       userData.learningUUID || uuidv4(),
+      emailVerified:      userData.emailVerified || false,
+      otp:                null,
+      otpExpires:         null,
+      resetToken:         null,
+      resetTokenExpires:  null,
+      createdAt:          new Date().toISOString(),
+      updatedAt:          new Date().toISOString(),
+      lastLogin:          null,
+      managerId:          null,
+      googleId:           userData.googleId || null,
+      jobRole:            userData.jobRole || '',
+      department:         userData.department || '',
+      jobDescription:     userData.jobDescription || '',
+      jobDescriptionFile: userData.jobDescriptionFile || null,
       onboardingComplete: userData.onboardingComplete || false,
-      companyName: userData.companyName || '',
-      companyId: userData.companyId || 'default',
+      companyName:        userData.companyName || '',
+      companyId:          userData.companyId || 'default',
     };
 
+    if (sb) {
+      const existing = await this.getUserByEmail(userData.email);
+      if (existing) throw new Error('Email already registered');
+      const row = { ...userToRow(newUser), created_at: newUser.createdAt, updated_at: newUser.updatedAt };
+      const { data, error } = await sb.from('users').insert(row).select().single();
+      if (error) throw new Error(error.message);
+      return rowToUser(data);
+    }
+
+    // File fallback
+    const data = await this.readUsersFile();
+    if (data.users.find(u => u.email === userData.email)) throw new Error('Email already registered');
+    newUser.userId = `auth_user_${String(data.nextUserId).padStart(3, '0')}`;
     data.users.push(newUser);
     data.nextUserId += 1;
-
     await this.writeUsersFile(data);
     return newUser;
   }
 
-  /**
-   * Get user by ID
-   * @param {string} userId - User ID
-   * @returns {Promise<Object|null>} User or null
-   */
   async getUserById(userId) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('users').select('*').eq('user_id', userId).maybeSingle();
+      if (error) { console.error('[UserStore] getUserById:', error.message); return null; }
+      return rowToUser(data);
+    }
     const data = await this.readUsersFile();
     return data.users.find(u => u.userId === userId) || null;
   }
 
-  /**
-   * Get user by email
-   * @param {string} email - User email
-   * @returns {Promise<Object|null>} User or null
-   */
   async getUserByEmail(email) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('users').select('*').eq('email', email).maybeSingle();
+      if (error) { console.error('[UserStore] getUserByEmail:', error.message); return null; }
+      return rowToUser(data);
+    }
     const data = await this.readUsersFile();
     return data.users.find(u => u.email === email) || null;
   }
 
-  /**
-   * Get user by Google ID
-   * @param {string} googleId - Google OAuth ID
-   * @returns {Promise<Object|null>} User or null
-   */
   async getUserByGoogleId(googleId) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('users').select('*').eq('google_id', googleId).maybeSingle();
+      if (error) return null;
+      return rowToUser(data);
+    }
     const data = await this.readUsersFile();
     return data.users.find(u => u.googleId === googleId) || null;
   }
 
-  /**
-   * Update user
-   * @param {string} userId - User ID
-   * @param {Object} updates - Fields to update
-   * @returns {Promise<Object>} Updated user
-   */
   async updateUser(userId, updates) {
-    const data = await this.readUsersFile();
-    const userIndex = data.users.findIndex(u => u.userId === userId);
-
-    if (userIndex === -1) {
-      throw new Error('User not found');
+    const sb = getSB();
+    if (sb) {
+      const row = userToRow(updates);
+      row.updated_at = new Date().toISOString();
+      const { data, error } = await sb.from('users').update(row).eq('user_id', userId).select().single();
+      if (error) throw new Error(error.message);
+      return rowToUser(data);
     }
-
-    // Prevent updating certain fields
-    const allowedUpdates = { ...updates };
-    delete allowedUpdates.userId;
-    delete allowedUpdates.createdAt;
-
-    data.users[userIndex] = {
-      ...data.users[userIndex],
-      ...allowedUpdates,
-      updatedAt: new Date().toISOString()
-    };
-
+    const data = await this.readUsersFile();
+    const idx = data.users.findIndex(u => u.userId === userId);
+    if (idx === -1) throw new Error('User not found');
+    const allowed = { ...updates };
+    delete allowed.userId; delete allowed.createdAt;
+    data.users[idx] = { ...data.users[idx], ...allowed, updatedAt: new Date().toISOString() };
     await this.writeUsersFile(data);
-    return data.users[userIndex];
+    return data.users[idx];
   }
 
-  /**
-   * Delete user
-   * @param {string} userId - User ID
-   * @returns {Promise<boolean>} Success
-   */
   async deleteUser(userId) {
-    const data = await this.readUsersFile();
-    const initialLength = data.users.length;
-    data.users = data.users.filter(u => u.userId !== userId);
-
-    if (data.users.length === initialLength) {
-      throw new Error('User not found');
+    const sb = getSB();
+    if (sb) {
+      const { error } = await sb.from('users').delete().eq('user_id', userId);
+      if (error) throw new Error(error.message);
+      return true;
     }
-
-    // Also remove any manager-employee assignments
-    const assignmentsData = await this.readAssignmentsFile();
-    assignmentsData.assignments = assignmentsData.assignments.filter(
-      a => a.managerId !== userId && a.employeeId !== userId
-    );
-    await this.writeAssignmentsFile(assignmentsData);
-
+    const data = await this.readUsersFile();
+    const initial = data.users.length;
+    data.users = data.users.filter(u => u.userId !== userId);
+    if (data.users.length === initial) throw new Error('User not found');
+    const aData = await this.readAssignmentsFile();
+    aData.assignments = aData.assignments.filter(a => a.managerId !== userId && a.employeeId !== userId);
+    await this.writeAssignmentsFile(aData);
     await this.writeUsersFile(data);
     return true;
   }
 
-  /**
-   * Get all users
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Array>} Array of users
-   */
   async getAllUsers(filters = {}) {
+    const sb = getSB();
+    if (sb) {
+      let q = sb.from('users').select('*');
+      if (filters.role) q = q.eq('role', filters.role);
+      if (filters.emailVerified !== undefined) q = q.eq('email_verified', filters.emailVerified);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return (data || []).map(rowToUser);
+    }
     const data = await this.readUsersFile();
     let users = data.users;
-
-    if (filters.role) {
-      users = users.filter(u => u.role === filters.role);
-    }
-
-    if (filters.emailVerified !== undefined) {
-      users = users.filter(u => u.emailVerified === filters.emailVerified);
-    }
-
+    if (filters.role) users = users.filter(u => u.role === filters.role);
+    if (filters.emailVerified !== undefined) users = users.filter(u => u.emailVerified === filters.emailVerified);
     return users;
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Role Management
-  // ────────────────────────────────────────────────────────────────────────────
+  async getUsersByCompany(companyId) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('users').select('*').eq('company_id', companyId);
+      if (error) throw new Error(error.message);
+      return (data || []).map(rowToUser);
+    }
+    const data = await this.readUsersFile();
+    return data.users.filter(u => u.companyId === companyId);
+  }
 
-  /**
-   * Update user role
-   * @param {string} userId - User ID
-   * @param {string} newRole - New role (admin, manager, employee)
-   * @returns {Promise<Object>} Updated user
-   */
+  // ── Role helpers ──────────────────────────────────────────────────────────
+
   async updateUserRole(userId, newRole) {
-    if (!this.validRoles.includes(newRole)) {
-      throw new Error(`Invalid role. Must be one of: ${this.validRoles.join(', ')}`);
-    }
-
-    return await this.updateUser(userId, { role: newRole });
+    if (!this.validRoles.includes(newRole)) throw new Error(`Invalid role: ${newRole}`);
+    return this.updateUser(userId, { role: newRole });
   }
 
-  /**
-   * Get users by role
-   * @param {string} role - Role to filter by
-   * @returns {Promise<Array>} Array of users
-   */
   async getUsersByRole(role) {
-    if (!this.validRoles.includes(role)) {
-      throw new Error(`Invalid role. Must be one of: ${this.validRoles.join(', ')}`);
-    }
-
-    return await this.getAllUsers({ role });
+    return this.getAllUsers({ role });
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Manager-Employee Assignments
-  // ────────────────────────────────────────────────────────────────────────────
+  // ── Manager-Employee assignments ──────────────────────────────────────────
 
-  /**
-   * Assign employees to a manager
-   * @param {string} managerId - Manager user ID
-   * @param {Array<string>} employeeIds - Array of employee user IDs
-   * @param {string} assignedBy - Admin user ID who made the assignment
-   * @returns {Promise<Array>} Created assignments
-   */
   async assignEmployeesToManager(managerId, employeeIds, assignedBy) {
-    // Validate manager has manager role
     const manager = await this.getUserById(managerId);
-    if (!manager) {
-      throw new Error('Manager not found');
-    }
-    if (manager.role !== 'manager') {
-      throw new Error('User must have manager role');
-    }
+    if (!manager) throw new Error('Manager not found');
+    if (manager.role !== 'manager') throw new Error('User must have manager role');
 
-    // Validate all employees have employee role
-    const employees = await Promise.all(
-      employeeIds.map(id => this.getUserById(id))
-    );
-
+    const employees = await Promise.all(employeeIds.map(id => this.getUserById(id)));
     for (let i = 0; i < employees.length; i++) {
-      if (!employees[i]) {
-        throw new Error(`Employee ${employeeIds[i]} not found`);
-      }
-      if (employees[i].role !== 'employee') {
-        throw new Error(`User ${employeeIds[i]} must have employee role`);
-      }
+      if (!employees[i]) throw new Error(`Employee ${employeeIds[i]} not found`);
+      if (employees[i].role !== 'employee') throw new Error(`User ${employeeIds[i]} must have employee role`);
     }
 
-    const assignmentsData = await this.readAssignmentsFile();
-    const createdAssignments = [];
-
+    const aData = await this.readAssignmentsFile();
+    const created = [];
     for (const employeeId of employeeIds) {
-      // Check if assignment already exists
-      const existingAssignment = assignmentsData.assignments.find(
-        a => a.managerId === managerId && a.employeeId === employeeId
-      );
-
-      if (!existingAssignment) {
-        const newAssignment = {
-          assignmentId: `assign_${String(assignmentsData.nextAssignmentId).padStart(3, '0')}`,
-          managerId,
-          employeeId,
+      const exists = aData.assignments.find(a => a.managerId === managerId && a.employeeId === employeeId);
+      if (!exists) {
+        const a = {
+          assignmentId: `assign_${String(aData.nextAssignmentId).padStart(3, '0')}`,
+          managerId, employeeId,
           assignedAt: new Date().toISOString(),
-          assignedBy
+          assignedBy,
         };
-
-        assignmentsData.assignments.push(newAssignment);
-        assignmentsData.nextAssignmentId += 1;
-        createdAssignments.push(newAssignment);
+        aData.assignments.push(a);
+        aData.nextAssignmentId += 1;
+        created.push(a);
       }
     }
-
-    await this.writeAssignmentsFile(assignmentsData);
-    return createdAssignments;
+    await this.writeAssignmentsFile(aData);
+    return created;
   }
 
-  /**
-   * Remove employee from manager
-   * @param {string} managerId - Manager user ID
-   * @param {string} employeeId - Employee user ID
-   * @returns {Promise<boolean>} Success
-   */
   async removeEmployeeFromManager(managerId, employeeId) {
-    const assignmentsData = await this.readAssignmentsFile();
-    const initialLength = assignmentsData.assignments.length;
-
-    assignmentsData.assignments = assignmentsData.assignments.filter(
-      a => !(a.managerId === managerId && a.employeeId === employeeId)
-    );
-
-    if (assignmentsData.assignments.length === initialLength) {
-      throw new Error('Assignment not found');
-    }
-
-    await this.writeAssignmentsFile(assignmentsData);
+    const aData = await this.readAssignmentsFile();
+    const initial = aData.assignments.length;
+    aData.assignments = aData.assignments.filter(a => !(a.managerId === managerId && a.employeeId === employeeId));
+    if (aData.assignments.length === initial) throw new Error('Assignment not found');
+    await this.writeAssignmentsFile(aData);
     return true;
   }
 
-  /**
-   * Get manager's assigned employees
-   * @param {string} managerId - Manager user ID
-   * @returns {Promise<Array>} Array of employee user objects
-   */
   async getManagerEmployees(managerId) {
-    const assignmentsData = await this.readAssignmentsFile();
-    const assignments = assignmentsData.assignments.filter(
-      a => a.managerId === managerId
-    );
-
-    const employeeIds = assignments.map(a => a.employeeId);
-    const employees = await Promise.all(
-      employeeIds.map(id => this.getUserById(id))
-    );
-
-    return employees.filter(e => e !== null);
+    const aData = await this.readAssignmentsFile();
+    const ids = aData.assignments.filter(a => a.managerId === managerId).map(a => a.employeeId);
+    const employees = await Promise.all(ids.map(id => this.getUserById(id)));
+    return employees.filter(Boolean);
   }
 
-  /**
-   * Get employee's assigned manager(s)
-   * @param {string} employeeId - Employee user ID
-   * @returns {Promise<Array>} Array of manager user objects
-   */
   async getEmployeeManagers(employeeId) {
-    const assignmentsData = await this.readAssignmentsFile();
-    const assignments = assignmentsData.assignments.filter(
-      a => a.employeeId === employeeId
-    );
-
-    const managerIds = assignments.map(a => a.managerId);
-    const managers = await Promise.all(
-      managerIds.map(id => this.getUserById(id))
-    );
-
-    return managers.filter(m => m !== null);
+    const aData = await this.readAssignmentsFile();
+    const ids = aData.assignments.filter(a => a.employeeId === employeeId).map(a => a.managerId);
+    const managers = await Promise.all(ids.map(id => this.getUserById(id)));
+    return managers.filter(Boolean);
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Audit Logging
-  // ────────────────────────────────────────────────────────────────────────────
+  async getEmployeesByManager(managerId) { return this.getManagerEmployees(managerId); }
 
-  /**
-   * Log an authentication event
-   * @param {string} eventType - Type of event
-   * @param {string} userId - User ID (optional)
-   * @param {Object} metadata - Additional event data
-   * @returns {Promise<Object>} Created log entry
-   */
-  async logAuthEvent(eventType, userId, metadata = {}) {
-    const auditData = await this.readAuditFile();
-
-    const logEntry = {
-      logId: `log_${String(auditData.nextLogId).padStart(6, '0')}`,
-      eventType,
-      userId: userId || null,
-      timestamp: new Date().toISOString(),
-      metadata
-    };
-
-    auditData.logs.push(logEntry);
-    auditData.nextLogId += 1;
-
-    await this.writeAuditFile(auditData);
-    return logEntry;
-  }
-
-  /**
-   * Get audit logs with optional filters
-   * @param {Object} filters - Filter options
-   * @returns {Promise<Array>} Array of log entries
-   */
-  async getAuditLogs(filters = {}) {
-    const auditData = await this.readAuditFile();
-    let logs = auditData.logs;
-
-    if (filters.userId) {
-      logs = logs.filter(l => l.userId === filters.userId);
-    }
-
-    if (filters.eventType) {
-      logs = logs.filter(l => l.eventType === filters.eventType);
-    }
-
-    if (filters.startDate) {
-      logs = logs.filter(l => new Date(l.timestamp) >= new Date(filters.startDate));
-    }
-
-    if (filters.endDate) {
-      logs = logs.filter(l => new Date(l.timestamp) <= new Date(filters.endDate));
-    }
-
-    // Sort by timestamp descending (newest first)
-    logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-    return logs;
-  }
-
-  /**
-   * Get employees by manager ID (alias for getManagerEmployees)
-   * @param {string} managerId - Manager user ID
-   * @returns {Promise<Array>} Array of employee user objects
-   */
-  async getEmployeesByManager(managerId) {
-    return this.getManagerEmployees(managerId);
-  }
-
-  /**
-   * Get employees by group ID
-   * @param {string} groupId - Group ID
-   * @returns {Promise<Array>} Array of employee user objects
-   */
   async getEmployeesByGroup(groupId) {
+    const sb = getSB();
+    if (sb) {
+      // No groupId column in Supabase schema — fall through to file
+    }
     const data = await this.readUsersFile();
-    const employees = data.users.filter(u => 
-      u.role === 'employee' && (u.groupId === groupId || u.group === groupId)
-    );
-    return employees;
+    return data.users.filter(u => u.role === 'employee' && (u.groupId === groupId || u.group === groupId));
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Content Assignment CRUD
-  // ────────────────────────────────────────────────────────────────────────────
+  // ── Content assignments ───────────────────────────────────────────────────
 
-  /**
-   * Get content assignments with optional filters
-   * @param {Object} filters - Filter options (user_id, group_id, status, type, assigned_to_user, assigned_by)
-   * @returns {Promise<Array>} Array of assignment objects
-   */
   async getAssignments(filters = {}) {
+    const sb = getSB();
+    if (sb) {
+      let q = sb.from('assignments').select('*');
+      if (filters.user_id || filters.assigned_to_user)
+        q = q.eq('assigned_to_user', filters.user_id || filters.assigned_to_user);
+      if (filters.group_id)  q = q.eq('assigned_to_group', filters.group_id);
+      if (filters.status)    q = q.eq('status', filters.status);
+      if (filters.assigned_by) q = q.eq('assigned_by', filters.assigned_by);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return data || [];
+    }
     const data = await this.readAssignmentsFile();
     let assignments = data.assignments || [];
-
-    if (filters.user_id) {
-      assignments = assignments.filter(a => a.assigned_to_user === filters.user_id);
-    }
-    if (filters.assigned_to_user) {
-      assignments = assignments.filter(a => a.assigned_to_user === filters.assigned_to_user);
-    }
-    if (filters.group_id) {
-      assignments = assignments.filter(a => a.assigned_to_group === filters.group_id);
-    }
-    if (filters.status) {
-      assignments = assignments.filter(a => a.status === filters.status);
-    }
-    if (filters.type) {
-      assignments = assignments.filter(a => a.assignable_type === filters.type || a.type === filters.type);
-    }
-    if (filters.assigned_by) {
-      assignments = assignments.filter(a => a.assigned_by === filters.assigned_by);
-    }
-
+    if (filters.user_id || filters.assigned_to_user)
+      assignments = assignments.filter(a => a.assigned_to_user === (filters.user_id || filters.assigned_to_user));
+    if (filters.group_id)   assignments = assignments.filter(a => a.assigned_to_group === filters.group_id);
+    if (filters.status)     assignments = assignments.filter(a => a.status === filters.status);
+    if (filters.type)       assignments = assignments.filter(a => a.assignable_type === filters.type || a.type === filters.type);
+    if (filters.assigned_by) assignments = assignments.filter(a => a.assigned_by === filters.assigned_by);
     return assignments;
   }
 
-  /**
-   * Create a new content assignment
-   * @param {Object} assignmentData - Assignment data
-   * @returns {Promise<Object>} Created assignment
-   */
   async createAssignment(assignmentData) {
-    const data = await this.readAssignmentsFile();
-
-    const newAssignment = {
-      id: `assign_${String(data.nextAssignmentId || 1).padStart(4, '0')}`,
-      type: assignmentData.type || assignmentData.assignable_type || 'module',
-      assignable_id: assignmentData.assignable_id || assignmentData.assignableId,
-      assignable_type: assignmentData.assignable_type || assignmentData.type || 'module',
-      assigned_by: assignmentData.assigned_by || assignmentData.assignedBy,
-      assigned_to_user: assignmentData.assigned_to_user || assignmentData.assignedToUser || null,
-      assigned_to_group: assignmentData.assigned_to_group || assignmentData.assignedToGroup || null,
-      assigned_by_manager: assignmentData.assigned_by_manager || null,
-      priority: assignmentData.priority || 'medium',
-      due_date: assignmentData.due_date || assignmentData.dueDate || null,
-      status: assignmentData.status || 'assigned',
-      progress: assignmentData.progress || 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+    const sb = getSB();
+    const newA = {
+      id:                 `assign_${uuidv4().slice(0, 8)}`,
+      type:               assignmentData.type || assignmentData.assignable_type || 'module',
+      assignable_id:      assignmentData.assignable_id || assignmentData.assignableId,
+      assignable_type:    assignmentData.assignable_type || assignmentData.type || 'module',
+      assigned_by:        assignmentData.assigned_by || assignmentData.assignedBy || null,
+      assigned_to_user:   assignmentData.assigned_to_user || assignmentData.assignedToUser || null,
+      assigned_to_group:  assignmentData.assigned_to_group || assignmentData.assignedToGroup || null,
+      assigned_by_manager:assignmentData.assigned_by_manager || null,
+      priority:           assignmentData.priority || 'medium',
+      due_date:           assignmentData.due_date || assignmentData.dueDate || null,
+      status:             assignmentData.status || 'assigned',
+      progress:           assignmentData.progress || 0,
+      // Extra display fields (not in Supabase schema — stored for file fallback)
+      title:              assignmentData.title || assignmentData.name || assignmentData.module_name || '',
+      isMandatory:        assignmentData.isMandatory || false,
+      created_at:         new Date().toISOString(),
+      updated_at:         new Date().toISOString(),
     };
 
-    data.assignments.push(newAssignment);
-    data.nextAssignmentId = (data.nextAssignmentId || 1) + 1;
-
-    await this.writeAssignmentsFile(data);
-    return newAssignment;
-  }
-
-  /**
-   * Update an existing assignment
-   * @param {string} assignmentId - Assignment ID
-   * @param {Object} updates - Fields to update
-   * @returns {Promise<Object>} Updated assignment
-   */
-  async updateAssignment(assignmentId, updates) {
-    const data = await this.readAssignmentsFile();
-    const index = data.assignments.findIndex(a => a.id === assignmentId);
-
-    if (index === -1) {
-      throw new Error('Assignment not found');
+    if (sb) {
+      // Only send columns that exist in the Supabase schema
+      const sbRow = {
+        id:                  newA.id,
+        type:                newA.type,
+        assignable_id:       newA.assignable_id,
+        assignable_type:     newA.assignable_type,
+        assigned_by:         newA.assigned_by,
+        assigned_to_user:    newA.assigned_to_user,
+        assigned_to_group:   newA.assigned_to_group,
+        assigned_by_manager: newA.assigned_by_manager,
+        priority:            newA.priority,
+        due_date:            newA.due_date,
+        status:              newA.status,
+        progress:            newA.progress,
+      };
+      const { data, error } = await sb.from('assignments').insert(sbRow).select().single();
+      if (error) { console.error('[UserStore] createAssignment:', error.message); }
+      return data || newA;
     }
 
-    const allowedUpdates = { ...updates };
-    delete allowedUpdates.id;
-    delete allowedUpdates.created_at;
-
-    data.assignments[index] = {
-      ...data.assignments[index],
-      ...allowedUpdates,
-      updated_at: new Date().toISOString(),
-    };
-
+    const data = await this.readAssignmentsFile();
+    newA.id = `assign_${String(data.nextAssignmentId || 1).padStart(4, '0')}`;
+    data.assignments.push(newA);
+    data.nextAssignmentId = (data.nextAssignmentId || 1) + 1;
     await this.writeAssignmentsFile(data);
-    return data.assignments[index];
+    return newA;
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Assignment Requests (Manager → Admin approval workflow)
-  // ────────────────────────────────────────────────────────────────────────────
+  async updateAssignment(assignmentId, updates) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('assignments')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', assignmentId).select().single();
+      if (error) throw new Error(error.message);
+      return data;
+    }
+    const data = await this.readAssignmentsFile();
+    const idx = data.assignments.findIndex(a => a.id === assignmentId);
+    if (idx === -1) throw new Error('Assignment not found');
+    const allowed = { ...updates }; delete allowed.id; delete allowed.created_at;
+    data.assignments[idx] = { ...data.assignments[idx], ...allowed, updated_at: new Date().toISOString() };
+    await this.writeAssignmentsFile(data);
+    return data.assignments[idx];
+  }
+
+  // ── Assignment Requests ───────────────────────────────────────────────────
 
   async readRequestsFile() {
     try {
@@ -562,11 +447,8 @@ class UserStore {
         path.join(path.dirname(this.assignmentsFilePath), 'assignment_requests.json'), 'utf-8'
       );
       return JSON.parse(data);
-    } catch {
-      return { requests: [], nextId: 1 };
-    }
+    } catch { return { requests: [], nextId: 1 }; }
   }
-
   async writeRequestsFile(data) {
     await fs.writeFile(
       path.join(path.dirname(this.assignmentsFilePath), 'assignment_requests.json'),
@@ -579,13 +461,13 @@ class UserStore {
     const id = `req_${String(data.nextId || 1).padStart(4, '0')}`;
     const newReq = {
       id,
-      manager_id: reqData.manager_id,
-      employee_id: reqData.employee_id,
-      module_id: reqData.module_id,
-      status: reqData.status || 'pending',
+      manager_id:   reqData.manager_id,
+      employee_id:  reqData.employee_id,
+      module_id:    reqData.module_id,
+      status:       reqData.status || 'pending',
       requested_at: new Date().toISOString(),
-      decided_by: null,
-      decided_at: null,
+      decided_by:   null,
+      decided_at:   null,
     };
     data.requests.push(newReq);
     data.nextId = (data.nextId || 1) + 1;
@@ -595,51 +477,49 @@ class UserStore {
 
   async getAssignmentRequests(filters = {}) {
     const data = await this.readRequestsFile();
-    let reqs = data.requests || [];
-    if (filters.status) reqs = reqs.filter(r => r.status === filters.status);
-    if (filters.manager_id) reqs = reqs.filter(r => r.manager_id === filters.manager_id);
-    return reqs.sort((a, b) => new Date(b.requested_at) - new Date(a.requested_at));
+    let requests = data.requests || [];
+    if (filters.manager_id)  requests = requests.filter(r => r.manager_id === filters.manager_id);
+    if (filters.employee_id) requests = requests.filter(r => r.employee_id === filters.employee_id);
+    if (filters.status)      requests = requests.filter(r => r.status === filters.status);
+    return requests;
   }
 
-  async updateAssignmentRequest(id, updates) {
+  async updateAssignmentRequest(requestId, updates) {
     const data = await this.readRequestsFile();
-    const idx = data.requests.findIndex(r => r.id === id);
-    if (idx === -1) throw new Error('Assignment request not found');
-    data.requests[idx] = {
-      ...data.requests[idx],
-      ...updates,
-      decided_at: new Date().toISOString(),
-    };
+    const idx = data.requests.findIndex(r => r.id === requestId);
+    if (idx === -1) throw new Error('Request not found');
+    data.requests[idx] = { ...data.requests[idx], ...updates };
     await this.writeRequestsFile(data);
     return data.requests[idx];
   }
 
-  /**
-   * Delete an assignment
-   * @param {string} assignmentId - Assignment ID
-   * @returns {Promise<boolean>} Success
-   */
-  async deleteAssignment(assignmentId) {
-    const data = await this.readAssignmentsFile();
-    const initialLength = data.assignments.length;
-    data.assignments = data.assignments.filter(a => a.id !== assignmentId);
+  // ── Audit logging ─────────────────────────────────────────────────────────
 
-    if (data.assignments.length === initialLength) {
-      throw new Error('Assignment not found');
-    }
-
-    await this.writeAssignmentsFile(data);
-    return true;
+  async logAuthEvent(eventType, userId, metadata = {}) {
+    try {
+      const auditData = await this.readAuditFile();
+      const logEntry = {
+        logId:     `log_${String(auditData.nextLogId).padStart(6, '0')}`,
+        eventType, userId: userId || null,
+        timestamp: new Date().toISOString(),
+        metadata,
+      };
+      auditData.logs.push(logEntry);
+      auditData.nextLogId += 1;
+      await this.writeAuditFile(auditData);
+      return logEntry;
+    } catch { return {}; }
   }
 
-  /**
-   * Get all users belonging to a specific company
-   * @param {string} companyId - Company ID
-   * @returns {Promise<Array>} Array of users in that company
-   */
-  async getUsersByCompany(companyId) {
-    const data = await this.readUsersFile();
-    return data.users.filter(u => (u.companyId || 'default') === companyId);
+  async getAuditLogs(filters = {}) {
+    const auditData = await this.readAuditFile();
+    let logs = auditData.logs;
+    if (filters.userId)    logs = logs.filter(l => l.userId === filters.userId);
+    if (filters.eventType) logs = logs.filter(l => l.eventType === filters.eventType);
+    if (filters.startDate) logs = logs.filter(l => new Date(l.timestamp) >= new Date(filters.startDate));
+    if (filters.endDate)   logs = logs.filter(l => new Date(l.timestamp) <= new Date(filters.endDate));
+    logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    return logs;
   }
 }
 
