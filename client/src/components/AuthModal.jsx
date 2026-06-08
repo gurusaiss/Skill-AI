@@ -58,7 +58,7 @@ const AuthModal = ({ isOpen, onClose }) => {
   };
 
   const handleGoogleLogin = () => {
-    const baseUrl = import.meta.env.PROD ? '' : 'http://localhost:3001';
+    const baseUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
     window.location.href = `${baseUrl}/api/oauth/google`;
   };
 

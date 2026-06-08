@@ -54,7 +54,7 @@ export default function Profile() {
 
       try {
         const token = localStorage.getItem('auth_token');
-        const baseUrl = import.meta.env.PROD ? '' : 'http://localhost:3001';
+        const baseUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
         if (user.role === 'employee') {
           // Fetch assigned manager
@@ -89,7 +89,7 @@ export default function Profile() {
   React.useEffect(() => {
     if (!user) return;
     const token = localStorage.getItem('auth_token');
-    const baseUrl = import.meta.env.PROD ? '' : 'http://localhost:3001';
+    const baseUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
     fetch(`${baseUrl}/api/users/${user.userId}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.data || d) setWorkProfile(d?.data ?? d); })
@@ -131,7 +131,7 @@ export default function Profile() {
       }
 
       const token = localStorage.getItem('auth_token');
-      const baseUrl = import.meta.env.PROD ? '' : 'http://localhost:3001';
+      const baseUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
       const response = await fetch(`${baseUrl}/api/users/${user.userId}/request-email-change`, {
         method: 'POST',
@@ -203,7 +203,7 @@ export default function Profile() {
       }
 
       const token = localStorage.getItem('auth_token');
-      const baseUrl = import.meta.env.PROD ? '' : 'http://localhost:3001';
+      const baseUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
       const response = await fetch(`${baseUrl}/api/auth/change-password`, {
         method: 'POST',

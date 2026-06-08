@@ -8,7 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 
-const BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
+const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
 const authFetch = async (path, options = {}) => {
   const token = localStorage.getItem('auth_token');
