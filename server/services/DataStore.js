@@ -397,6 +397,14 @@ export const Companies = {
     if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile('companies.json', all); return all[idx]; }
     return null;
   },
+  async delete(id) {
+    const sb = getSB();
+    if (sb) {
+      const ok = await sbDelete('companies', id);
+      if (ok) return;
+    }
+    writeFile('companies.json', readFile('companies.json').filter(c => c.id !== id));
+  },
 };
 
 // ── ORGANIZATIONS ─────────────────────────────────────────────────────────────

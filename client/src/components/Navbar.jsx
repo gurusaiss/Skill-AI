@@ -79,10 +79,9 @@ function Navbar() {
 
   const ROLE_LINKS = {
     superadmin: [
-      { to: '/superadmin/dashboard', label: 'Platform',   icon: '🌐' },
-      { to: '/superadmin/admins',    label: 'Admins',     icon: '👑' },
-      { to: '/admin/dashboard',      label: 'Admin View', icon: '📊' },
-      { to: '/report',               label: 'Reports',    icon: '📄' },
+      { to: '/superadmin/dashboard', label: 'Platform', icon: '🌐' },
+      { to: '/superadmin/admins',    label: 'Admins',   icon: '👑' },
+      { to: '/superadmin/reports',   label: 'Reports',  icon: '📄' },
     ],
     manager: [
       { to: '/manager/dashboard',  label: 'Dashboard',  icon: '📊' },
