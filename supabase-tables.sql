@@ -84,19 +84,49 @@ CREATE TABLE IF NOT EXISTS teams (
   updated_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── 10. Assignment Requests ──────────────────────────────────
+-- Manager -> Admin approval workflow
+CREATE TABLE IF NOT EXISTS assignment_requests (
+  id           TEXT PRIMARY KEY,
+  manager_id   TEXT,
+  employee_id  TEXT,
+  group_id     TEXT,
+  module_id    TEXT,
+  priority     TEXT DEFAULT 'medium',
+  due_date     TIMESTAMPTZ,
+  status       TEXT DEFAULT 'pending',
+  requested_at TIMESTAMPTZ DEFAULT NOW(),
+  decided_by   TEXT,
+  decided_at   TIMESTAMPTZ
+);
+
+-- ── 11. Notifications ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS notifications (
+  id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id      TEXT NOT NULL,
+  title        TEXT,
+  message      TEXT,
+  type         TEXT DEFAULT 'info',
+  action_url   TEXT,
+  read         BOOLEAN DEFAULT FALSE,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ============================================================
 -- Disable Row Level Security on all tables so the service_role
 -- key can read/write without JWT issues.
 -- ============================================================
-ALTER TABLE assessments           DISABLE ROW LEVEL SECURITY;
+ALTER TABLE assessments            DISABLE ROW LEVEL SECURITY;
 ALTER TABLE assessment_submissions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE assessment_reports    DISABLE ROW LEVEL SECURITY;
-ALTER TABLE pending_modules       DISABLE ROW LEVEL SECURITY;
-ALTER TABLE module_assignments    DISABLE ROW LEVEL SECURITY;
-ALTER TABLE companies             DISABLE ROW LEVEL SECURITY;
-ALTER TABLE organizations         DISABLE ROW LEVEL SECURITY;
-ALTER TABLE departments           DISABLE ROW LEVEL SECURITY;
-ALTER TABLE teams                 DISABLE ROW LEVEL SECURITY;
+ALTER TABLE assessment_reports     DISABLE ROW LEVEL SECURITY;
+ALTER TABLE pending_modules        DISABLE ROW LEVEL SECURITY;
+ALTER TABLE module_assignments     DISABLE ROW LEVEL SECURITY;
+ALTER TABLE companies              DISABLE ROW LEVEL SECURITY;
+ALTER TABLE organizations          DISABLE ROW LEVEL SECURITY;
+ALTER TABLE departments            DISABLE ROW LEVEL SECURITY;
+ALTER TABLE teams                  DISABLE ROW LEVEL SECURITY;
+ALTER TABLE assignment_requests    DISABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications          DISABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- Also ensure the users table has all required columns
@@ -121,5 +151,6 @@ ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 -- DONE. You should now see these tables in Table Editor:
 -- assessments, assessment_submissions, assessment_reports,
 -- pending_modules, module_assignments, companies,
--- organizations, departments, teams
+-- organizations, departments, teams,
+-- assignment_requests, notifications
 -- ============================================================

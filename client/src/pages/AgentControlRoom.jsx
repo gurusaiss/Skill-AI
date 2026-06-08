@@ -198,7 +198,8 @@ function PipelineModal({ onClose }) {
   const feedRef = useRef(null);
 
   useEffect(() => {
-    const es = new EventSource('http://localhost:3001/api/demo/run?goal=fullstack');
+    const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+    const es = new EventSource(`${apiBase}/api/demo/run?goal=fullstack`);
 
     es.onmessage = (e) => {
       try {
