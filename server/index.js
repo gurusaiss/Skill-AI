@@ -83,6 +83,9 @@ import('./db/store.js').then(async db => {
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Trust Render/Vercel/Railway reverse proxy — required for rate-limiter + correct IP
+app.set('trust proxy', 1);
 const geminiEnabled = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.length > 10);
 const groqEnabled = !!(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.length > 10);
 

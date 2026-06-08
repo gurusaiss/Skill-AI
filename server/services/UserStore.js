@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { createClient } from '@supabase/supabase-js';
+import ws from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,7 +17,10 @@ function getSB() {
            || process.env.SUPABASE_SECRET_KEY
            || process.env.SUPABASE_KEY;
   if (url && key && url.startsWith('http') && key.length > 20) {
-    _sb = createClient(url, key, { auth: { persistSession: false } });
+    _sb = createClient(url, key, {
+      auth: { persistSession: false },
+      realtime: { transport: ws },    // fixes Node.js 20 WebSocket error
+    });
     console.log('[UserStore] Using Supabase');
   }
   return _sb;
