@@ -124,6 +124,7 @@ function toSupabaseModule(module, createdBy, id) {
     completion_criteria: module.completionCriteria || module.completion_criteria || 'Complete all tasks',
     content: module.content || {},
     created_by: createdBy,
+    companyId: module.companyId || null,
   };
 }
 
@@ -132,6 +133,7 @@ export async function getModules(filters = {}) {
     let qb = supabase.from('modules').select('*');
     if (filters.category) qb = qb.eq('category', filters.category);
     if (filters.difficulty) qb = qb.eq('difficulty', filters.difficulty);
+    if (filters.companyId) qb = qb.eq('companyId', filters.companyId);
     const { data, error } = await qb;
     if (error) throw error;
     return (data || []).map(normalizeModule);
@@ -188,6 +190,7 @@ export async function createModule(module, createdBy) {
     resources: module.resources || [],
     completionCriteria: module.completionCriteria || 'Complete all tasks',
     content: module.content || {},
+    companyId: module.companyId || null,
     createdBy,
     createdAt: new Date().toISOString(),
   };

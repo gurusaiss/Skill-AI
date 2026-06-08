@@ -292,9 +292,14 @@ router.get('/', authenticate, async (req, res) => {
     const assessments = await Assessments.getAll() || [];
     const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
 
+    // Company isolation: admin/manager only see their company's assessments
+    const companyId = req.user?.companyId;
+    const companyFiltered = (companyId && companyId !== 'default')
+      ? assessments.filter(a => !a.companyId || a.companyId === companyId)
+      : assessments;
     const result = isPrivileged
-      ? assessments
-      : assessments.filter(a =>
+      ? companyFiltered
+      : companyFiltered.filter(a =>
           a.employeeAssignments?.some(ea => ea.userId === req.user.userId) ||
           a.targetUsers?.includes(req.user.userId)
         );
@@ -386,6 +391,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       deadline: deadline || null,
       duration,
       createdBy: req.user.userId,
+      companyId: req.user.companyId || null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isActive: true,
@@ -484,7 +490,11 @@ router.get('/my', authenticate, async (req, res) => {
 router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const reports = await Reports.getAll();
-    res.json({ success: true, data: reports, error: null });
+    const companyId = req.user?.companyId;
+    const filteredReports = (companyId && companyId !== 'default')
+      ? reports.filter(r => !r.companyId || r.companyId === companyId)
+      : reports;
+    res.json({ success: true, data: filteredReports, error: null });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
   }

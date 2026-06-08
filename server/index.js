@@ -38,6 +38,7 @@ import autonomousScheduler from './agent/AutonomousScheduler.js';
 import superadminRouter from './routes/superadmin.js';
 import adminDashboardRouter from './routes/adminDashboard.js';
 import approvalsRouter from './routes/approvals.js';
+import groupsRouter from './routes/groups.js';
 import { autoSeed } from './utils/autoSeed.js';
 import { migrateDB } from './utils/migrateDB.js';
 
@@ -190,6 +191,7 @@ app.use('/api/content', contentRouter);
 app.use('/api/superadmin', superadminRouter);
 app.use('/api/admin', adminDashboardRouter);
 app.use('/api/approvals', approvalsRouter);
+app.use('/api/groups', groupsRouter);
 
 // Enterprise org structure
 app.use('/api/org', orgRouter);

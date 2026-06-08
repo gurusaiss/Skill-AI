@@ -30,7 +30,12 @@ router.get('/', authenticate, async (req, res) => {
     if (category) filters.category = category;
     if (difficulty) filters.difficulty = difficulty;
 
-    const modules = await db.getModules(filters);
+    const allModules = await db.getModules(filters);
+    // Company isolation: filter modules by companyId
+    const companyId = req.user?.companyId;
+    const modules = (companyId && companyId !== 'default')
+      ? allModules.filter(m => !m.companyId || m.companyId === companyId)
+      : allModules;
     const total = modules.length;
     const paginated = modules.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
 
@@ -61,7 +66,11 @@ router.get('/pending', authenticate, async (req, res) => {
       return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
     }
     const all = await PendingModules.getAll();
-    const pendings = all.filter(p => p.status === 'pending_approval');
+    const companyId = req.user?.companyId;
+    const pendings = all.filter(p =>
+      p.status === 'pending_approval' &&
+      (!companyId || companyId === 'default' || !p.companyId || p.companyId === companyId)
+    );
     res.json({ success: true, data: pendings, error: null });
   } catch (e) {
     res.status(500).json({ success: false, error: { message: 'Failed to fetch pending modules' } });
@@ -154,6 +163,7 @@ router.post('/', authenticate, async (req, res) => {
       completionCriteria: completionCriteria || 'Complete all tasks',
       progressTracking: true,
       content: content || {},
+      companyId: req.user.companyId || null,
     }, user.userId || user.id);
 
     res.status(201).json({ success: true, data: newModule });
