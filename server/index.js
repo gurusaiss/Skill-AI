@@ -205,6 +205,21 @@ app.get('/api/brief/:userId', (req, res) => {
 });
 app.get('/api/scheduler/status', (req, res) => res.json(autonomousScheduler.getStatus()));
 
+// ── Serve React frontend in production ────────────────────────────────────────
+// The Dockerfile copies client/dist next to server/ so the path resolves to
+// /app/client/dist inside the container (and works for local prod builds too).
+const clientDist = join(__dirname, '..', 'client', 'dist');
+if (existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  // SPA fallback — all non-API routes return index.html
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(join(clientDist, 'index.html'));
+    }
+  });
+  console.log('[static] Serving React build from', clientDist);
+}
+
 // Global error handler
 app.use((err, req, res, _next) => {
   console.error('[error]', err.message);
