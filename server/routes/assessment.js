@@ -1,5 +1,6 @@
 /**
  * assessment.js — JD + Job Role driven assessments
+ * All data persisted to Supabase via DataStore (falls back to JSON files)
  *
  * Flow:
  * 1. Admin/Manager creates assessment → selects employee(s) or group
@@ -12,28 +13,17 @@
  */
 import express from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import UserStore from '../services/UserStore.js';
+import { Assessments, Submissions, Reports } from '../services/DataStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const DATA_DIR = join(__dirname, '../data');
 
 const router = express.Router();
-const DATA_DIR = join(__dirname, '../data');
-const ASSESSMENTS_FILE = join(DATA_DIR, 'assessments.json');
-const SUBMISSIONS_FILE = join(DATA_DIR, 'assessment_submissions.json');
-const REPORTS_FILE = join(DATA_DIR, 'assessment_reports.json');
-
-if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-if (!existsSync(ASSESSMENTS_FILE)) writeFileSync(ASSESSMENTS_FILE, JSON.stringify([], null, 2));
-if (!existsSync(SUBMISSIONS_FILE)) writeFileSync(SUBMISSIONS_FILE, JSON.stringify([], null, 2));
-if (!existsSync(REPORTS_FILE)) writeFileSync(REPORTS_FILE, JSON.stringify([], null, 2));
-
-const readJSON = (file) => { try { return JSON.parse(readFileSync(file, 'utf-8')); } catch { return []; } };
-const writeJSON = (file, data) => writeFileSync(file, JSON.stringify(data, null, 2));
 
 // ── AI question generation ────────────────────────────────────────────────────
 
@@ -103,7 +93,7 @@ Always return valid JSON with exactly a "questions" array.`;
         body: JSON.stringify({
           model: 'llama-3.3-70b-versatile',
           messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-          temperature: 0.85, // higher temp for more variety
+          temperature: 0.85,
           max_tokens: 4000,
           response_format: { type: 'json_object' },
         }),
@@ -180,13 +170,11 @@ function scoreSubmission(questions, responses) {
     let isCorrect = false;
 
     if (q.type === 'mcq') {
-      // Extract just the letter: "A) full text..." → "A", "A" → "A"
       const extractLetter = s => (s || '').trim().toUpperCase().replace(/^([A-D])[)\s.].*$/, '$1').charAt(0);
       isCorrect = extractLetter(resp.answer) === extractLetter(q.answer);
       total++;
       if (isCorrect) correct++;
     } else {
-      // Subjective / fill_blank: auto-score based on keyword match
       const userAnswer = (resp.answer || '').toLowerCase();
       const modelAnswer = (q.answer || '').toLowerCase();
       const keywords = modelAnswer.split(/\s+/).filter(w => w.length > 4);
@@ -196,7 +184,6 @@ function scoreSubmission(questions, responses) {
       if (isCorrect) correct++;
     }
 
-    // For MCQ, also store the full correct option text for display
     const correctOptionText = q.type === 'mcq' && q.options
       ? (q.options.find(opt => opt.toUpperCase().startsWith(q.answer?.toUpperCase())) || q.answer)
       : q.answer;
@@ -206,7 +193,6 @@ function scoreSubmission(questions, responses) {
   const score = total > 0 ? Math.round((correct / total) * 100) : 0;
   const grade = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
 
-  // Skill area breakdown
   const skillAreas = {};
   breakdown.forEach(b => {
     if (!skillAreas[b.skillArea]) skillAreas[b.skillArea] = { correct: 0, total: 0 };
@@ -230,8 +216,8 @@ function scoreSubmission(questions, responses) {
  */
 router.get('/', authenticate, async (req, res) => {
   try {
-    const assessments = readJSON(ASSESSMENTS_FILE);
-    const isPrivileged = ['admin', 'manager'].includes(req.user.role);
+    const assessments = await Assessments.getAll() || [];
+    const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
 
     const result = isPrivileged
       ? assessments
@@ -249,34 +235,32 @@ router.get('/', authenticate, async (req, res) => {
 /**
  * POST /api/assessments
  * Create assessment — admin/manager only
- * Body: { title, targetUsers (array of userIds), targetGroup, questionCount, questionTypes, assessmentDate, duration }
- * System auto-fetches JD+jobRole for each target employee and generates unique questions
  */
 router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const {
       title,
-      targetUsers = [],   // array of userIds
-      targetGroup,        // group id (optional)
+      targetUsers = [],
+      targetGroup,
       questionCount = 10,
       questionTypes = ['mcq'],
       assessmentDate,
-      deadline,           // datetime string — employee cannot submit after this
-      duration = 30,      // minutes
+      deadline,
+      duration = 30,
     } = req.body;
 
     if (!title) {
       return res.status(400).json({ success: false, data: null, error: 'Title is required' });
     }
 
-    // Resolve target users
     let userIds = [...(Array.isArray(targetUsers) ? targetUsers : [])];
 
-    // If group provided, fetch all members
+    // If group provided, fetch all members from Supabase groups
     if (targetGroup) {
       try {
-        const groups = readJSON(join(DATA_DIR, 'groups.json'));
-        const memberships = readJSON(join(DATA_DIR, 'group_memberships.json'));
+        const { default: db } = await import('../db/store.js');
+        const groups = await db.getGroups?.() || [];
+        const memberships = await db.getGroupMemberships?.() || [];
         const groupObj = (Array.isArray(groups) ? groups : groups.groups || []).find(g => g.id === targetGroup);
         if (groupObj) {
           const memberIds = (Array.isArray(memberships) ? memberships : memberships.memberships || [])
@@ -287,7 +271,6 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       } catch (e) { console.warn('[assessment] Group resolution failed:', e.message); }
     }
 
-    // Deduplicate
     userIds = [...new Set(userIds)];
 
     // Generate per-employee assignments with unique questions
@@ -302,7 +285,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
         jobDescriptionFile: user.jobDescriptionFile || null,
         questionCount,
         questionTypes,
-        employeeSeed: `${userId}-${Date.now()}`, // unique per employee per creation
+        employeeSeed: `${userId}-${Date.now()}`,
       });
 
       employeeAssignments.push({
@@ -310,8 +293,8 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
         userName: user.name,
         userEmail: user.email,
         jobRole: user.jobRole || '',
-        questions,           // unique to this employee
-        status: 'assigned',  // assigned | started | submitted
+        questions,
+        status: 'assigned',
         assignedAt: new Date().toISOString(),
         startedAt: null,
         submittedAt: null,
@@ -323,11 +306,11 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       title,
       targetGroup: targetGroup || null,
       targetUsers: userIds,
-      employeeAssignments,  // per-employee unique questions
+      employeeAssignments,
       questionCount,
       questionTypes,
       assessmentDate: assessmentDate || null,
-      deadline: deadline || null,   // employee cannot submit after this datetime
+      deadline: deadline || null,
       duration,
       createdBy: req.user.userId,
       createdAt: new Date().toISOString(),
@@ -335,11 +318,8 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       isActive: true,
     };
 
-    const assessments = readJSON(ASSESSMENTS_FILE);
-    assessments.push(newAssessment);
-    writeJSON(ASSESSMENTS_FILE, assessments);
-
-    res.status(201).json({ success: true, data: newAssessment, error: null });
+    const saved = await Assessments.create(newAssessment);
+    res.status(201).json({ success: true, data: saved || newAssessment, error: null });
   } catch (e) {
     console.error('[POST /api/assessments]', e);
     res.status(500).json({ success: false, data: null, error: e.message });
@@ -349,7 +329,6 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
 /**
  * POST /api/assessments/generate-from-jd
  * Preview: generate questions from a specific employee's JD (no assessment saved)
- * Body: { userId?, jobRole?, jobDescription?, questionCount, questionTypes }
  */
 router.post('/generate-from-jd', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
@@ -387,7 +366,7 @@ router.post('/generate-from-jd', authenticate, requireRole('admin', 'manager'), 
  */
 router.get('/my', authenticate, async (req, res) => {
   try {
-    const assessments = readJSON(ASSESSMENTS_FILE);
+    const assessments = await Assessments.getAll() || [];
     const now = new Date();
 
     const myAssessments = assessments
@@ -395,13 +374,10 @@ router.get('/my', authenticate, async (req, res) => {
       .map(a => {
         const myAssignment = a.employeeAssignments.find(ea => ea.userId === req.user.userId);
 
-        // Timing logic
         const assessmentDate = a.assessmentDate ? new Date(a.assessmentDate) : null;
         const deadline = a.deadline ? new Date(a.deadline) : null;
 
-        // Employee can see assessment only on/after assessmentDate (if set)
         const isVisible = !assessmentDate || now >= assessmentDate;
-        // Employee cannot submit after deadline
         const isExpired = deadline ? now > deadline : false;
 
         return {
@@ -411,12 +387,12 @@ router.get('/my', authenticate, async (req, res) => {
           deadline: a.deadline || null,
           duration: a.duration,
           status: isExpired && myAssignment.status !== 'submitted' ? 'expired' : myAssignment.status,
-          questions: isVisible ? myAssignment.questions : null, // hide questions until date
+          questions: isVisible ? myAssignment.questions : null,
           assignedAt: myAssignment.assignedAt,
           submittedAt: myAssignment.submittedAt,
           jobRole: myAssignment.jobRole,
-          isVisible,        // frontend uses this to show "Available on [date]" or actual quiz
-          isExpired,        // frontend shows "Deadline passed"
+          isVisible,
+          isExpired,
           scoring: myAssignment.status === 'submitted' ? myAssignment.scoring : null,
         };
       });
@@ -428,124 +404,13 @@ router.get('/my', authenticate, async (req, res) => {
 });
 
 /**
- * GET /api/assessments/:id
- * Get single assessment
- */
-router.get('/:id', authenticate, async (req, res) => {
-  try {
-    const assessments = readJSON(ASSESSMENTS_FILE);
-    const assessment = assessments.find(a => a.id === req.params.id);
-    if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Not found' });
-
-    const isPrivileged = ['admin', 'manager'].includes(req.user.role);
-    if (!isPrivileged) {
-      // Employee: only return their own questions
-      const myAssignment = assessment.employeeAssignments?.find(ea => ea.userId === req.user.userId);
-      if (!myAssignment) return res.status(403).json({ success: false, data: null, error: 'Access denied' });
-      return res.json({ success: true, data: { ...assessment, employeeAssignments: [myAssignment] }, error: null });
-    }
-
-    res.json({ success: true, data: assessment, error: null });
-  } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
-  }
-});
-
-/**
- * POST /api/assessments/:id/submit
- * Employee submits their assessment → auto-generates report
- */
-router.post('/:id/submit', authenticate, async (req, res) => {
-  try {
-    const { responses } = req.body; // array of { answer } matching question indices
-    const assessments = readJSON(ASSESSMENTS_FILE);
-    const idx = assessments.findIndex(a => a.id === req.params.id);
-
-    if (idx === -1) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
-
-    const assessment = assessments[idx];
-    const assignmentIdx = assessment.employeeAssignments?.findIndex(ea => ea.userId === req.user.userId);
-
-    if (assignmentIdx === -1 || assignmentIdx === undefined) {
-      return res.status(403).json({ success: false, data: null, error: 'You are not assigned to this assessment' });
-    }
-
-    const assignment = assessment.employeeAssignments[assignmentIdx];
-    if (assignment.status === 'submitted') {
-      return res.status(400).json({ success: false, data: null, error: 'Assessment already submitted' });
-    }
-
-    // Deadline enforcement
-    if (assessment.deadline && new Date() > new Date(assessment.deadline)) {
-      return res.status(403).json({ success: false, data: null, error: 'Submission deadline has passed' });
-    }
-
-    // Score the submission
-    const scoring = scoreSubmission(assignment.questions, responses || []);
-
-    // Update assignment status
-    assessment.employeeAssignments[assignmentIdx] = {
-      ...assignment,
-      status: 'submitted',
-      submittedAt: new Date().toISOString(),
-      responses,
-      scoring,
-    };
-    assessments[idx] = { ...assessment, updatedAt: new Date().toISOString() };
-    writeJSON(ASSESSMENTS_FILE, assessments);
-
-    // Generate report
-    const report = {
-      id: randomUUID(),
-      assessmentId: assessment.id,
-      assessmentTitle: assessment.title,
-      userId: req.user.userId,
-      userName: req.user.name,
-      jobRole: assignment.jobRole,
-      submittedAt: new Date().toISOString(),
-      ...scoring,
-      questions: assignment.questions,
-      responses,
-      generatedAt: new Date().toISOString(),
-    };
-
-    const reports = readJSON(REPORTS_FILE);
-    reports.push(report);
-    writeJSON(REPORTS_FILE, reports);
-
-    res.json({ success: true, data: { report }, error: null });
-  } catch (e) {
-    console.error('[POST /api/assessments/:id/submit]', e);
-    res.status(500).json({ success: false, data: null, error: e.message });
-  }
-});
-
-/**
- * GET /api/assessments/:id/report
- * Get report for a specific assessment — employee gets own, admin/manager see all
- */
-router.get('/:id/report', authenticate, async (req, res) => {
-  try {
-    const reports = readJSON(REPORTS_FILE);
-    const isPrivileged = ['admin', 'manager'].includes(req.user.role);
-
-    const filtered = isPrivileged
-      ? reports.filter(r => r.assessmentId === req.params.id)
-      : reports.filter(r => r.assessmentId === req.params.id && r.userId === req.user.userId);
-
-    res.json({ success: true, data: filtered, error: null });
-  } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
-  }
-});
-
-/**
  * GET /api/assessments/reports/all
- * Admin/Manager: all reports (scoped to manager's employees)
+ * Admin/Manager: all reports
+ * NOTE: must be defined BEFORE /:id to avoid route conflict
  */
 router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
-    const reports = readJSON(REPORTS_FILE);
+    const reports = await Reports.getAll();
     res.json({ success: true, data: reports, error: null });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
@@ -553,42 +418,7 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
 });
 
 /**
- * PUT /api/assessments/:id
- * Update (admin/manager)
- */
-router.put('/:id', authenticate, requireRole('admin', 'manager'), async (req, res) => {
-  try {
-    const assessments = readJSON(ASSESSMENTS_FILE);
-    const idx = assessments.findIndex(a => a.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ success: false, data: null, error: 'Not found' });
-
-    assessments[idx] = { ...assessments[idx], ...req.body, id: assessments[idx].id, updatedAt: new Date().toISOString() };
-    writeJSON(ASSESSMENTS_FILE, assessments);
-    res.json({ success: true, data: assessments[idx], error: null });
-  } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
-  }
-});
-
-/**
- * DELETE /api/assessments/:id
- * Delete (admin/manager)
- */
-router.delete('/:id', authenticate, requireRole('admin', 'manager'), async (req, res) => {
-  try {
-    const assessments = readJSON(ASSESSMENTS_FILE);
-    const filtered = assessments.filter(a => a.id !== req.params.id);
-    if (filtered.length === assessments.length) return res.status(404).json({ success: false, data: null, error: 'Not found' });
-    writeJSON(ASSESSMENTS_FILE, filtered);
-    res.json({ success: true, data: { id: req.params.id }, error: null });
-  } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
-  }
-});
-
-/**
  * POST /api/assessments/generate (legacy compat — module-based)
- * Kept for backward compatibility with existing module quiz generation
  */
 router.post('/generate', authenticate, async (req, res) => {
   try {
@@ -608,6 +438,152 @@ router.post('/generate', authenticate, async (req, res) => {
     });
 
     res.json({ success: true, data: questions, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * GET /api/assessments/:id
+ * Get single assessment
+ */
+router.get('/:id', authenticate, async (req, res) => {
+  try {
+    const assessment = await Assessments.getById(req.params.id);
+    if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Not found' });
+
+    const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
+    if (!isPrivileged) {
+      const myAssignment = assessment.employeeAssignments?.find(ea => ea.userId === req.user.userId);
+      if (!myAssignment) return res.status(403).json({ success: false, data: null, error: 'Access denied' });
+      return res.json({ success: true, data: { ...assessment, employeeAssignments: [myAssignment] }, error: null });
+    }
+
+    res.json({ success: true, data: assessment, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * POST /api/assessments/:id/submit
+ * Employee submits their assessment → auto-generates report
+ */
+router.post('/:id/submit', authenticate, async (req, res) => {
+  try {
+    const { responses } = req.body;
+    const assessment = await Assessments.getById(req.params.id);
+
+    if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
+
+    const assignmentIdx = assessment.employeeAssignments?.findIndex(ea => ea.userId === req.user.userId);
+
+    if (assignmentIdx === -1 || assignmentIdx === undefined || assignmentIdx == null) {
+      return res.status(403).json({ success: false, data: null, error: 'You are not assigned to this assessment' });
+    }
+
+    const assignment = assessment.employeeAssignments[assignmentIdx];
+    if (assignment.status === 'submitted') {
+      return res.status(400).json({ success: false, data: null, error: 'Assessment already submitted' });
+    }
+
+    if (assessment.deadline && new Date() > new Date(assessment.deadline)) {
+      return res.status(403).json({ success: false, data: null, error: 'Submission deadline has passed' });
+    }
+
+    // Score the submission
+    const scoring = scoreSubmission(assignment.questions, responses || []);
+
+    // Update the specific employee's assignment inside the assessment
+    const updatedAssignments = [...assessment.employeeAssignments];
+    updatedAssignments[assignmentIdx] = {
+      ...assignment,
+      status: 'submitted',
+      submittedAt: new Date().toISOString(),
+      responses,
+      scoring,
+    };
+
+    // Persist updated assessment to Supabase
+    await Assessments.update(req.params.id, {
+      employeeAssignments: updatedAssignments,
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Generate and persist report
+    const report = {
+      id: randomUUID(),
+      assessmentId: assessment.id,
+      assessmentTitle: assessment.title,
+      userId: req.user.userId,
+      userName: req.user.name,
+      jobRole: assignment.jobRole,
+      submittedAt: new Date().toISOString(),
+      ...scoring,
+      questions: assignment.questions,
+      responses,
+      generatedAt: new Date().toISOString(),
+    };
+
+    await Reports.create(report);
+
+    res.json({ success: true, data: { report }, error: null });
+  } catch (e) {
+    console.error('[POST /api/assessments/:id/submit]', e);
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * GET /api/assessments/:id/report
+ * Get report for a specific assessment
+ */
+router.get('/:id/report', authenticate, async (req, res) => {
+  try {
+    const allReports = await Reports.getAll();
+    const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
+
+    const filtered = isPrivileged
+      ? allReports.filter(r => r.assessmentId === req.params.id)
+      : allReports.filter(r => r.assessmentId === req.params.id && r.userId === req.user.userId);
+
+    res.json({ success: true, data: filtered, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * PUT /api/assessments/:id
+ * Update (admin/manager)
+ */
+router.put('/:id', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const existing = await Assessments.getById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, data: null, error: 'Not found' });
+
+    const updated = await Assessments.update(req.params.id, {
+      ...req.body,
+      id: req.params.id,
+      updatedAt: new Date().toISOString(),
+    });
+
+    res.json({ success: true, data: updated || existing, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * DELETE /api/assessments/:id
+ * Delete (admin/manager)
+ */
+router.delete('/:id', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const existing = await Assessments.getById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, data: null, error: 'Not found' });
+    await Assessments.delete(req.params.id);
+    res.json({ success: true, data: { id: req.params.id }, error: null });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
   }

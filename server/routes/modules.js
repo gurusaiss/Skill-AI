@@ -1,30 +1,22 @@
 /**
  * routes/modules.js
- * Module management routes - Supabase integrated
+ * Module management routes - fully Supabase integrated
+ * pending_modules + module_assignments → DataStore (Supabase / JSON fallback)
+ * approved modules → db/store.js (Supabase)
  */
 
 import express from 'express';
 import { authenticate } from '../middleware/auth.js';
 import * as db from '../db/store.js';
 import UserStore from '../services/UserStore.js';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
+import { PendingModules, ModuleAssignments } from '../services/DataStore.js';
 
 const __moduleDir = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__moduleDir, '../data');
-const PENDING_MODULES_FILE = join(DATA_DIR, 'pending_modules.json');
-const MODULE_ASSIGNMENTS_FILE = join(DATA_DIR, 'module_assignments.json');
-
-if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-if (!existsSync(PENDING_MODULES_FILE)) writeFileSync(PENDING_MODULES_FILE, JSON.stringify([], null, 2));
-if (!existsSync(MODULE_ASSIGNMENTS_FILE)) writeFileSync(MODULE_ASSIGNMENTS_FILE, JSON.stringify([], null, 2));
-
-const readPending = () => { try { return JSON.parse(readFileSync(PENDING_MODULES_FILE, 'utf-8')); } catch { return []; } };
-const writePending = (d) => writeFileSync(PENDING_MODULES_FILE, JSON.stringify(d, null, 2));
-const readAssignments = () => { try { return JSON.parse(readFileSync(MODULE_ASSIGNMENTS_FILE, 'utf-8')); } catch { return []; } };
-const writeAssignments = (d) => writeFileSync(MODULE_ASSIGNMENTS_FILE, JSON.stringify(d, null, 2));
 
 const router = express.Router();
 
@@ -55,10 +47,61 @@ router.get('/', authenticate, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching modules:', error);
-    res.status(500).json({
-      success: false,
-      error: { message: 'Failed to fetch modules' },
-    });
+    res.status(500).json({ success: false, error: { message: 'Failed to fetch modules' } });
+  }
+});
+
+/**
+ * GET /api/modules/pending
+ * Admin/Manager: get all pending auto-generated modules awaiting approval
+ * NOTE: must be before /:id
+ */
+router.get('/pending', authenticate, async (req, res) => {
+  try {
+    if (!['admin', 'manager'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
+    }
+    const all = await PendingModules.getAll();
+    const pendings = all.filter(p => p.status === 'pending_approval');
+    res.json({ success: true, data: pendings, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { message: 'Failed to fetch pending modules' } });
+  }
+});
+
+/**
+ * GET /api/modules/my-assignments
+ * Employee: get all modules assigned to them (mandatory + optional)
+ * NOTE: must be before /:id
+ */
+router.get('/my-assignments', authenticate, async (req, res) => {
+  try {
+    const all = await ModuleAssignments.getAll();
+    const assignments = all.filter(a => a.userId === req.user.userId);
+    const enriched = await Promise.all(assignments.map(async a => {
+      const mod = await db.getModuleById(a.moduleId).catch(() => null);
+      return { ...a, module: mod };
+    }));
+    res.json({ success: true, data: enriched, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { message: 'Failed to fetch assignments' } });
+  }
+});
+
+/**
+ * GET /api/modules/assignments/all
+ * Admin/Manager: all module assignments with progress
+ * NOTE: must be before /:id
+ */
+router.get('/assignments/all', authenticate, async (req, res) => {
+  try {
+    if (!['admin', 'manager'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
+    }
+    const assignments = await ModuleAssignments.getAll();
+    res.json({ success: true, data: assignments, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { message: 'Failed to fetch' } });
   }
 });
 
@@ -72,49 +115,32 @@ router.get('/:id', authenticate, async (req, res) => {
     const module = await db.getModuleById(id);
 
     if (!module) {
-      return res.status(404).json({
-        success: false,
-        error: { message: 'Module not found' },
-      });
+      return res.status(404).json({ success: false, error: { message: 'Module not found' } });
     }
 
-    res.json({
-      success: true,
-      data: module,
-    });
+    res.json({ success: true, data: module });
   } catch (error) {
     console.error('Error fetching module:', error);
-    res.status(500).json({
-      success: false,
-      error: { message: 'Failed to fetch module' },
-    });
+    res.status(500).json({ success: false, error: { message: 'Failed to fetch module' } });
   }
 });
 
 /**
  * POST /api/modules
- * Create new module (admin only) - persists to Supabase
+ * Create new module (admin/manager) - persists to Supabase
  */
 router.post('/', authenticate, async (req, res) => {
   try {
     const user = req.user;
-    
-    // Check authorization
+
     if (user.role !== 'admin' && user.role !== 'manager') {
-      return res.status(403).json({
-        success: false,
-        error: { message: 'Only admins and managers can create modules' },
-      });
+      return res.status(403).json({ success: false, error: { message: 'Only admins and managers can create modules' } });
     }
 
     const { title, description, category, difficulty, estimatedDuration, skills, tasks, resources, completionCriteria, content } = req.body;
 
-    // Validate required fields — only title is strictly required
     if (!title) {
-      return res.status(400).json({
-        success: false,
-        error: { message: 'Module title is required' },
-      });
+      return res.status(400).json({ success: false, error: { message: 'Module title is required' } });
     }
 
     const newModule = await db.createModule({
@@ -128,66 +154,45 @@ router.post('/', authenticate, async (req, res) => {
       resources: resources || [],
       completionCriteria: completionCriteria || 'Complete all tasks',
       progressTracking: true,
-      content: content || {},           // ← Full generated data (roadmap, sessions, quizzes, notes)
+      content: content || {},
     }, user.userId || user.id);
 
-    res.status(201).json({
-      success: true,
-      data: newModule,
-    });
+    res.status(201).json({ success: true, data: newModule });
   } catch (error) {
     console.error('Error creating module:', error);
-    res.status(500).json({
-      success: false,
-      error: { message: 'Failed to create module' },
-    });
+    res.status(500).json({ success: false, error: { message: 'Failed to create module' } });
   }
 });
 
 /**
  * PUT /api/modules/:id
- * Update module (admin only) - persists to Supabase
+ * Update module (admin/manager) - persists to Supabase
  */
 router.put('/:id', authenticate, async (req, res) => {
   try {
     const user = req.user;
     const { id } = req.params;
 
-    // Check authorization
     if (user.role !== 'admin' && user.role !== 'manager') {
-      return res.status(403).json({
-        success: false,
-        error: { message: 'Only admins and managers can update modules' },
-      });
+      return res.status(403).json({ success: false, error: { message: 'Only admins and managers can update modules' } });
     }
 
-    const updates = req.body;
-    const updatedModule = await db.updateModule(id, updates);
+    const updatedModule = await db.updateModule(id, req.body);
 
     if (!updatedModule) {
-      return res.status(404).json({
-        success: false,
-        error: { message: 'Module not found' },
-      });
+      return res.status(404).json({ success: false, error: { message: 'Module not found' } });
     }
 
-    res.json({
-      success: true,
-      data: updatedModule,
-    });
+    res.json({ success: true, data: updatedModule });
   } catch (error) {
     console.error('Error updating module:', error);
-    res.status(500).json({
-      success: false,
-      error: { message: 'Failed to update module' },
-    });
+    res.status(500).json({ success: false, error: { message: 'Failed to update module' } });
   }
 });
 
 /**
  * POST /api/modules/:id/generate-content
- * Use AI to generate full learning content for a module (sessions, roadmap, projects, resources)
- * All authenticated users can trigger this (employees need it when entering a module)
+ * Use AI to generate full learning content for a module
  */
 router.post('/:id/generate-content', authenticate, async (req, res) => {
   try {
@@ -374,20 +379,16 @@ IMPORTANT:
       };
     }
 
-    // Save generated content to module
-    const contentUpdate = {
-      sessions: generated.sessions,
-      roadmap: generated.roadmap || [],
-      projects: generated.projects || [],
-      resources: generated.resources || [],
-      contentGeneratedAt: new Date().toISOString(),
-    };
-
+    // Save generated content to module via Supabase
     await db.updateModule(id, {
-      sessions: contentUpdate.sessions,
+      sessions: generated.sessions,
       content: {
         ...(module.content || {}),
-        ...contentUpdate,
+        sessions: generated.sessions,
+        roadmap: generated.roadmap || [],
+        projects: generated.projects || [],
+        resources: generated.resources || [],
+        contentGeneratedAt: new Date().toISOString(),
       },
     });
 
@@ -408,34 +409,20 @@ router.delete('/:id', authenticate, async (req, res) => {
     const user = req.user;
     const { id } = req.params;
 
-    // Check authorization
     if (user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        error: { message: 'Only admins can delete modules' },
-      });
+      return res.status(403).json({ success: false, error: { message: 'Only admins can delete modules' } });
     }
 
     const deleted = await db.deleteModule(id);
 
     if (!deleted) {
-      return res.status(404).json({
-        success: false,
-        error: { message: 'Module not found' },
-      });
+      return res.status(404).json({ success: false, error: { message: 'Module not found' } });
     }
 
-    res.json({
-      success: true,
-      message: 'Module deleted',
-      data: { id },
-    });
+    res.json({ success: true, message: 'Module deleted', data: { id } });
   } catch (error) {
     console.error('Error deleting module:', error);
-    res.status(500).json({
-      success: false,
-      error: { message: 'Failed to delete module' },
-    });
+    res.status(500).json({ success: false, error: { message: 'Failed to delete module' } });
   }
 });
 
@@ -446,7 +433,6 @@ router.delete('/:id', authenticate, async (req, res) => {
 /**
  * POST /api/modules/auto-generate
  * Auto-generate a module from an assessment report — stored as PENDING (needs approval)
- * Body: { assessmentReportId, userId, jobRole, weakAreas, assessmentTitle }
  */
 router.post('/auto-generate', authenticate, async (req, res) => {
   try {
@@ -460,7 +446,6 @@ router.post('/auto-generate', authenticate, async (req, res) => {
     const user = await UserStore.getUserById(userId);
     const skills = Array.isArray(weakAreas) && weakAreas.length > 0 ? weakAreas : ['Core Skills'];
 
-    // Get JD text for richer module generation
     let jdContext = user?.jobDescription || '';
     if (!jdContext && user?.jobDescriptionFile?.path) {
       try {
@@ -469,7 +454,6 @@ router.post('/auto-generate', authenticate, async (req, res) => {
       } catch {}
     }
 
-    // Generate rich module content using AI — with sessions + quizzes per session
     let moduleContent = null;
     try {
       const groqKey = process.env.GROQ_API_KEY;
@@ -524,8 +508,8 @@ Return JSON:
     const pending = {
       id: randomUUID(),
       type: 'auto_generated',
-      isMandatory: true,           // auto-generated = mandatory
-      status: 'pending_approval',  // admin/manager must approve before employee sees it
+      isMandatory: true,
+      status: 'pending_approval',
       targetUserId: userId,
       targetUserName: user?.name || '',
       jobRole: jobRole || '',
@@ -547,30 +531,12 @@ Return JSON:
       createdBy: req.user.userId,
     };
 
-    const pendings = readPending();
-    pendings.push(pending);
-    writePending(pendings);
-
-    res.status(201).json({ success: true, data: pending, error: null });
+    // Persist to Supabase via DataStore
+    const saved = await PendingModules.create(pending);
+    res.status(201).json({ success: true, data: saved || pending, error: null });
   } catch (e) {
     console.error('[POST /modules/auto-generate]', e);
     res.status(500).json({ success: false, error: { message: 'Failed to auto-generate module' } });
-  }
-});
-
-/**
- * GET /api/modules/pending
- * Admin/Manager: get all pending auto-generated modules awaiting approval
- */
-router.get('/pending', authenticate, async (req, res) => {
-  try {
-    if (!['admin', 'manager'].includes(req.user.role)) {
-      return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
-    }
-    const pendings = readPending().filter(p => p.status === 'pending_approval');
-    res.json({ success: true, data: pendings, error: null });
-  } catch (e) {
-    res.status(500).json({ success: false, error: { message: 'Failed to fetch pending modules' } });
   }
 });
 
@@ -584,13 +550,10 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
       return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
     }
 
-    const pendings = readPending();
-    const idx = pendings.findIndex(p => p.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ success: false, error: { message: 'Pending module not found' } });
+    const pending = await PendingModules.getById(req.params.id);
+    if (!pending) return res.status(404).json({ success: false, error: { message: 'Pending module not found' } });
 
-    const pending = pendings[idx];
-
-    // Create the real module
+    // Create the real module in Supabase
     const newModule = await db.createModule({
       title: pending.module.title,
       description: pending.module.description,
@@ -612,7 +575,7 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
 
     const moduleId = newModule.id || newModule;
 
-    // Write to module_assignments.json (used by /api/modules/my-assignments)
+    // Write module assignment to Supabase via DataStore
     const moduleAssignment = {
       id: randomUUID(),
       moduleId,
@@ -622,11 +585,9 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
       assignedBy: req.user.userId,
       status: 'assigned',
     };
-    const mAssignments = readAssignments();
-    mAssignments.push(moduleAssignment);
-    writeAssignments(mAssignments);
+    await ModuleAssignments.create(moduleAssignment);
 
-    // Also write to main assignments system (used by Employee.jsx /api/assignments)
+    // Also write to main assignments system (visible on Employee dashboard)
     try {
       const moduleTitle = pending.module.title || `Training: ${pending.weakAreas?.[0] || pending.jobRole || 'Skills'}`;
       await UserStore.createAssignment({
@@ -643,7 +604,6 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
         name: moduleTitle,
         module_name: moduleTitle,
         description: pending.module.description || '',
-        // Store module reference for detail view
         moduleRef: {
           id: moduleId,
           title: moduleTitle,
@@ -653,12 +613,15 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
       });
     } catch (e) {
       console.warn('[modules/approve] Could not write to main assignments:', e.message);
-      // Non-fatal — module_assignments.json was already written
     }
 
-    // Mark pending as approved
-    pendings[idx] = { ...pending, status: 'approved', approvedAt: new Date().toISOString(), approvedBy: req.user.userId, moduleId };
-    writePending(pendings);
+    // Mark pending as approved in Supabase
+    await PendingModules.update(req.params.id, {
+      status: 'approved',
+      approvedAt: new Date().toISOString(),
+      approvedBy: req.user.userId,
+      moduleId,
+    });
 
     res.json({ success: true, data: { module: newModule, assignment: moduleAssignment }, error: null });
   } catch (e) {
@@ -676,13 +639,16 @@ router.post('/pending/:id/reject', authenticate, async (req, res) => {
     if (!['admin', 'manager'].includes(req.user.role)) {
       return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
     }
-    const pendings = readPending();
-    const idx = pendings.findIndex(p => p.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ success: false, error: { message: 'Not found' } });
+    const pending = await PendingModules.getById(req.params.id);
+    if (!pending) return res.status(404).json({ success: false, error: { message: 'Not found' } });
 
-    pendings[idx] = { ...pendings[idx], status: 'rejected', rejectedAt: new Date().toISOString(), rejectedBy: req.user.userId, reason: req.body.reason || '' };
-    writePending(pendings);
-    res.json({ success: true, data: pendings[idx], error: null });
+    const updated = await PendingModules.update(req.params.id, {
+      status: 'rejected',
+      rejectedAt: new Date().toISOString(),
+      rejectedBy: req.user.userId,
+      reason: req.body.reason || '',
+    });
+    res.json({ success: true, data: updated || pending, error: null });
   } catch (e) {
     res.status(500).json({ success: false, error: { message: 'Failed to reject' } });
   }
@@ -691,7 +657,6 @@ router.post('/pending/:id/reject', authenticate, async (req, res) => {
 /**
  * POST /api/modules/assign
  * Manually assign modules to users or groups
- * Body: { moduleIds: [], targetUserIds: [], targetGroupId?, isMandatory: false }
  */
 router.post('/assign', authenticate, async (req, res) => {
   try {
@@ -715,13 +680,13 @@ router.post('/assign', authenticate, async (req, res) => {
       } catch { /* skip */ }
     }
 
+    const existingAssignments = await ModuleAssignments.getAll();
     const created = [];
-    const assignments = readAssignments();
 
     for (const userId of allUserIds) {
       for (const moduleId of moduleIds) {
         // Skip duplicates
-        const exists = assignments.some(a => a.moduleId === moduleId && a.userId === userId);
+        const exists = existingAssignments.some(a => a.moduleId === moduleId && a.userId === userId);
         if (exists) continue;
 
         const assignment = {
@@ -733,12 +698,11 @@ router.post('/assign', authenticate, async (req, res) => {
           assignedBy: req.user.userId,
           status: 'assigned',
         };
-        assignments.push(assignment);
+        await ModuleAssignments.create(assignment);
         created.push(assignment);
       }
     }
 
-    writeAssignments(assignments);
     res.json({ success: true, data: { assigned: created.length, assignments: created }, error: null });
   } catch (e) {
     console.error('[POST /modules/assign]', e);
@@ -746,38 +710,4 @@ router.post('/assign', authenticate, async (req, res) => {
   }
 });
 
-/**
- * GET /api/modules/my-assignments
- * Employee: get all modules assigned to them (mandatory + optional)
- */
-router.get('/my-assignments', authenticate, async (req, res) => {
-  try {
-    const assignments = readAssignments().filter(a => a.userId === req.user.userId);
-    const enriched = await Promise.all(assignments.map(async a => {
-      const mod = await db.getModuleById(a.moduleId).catch(() => null);
-      return { ...a, module: mod };
-    }));
-    res.json({ success: true, data: enriched, error: null });
-  } catch (e) {
-    res.status(500).json({ success: false, error: { message: 'Failed to fetch assignments' } });
-  }
-});
-
-/**
- * GET /api/modules/assignments/all
- * Admin/Manager: all module assignments with progress
- */
-router.get('/assignments/all', authenticate, async (req, res) => {
-  try {
-    if (!['admin', 'manager'].includes(req.user.role)) {
-      return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
-    }
-    const assignments = readAssignments();
-    res.json({ success: true, data: assignments, error: null });
-  } catch (e) {
-    res.status(500).json({ success: false, error: { message: 'Failed to fetch' } });
-  }
-});
-
 export default router;
-

@@ -1,22 +1,13 @@
+/**
+ * superadmin.js — Platform-level company management
+ * Companies data is now persisted to Supabase via DataStore
+ */
 import express from 'express';
 import { authenticate, requireSuperAdmin } from '../middleware/auth.js';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import UserStore from '../services/UserStore.js';
 import AuthService from '../services/AuthService.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, '../data');
-const COMPANIES_FILE = join(DATA_DIR, 'companies.json');
-
-if (!existsSync(COMPANIES_FILE)) writeFileSync(COMPANIES_FILE, JSON.stringify([], null, 2));
-
-const readCompanies = () => {
-  try { return JSON.parse(readFileSync(COMPANIES_FILE, 'utf-8')); } catch { return []; }
-};
-const writeCompanies = (d) => writeFileSync(COMPANIES_FILE, JSON.stringify(d, null, 2));
+import { Companies } from '../services/DataStore.js';
 
 const router = express.Router();
 
@@ -29,7 +20,7 @@ router.use(authenticate, requireSuperAdmin);
  */
 router.get('/stats', async (req, res) => {
   try {
-    const companies = readCompanies();
+    const companies = await Companies.getAll();
     const allUsers = await UserStore.getAllUsers({});
 
     const stats = {
@@ -58,7 +49,7 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/companies', async (req, res) => {
   try {
-    const companies = readCompanies();
+    const companies = await Companies.getAll();
     const allUsers = await UserStore.getAllUsers({});
 
     const enriched = companies.map(c => {
@@ -98,7 +89,7 @@ router.post('/companies', async (req, res) => {
     }
 
     // Check duplicate company name
-    const companies = readCompanies();
+    const companies = await Companies.getAll();
     if (companies.find(c => c.name.toLowerCase() === name.toLowerCase())) {
       return res.status(409).json({ success: false, data: null, error: 'Company name already exists' });
     }
@@ -109,7 +100,6 @@ router.post('/companies', async (req, res) => {
       return res.status(409).json({ success: false, data: null, error: 'Admin email already registered' });
     }
 
-    // Create company first
     const companyId = `company_${randomUUID().slice(0, 8)}`;
     const company = {
       id: companyId,
@@ -137,15 +127,14 @@ router.post('/companies', async (req, res) => {
       companyId,
     });
 
-    // Link admin to company
+    // Link admin to company and persist to Supabase
     company.primaryAdminId = adminUser.userId;
-    companies.push(company);
-    writeCompanies(companies);
+    const saved = await Companies.create(company);
 
     res.status(201).json({
       success: true,
       data: {
-        company,
+        company: saved || company,
         admin: { userId: adminUser.userId, email: adminUser.email, name: adminUser.name },
         tempPassword: !adminPassword ? tempPassword : undefined,
       },
@@ -163,9 +152,8 @@ router.post('/companies', async (req, res) => {
  */
 router.put('/companies/:id', async (req, res) => {
   try {
-    const companies = readCompanies();
-    const idx = companies.findIndex(c => c.id === req.params.id);
-    if (idx === -1) {
+    const existing = await Companies.getById(req.params.id);
+    if (!existing) {
       return res.status(404).json({ success: false, data: null, error: 'Company not found' });
     }
 
@@ -176,9 +164,8 @@ router.put('/companies/:id', async (req, res) => {
     if (plan) updates.plan = plan;
     if (status) updates.status = status;
 
-    companies[idx] = { ...companies[idx], ...updates };
-    writeCompanies(companies);
-    res.json({ success: true, data: companies[idx], error: null });
+    const updated = await Companies.update(req.params.id, updates);
+    res.json({ success: true, data: updated || { ...existing, ...updates }, error: null });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
   }
@@ -214,15 +201,13 @@ router.get('/companies/:id/users', async (req, res) => {
  */
 router.post('/companies/:id/suspend', async (req, res) => {
   try {
-    const companies = readCompanies();
-    const idx = companies.findIndex(c => c.id === req.params.id);
-    if (idx === -1) {
+    const existing = await Companies.getById(req.params.id);
+    if (!existing) {
       return res.status(404).json({ success: false, data: null, error: 'Company not found' });
     }
 
-    const newStatus = companies[idx].status === 'active' ? 'suspended' : 'active';
-    companies[idx] = { ...companies[idx], status: newStatus, updatedAt: new Date().toISOString() };
-    writeCompanies(companies);
+    const newStatus = existing.status === 'active' ? 'suspended' : 'active';
+    await Companies.update(req.params.id, { status: newStatus, updatedAt: new Date().toISOString() });
     res.json({ success: true, data: { status: newStatus }, error: null });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
@@ -236,7 +221,7 @@ router.post('/companies/:id/suspend', async (req, res) => {
 router.get('/admins', async (req, res) => {
   try {
     const allUsers = await UserStore.getAllUsers({ role: 'admin' });
-    const companies = readCompanies();
+    const companies = await Companies.getAll();
 
     const enriched = allUsers.map(u => {
       const company = companies.find(c => c.id === (u.companyId || 'default'));
