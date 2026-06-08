@@ -591,4 +591,60 @@ export const ApprovalRequests = {
   },
 };
 
-export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests };
+// ── GROUPS ────────────────────────────────────────────────────────────────────
+
+export const Groups = {
+  async getAll() {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbGetAll('groups');
+      if (result !== null) return result;
+      console.warn('[DataStore] groups.getAll: Supabase error, using file fallback');
+    }
+    return readFile('groups.json');
+  },
+  async getById(id) {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbGetById('groups', id);
+      if (result) return result;
+    }
+    return readFile('groups.json').find(g => g.id === id) || null;
+  },
+  async create(doc) {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbInsert('groups', doc.id, doc);
+      if (result) return result;
+    }
+    const all = readFile('groups.json');
+    all.push(doc);
+    writeFile('groups.json', all);
+    return doc;
+  },
+  async update(id, updates) {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbUpdate('groups', id, updates);
+      if (result) return result;
+    }
+    const all = readFile('groups.json');
+    const idx = all.findIndex(g => g.id === id);
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...updates };
+      writeFile('groups.json', all);
+      return all[idx];
+    }
+    return null;
+  },
+  async delete(id) {
+    const sb = getSB();
+    if (sb) {
+      const ok = await sbDelete('groups', id);
+      if (ok) return;
+    }
+    writeFile('groups.json', readFile('groups.json').filter(g => g.id !== id));
+  },
+};
+
+export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups };

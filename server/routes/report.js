@@ -81,7 +81,11 @@ router.get('/all', authenticate, async (req, res) => {
 
     let targetUsers;
     if (req.user.role === 'admin') {
-      targetUsers = allUsers.filter(u => u.role === 'employee');
+      const adminCompanyId = req.user.companyId || 'default';
+      targetUsers = allUsers.filter(u =>
+        u.role === 'employee' &&
+        (adminCompanyId === 'default' || (u.companyId || 'default') === adminCompanyId)
+      );
     } else {
       // Manager: only show their assigned employees
       const UserStoreImport = (await import('../services/UserStore.js')).default;
