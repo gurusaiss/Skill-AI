@@ -53,6 +53,10 @@ export function supabaseEnabled() {
   return enabled;
 }
 
+export function getSupabaseClient() {
+  return enabled ? supabase : null;
+}
+
 async function readJsonFile(path) {
   try {
     const txt = await readFile(path, 'utf-8');
@@ -468,6 +472,7 @@ export async function getAuditLogs(filters = {}) {
 export default {
   initSupabase,
   supabaseEnabled,
+  getSupabaseClient,
   initContentFiles,
   getPackages,
   getModules,
