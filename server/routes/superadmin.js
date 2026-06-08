@@ -79,7 +79,8 @@ router.get('/companies', async (req, res) => {
  */
 router.post('/companies', async (req, res) => {
   try {
-    const { name, domain, plan = 'standard', adminName, adminEmail, adminPassword } = req.body;
+    const { name: _name, companyName, domain, plan = 'standard', adminName, adminEmail, adminPassword } = req.body;
+    const name = (_name || companyName || '').trim();
     if (!name || !adminEmail || !adminName) {
       return res.status(400).json({
         success: false,
@@ -157,9 +158,10 @@ router.put('/companies/:id', async (req, res) => {
       return res.status(404).json({ success: false, data: null, error: 'Company not found' });
     }
 
-    const { name, domain, plan, status } = req.body;
+    const { name: _name, companyName, domain, plan, status } = req.body;
+    const name = (_name || companyName || '').trim();
     const updates = { updatedAt: new Date().toISOString() };
-    if (name) updates.name = name.trim();
+    if (name) updates.name = name;
     if (domain !== undefined) updates.domain = domain;
     if (plan) updates.plan = plan;
     if (status) updates.status = status;
