@@ -62,13 +62,22 @@ router.get('/all', authenticate, async (req, res) => {
     const UserStore = (await import('../services/UserStore.js')).default;
     const db = await import('../db/store.js');
 
-    const [users, assignmentsRaw] = await Promise.allSettled([
+    const [users, assignmentsRaw, modulesRaw] = await Promise.allSettled([
       UserStore.getAllUsers(),
       db.getAssignments(),
+      db.getModules(),
     ]);
 
     const allUsers = users.status === 'fulfilled' ? (users.value || []) : [];
     const allAssignments = assignmentsRaw.status === 'fulfilled' ? (assignmentsRaw.value || []) : [];
+    const allModules = modulesRaw.status === 'fulfilled' ? (modulesRaw.value || []) : [];
+
+    // Build a quick lookup map: moduleId → title
+    const moduleNameMap = {};
+    (Array.isArray(allModules) ? allModules : allModules.modules || []).forEach(m => {
+      const id = m.id || m.module_id;
+      if (id) moduleNameMap[id] = m.title || m.name || 'Unknown Module';
+    });
 
     let targetUsers;
     if (req.user.role === 'admin') {
@@ -102,9 +111,15 @@ router.get('/all', authenticate, async (req, res) => {
           const d = a.updated_at || a.created_at;
           return (!latest || (d && d > latest)) ? d : latest;
         }, null),
+        jobRole: u.jobRole || u.job_role || '',
         assignments: userAssignments.map(a => ({
           id: a.id,
-          moduleName: a.title || a.name || 'Unknown Module',
+          // Resolve module name from the module lookup map
+          moduleName: a.module_name || a.title || a.name
+            || moduleNameMap[a.assignable_id || a.module_id]
+            || a.assignable_type || 'Unknown Module',
+          assignableId: a.assignable_id,
+          assignableType: a.assignable_type,
           status: a.status,
           progress: a.progress || 0,
           dueDate: a.due_date,
