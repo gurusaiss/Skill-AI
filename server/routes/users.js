@@ -73,7 +73,11 @@ router.get('/', authenticate, async (req, res) => {
     if (emailVerified !== undefined) filters.emailVerified = emailVerified === 'true';
     if (isManager && !filters.role) filters.role = 'employee';
 
-    const users = await UserStore.getAllUsers(filters);
+    const allUsers = await UserStore.getAllUsers(filters);
+    // Company isolation: admin only sees their own company's users
+    const users = (isAdmin && req.user.companyId && req.user.companyId !== 'default')
+      ? allUsers.filter(u => (u.companyId || 'default') === req.user.companyId)
+      : allUsers;
     const sanitizedUsers = users.map(sanitizeUser);
 
     res.json({ success: true, data: { users: sanitizedUsers, count: sanitizedUsers.length }, error: null });
@@ -122,6 +126,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       department: department || '',
       jobDescription: jobDescription || '',
       companyName: companyName || '',
+      companyId: req.user.companyId || 'default',
     });
 
     await UserStore.logAuthEvent('user_created_by_admin', user.userId, {
@@ -383,6 +388,10 @@ router.delete('/:userId', authenticate, requireRole('admin'), async (req, res) =
     const user = await UserStore.getUserById(userId);
     if (!user) {
       return res.status(404).json({ success: false, data: null, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+    }
+    // Company isolation: admin can only delete users in their own company
+    if (req.user.role === 'admin' && req.user.companyId !== 'default' && (user.companyId || 'default') !== req.user.companyId) {
+      return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Cannot delete users from other companies' } });
     }
 
     await UserStore.deleteUser(userId);

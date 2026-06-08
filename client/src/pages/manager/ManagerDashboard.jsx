@@ -205,6 +205,9 @@ export default function ManagerDashboard() {
   const [employeeAssignments, setEmployeeAssignments] = useState([]);
   const [toasts, setToasts] = useState([]);
   const [activeView, setActiveView] = useState('overview');
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [requestForm, setRequestForm] = useState({ actionType: 'assign_module', title: '', description: '', category: 'General', difficulty: 'beginner', targetId: '', targetTitle: '', employeeIds: [], priority: 'medium', dueDate: '', notes: '' });
+  const [submittingRequest, setSubmittingRequest] = useState(false);
   const toastIdRef = useRef(0);
 
   const addToast = useCallback((message, type = 'info') => {
@@ -290,6 +293,41 @@ export default function ManagerDashboard() {
   const closeEmployeeDetail = () => {
     setSelectedEmployee(null);
     setEmployeeAssignments([]);
+  };
+
+  const handleSubmitRequest = async (e) => {
+    e.preventDefault();
+    setSubmittingRequest(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const payload = {};
+      if (requestForm.actionType === 'assign_module' || requestForm.actionType === 'assign_assessment') {
+        payload.targetId = requestForm.targetId;
+        payload.targetTitle = requestForm.targetTitle;
+        payload.targetType = requestForm.actionType === 'assign_module' ? 'module' : 'assessment';
+        payload.employeeIds = requestForm.employeeIds;
+        payload.priority = requestForm.priority;
+        payload.dueDate = requestForm.dueDate || null;
+      } else {
+        payload.title = requestForm.title;
+        payload.description = requestForm.description;
+        payload.category = requestForm.category;
+        payload.difficulty = requestForm.difficulty;
+      }
+      await fetch(`${BASE_URL}/api/approvals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ actionType: requestForm.actionType, payload, notes: requestForm.notes }),
+      });
+      setShowRequestModal(false);
+      setRequestForm({ actionType: 'assign_module', title: '', description: '', category: 'General', difficulty: 'beginner', targetId: '', targetTitle: '', employeeIds: [], priority: 'medium', dueDate: '', notes: '' });
+      // Show a simple alert since we may not have addToast available
+      alert('Request submitted! Admin will review and take action.');
+    } catch (err) {
+      alert('Failed to submit request: ' + err.message);
+    } finally {
+      setSubmittingRequest(false);
+    }
   };
 
   const filteredEmployees = employees.filter((emp) => {
@@ -509,6 +547,12 @@ export default function ManagerDashboard() {
             className="px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 text-sm font-medium transition-all"
           >
             ↻ Refresh
+          </button>
+          <button
+            onClick={() => setShowRequestModal(true)}
+            className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold transition-all flex items-center gap-2"
+          >
+            📋 Submit Request
           </button>
         </div>
       </div>
@@ -811,6 +855,143 @@ export default function ManagerDashboard() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Submit Approval Request Modal */}
+      {showRequestModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-[#1E293B] border border-slate-700/80 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 sticky top-0 bg-[#1E293B]">
+              <h2 className="text-lg font-bold text-white">📋 Submit Approval Request</h2>
+              <button onClick={() => setShowRequestModal(false)} className="text-slate-400 hover:text-white text-xl">✕</button>
+            </div>
+            <form onSubmit={handleSubmitRequest} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Request Type</label>
+                <select
+                  value={requestForm.actionType}
+                  onChange={e => setRequestForm(f => ({ ...f, actionType: e.target.value }))}
+                  className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
+                >
+                  <option value="assign_module">Assign Module to Employees</option>
+                  <option value="assign_assessment">Assign Assessment to Employees</option>
+                  <option value="create_module">Request New Module Creation</option>
+                  <option value="create_assessment">Request New Assessment Creation</option>
+                </select>
+              </div>
+
+              {(requestForm.actionType === 'assign_module' || requestForm.actionType === 'assign_assessment') ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                      {requestForm.actionType === 'assign_module' ? 'Module' : 'Assessment'} Title / ID
+                    </label>
+                    <input
+                      value={requestForm.targetTitle}
+                      onChange={e => setRequestForm(f => ({ ...f, targetTitle: e.target.value, targetId: e.target.value }))}
+                      placeholder={`Enter ${requestForm.actionType === 'assign_module' ? 'module' : 'assessment'} name or ID`}
+                      className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Priority</label>
+                    <select
+                      value={requestForm.priority}
+                      onChange={e => setRequestForm(f => ({ ...f, priority: e.target.value }))}
+                      className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Due Date (optional)</label>
+                    <input
+                      type="date"
+                      value={requestForm.dueDate}
+                      onChange={e => setRequestForm(f => ({ ...f, dueDate: e.target.value }))}
+                      className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Title <span className="text-red-400">*</span></label>
+                    <input
+                      required
+                      value={requestForm.title}
+                      onChange={e => setRequestForm(f => ({ ...f, title: e.target.value }))}
+                      placeholder={requestForm.actionType === 'create_module' ? 'Module title' : 'Assessment title'}
+                      className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Description</label>
+                    <textarea
+                      value={requestForm.description}
+                      onChange={e => setRequestForm(f => ({ ...f, description: e.target.value }))}
+                      placeholder="Brief description..."
+                      rows={3}
+                      className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60 resize-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Category</label>
+                      <input
+                        value={requestForm.category}
+                        onChange={e => setRequestForm(f => ({ ...f, category: e.target.value }))}
+                        className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Difficulty</label>
+                      <select
+                        value={requestForm.difficulty}
+                        onChange={e => setRequestForm(f => ({ ...f, difficulty: e.target.value }))}
+                        className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
+                      >
+                        <option value="beginner">Beginner</option>
+                        <option value="intermediate">Intermediate</option>
+                        <option value="advanced">Advanced</option>
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Notes (optional)</label>
+                <textarea
+                  value={requestForm.notes}
+                  onChange={e => setRequestForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Any additional notes for the admin..."
+                  rows={2}
+                  className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60 resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRequestModal(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingRequest}
+                  className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white font-bold text-sm transition-colors"
+                >
+                  {submittingRequest ? 'Submitting...' : 'Submit Request'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

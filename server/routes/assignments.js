@@ -316,8 +316,16 @@ router.get('/dashboard', authenticate, async (req, res) => {
  */
 router.get('/requests', authenticate, requireRole('admin'), async (req, res) => {
   try {
-    // Return all requests; client filters by status
-    const requests = await UserStore.getAssignmentRequests({});
+    // Return requests filtered by admin's company
+    const allRequests = await UserStore.getAssignmentRequests({});
+    let requests = allRequests;
+    if (req.user.companyId && req.user.companyId !== 'default') {
+      const allUsers = await UserStore.getAllUsers({});
+      const companyUserIds = new Set(
+        allUsers.filter(u => (u.companyId || 'default') === req.user.companyId).map(u => u.userId || u.id)
+      );
+      requests = allRequests.filter(r => companyUserIds.has(r.manager_id) || companyUserIds.has(r.employee_id));
+    }
     res.json({ success: true, data: { requests } });
   } catch (error) {
     res.status(500).json({ success: false, error: { message: 'Failed to fetch requests' } });
@@ -431,10 +439,21 @@ router.get('/', authenticate, async (req, res) => {
     }
 
     const assignments = await UserStore.getAssignments(filters);
+    // Company isolation: admin only sees assignments for their company's users
+    let result = assignments;
+    if (req.user.role === 'admin' && req.user.companyId && req.user.companyId !== 'default') {
+      const allUsers = await UserStore.getAllUsers({});
+      const companyUserIds = new Set(
+        allUsers.filter(u => (u.companyId || 'default') === req.user.companyId).map(u => u.userId || u.id)
+      );
+      result = assignments.filter(a =>
+        companyUserIds.has(a.assigned_to_user) || companyUserIds.has(a.assigned_by)
+      );
+    }
 
     res.json({
       success: true,
-      data: { assignments, count: assignments.length },
+      data: { assignments: result, count: result.length },
       error: null,
     });
   } catch (error) {
