@@ -36,6 +36,7 @@ import notificationsRouter from './routes/notifications.js';
 import agentControlRouter from './routes/agentcontrol.js';
 import autonomousScheduler from './agent/AutonomousScheduler.js';
 import superadminRouter from './routes/superadmin.js';
+import { autoSeed } from './utils/autoSeed.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataPath = join(__dirname, 'data');
@@ -69,8 +70,12 @@ import('./db/store.js').then(async db => {
                           || process.env.SUPABASE_KEY);
     await db.initContentFiles();
     console.log('[DB] Store initialized:', db.supabaseEnabled() ? 'Supabase' : 'File-based');
+    // Auto-seed demo accounts if none exist (runs once on first deploy)
+    await autoSeed();
   } catch (err) {
     console.warn('[DB] Store init warning:', err.message);
+    // Still try to seed even if Supabase init had issues
+    try { await autoSeed(); } catch {}
   }
 }).catch(err => {
   console.warn('[DB] Store import warning:', err.message);
