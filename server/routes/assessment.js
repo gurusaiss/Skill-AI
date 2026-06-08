@@ -158,41 +158,106 @@ Always return valid JSON with exactly a "questions" array.`;
   });
 }
 
-// ── Score a submission ────────────────────────────────────────────────────────
+// ── Normalise answers from frontend into a dense array indexed by question pos ─
+// Frontend sends: answers: [{questionIndex:0, answer:'B) ...'}, ...]
+// Legacy format:  responses: [{answer:'B'}, ...]   (index-ordered)
+// Both are normalised to:  responsesArr[i] = { answer: string }
+function normaliseResponses(rawAnswers, rawResponses, questionCount) {
+  // Prefer the new `answers` field (sent by Assessment.jsx)
+  if (Array.isArray(rawAnswers) && rawAnswers.length > 0) {
+    const arr = new Array(questionCount).fill(null).map(() => ({ answer: '' }));
+    rawAnswers.forEach(a => {
+      if (a && typeof a.questionIndex === 'number' && a.questionIndex >= 0 && a.questionIndex < questionCount) {
+        arr[a.questionIndex] = { answer: String(a.answer ?? '') };
+      }
+    });
+    return arr;
+  }
+  // Fallback to legacy `responses` field
+  if (Array.isArray(rawResponses) && rawResponses.length > 0) {
+    const arr = new Array(questionCount).fill(null).map(() => ({ answer: '' }));
+    rawResponses.forEach((r, i) => {
+      if (i < questionCount) arr[i] = { answer: String(r?.answer ?? '') };
+    });
+    return arr;
+  }
+  return new Array(questionCount).fill({ answer: '' });
+}
 
+// ── Score a submission ────────────────────────────────────────────────────────
+// responses: dense array of { answer: string } indexed by question position
 function scoreSubmission(questions, responses) {
   let correct = 0;
   let total = 0;
   const breakdown = [];
 
+  // Extract just the letter from answers like "B) some text" or "B"
+  const extractLetter = s => {
+    const str = (s || '').trim().toUpperCase();
+    // Matches "B)" or "B " or "B." at the start, or just "A"/"B"/"C"/"D" alone
+    const m = str.match(/^([A-D])[)\s.]/);
+    if (m) return m[1];
+    if (/^[A-D]$/.test(str)) return str;
+    return '';
+  };
+
   questions.forEach((q, i) => {
-    const resp = responses[i] || {};
+    const resp = responses[i] || { answer: '' };
+    const userAnswer = resp.answer || '';
     let isCorrect = false;
 
-    if (q.type === 'mcq') {
-      const extractLetter = s => (s || '').trim().toUpperCase().replace(/^([A-D])[)\s.].*$/, '$1').charAt(0);
-      isCorrect = extractLetter(resp.answer) === extractLetter(q.answer);
-      total++;
-      if (isCorrect) correct++;
+    if (q.type === 'mcq' || q.type === 'multiple_choice') {
+      const userLetter = extractLetter(userAnswer);
+      const correctLetter = extractLetter(q.answer || '');
+      isCorrect = userLetter !== '' && userLetter === correctLetter;
+    } else if (q.type === 'fill_blank' || q.type === 'fill_in_blank') {
+      const ua = userAnswer.toLowerCase().trim();
+      const ca = (q.answer || '').toLowerCase().trim();
+      // Exact match first
+      if (ua === ca) {
+        isCorrect = true;
+      } else {
+        // Keyword overlap
+        const keywords = ca.split(/\s+/).filter(w => w.length > 3);
+        const matched = keywords.filter(k => ua.includes(k)).length;
+        isCorrect = keywords.length > 0 && (matched / keywords.length) >= 0.5;
+      }
     } else {
-      const userAnswer = (resp.answer || '').toLowerCase();
-      const modelAnswer = (q.answer || '').toLowerCase();
-      const keywords = modelAnswer.split(/\s+/).filter(w => w.length > 4);
-      const matched = keywords.filter(k => userAnswer.includes(k)).length;
-      isCorrect = keywords.length > 0 && (matched / keywords.length) >= 0.3;
-      total++;
-      if (isCorrect) correct++;
+      // Subjective — keyword overlap scoring
+      const ua = userAnswer.toLowerCase();
+      const ca = (q.answer || '').toLowerCase();
+      const keywords = ca.split(/\s+/).filter(w => w.length > 4);
+      const matched = keywords.filter(k => ua.includes(k)).length;
+      isCorrect = ua.trim().length > 10 && (keywords.length === 0 || (matched / keywords.length) >= 0.3);
     }
 
-    const correctOptionText = q.type === 'mcq' && q.options
-      ? (q.options.find(opt => opt.toUpperCase().startsWith(q.answer?.toUpperCase())) || q.answer)
-      : q.answer;
-    breakdown.push({ questionIndex: i, question: q.question, type: q.type, userAnswer: resp.answer, correctAnswer: q.answer, correctOptionText, isCorrect, skillArea: q.skillArea || 'General' });
+    total++;
+    if (isCorrect) correct++;
+
+    // Find the full correct option text for MCQ (e.g. "B) To install dependencies...")
+    let correctOptionText = q.answer;
+    if ((q.type === 'mcq' || q.type === 'multiple_choice') && Array.isArray(q.options)) {
+      const correctLetter = extractLetter(q.answer || '');
+      const found = q.options.find(opt => extractLetter(opt) === correctLetter);
+      if (found) correctOptionText = found;
+    }
+
+    breakdown.push({
+      questionIndex: i,
+      question: q.question,
+      type: q.type,
+      userAnswer: userAnswer || null,      // null = no answer (displayed as "(no answer)")
+      correctAnswer: q.answer,
+      correctOptionText,
+      isCorrect,
+      skillArea: q.skillArea || 'General',
+    });
   });
 
   const score = total > 0 ? Math.round((correct / total) * 100) : 0;
   const grade = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
 
+  // Skill area breakdown for the report
   const skillAreas = {};
   breakdown.forEach(b => {
     if (!skillAreas[b.skillArea]) skillAreas[b.skillArea] = { correct: 0, total: 0 };
@@ -200,10 +265,18 @@ function scoreSubmission(questions, responses) {
     if (b.isCorrect) skillAreas[b.skillArea].correct++;
   });
 
+  // Skill breakdown list (for bar charts)
+  const skillBreakdown = Object.entries(skillAreas).map(([skill, v]) => ({
+    skill,
+    correct: v.correct,
+    total: v.total,
+    pct: Math.round((v.correct / v.total) * 100),
+  }));
+
   const strengths = Object.entries(skillAreas).filter(([, v]) => v.correct / v.total >= 0.7).map(([k]) => k);
   const weakAreas = Object.entries(skillAreas).filter(([, v]) => v.correct / v.total < 0.7).map(([k]) => k);
 
-  return { score, grade, correct, total, breakdown, skillAreas, strengths, weakAreas };
+  return { score, grade, correct, total, breakdown, skillAreas, skillBreakdown, strengths, weakAreas };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -471,7 +544,8 @@ router.get('/:id', authenticate, async (req, res) => {
  */
 router.post('/:id/submit', authenticate, async (req, res) => {
   try {
-    const { responses } = req.body;
+    // Accept both `answers` (new frontend format) and `responses` (legacy)
+    const { answers, responses: rawResponses } = req.body;
     const assessment = await Assessments.getById(req.params.id);
 
     if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
@@ -491,8 +565,15 @@ router.post('/:id/submit', authenticate, async (req, res) => {
       return res.status(403).json({ success: false, data: null, error: 'Submission deadline has passed' });
     }
 
+    const questions = assignment.questions || [];
+
+    // Normalise answers into dense array: responses[i] = { answer: string }
+    const responses = normaliseResponses(answers, rawResponses, questions.length);
+
+    console.log(`[submit] Assessment ${req.params.id} — ${questions.length} questions, ${responses.filter(r => r?.answer).length} answered`);
+
     // Score the submission
-    const scoring = scoreSubmission(assignment.questions, responses || []);
+    const scoring = scoreSubmission(questions, responses);
 
     // Update the specific employee's assignment inside the assessment
     const updatedAssignments = [...assessment.employeeAssignments];
@@ -500,7 +581,7 @@ router.post('/:id/submit', authenticate, async (req, res) => {
       ...assignment,
       status: 'submitted',
       submittedAt: new Date().toISOString(),
-      responses,
+      responses,      // save normalised responses
       scoring,
     };
 
@@ -510,24 +591,24 @@ router.post('/:id/submit', authenticate, async (req, res) => {
       updatedAt: new Date().toISOString(),
     });
 
-    // Generate and persist report
+    // Generate and persist full report
     const report = {
       id: randomUUID(),
       assessmentId: assessment.id,
       assessmentTitle: assessment.title,
       userId: req.user.userId,
-      userName: req.user.name,
+      userName: req.user.name || assignment.userName,
       jobRole: assignment.jobRole,
       submittedAt: new Date().toISOString(),
       ...scoring,
-      questions: assignment.questions,
+      questions,
       responses,
       generatedAt: new Date().toISOString(),
     };
 
     await Reports.create(report);
 
-    res.json({ success: true, data: { report }, error: null });
+    res.json({ success: true, data: { report, scoring }, error: null });
   } catch (e) {
     console.error('[POST /api/assessments/:id/submit]', e);
     res.status(500).json({ success: false, data: null, error: e.message });
