@@ -490,10 +490,21 @@ router.get('/my', authenticate, async (req, res) => {
 router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const reports = await Reports.getAll();
-    const companyId = req.user?.companyId;
-    const filteredReports = (companyId && companyId !== 'default')
-      ? reports.filter(r => !r.companyId || r.companyId === companyId)
-      : reports;
+    const companyId = req.user?.companyId || 'default';
+
+    // Filter by company user membership (not by r.companyId, since legacy reports have none)
+    const UserStore = (await import('../services/UserStore.js')).default;
+    const allUsers = await UserStore.getAllUsers({});
+    const companyUserIds = new Set(
+      allUsers
+        .filter(u => (u.companyId || 'default') === companyId)
+        .map(u => u.userId || u.id)
+    );
+
+    const filteredReports = companyId === 'default'
+      ? reports
+      : reports.filter(r => companyUserIds.has(r.userId || r.user_id || r.submittedBy));
+
     res.json({ success: true, data: filteredReports, error: null });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
@@ -607,6 +618,7 @@ router.post('/:id/submit', authenticate, async (req, res) => {
       assessmentId: assessment.id,
       assessmentTitle: assessment.title,
       userId: req.user.userId,
+      companyId: req.user.companyId || 'default',
       userName: req.user.name || assignment.userName,
       jobRole: assignment.jobRole,
       submittedAt: new Date().toISOString(),
