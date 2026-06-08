@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-const BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
+const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
 // Dynamic quick skills derived from user goal, with tech fallback
 function getDynamicSkills(goalSkills) {

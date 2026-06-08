@@ -143,7 +143,7 @@ export default function Login() {
 
   const handleGoogleLogin = () => {
     // Redirect to Google OAuth endpoint
-    window.location.href = `${import.meta.env.PROD ? '' : 'http://localhost:3001'}/api/oauth/google`;
+    window.location.href = `${import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001')}/api/oauth/google`;
   };
 
   return (

@@ -41,7 +41,7 @@ export default function OAuthCallback() {
         
         // Fetch user profile with the token
         const response = await fetch(
-          `${import.meta.env.PROD ? '' : 'http://localhost:3001'}/api/auth/me`,
+          `${import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001')}/api/auth/me`,
           {
             headers: {
               Authorization: `Bearer ${token}`,

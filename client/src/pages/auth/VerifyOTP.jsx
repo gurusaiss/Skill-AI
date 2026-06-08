@@ -133,7 +133,7 @@ export default function VerifyOTP() {
     try {
       // Call resend OTP API
       const response = await fetch(
-        `${import.meta.env.PROD ? '' : 'http://localhost:3001'}/api/auth/resend-otp`,
+        `${import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001')}/api/auth/resend-otp`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

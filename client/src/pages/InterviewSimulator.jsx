@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../utils/api.js';
 import AgentThinking from '../components/AgentThinking.jsx';
 
-const BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
+const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
 // ── Grade metadata ────────────────────────────────────────────────────────────
 const GRADE_META = {

@@ -1,5 +1,9 @@
 // Determine API base URL based on environment
+// VITE_API_URL is set on Vercel/Render to point to the backend (e.g. https://skillforge-backend.onrender.com)
+// In local dev it falls back to localhost:3001
+// In production without VITE_API_URL it uses '' (same-origin, works for Docker/Railway)
 const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
   if (import.meta.env.PROD) return '';
   return 'http://localhost:3001';
 };

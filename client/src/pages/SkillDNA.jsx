@@ -604,7 +604,7 @@ export default function SkillDNA() {
     const token = localStorage.getItem('auth_token');
     if (!token) return;
     setMemoryLoading(true);
-    const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:3001';
+    const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
     fetch(`${API_BASE}/api/memory/${userId}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(j => {

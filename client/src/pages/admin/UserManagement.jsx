@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
-const BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:3001';
+const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
 const authFetch = async (path, options = {}) => {
   const token = localStorage.getItem('auth_token');
@@ -213,7 +213,7 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
                       onClick={async () => {
                         try {
                           const token = localStorage.getItem('auth_token');
-                          const base = import.meta.env.PROD ? '' : 'http://localhost:3001';
+                          const base = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
                           const res = await fetch(`${base}/api/users/${user.userId}/jd-file`, {
                             headers: { Authorization: `Bearer ${token}` }
                           });
