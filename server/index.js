@@ -41,6 +41,7 @@ import approvalsRouter from './routes/approvals.js';
 import groupsRouter from './routes/groups.js';
 import { autoSeed } from './utils/autoSeed.js';
 import { migrateDB } from './utils/migrateDB.js';
+import { migrateDefaultUsersToGSS } from './utils/migrateGSS.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataPath = join(__dirname, 'data');
@@ -76,6 +77,7 @@ import('./db/store.js').then(async db => {
     console.log('[DB] Store initialized:', db.supabaseEnabled() ? 'Supabase' : 'File-based');
     // Check + warn about missing DataStore tables (assessments, companies, etc.)
     await migrateDB();
+    await migrateDefaultUsersToGSS();
     // Auto-seed demo accounts if none exist (runs once on first deploy)
     await autoSeed();
   } catch (err) {

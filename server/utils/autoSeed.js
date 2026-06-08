@@ -60,7 +60,7 @@ async function seedAccount(account) {
       emailVerified:      true,
       onboardingComplete: true,
       learningUUID:       uuidv4(),
-      companyId:          'default',
+      companyId:          'company_gss',
     });
     console.log(`[autoSeed] ✅ Created: ${account.email} (${account.role})`);
   } catch (err) {
@@ -74,6 +74,27 @@ async function seedAccount(account) {
 
 export async function autoSeed() {
   try {
+    // Ensure GSS company exists before seeding users
+    try {
+      const { Companies } = await import('../services/DataStore.js');
+      const { GSS_COMPANY_ID } = await import('./migrateGSS.js');
+      const companies = await Companies.getAll();
+      if (!companies.find(c => c.id === GSS_COMPANY_ID)) {
+        await Companies.create({
+          id: GSS_COMPANY_ID,
+          name: 'GSS',
+          domain: 'gss.internal',
+          plan: 'enterprise',
+          status: 'active',
+          primaryAdminId: null,
+          createdAt: '2020-01-01T00:00:00.000Z',
+          updatedAt: new Date().toISOString(),
+          settings: {},
+        });
+        console.log('[autoSeed] Created GSS company');
+      }
+    } catch {}
+
     console.log('[autoSeed] Checking if seed is needed...');
 
     // Check if any users exist already
