@@ -85,14 +85,26 @@ const groqEnabled = !!(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.leng
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
+  'https://skillforge-swart-mu.vercel.app',          // production frontend
   process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
 app.use(cors({
-  origin: allowedOrigins.length > 2 ? allowedOrigins : '*',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Render health checks)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Allow any vercel.app preview deploy for this project
+    if (origin.endsWith('.vercel.app')) return callback(null, true);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+// Handle OPTIONS preflight for all routes
+app.options('*', cors());
 app.use(express.json({ limit: '2mb' }));
 
 // ── API Documentation ────────────────────────────────────────────────────────────
