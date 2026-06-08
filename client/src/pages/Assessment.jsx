@@ -220,22 +220,24 @@ export default function Assessment() {
     setShowConfirm(false);
     setSubmitting(true);
     try {
-      const payload = {
-        answers: Object.entries(answers).map(([idx, value]) => ({
-          questionIndex: parseInt(idx),
-          answer: value,
-        })),
-      };
+      // Build ordered answers array — include ALL questions (even unanswered ones)
+      const questions = assessment.questions || [];
+      const answersPayload = questions.map((_, idx) => ({
+        questionIndex: idx,
+        answer: answers[idx] ?? '',   // empty string for unanswered → shows "(no answer)" correctly
+      }));
+
       const id = assessment.id || assessment._id;
       const result = await authFetch(`/api/assessments/${id}/submit`, {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ answers: answersPayload }),
       });
 
+      // Backend returns { report, scoring } — try both paths
       const scoring = result?.scoring || result?.report || result;
       setReport(scoring);
 
-      // Auto-trigger module generation
+      // Auto-trigger module generation for weak areas
       const weakAreas = scoring?.weakAreas || [];
       if (weakAreas.length > 0) {
         authFetch('/api/modules/auto-generate', {
@@ -339,7 +341,7 @@ export default function Assessment() {
     const total = report.total ?? report.totalQuestions ?? (assessment?.questions?.length ?? 0);
     const strengths = report.strengths || report.strongAreas || [];
     const weakAreas = report.weakAreas || report.weaknesses || [];
-    const skillBreakdown = report.skillBreakdown || report.breakdown || [];
+    const skillBreakdown = report.skillBreakdown || [];
 
     return (
       <div className="min-h-screen bg-[#0F172A] text-white p-4 sm:p-8">
@@ -436,16 +438,24 @@ export default function Assessment() {
                     {/* Answers */}
                     <div className="ml-10 space-y-1.5">
                       {/* User's answer */}
-                      <div className={`flex items-start gap-2 text-xs rounded-lg px-3 py-2 ${b.isCorrect ? 'bg-emerald-500/10 text-emerald-300' : 'bg-red-500/10 text-red-300'}`}>
+                      <div className={`flex items-start gap-2 text-xs rounded-lg px-3 py-2 ${
+                        b.isCorrect
+                          ? 'bg-emerald-500/10 text-emerald-300'
+                          : b.userAnswer
+                            ? 'bg-red-500/10 text-red-300'
+                            : 'bg-slate-700/50 text-slate-400'
+                      }`}>
                         <span className="font-bold shrink-0">Your answer:</span>
                         <span>{b.userAnswer || '(no answer)'}</span>
                       </div>
 
-                      {/* Correct answer — always show */}
-                      <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2 bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                        <span className="font-bold shrink-0">✓ Correct:</span>
-                        <span>{b.correctOptionText || b.correctAnswer}</span>
-                      </div>
+                      {/* Correct answer — always show when wrong */}
+                      {!b.isCorrect && (
+                        <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2 bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                          <span className="font-bold shrink-0">✓ Correct:</span>
+                          <span>{b.correctOptionText || b.correctAnswer}</span>
+                        </div>
+                      )}
 
                       {/* Skill area tag */}
                       {b.skillArea && b.skillArea !== 'General' && (
