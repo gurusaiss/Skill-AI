@@ -539,4 +539,56 @@ export const Teams = {
   },
 };
 
-export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams };
+// ── APPROVAL REQUESTS ─────────────────────────────────────────────────────────
+
+export const ApprovalRequests = {
+  async getAll() {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbGetAll('approval_requests');
+      if (result !== null) return result;
+      console.warn('[DataStore] approval_requests.getAll: Supabase error, using file fallback');
+    }
+    return readFile('approval_requests.json');
+  },
+  async getById(id) {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbGetById('approval_requests', id);
+      if (result) return result;
+    }
+    return readFile('approval_requests.json').find(a => a.id === id) || null;
+  },
+  async create(doc) {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbInsert('approval_requests', doc.id, doc);
+      if (result) return result;
+    }
+    const all = readFile('approval_requests.json');
+    all.push(doc);
+    writeFile('approval_requests.json', all);
+    return doc;
+  },
+  async update(id, updates) {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbUpdate('approval_requests', id, updates);
+      if (result) return result;
+    }
+    const all = readFile('approval_requests.json');
+    const idx = all.findIndex(a => a.id === id);
+    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile('approval_requests.json', all); return all[idx]; }
+    return null;
+  },
+  async delete(id) {
+    const sb = getSB();
+    if (sb) {
+      const ok = await sbDelete('approval_requests', id);
+      if (ok) return;
+    }
+    writeFile('approval_requests.json', readFile('approval_requests.json').filter(a => a.id !== id));
+  },
+};
+
+export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests };

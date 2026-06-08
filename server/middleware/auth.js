@@ -59,7 +59,8 @@ export const authenticate = async (req, res, next) => {
       email: user.email,
       role: user.role,
       name: user.name,
-      learningUUID: user.learningUUID
+      learningUUID: user.learningUUID,
+      companyId: user.companyId || 'default',
     };
 
     next();

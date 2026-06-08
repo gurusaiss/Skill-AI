@@ -67,6 +67,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
+  const [company, setCompany] = useState(null);
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [stats, setStats] = useState(null);
@@ -89,6 +90,11 @@ export default function AdminDashboard() {
   const loadAll = async () => {
     setLoading(true);
     try {
+      // Fetch live dashboard stats with company info
+      authFetch('/api/admin/dashboard').then(d => {
+        if (d?.company) setCompany(d.company);
+      }).catch(() => {});
+
       const [usersRes, modulesRes, assignmentsRes, requestsRes, reportsRes] = await Promise.allSettled([
         authFetch('/api/users'),
         authFetch('/api/modules'),
@@ -197,6 +203,37 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-[#0F172A] px-4 sm:px-6 py-8 max-w-7xl mx-auto">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+      {/* Company Info Banner */}
+      {company && (
+        <div className="mb-5 flex items-center justify-between rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-5 py-3">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🏢</span>
+            <div>
+              <p className="font-bold text-white text-sm">{company.name}</p>
+              <p className="text-xs text-slate-400">{company.domain || 'Admin Panel'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+              company.plan === 'enterprise' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' :
+              company.plan === 'standard' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' :
+              'bg-amber-500/20 text-amber-300 border-amber-500/30'
+            }`}>
+              {company.plan ? company.plan.charAt(0).toUpperCase() + company.plan.slice(1) : 'Trial'}
+            </span>
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+              company.status === 'active' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+              'bg-red-500/20 text-red-400 border-red-500/30'
+            }`}>
+              {company.status ? company.status.charAt(0).toUpperCase() + company.status.slice(1) : 'Active'}
+            </span>
+            <a href="/admin/approvals" className="ml-3 text-xs font-bold text-indigo-400 hover:text-indigo-300 underline">
+              Approval Center →
+            </a>
+          </div>
+        </div>
+      )}
 
       <div className="mb-8 flex items-center justify-between">
         <div className="flex items-center gap-3">
