@@ -9,7 +9,6 @@ import express from 'express';
 import { authenticate } from '../middleware/auth.js';
 import * as db from '../db/store.js';
 import UserStore from '../services/UserStore.js';
-import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
@@ -669,13 +668,11 @@ router.post('/assign', authenticate, async (req, res) => {
 
     let allUserIds = [...targetUserIds];
 
-    // Resolve group members
+    // Resolve group members via Supabase (or file fallback)
     if (targetGroupId) {
       try {
-        const memberships = JSON.parse(readFileSync(join(DATA_DIR, 'group_memberships.json'), 'utf-8'));
-        const memberIds = (Array.isArray(memberships) ? memberships : memberships.memberships || [])
-          .filter(m => (m.group_id || m.groupId) === targetGroupId)
-          .map(m => m.user_id || m.userId);
+        const memberships = await db.getGroupMemberships(targetGroupId);
+        const memberIds = memberships.map(m => m.user_id || m.userId).filter(Boolean);
         allUserIds = [...new Set([...allUserIds, ...memberIds])];
       } catch { /* skip */ }
     }

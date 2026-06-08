@@ -210,7 +210,13 @@ export async function updateModule(id, updates) {
     if (updates.tasks !== undefined) sbUpdates.tasks = updates.tasks;
     if (updates.resources !== undefined) sbUpdates.resources = updates.resources;
     if (updates.completionCriteria !== undefined) sbUpdates.completion_criteria = updates.completionCriteria;
-    if (updates.content !== undefined) sbUpdates.content = updates.content;
+    // sessions passed top-level → merge into content
+    if (updates.sessions !== undefined) {
+      sbUpdates.content = { ...(sbUpdates.content || updates.content || {}), sessions: updates.sessions };
+    }
+    if (updates.content !== undefined) {
+      sbUpdates.content = { ...(sbUpdates.content || {}), ...updates.content };
+    }
     const { data, error } = await supabase.from('modules').update(sbUpdates).eq('id', id).select().single();
     if (error) throw error;
     return normalizeModule(data);
@@ -413,6 +419,19 @@ export async function addGroupMembers(groupId, userIds, roleInGroup = 'member') 
   return memberships;
 }
 
+export async function getGroupMemberships(groupId) {
+  if (enabled) {
+    let qb = supabase.from('group_memberships').select('*');
+    if (groupId) qb = qb.eq('group_id', groupId);
+    const { data, error } = await qb;
+    if (error) throw error;
+    return data || [];
+  }
+  const f = await readJsonFile(join(DATA_DIR, 'group_memberships.json'));
+  const all = f?.memberships || [];
+  return groupId ? all.filter(m => m.group_id === groupId) : all;
+}
+
 // Audit logging
 export async function logAuthEvent(eventType, userId, metadata = {}) {
   const logEntry = { log_id: `log_${Date.now()}`, event_type: eventType, user_id: userId || null, metadata, timestamp: new Date().toISOString() };
@@ -465,6 +484,7 @@ export default {
   getGroups,
   createGroup,
   addGroupMembers,
+  getGroupMemberships,
   logAuthEvent,
   getAuditLogs,
   getAssignments,

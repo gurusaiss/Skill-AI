@@ -479,6 +479,21 @@ class UserStore {
     return data.assignments[idx];
   }
 
+  async deleteAssignment(assignmentId) {
+    const sb = getSB();
+    if (sb) {
+      const { error } = await sb.from('assignments').delete().eq('id', assignmentId);
+      if (error) throw new Error(error.message);
+      return true;
+    }
+    const data = await this.readAssignmentsFile();
+    const before = data.assignments.length;
+    data.assignments = data.assignments.filter(a => a.id !== assignmentId);
+    if (data.assignments.length === before) throw new Error('Assignment not found');
+    await this.writeAssignmentsFile(data);
+    return true;
+  }
+
   // ── Assignment Requests ───────────────────────────────────────────────────
 
   async readRequestsFile() {
@@ -497,27 +512,60 @@ class UserStore {
   }
 
   async createAssignmentRequest(reqData) {
-    const data = await this.readRequestsFile();
-    const id = `req_${String(data.nextId || 1).padStart(4, '0')}`;
+    const sb = getSB();
+    if (sb) {
+      const { randomUUID } = await import('crypto');
+      const newReq = {
+        id: `req_${randomUUID().slice(0, 8)}`,
+        manager_id:   reqData.manager_id,
+        employee_id:  reqData.employee_id || null,
+        group_id:     reqData.group_id || null,
+        module_id:    reqData.module_id,
+        priority:     reqData.priority || 'medium',
+        due_date:     reqData.due_date || null,
+        status:       reqData.status || 'pending',
+        requested_at: new Date().toISOString(),
+        decided_by:   null,
+        decided_at:   null,
+      };
+      const { data, error } = await sb.from('assignment_requests').insert([newReq]).select().maybeSingle();
+      if (error) { console.error('[UserStore] createAssignmentRequest:', error.message); }
+      return data || newReq;
+    }
+    const fileData = await this.readRequestsFile();
+    const id = `req_${String(fileData.nextId || 1).padStart(4, '0')}`;
     const newReq = {
       id,
       manager_id:   reqData.manager_id,
-      employee_id:  reqData.employee_id,
+      employee_id:  reqData.employee_id || null,
+      group_id:     reqData.group_id || null,
       module_id:    reqData.module_id,
+      priority:     reqData.priority || 'medium',
+      due_date:     reqData.due_date || null,
       status:       reqData.status || 'pending',
       requested_at: new Date().toISOString(),
       decided_by:   null,
       decided_at:   null,
     };
-    data.requests.push(newReq);
-    data.nextId = (data.nextId || 1) + 1;
-    await this.writeRequestsFile(data);
+    fileData.requests.push(newReq);
+    fileData.nextId = (fileData.nextId || 1) + 1;
+    await this.writeRequestsFile(fileData);
     return newReq;
   }
 
   async getAssignmentRequests(filters = {}) {
-    const data = await this.readRequestsFile();
-    let requests = data.requests || [];
+    const sb = getSB();
+    if (sb) {
+      let q = sb.from('assignment_requests').select('*');
+      if (filters.manager_id)  q = q.eq('manager_id', filters.manager_id);
+      if (filters.employee_id) q = q.eq('employee_id', filters.employee_id);
+      if (filters.status)      q = q.eq('status', filters.status);
+      const { data, error } = await q;
+      if (error) { console.error('[UserStore] getAssignmentRequests:', error.message); return []; }
+      return data || [];
+    }
+    const fileData = await this.readRequestsFile();
+    let requests = fileData.requests || [];
     if (filters.manager_id)  requests = requests.filter(r => r.manager_id === filters.manager_id);
     if (filters.employee_id) requests = requests.filter(r => r.employee_id === filters.employee_id);
     if (filters.status)      requests = requests.filter(r => r.status === filters.status);
@@ -525,12 +573,20 @@ class UserStore {
   }
 
   async updateAssignmentRequest(requestId, updates) {
-    const data = await this.readRequestsFile();
-    const idx = data.requests.findIndex(r => r.id === requestId);
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('assignment_requests')
+        .update({ ...updates, decided_at: new Date().toISOString() })
+        .eq('id', requestId).select().maybeSingle();
+      if (error) { console.error('[UserStore] updateAssignmentRequest:', error.message); }
+      return data || { id: requestId, ...updates };
+    }
+    const fileData = await this.readRequestsFile();
+    const idx = fileData.requests.findIndex(r => r.id === requestId);
     if (idx === -1) throw new Error('Request not found');
-    data.requests[idx] = { ...data.requests[idx], ...updates };
-    await this.writeRequestsFile(data);
-    return data.requests[idx];
+    fileData.requests[idx] = { ...fileData.requests[idx], ...updates };
+    await this.writeRequestsFile(fileData);
+    return fileData.requests[idx];
   }
 
   // ── Audit logging ─────────────────────────────────────────────────────────
