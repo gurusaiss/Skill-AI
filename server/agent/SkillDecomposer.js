@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import GeminiService from '../services/GeminiService.js';
+import LLMCache from '../services/LLMCache.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -74,9 +75,19 @@ class SkillDecomposer {
     return selectedDomain;
   }
 
-  // ── Gemini-powered universal decomposition ─────────────────────────────────
+  // ── Gemini-powered universal decomposition (7-day goal cache) ────────────
   async decomposeWithLLM(goalText, jobDescriptionText = null) {
-    const jobDescriptionSection = jobDescriptionText ? 
+    // Cache key: normalized goal text (7-day TTL — curriculum for a goal rarely changes)
+    // JD is excluded from key: a JD-customized plan is still valid for 7 days.
+    const normalizedGoal = (goalText || '').toLowerCase().trim().replace(/\s+/g, ' ');
+    const cacheKey = `decompose_${LLMCache.hash(normalizedGoal)}`;
+    const cached = LLMCache.get(cacheKey);
+    if (cached) {
+      console.log(`[SkillDecomposer] ✅ Cache hit for goal "${goalText.slice(0, 50)}"`);
+      return cached;
+    }
+
+    const jobDescriptionSection = jobDescriptionText ?
       `\n\nJOB DESCRIPTION CONTEXT:\n${jobDescriptionText}\n\nUse this job description to tailor the skills and focus areas to match the specific requirements and responsibilities mentioned.` : '';
 
     const prompt = `You are an expert curriculum architect. A user wants to: "${goalText}"${jobDescriptionSection}
@@ -136,6 +147,7 @@ STRICT RULES:
 
       if (result && result.skills && result.skills.length >= 3) {
         console.log(`[SkillDecomposer] Gemini decomposed "${goalText}" → ${result.domainLabel} (${result.skills.length} skills)`);
+        LLMCache.set(cacheKey, result, LLMCache.TTL.SKILL_DECOMP);
         return result;
       }
     } catch (err) {

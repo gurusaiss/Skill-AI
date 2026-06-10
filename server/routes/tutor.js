@@ -1,5 +1,6 @@
 import express from 'express';
 import geminiService from '../services/GeminiService.js';
+import LLMCache from '../services/LLMCache.js';
 
 const router = express.Router();
 
@@ -38,6 +39,11 @@ function ruleBased(message) {
 /**
  * POST /api/tutor/chat
  * Body: { message: string, context: string, history: [{role, content}] }
+ *
+ * Optimisations vs original:
+ *   1. Uses generateTextFast() → Groq llama-3.1-8b-instant first (near-free)
+ *   2. History trimmed to last 3 turns instead of 5 (saves ~20% tokens)
+ *   3. Identical messages within 2 min return cached replies (dedup rapid-fire)
  */
 router.post('/chat', async (req, res) => {
   try {
@@ -47,11 +53,20 @@ router.post('/chat', async (req, res) => {
       return res.status(400).json({ success: false, error: 'message is required', data: null });
     }
 
+    const trimmedMsg = message.trim();
+
+    // ── Cache dedup: identical message + context within 2 minutes ──────────
+    const cacheKey = `tutor_${LLMCache.hash(trimmedMsg + '|' + context)}`;
+    const cached = LLMCache.get(cacheKey);
+    if (cached) {
+      return res.json({ success: true, data: { reply: cached, _cached: true } });
+    }
+
     const systemPrompt = `You are SkillForge AI's friendly learning tutor. You help students understand technical concepts, give clear examples, and motivate learners. Be concise (2-3 sentences max unless asked for more). If the student asks for an example, a list, or detailed explanation, you may go longer — but stay focused and practical. Always be encouraging. Context: user is on page: ${context}.`;
 
-    // Build the full prompt including conversation history
+    // Build prompt — keep only the last 3 turns to save tokens
     let prompt = '';
-    const recentHistory = history.slice(-5);
+    const recentHistory = history.slice(-3); // ← was -5, now -3 (saves ~20% tokens)
 
     if (recentHistory.length > 0) {
       prompt += 'Previous conversation:\n';
@@ -62,13 +77,16 @@ router.post('/chat', async (req, res) => {
       prompt += '\n';
     }
 
-    prompt += `Student: ${message.trim()}\nTutor:`;
+    prompt += `Student: ${trimmedMsg}\nTutor:`;
 
-    // Try AI generation
-    const aiReply = await geminiService.generateText(prompt, systemPrompt);
+    // ── generateTextFast: Groq llama-3.1-8b-instant first (Tier-3 task) ────
+    const aiReply = await geminiService.generateTextFast(prompt, systemPrompt);
 
     if (aiReply && aiReply.trim()) {
-      return res.json({ success: true, data: { reply: aiReply.trim() } });
+      const reply = aiReply.trim();
+      // Cache for 2 minutes to absorb rapid-fire identical messages
+      LLMCache.set(cacheKey, reply, LLMCache.TTL.TUTOR_MSG);
+      return res.json({ success: true, data: { reply } });
     }
 
     // Fallback to rule-based

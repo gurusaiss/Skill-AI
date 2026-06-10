@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import GeminiService from '../services/GeminiService.js';
+import LLMCache from '../services/LLMCache.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -10,10 +11,22 @@ class ChallengeEngine {
     this.challenges = JSON.parse(readFileSync(join(__dirname, '../knowledge/challenges.json'), 'utf-8'));
   }
 
-  // ── Gemini-powered: domain-specific challenge + MCQ warm-up ─────────────
+  // ── Gemini-powered: domain-specific challenge + MCQ warm-up (4h cache) ──
   async generateWithLLM(planDay, session) {
     const goal = session?.goal?.goalText || planDay.skillName;
     const domain = session?.goal?.domainLabel || planDay.skillId;
+
+    // Cache key: skillId + day + sessionType (4h TTL)
+    // Weaknesses are excluded from the key to avoid over-fragmentation;
+    // they only affect the prompt if present — a minor quality trade-off.
+    const cacheKey = `challenge_${LLMCache.hash(
+      `${planDay.skillId || 'sk'}_d${planDay.day || 0}_${planDay.sessionType || 'practice'}_${domain || ''}`
+    )}`;
+    const cached = LLMCache.get(cacheKey);
+    if (cached) {
+      console.log(`[ChallengeEngine] ✅ Cache hit for Day ${planDay.day} skill "${planDay.skillId}"`);
+      return cached;
+    }
     const topic = planDay.topic || planDay.skillName;
     const skillName = planDay.skillName || planDay.skillId;
     const sessionType = planDay.sessionType || 'practice';
@@ -82,7 +95,9 @@ IMPORTANT:
 
       if (result?.title && result?.description) {
         console.log(`[ChallengeEngine] Gemini challenge for Day ${planDay.day}: "${result.title}"`);
-        return { ...result, source: 'llm' };
+        const challenge = { ...result, source: 'llm' };
+        LLMCache.set(cacheKey, challenge, LLMCache.TTL.CHALLENGE);
+        return challenge;
       }
     } catch (err) {
       console.error('[ChallengeEngine] Gemini error:', err.message);
