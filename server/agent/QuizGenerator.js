@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import GeminiService from '../services/GeminiService.js';
 import RuleBase from './RuleBase.js';
+import LLMCache from '../services/LLMCache.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -31,10 +32,19 @@ class QuizGenerator {
     }));
   }
 
-  // ── STEP 2: Gemini-powered domain-specific quiz ──────────────────────────
+  // ── STEP 2: Gemini-powered domain-specific quiz (with 12h cache) ─────────
   async generateWithLLM(skillTree) {
     const { profile, skills, domain } = skillTree;
     const domainLabel = skillTree.domainName || domain;
+
+    // Cache key: domain + sorted top-3 skill names (12h TTL)
+    const skillKey = (skills || []).slice(0, 3).map(s => s.name || s.id).sort().join('|');
+    const cacheKey = `quiz_${LLMCache.hash((domain || 'custom') + '_' + skillKey)}`;
+    const cached = LLMCache.get(cacheKey);
+    if (cached) {
+      console.log(`[QuizGenerator] ✅ Cache hit for domain "${domain}"`);
+      return cached;
+    }
     const goalText = profile?.rawGoal || domainLabel;
     const skillList = skills.slice(0, 5).map((s, i) =>
       `${i + 1}. ${s.name} (id: ${s.id}, topics: ${(s.topics || []).slice(0, 3).join(', ')})`
@@ -111,7 +121,9 @@ CRITICAL RULES:
 
         if (validated.length >= TARGET_QUESTIONS - 1) {
           console.log(`[QuizGenerator] Gemini generated ${validated.length} questions for "${domainLabel}"`);
-          return validated.slice(0, TARGET_QUESTIONS);
+          const result2 = validated.slice(0, TARGET_QUESTIONS);
+          LLMCache.set(cacheKey, result2, LLMCache.TTL.QUIZ);
+          return result2;
         }
       }
     } catch (err) {

@@ -2,6 +2,7 @@
 // Generates role-based interview questions and evaluates responses in real-time
 
 import GeminiService from '../services/GeminiService.js';
+import LLMCache from '../services/LLMCache.js';
 
 class InterviewAgent {
   constructor() {
@@ -15,7 +16,20 @@ class InterviewAgent {
    */
   async generateQuestions({ role, skills, difficulty = 'medium', count = 5 }) {
     const skillList = Array.isArray(skills) ? skills.join(', ') : skills;
-    
+
+    // ── Cache: questions for same role+difficulty+count (24h TTL) ──────────
+    // Avoids re-generating identical question sets; per-session personalisation
+    // happens via the evaluation step which always calls live.
+    const cacheKey = `interview_qs_${LLMCache.hash(
+      `${(role || '').toLowerCase()}_${difficulty}_${count}`
+    )}`;
+    const cached = LLMCache.get(cacheKey);
+    if (cached) {
+      console.log(`[InterviewAgent] ✅ Cache hit for role "${role}" (${difficulty})`);
+      // Reset per-session fields so the returned questions look fresh
+      return cached.map(q => ({ ...q, askedAt: null, answeredAt: null, answer: null, score: null, feedback: null }));
+    }
+
     const prompt = `You are an expert technical interviewer for a ${role} position.
 
 Generate ${count} interview questions that assess the candidate's knowledge in: ${skillList}
@@ -45,15 +59,15 @@ Return JSON format:
 }`;
 
     try {
-      if (!this.gemini.isEnabled()) {
+      if (!this.gemini.isEnabled() && !this.gemini.groqEnabled) {
         return this._getFallbackQuestions(role, skills, count);
       }
 
-      const response = await this.gemini.generateContent(prompt);
-      const parsed = this._parseJSON(response);
-      
+      // Use generateJSON (Gemini primary + Groq 70b fallback — structured output needed)
+      const parsed = await this.gemini.generateJSON(prompt);
+
       if (parsed && parsed.questions && Array.isArray(parsed.questions)) {
-        return parsed.questions.map((q, i) => ({
+        const questions = parsed.questions.map((q, i) => ({
           ...q,
           id: i + 1,
           askedAt: null,
@@ -62,6 +76,8 @@ Return JSON format:
           score: null,
           feedback: null
         }));
+        LLMCache.set(cacheKey, questions, LLMCache.TTL.INTERVIEW);
+        return questions;
       }
 
       return this._getFallbackQuestions(role, skills, count);
@@ -103,13 +119,13 @@ Return JSON format:
 }`;
 
     try {
-      if (!this.gemini.isEnabled()) {
+      if (!this.gemini.isEnabled() && !this.gemini.groqEnabled) {
         return this._getFallbackEvaluation(question, answer);
       }
 
-      const response = await this.gemini.generateContent(prompt);
-      const parsed = this._parseJSON(response);
-      
+      // Evaluation is per-answer — always live (answers differ every session)
+      const parsed = await this.gemini.generateJSON(prompt);
+
       if (parsed && typeof parsed.score === 'number') {
         return {
           score: Math.min(100, Math.max(0, parsed.score)),
@@ -140,7 +156,7 @@ Return JSON format:
    */
   async generateReport(questions, role) {
     const answeredQuestions = questions.filter(q => q.answer && q.score !== null);
-    
+
     if (answeredQuestions.length === 0) {
       return {
         overallScore: 0,
@@ -183,13 +199,13 @@ Return JSON format:
 }`;
 
     try {
-      if (!this.gemini.isEnabled()) {
+      if (!this.gemini.isEnabled() && !this.gemini.groqEnabled) {
         return this._getFallbackReport(avgScore, answeredQuestions);
       }
 
-      const response = await this.gemini.generateContent(prompt);
-      const parsed = this._parseJSON(response);
-      
+      // Report is per-session — always live (scores differ)
+      const parsed = await this.gemini.generateJSON(prompt);
+
       if (parsed && parsed.overallScore !== undefined) {
         return {
           ...parsed,
@@ -207,34 +223,7 @@ Return JSON format:
     }
   }
 
-  // ── Helper Methods ────────────────────────────────────────────────────────
-
-  _parseJSON(text) {
-    try {
-      // Try direct parse
-      return JSON.parse(text);
-    } catch {
-      // Try extracting from markdown code block
-      const match = text.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
-      if (match) {
-        try {
-          return JSON.parse(match[1]);
-        } catch {
-          return null;
-        }
-      }
-      // Try finding first JSON object
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          return JSON.parse(jsonMatch[0]);
-        } catch {
-          return null;
-        }
-      }
-      return null;
-    }
-  }
+  // ── Helper Methods ─────────────────────────────────────────────────────────
 
   _scoreToGrade(score) {
     if (score >= 90) return 'A';
@@ -306,7 +295,7 @@ Return JSON format:
 
   _getFallbackEvaluation(question, answer) {
     const wordCount = answer.trim().split(/\s+/).length;
-    const hasKeywords = question.expectedPoints?.some(point => 
+    const hasKeywords = question.expectedPoints?.some(point =>
       answer.toLowerCase().includes(point.toLowerCase())
     ) || false;
 
@@ -325,7 +314,7 @@ Return JSON format:
       weaknesses: wordCount < 50 ? ['Could be more detailed'] : [],
       feedback: 'Your response shows understanding. Consider adding more specific examples.',
       askFollowUp: score >= 70,
-      followUpReason: score >= 70 ? 'Good answer, let\'s go deeper' : '',
+      followUpReason: score >= 70 ? "Good answer, let's go deeper" : '',
       overallImpression: score >= 70 ? 'Solid response' : 'Needs more detail',
       evaluatedAt: new Date().toISOString(),
       source: 'rule-based'

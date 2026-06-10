@@ -74,12 +74,12 @@ class AutonomousScheduler {
     const nextDay = plan.find(d => !d.completed && d.day > completedDays);
     const streak = this._calculateStreak(sessions);
 
-    // Try AI-generated insight, fall back to template
+    // Try AI-generated insight — Groq llama-3.1-8b-instant first (Tier-3: simple text, near-free)
     let insight = '';
     try {
-      if (this.gemini.isEnabled()) {
+      if (this.gemini.isEnabled() || this.gemini.groqEnabled) {
         const prompt = `Generate a 2-sentence motivational learning insight for a student who: completed ${completedDays} sessions, has avg score ${avgScore}%, last score ${lastScore}%, streak ${streak} days. Be encouraging and specific. No generic platitudes.`;
-        insight = await this.gemini.generateText?.(prompt) || '';
+        insight = await this.gemini.generateTextFast(prompt) || '';
       }
     } catch {}
 

@@ -5,6 +5,7 @@
  */
 
 import GeminiService from '../services/GeminiService.js';
+import LLMCache from '../services/LLMCache.js';
 
 const MARKET_SNAPSHOTS = {
   full_stack: {
@@ -111,9 +112,19 @@ const DEFAULT_MARKET = {
 
 class MarketAgent {
   async getIntelligence({ domain, goal, skills }) {
+    // ── Cache check: domain-level, 24h TTL ────────────────────────────────
+    // Key on domain only so all users asking about the same domain share
+    // one cached result — market data doesn't change hour-to-hour.
+    const cacheKey = `market_${LLMCache.hash(String(domain || 'default'))}`;
+    const cached = LLMCache.get(cacheKey);
+    if (cached) return { ...cached, _source: 'llm_cached' };
+
     // Try LLM for personalized market data
     const llmData = await this._getWithLLM({ domain, goal, skills });
-    if (llmData) return { ...llmData, _source: 'llm' };
+    if (llmData) {
+      LLMCache.set(cacheKey, llmData, LLMCache.TTL.MARKET);
+      return { ...llmData, _source: 'llm' };
+    }
 
     // Rule-based fallback
     const snapshot = MARKET_SNAPSHOTS[domain] || DEFAULT_MARKET;

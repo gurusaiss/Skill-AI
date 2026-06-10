@@ -1,7 +1,8 @@
 import GeminiService from '../services/GeminiService.js';
+import LLMCache from '../services/LLMCache.js';
 
 class Evaluator {
-  // ── Gemini-powered evaluation ────────────────────────────────────────────
+  // ── Gemini-powered evaluation (30-min dedup cache) ───────────────────────
   async evaluateWithLLM(challenge, userResponse, context = {}) {
     const domain = context.domain || '';
     const skillName = challenge.skillName || context.skillName || '';
@@ -9,6 +10,14 @@ class Evaluator {
     const wordCount = userResponse.trim().split(/\s+/).length;
 
     if (wordCount < 5) return null; // Too short to bother LLM
+
+    // ── Cache dedup: same challenge + same response = same evaluation ───────
+    // Prevents repeat LLM calls when a user resubmits the exact same answer.
+    const cacheKey = `eval_${LLMCache.hash(
+      (challenge.id || challenge.title || '') + '||' + userResponse.trim()
+    )}`;
+    const cached = LLMCache.get(cacheKey);
+    if (cached) return cached;
 
     const prompt = `You are evaluating a learner's response for a ${domain} challenge.
 
@@ -48,7 +57,7 @@ Be honest — don't inflate scores for effort alone.`;
 
       if (result && typeof result.score === 'number') {
         console.log(`[Evaluator] Gemini scored response: ${result.score}% (${result.grade})`);
-        return {
+        const evalResult = {
           score: Math.min(100, Math.max(0, Math.round(result.score))),
           grade: result.grade || this.calculateGrade(result.score),
           strengths: result.strengths || ['Attempted the challenge'],
@@ -58,6 +67,8 @@ Be honest — don't inflate scores for effort alone.`;
           modelSolution: challenge.model_solution || 'No model solution available.',
           source: 'llm'
         };
+        LLMCache.set(cacheKey, evalResult, LLMCache.TTL.EVAL);
+        return evalResult;
       }
     } catch (err) {
       console.error('[Evaluator] Gemini error:', err.message);

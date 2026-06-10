@@ -42,6 +42,8 @@ import groupsRouter from './routes/groups.js';
 import { autoSeed } from './utils/autoSeed.js';
 import { migrateDB } from './utils/migrateDB.js';
 import { migrateDefaultUsersToGSS } from './utils/migrateGSS.js';
+import LLMCache from './services/LLMCache.js';
+import geminiService from './services/GeminiService.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataPath = join(__dirname, 'data');
@@ -170,6 +172,7 @@ app.get('/api/health', (req, res) => {
       uptime: Math.round(process.uptime()) + 's',
       timestamp: new Date().toISOString(),
       db: process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'placeholder' ? 'supabase' : 'file',
+      llm: geminiService.getStats(),
     },
   });
 });
