@@ -192,6 +192,12 @@ export default function Employee() {
   const [myAssessments, setMyAssessments] = useState([]);
   const [assessmentsLoading, setAssessmentsLoading] = useState(true);
 
+  // Recommendations
+  const [recommendations, setRecommendations] = useState([]);
+  const [recsLoading, setRecsLoading] = useState(true);
+  const [excludingSkill, setExcludingSkill] = useState(null);
+  const [tooltipSkill, setTooltipSkill] = useState(null);
+
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, id: Date.now() });
   }, []);
@@ -217,6 +223,7 @@ export default function Employee() {
         authFetch(`/api/assignments/employee/${userId}/manager`),
       ]);
       loadAssessments();
+      loadRecommendations();
 
       if (assignmentsData.status === 'fulfilled') {
         const data = assignmentsData.value;
@@ -237,6 +244,45 @@ export default function Employee() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadRecommendations = async () => {
+    setRecsLoading(true);
+    try {
+      const res = await authFetch('/api/recommendations');
+      const recs = res?.recommendations ?? res?.data?.recommendations ?? [];
+      setRecommendations(Array.isArray(recs) ? recs : []);
+    } catch {
+      setRecommendations([]);
+    } finally {
+      setRecsLoading(false);
+    }
+  };
+
+  const handleExcludeSkill = async (skillId) => {
+    setExcludingSkill(skillId);
+    try {
+      await authFetch('/api/recommendations/exclude', {
+        method: 'POST',
+        body: JSON.stringify({ skillId }),
+      });
+      setRecommendations(prev => prev.filter(r => r.skill_id !== skillId));
+      showToast('Skill hidden from recommendations', 'info');
+    } catch {
+      showToast('Could not update preferences', 'error');
+    } finally {
+      setExcludingSkill(null);
+    }
+  };
+
+  const handleRecClick = async (skillId) => {
+    try {
+      await authFetch('/api/recommendations/interaction', {
+        method: 'POST',
+        body: JSON.stringify({ skillId, engagementScore: 0.7, interactionType: 'view' }),
+      });
+    } catch { /* non-fatal */ }
+    navigate(`/learn?skill=${skillId}`);
   };
 
   const loadAssessments = async () => {
@@ -478,6 +524,87 @@ export default function Employee() {
             )}
           </div>
         </div>
+
+        {/* ── Recommended for You ── */}
+        {(recsLoading || recommendations.length > 0) && (
+          <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/5 to-indigo-500/5 overflow-hidden mb-6 card-enter" style={{ animationDelay: '200ms' }}>
+            <div className="border-b border-violet-500/20 px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">✨</span>
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Recommended for You</h3>
+              </div>
+              <span className="text-xs text-slate-600">AI-powered · updated 6h</span>
+            </div>
+            <div className="p-4">
+              {recsLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className="h-20 rounded-xl bg-slate-800/40 animate-pulse" />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {recommendations.map((rec) => {
+                    const matchPct = Math.round((rec.score ?? 0.5) * 100);
+                    const barColor = matchPct >= 75 ? '#8b5cf6' : matchPct >= 50 ? '#6366f1' : '#94a3b8';
+                    return (
+                      <div
+                        key={rec.skill_id}
+                        className="relative group rounded-xl bg-slate-800/40 border border-slate-700/30 hover:border-violet-500/40 hover:bg-slate-800/60 transition-all duration-200 p-3.5 cursor-pointer"
+                        onClick={() => handleRecClick(rec.skill_id)}
+                      >
+                        {/* Not Interested button */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleExcludeSkill(rec.skill_id); }}
+                          disabled={excludingSkill === rec.skill_id}
+                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-slate-700/70 border border-slate-600/50 text-slate-500 hover:text-red-400 hover:border-red-500/40 flex items-center justify-center text-xs font-bold leading-none"
+                          title="Not Interested"
+                        >
+                          {excludingSkill === rec.skill_id ? (
+                            <span className="w-2.5 h-2.5 border border-slate-400/40 border-t-slate-300 rounded-full animate-spin block" />
+                          ) : '×'}
+                        </button>
+
+                        <div className="flex items-start gap-2 mb-2">
+                          <span className="text-lg mt-0.5">🎯</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-white truncate">{rec.name || rec.skill_id}</p>
+                            <p className="text-xs text-slate-500 capitalize">{rec.domain || 'skill'}</p>
+                          </div>
+                        </div>
+
+                        {/* Match score bar */}
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <div className="flex-1 h-1.5 bg-slate-700/60 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${matchPct}%`, background: barColor }} />
+                          </div>
+                          <span className="text-xs font-black" style={{ color: barColor }}>{matchPct}%</span>
+                        </div>
+
+                        {/* Why recommended tooltip */}
+                        {rec.reason && (
+                          <div className="relative">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setTooltipSkill(tooltipSkill === rec.skill_id ? null : rec.skill_id); }}
+                              className="text-xs text-violet-400/60 hover:text-violet-400 transition-colors underline decoration-dotted"
+                            >
+                              Why?
+                            </button>
+                            {tooltipSkill === rec.skill_id && (
+                              <div className="absolute left-0 bottom-6 z-20 w-52 bg-slate-900 border border-violet-500/30 rounded-lg px-3 py-2 shadow-2xl text-xs text-slate-300 leading-relaxed">
+                                {rec.reason}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 backdrop-blur-sm overflow-hidden mb-6">
           <div className="border-b border-slate-700/40 px-5 py-4">

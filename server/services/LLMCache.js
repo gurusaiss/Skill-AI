@@ -106,6 +106,11 @@ class LLMCache {
     console.log(`[LLMCache] ♻️  Evicted ${n} oldest entries (cache full)`);
   }
 
+  /** Manually remove a key (e.g. after a user action that invalidates it). */
+  delete(key) {
+    return this.store.delete(key);
+  }
+
   /** Stats for /api/health endpoint */
   getStats() {
     const total = this.hits + this.misses;
