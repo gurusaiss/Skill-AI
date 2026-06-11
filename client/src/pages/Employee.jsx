@@ -408,6 +408,12 @@ export default function Employee() {
               <p className="text-slate-400 text-sm mt-0.5">Track your assigned modules and progress</p>
             </div>
           </div>
+          <button
+            onClick={() => window.print()}
+            className="ml-auto flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 text-xs font-bold transition-all"
+          >
+            🖨️ Export PDF
+          </button>
         </div>
 
         {loading ? (
