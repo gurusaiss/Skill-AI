@@ -179,12 +179,20 @@ export default function Analytics() {
               {user?.name || 'You'} · {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </p>
           </div>
-          <button
-            onClick={loadAll}
-            className="ml-auto px-4 py-2 rounded-xl bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 text-sm font-bold transition-all"
-          >
-            ↺ Refresh
-          </button>
+          <div className="ml-auto flex gap-2">
+            <button
+              onClick={loadAll}
+              className="px-4 py-2 rounded-xl bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 text-sm font-bold transition-all"
+            >
+              ↺ Refresh
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="px-4 py-2 rounded-xl bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 text-sm font-bold transition-all"
+            >
+              🖨️ Export PDF
+            </button>
+          </div>
         </div>
 
         {/* KPI Row */}

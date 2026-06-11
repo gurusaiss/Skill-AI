@@ -4,7 +4,7 @@
  * RecSys Performance, Module Stats, Platform Health
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -81,6 +81,7 @@ export default function MetricsDashboard() {
   const [adminData, setAdminData]   = useState(null);
   const [llmStats, setLlmStats]     = useState(null);
   const [recMetrics, setRecMetrics] = useState(null);
+  const [modules, setModules]       = useState([]);
 
   useEffect(() => {
     if (!user) return;
@@ -94,15 +95,20 @@ export default function MetricsDashboard() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [admin, health, rec] = await Promise.allSettled([
+      const [admin, health, rec, mods] = await Promise.allSettled([
         authFetch('/api/admin/dashboard'),
         authFetch('/api/health'),
         authFetch('/api/recommendations/metrics'),
+        authFetch('/api/modules'),
       ]);
 
       if (admin.status === 'fulfilled' && admin.value) setAdminData(admin.value);
       if (health.status === 'fulfilled' && health.value) setLlmStats(health.value.llm);
       if (rec.status === 'fulfilled' && rec.value) setRecMetrics(rec.value);
+      if (mods.status === 'fulfilled' && mods.value) {
+        const list = Array.isArray(mods.value) ? mods.value : (mods.value?.modules || []);
+        setModules(list);
+      }
     } catch (e) {
       console.error('[MetricsDashboard] load error:', e);
     } finally {
@@ -154,6 +160,28 @@ export default function MetricsDashboard() {
   const cacheHitRate = llmStats?.cacheStats?.hitRate
     ? parseInt(llmStats.cacheStats.hitRate)
     : null;
+
+  // 6A: Skill Gap Heatmap — domain coverage derived from module catalog
+  const skillGapData = useMemo(() => {
+    if (!modules.length) return [];
+    const domainMap = {};
+    modules.forEach(m => {
+      const d = m.data?.domain || m.category || m.data?.category || 'General';
+      if (!domainMap[d]) domainMap[d] = { domain: d, total: 0, skills: 0 };
+      domainMap[d].total++;
+      const skillCount = Array.isArray(m.data?.skills) ? m.data.skills.length : 0;
+      domainMap[d].skills += skillCount;
+    });
+    return Object.values(domainMap)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8)
+      .map(d => ({
+        domain    : d.domain.slice(0, 16),
+        modules   : d.total,
+        skillTags : d.skills,
+        coverage  : Math.min(100, Math.round((d.total / Math.max(...Object.values(domainMap).map(x => x.total))) * 100)),
+      }));
+  }, [modules]);
 
   const totalLlmCalls = (llmStats?.geminiCallCount || 0)
     + (llmStats?.groqCallCount || 0)
@@ -358,6 +386,59 @@ export default function MetricsDashboard() {
             </div>
           </ChartCard>
 
+        </div>
+
+        {/* 6A: Skill Gap Heatmap */}
+        {(loading || skillGapData.length > 0) && (
+          <ChartCard
+            title="Skill Domain Coverage Heatmap"
+            subtitle="Module count and skill tag density by domain — darker = more coverage"
+            loading={loading}
+            className="mt-6"
+          >
+            {skillGapData.length > 0 ? (
+              <div className="space-y-2">
+                {skillGapData.map((row) => {
+                  const intensity = row.coverage / 100;
+                  const bg = `rgba(99, 102, 241, ${0.08 + intensity * 0.45})`;
+                  const border = `rgba(99, 102, 241, ${0.1 + intensity * 0.5})`;
+                  return (
+                    <div key={row.domain} className="flex items-center gap-3">
+                      <span className="w-28 text-xs text-slate-400 font-medium truncate flex-shrink-0">{row.domain}</span>
+                      <div className="flex-1 flex items-center gap-1">
+                        {Array.from({ length: 10 }).map((_, i) => {
+                          const filled = (i + 1) <= Math.ceil(row.coverage / 10);
+                          return (
+                            <div
+                              key={i}
+                              className="flex-1 h-6 rounded-md transition-all duration-300"
+                              style={{ background: filled ? bg : 'rgba(99,102,241,0.05)', border: `1px solid ${filled ? border : 'rgba(99,102,241,0.08)'}` }}
+                            />
+                          );
+                        })}
+                      </div>
+                      <span className="w-16 text-right text-xs text-slate-500 flex-shrink-0">
+                        {row.modules}m · {row.skillTags}sk
+                      </span>
+                    </div>
+                  );
+                })}
+                <p className="text-xs text-slate-700 mt-2">m = modules · sk = skill tags · intensity = relative coverage</p>
+              </div>
+            ) : (
+              <div className="h-24 flex items-center justify-center text-slate-600 text-sm">No module data yet</div>
+            )}
+          </ChartCard>
+        )}
+
+        {/* 6B: Export/Print Report */}
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 text-sm font-bold transition-all"
+          >
+            🖨️ Export Report (Print / PDF)
+          </button>
         </div>
 
         {/* Recent Activity */}
