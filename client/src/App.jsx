@@ -44,6 +44,7 @@ const ModuleManagement     = lazy(() => import('./pages/admin/ModuleManagement.j
 const AssignmentManagement = lazy(() => import('./pages/admin/AssignmentManagement.jsx'));
 const Settings             = lazy(() => import('./pages/admin/Settings.jsx'));
 const MetricsDashboard     = lazy(() => import('./pages/admin/MetricsDashboard.jsx'));
+const EmployeeAnalytics    = lazy(() => import('./pages/employee/Analytics.jsx'));
 const ApprovalCenter      = lazy(() => import('./pages/admin/ApprovalCenter.jsx'));
 const GroupManagement     = lazy(() => import('./pages/admin/GroupManagement.jsx'));
 const ModuleStart          = lazy(() => import('./pages/ModuleStart.jsx'));
@@ -195,6 +196,11 @@ const App = () => {
               <Route path="/admin/metrics" element={
                 <ProtectedRoute requiredRole="admin">
                   <MetricsDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/employee/analytics" element={
+                <ProtectedRoute requiredRole="employee">
+                  <EmployeeAnalytics />
                 </ProtectedRoute>
               } />
               <Route path="/assessment/:assessmentId" element={
