@@ -77,6 +77,7 @@ function Navbar() {
     { to: '/report',            label: 'Reports',     icon: '📄', roles: ['admin', 'manager'] },
     { to: '/admin/approvals',   label: 'Approvals',   icon: '⏳', roles: ['admin'] },
     { to: '/admin/groups',      label: 'Groups',      icon: '👥', roles: ['admin'] },
+    { to: '/admin/metrics',     label: 'AI Metrics',  icon: '📈', roles: ['admin'] },
   ];
 
   const ROLE_LINKS = {
