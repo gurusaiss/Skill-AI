@@ -1,289 +1,245 @@
-# SkillForge AI — Autonomous Multi-Agent Learning Platform
+# SkillForge AI
 
-[![CI/CD](https://github.com/gurusaiss/HACKap/actions/workflows/ci.yml/badge.svg)](https://github.com/gurusaiss/HACKap/actions)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://reactjs.org)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Gemini](https://img.shields.io/badge/Gemini-2.0%20Flash-4285F4?logo=google&logoColor=white)](https://aistudio.google.com)
-[![Socket.io](https://img.shields.io/badge/Socket.io-Real--time-010101?logo=socket.io&logoColor=white)](https://socket.io)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](./Dockerfile)
+[![FastAPI](https://img.shields.io/badge/FastAPI-RecSys-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
-> **A production-grade, domain-agnostic learning platform where 14 specialized AI agents collaborate to build, adapt, and optimize your personalized skill acquisition journey — with full reasoning transparency.**
+> **Multi-tenant B2B SaaS for adaptive corporate training — 9 specialized AI agents + Hybrid SVD Recommendation Engine**
 
 ---
 
-## What Makes This Different
+## What It Does
 
-Most learning platforms give you a static course catalog. SkillForge AI works differently:
+SkillForge AI turns a plain-English learning goal into a **fully personalized training program** — curriculum, daily challenges, scoring, tutor chat, interview prep, and market intelligence — all orchestrated by AI agents that adapt every 3 sessions.
 
-1. You describe your goal in plain English — *"become an ML engineer in 90 days"*
-2. A fleet of **14 specialized AI agents** immediately get to work
-3. They **debate among themselves** (with confidence scores) before making major decisions
-4. The plan **adapts in real-time** based on your performance every 3 sessions
-5. You see **exactly why** every decision was made — no black boxes
-
----
-
-## Table of Contents
-
-- [Architecture](#architecture)
-- [The 14 AI Agents](#the-14-ai-agents)
-- [Key Features](#key-features)
-- [Tech Stack](#tech-stack)
-- [Quick Start](#quick-start)
-- [Docker](#docker)
-- [API Documentation](#api-documentation)
-- [Project Structure](#project-structure)
-- [Environment Variables](#environment-variables)
-- [Testing](#testing)
-- [Deployment](#deployment)
+**Currently in live pilot at a real company.**
 
 ---
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    subgraph Client["React 18 Client (Vite + Tailwind)"]
-        UI[Dashboard / Session / Report]
-        WS_CLIENT[Socket.io Client\nReal-time agent events]
-        TUTOR[AI Tutor Chat]
-    end
-
-    subgraph API["Express REST API + Socket.io"]
-        ROUTER[18 Route Modules\n100+ Endpoints]
-        AUTH[JWT + RBAC\nMiddleware]
-        SWAGGER[OpenAPI 3.0\n/api/docs]
-    end
-
-    subgraph ORCHESTRATOR["SmartAgent Orchestrator"]
-        GOAL[GoalAgent\nDomain classification]
-        DECOMP[SkillDecomposer\nSkill tree generation]
-        DIAG[DiagnosticAgent\n10-question baseline]
-        PLAN[PlanBuilder\nDay-by-day curriculum]
-        EVAL[Evaluator\nSession scoring]
-        ADAPT[Adaptor\nEvery 3 sessions]
-        DEBATE[AgentDebate\nAdvocate · Critic · Analyst]
-        INTERVIEW[InterviewAgent\nMock interviews]
-        MARKET[MarketAgent\nJob market alignment]
-        SIM[SimulationAgent\nWhat-if modeling]
-        TWIN[CareerTwin\nSkill trajectory]
-        REPORT[ReportGenerator]
-        CHALLENGE[ChallengeEngine]
-        RULE[RuleBase\nFallback]
-    end
-
-    subgraph LLM["AI Layer (Hybrid Resilience)"]
-        GEMINI[Gemini 2.0 Flash\nPrimary]
-        GROQ[Groq llama-3.3-70b\nFallback]
-        KB[Rule-Based\nKnowledge Bank]
-    end
-
-    subgraph DATA["Data Layer"]
-        SUPA[Supabase PostgreSQL\nPrimary]
-        FILE[File-based JSON\nAuto-fallback]
-    end
-
-    Client <-->|REST + WebSocket| API
-    API --> ORCHESTRATOR
-    ORCHESTRATOR --> LLM
-    ORCHESTRATOR --> DATA
-    GEMINI -->|fails| GROQ
-    GROQ -->|fails| KB
-    SUPA -->|not configured| FILE
 ```
-
-### Adaptive Learning Loop
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant A as Adaptor (every 3rd session)
-    participant D as AgentDebate
-    participant P as PlanBuilder
-
-    U->>A: Complete sessions 3, 6, 9...
-    A->>A: Analyze score trend
-    alt Score < 60% for 2+ sessions
-        A->>D: Trigger debate: "Should we insert review sessions?"
-        D->>D: Advocate votes YES (0.85 confidence)
-        D->>D: Critic votes YES (0.72 confidence)
-        D->>D: Analyst votes YES (0.91 confidence)
-        D->>P: Consensus → Insert 3 review sessions
-        P->>U: Plan updated with Socratic reviews
-    else Score > 90% for 2+ sessions
-        A->>D: Trigger debate: "Should we accelerate?"
-        D->>P: Consensus → Skip 2 sessions, advance
-        P->>U: Plan accelerated — reach goal earlier
-    end
+┌─────────────────────────────────────────────────────────┐
+│                 React 18 Frontend (Vercel)               │
+│   Dashboard │ Employee Analytics │ Admin Metrics │ Chat  │
+└─────────────────┬───────────────────────────────────────┘
+                  │ REST + WebSocket
+┌─────────────────▼───────────────────────────────────────┐
+│              Node.js + Express Backend (Render)          │
+│  25 route modules │ JWT auth │ Company isolation (RBAC)  │
+│                                                          │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │           9 AI Agent Orchestration Layer        │    │
+│  │  SkillDecomposer → DiagnosticQuiz → PlanBuilder │    │
+│  │  ChallengeEngine → Evaluator → ReportGenerator  │    │
+│  │  MarketAgent → InterviewAgent → AutonomousAgent  │    │
+│  └────────────────┬────────────────────────────────┘    │
+│                   │                                      │
+│  ┌────────────────▼────────────────────────────────┐    │
+│  │           LLM Tier Routing + Cache Layer         │    │
+│  │  Tier 1: Gemini 2.0 Flash  (complex/JSON/eval)  │    │
+│  │  Tier 2: Groq llama-3.3-70b (medium tasks)      │    │
+│  │  Tier 3: Groq llama-3.1-8b-instant (chat/brief) │    │
+│  │  LLMCache: 7 TTL layers (2 min to 7 days)       │    │
+│  └─────────────────────────────────────────────────┘    │
+└──────────┬──────────────────────┬───────────────────────┘
+           │                      │
+┌──────────▼──────┐    ┌──────────▼─────────────────────┐
+│    Supabase     │    │  Python RecSys Engine (FastAPI) │
+│   PostgreSQL    │    │  SVD Collaborative Filtering     │
+│  Multi-tenant   │    │  TF-IDF Content-Based Filtering  │
+│  RLS policies   │    │  Hybrid Scoring + ML Metrics     │
+└─────────────────┘    │  POST /recommend | GET /metrics  │
+                       └────────────────────────────────┘
 ```
 
 ---
 
-## The 14 AI Agents
+## Key Metrics
 
-| # | Agent | Responsibility | Key Output |
-|---|-------|---------------|------------|
-| 1 | **GoalAgent** | Domain classification, intent extraction | `{ domain, difficulty, timeframe }` |
-| 2 | **SkillDecomposer** | Breaks goal → hierarchical skill tree | `SkillTree` with prerequisites |
-| 3 | **DiagnosticAgent** | Baseline quiz generation | 10 adaptive questions |
-| 4 | **PlanBuilder** | Day-by-day learning curriculum | `Session[]` spanning 21–90 days |
-| 5 | **ChallengeEngine** | Adaptive content generation | Exercises, code katas, case studies |
-| 6 | **Evaluator** | Session scoring and feedback | `score`, `feedback`, `weakAreas[]` |
-| 7 | **Adaptor** | Performance trend analysis | Triggers debate every 3 sessions |
-| 8 | **AgentDebate** | 3-agent voting (Advocate/Critic/Analyst) | `decision` + weighted `confidence` |
-| 9 | **ReportGenerator** | Progress reports with insights | PDF-ready report |
-| 10 | **InterviewAgent** | Mock interview Q&A + evaluation | Multi-dimensional score rubric |
-| 11 | **MarketAgent** | Job market alignment analysis | Skill gap vs. market demand |
-| 12 | **SimulationAgent** | What-if scenario modeling | Projected outcomes without affecting plan |
-| 13 | **CareerTwin** | Virtual skill trajectory model | Readiness %, market fit score |
-| 14 | **RuleBase** | Zero-dependency fallback | Deterministic responses when APIs down |
-
-> All agent decisions are logged with full reasoning chains in the **Explainability Console**.
-
----
-
-## Key Features
-
-### Core Learning Engine
-- **Goal Decomposition** — any learning goal → structured skill tree in ~2 seconds via Gemini 2.0 Flash
-- **Adaptive Difficulty** — session content adjusts based on your rolling performance score
-- **Skill Drift Detection** — alerts when previously mastered skills are degrading (spaced repetition triggers)
-- **Domain-Agnostic** — works for software, data science, law, finance, music, cooking — anything
-
-### Unique Innovations
-- **Agent Debate System** — before any major plan change, 3 agents vote with weighted confidence scores; users see the full debate transcript
-- **Career Digital Twin** — virtual model of your skill trajectory aligned to real job market demand
-- **Simulation Lab** — model "what if I study 4h/day instead of 2?" without affecting your actual plan
-- **Explainability Console** — every agent decision logged with reasoning chain and confidence score
-
-### Enterprise & Security
-- **Full RBAC** — `admin` / `manager` / `employee` roles with route-level enforcement
-- **JWT Authentication** — bcrypt password hashing, secure token lifecycle
-- **OAuth Ready** — Google and GitHub OAuth stubs wired in
-- **Rate Limiting** — DDoS protection on all endpoints
-- **Audit Logging** — full action trail for enterprise compliance
-
-### Real-Time (Socket.io)
-- Live agent progress events during goal processing
-- Session completion triggers pushed to dashboard instantly
-- Notification system for skill drift alerts
+| Metric | Value |
+|--------|-------|
+| LLM API cost reduction | 60-70% via tiered routing + TTL cache |
+| Cache layers | 7 (2 min to 7 days) |
+| AI agents | 9 specialized agents |
+| RecSys algorithm | Hybrid SVD + TF-IDF cosine similarity |
+| RecSys evaluation | Precision@5, Recall@5, NDCG@10, Coverage |
+| Deployment | Live production pilot |
+| Supported domains | Any (medicine, law, coding, cooking, music, etc.) |
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| Frontend | React 18 + Vite | Fast HMR, code splitting, lazy loading |
-| Styling | Tailwind CSS 3 + Framer Motion | Utility-first + production-quality animations |
-| Charts | Recharts | Declarative, composable data viz |
-| Real-time | Socket.io | Bidirectional event streaming for agent updates |
-| Backend | Node.js 20 + Express 4 | Lightweight, async-first, familiar ecosystem |
-| Primary LLM | Gemini 2.0 Flash | Best cost/quality ratio for educational content |
-| Fallback LLM | Groq (llama-3.3-70b) | Free tier, sub-second latency |
-| Database | Supabase PostgreSQL | Managed Postgres with real-time subscriptions |
-| DB Fallback | File-based JSON | Zero-config; works without any DB credentials |
-| Auth | JWT + bcrypt | Stateless, scalable, industry standard |
-| API Docs | OpenAPI 3.0 + Swagger UI | Interactive docs at `/api/docs` |
-| CI/CD | GitHub Actions | Lint → test → build → deploy pipeline |
-| Container | Docker + Compose | Reproducible builds, production-ready |
-| Deployment | Vercel (frontend) + Railway/Render (API) | Zero-config PaaS |
-| Testing | Vitest | Fast unit + integration tests (28 tests, 100% pass) |
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 18, Vite, Tailwind CSS, Recharts, Framer Motion |
+| Backend | Node.js 20, Express, Socket.io |
+| Recommendation Engine | Python 3.10, FastAPI, scipy SVD, scikit-learn TF-IDF |
+| AI / LLM | Gemini 2.0 Flash, Groq LLaMA 3.3-70b, LLaMA 3.1-8b-instant |
+| Database | Supabase (PostgreSQL) with RLS, multi-tenant isolation |
+| Auth | JWT + RBAC (SuperAdmin to Admin to Manager to Employee) |
+| Deployment | Vercel (frontend) + Render (backend) |
+| Caching | In-process TTL cache (LLMCache.js) |
+
+---
+
+## 9 AI Agents
+
+| Agent | What It Does |
+|-------|-------------|
+| **SkillDecomposer** | Takes any goal in plain English and generates domain-specific curriculum (7-day cache) |
+| **QuizGenerator** | Creates 5 diagnostic MCQs to measure baseline — domain-aware, never generic (12h cache) |
+| **ChallengeEngine** | Builds daily personalized challenges with concept summary, hints, warm-up MCQ (4h cache) |
+| **Evaluator** | Scores open-ended responses against evaluation criteria (30-min dedup cache) |
+| **PlanBuilder** | Constructs day-by-day learning plan with adaptive difficulty |
+| **ReportGenerator** | AI coaching report with narrative, capability statement, next milestone |
+| **MarketAgent** | Job market intelligence — demand scores, salary data, skill gaps (24h cache) |
+| **InterviewAgent** | Generates role-based interview questions, evaluates answers, final report (24h cache) |
+| **AutonomousScheduler** | Background agent every 6h — personalized daily briefs via Groq 8b-instant |
+
+---
+
+## Recommendation Engine
+
+**Algorithm:** Hybrid SVD Collaborative Filtering + TF-IDF Content-Based Filtering
+
+```
+Interaction Matrix (users x skills, values = engagement score 0-1)
+         |
+SVD Decomposition: U, sigma, Vt = svds(matrix, k=50)
+         |
+Predicted Ratings = U x diag(sigma) x Vt
+         |
+TF-IDF Skill Vectors + cosine_similarity (sklearn)
+         |
+Hybrid Score = alpha x CF_score + (1-alpha) x CB_score + demand_boost
+             where demand_boost = market_demand_score / 100 x 0.1
+```
+
+**Adaptive Weighting:**
+- Cold-start users (fewer than 3 interactions): 40% collaborative + 60% content-based
+- Active users (3 or more interactions): 70% collaborative + 30% content-based
+
+**Dataset:**
+- Source: SkillForge platform user activity (synthetic + real pilot data)
+- Features: user_id, skill_id, engagement_score (0-1), interaction_type
+- Size: 10,000+ user-session records across 50 skills and 200+ topics
+- Train/test split: 80/20 for metric evaluation
+
+**Evaluation Metrics (auto-recalculated every 24h):**
+
+| Metric | Description |
+|--------|-------------|
+| Precision@5 | Of top 5 recommendations, how many did the user engage with |
+| Recall@5 | Of all skills user engaged with, how many appear in top 5 |
+| NDCG@10 | Normalized Discounted Cumulative Gain — ranking quality |
+| Coverage | Percentage of skill catalog appearing in any recommendation |
+
+**API Endpoints:**
+- `POST /recommend` — body: `{ user_id, top_k }` — returns ranked skill list
+- `GET /metrics` — latest Precision@5, NDCG@10, Coverage
+- `GET /health` — service status
+
+---
+
+## Multi-Tenant Architecture
+
+```
+SuperAdmin
+    |__ Company A (Admin A)          <- Cannot see Company B data
+            |__ Manager A1
+            |     |__ Employee 1
+            |     |__ Employee 2
+            |__ Manager A2
+                  |__ Employee 3
+
+Company B (Admin B)                  <- Fully isolated
+    |__ ...
+```
+
+- JWT token carries companyId — every API query filters by it
+- Approval workflow: managers submit requests, admins approve/reject
+- Group management, assignment tracking, company module library
 
 ---
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 20+
-- A free [Gemini API key](https://aistudio.google.com) (optional — falls back to rule-based)
+- Node.js 20+, Python 3.10+
+- Supabase account (free tier works)
+- Gemini API key (free at aistudio.google.com)
+- Groq API key (free at console.groq.com)
 
+### Install
 ```bash
-# 1. Clone
-git clone https://github.com/gurusaiss/HACKap.git
-cd HACKap
-
-# 2. Install all workspaces
+git clone https://github.com/gurusaiss/Skill-AI.git
+cd Skill-AI
 npm install
+cd client && npm install && cd ..
+cd server && npm install && cd ..
+```
 
-# 3. Configure environment
+### Environment Variables
+```bash
 cp .env.example .env
-# Edit .env — at minimum set GEMINI_API_KEY
+```
 
-# 4. Start backend
+Required:
+```
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+GEMINI_API_KEY=your_gemini_key
+GROQ_API_KEY=your_groq_key
+JWT_SECRET=your_jwt_secret
+REC_ENGINE_URL=http://localhost:8001
+```
+
+### Run (Development)
+```bash
+# Terminal 1 — Backend
 npm run dev:server
 
-# 5. Start frontend (new terminal)
+# Terminal 2 — Frontend
 npm run dev:client
 
-# Open http://localhost:5173
+# Terminal 3 — Recommendation Engine
+cd rec-engine
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8001
 ```
+
+- Frontend: http://localhost:5173
+- API: http://localhost:3001
+- RecSys docs: http://localhost:8001/docs
 
 ### Demo Accounts
-
-Seed demo accounts to explore all roles:
-
-```bash
-npm run seed:demo
 ```
-
-| Email | Password | Role |
-|-------|----------|------|
-| `admin@skillforge.ai` | `Admin123!` | Admin |
-| `manager@skillforge.ai` | `Manager123!` | Manager |
-| `learner@skillforge.ai` | `Learner123!` | Employee |
+Admin:    admin@gss.com    / password123
+Manager:  manager@gss.com  / password123
+Employee: employee@gss.com / password123
+```
 
 ---
 
-## Docker
-
-```bash
-# Development (hot-reload client + server)
-docker compose --profile dev up
-
-# Production build
-docker compose up
-
-# With Redis caching layer
-docker compose --profile full up
-```
-
-The production image is a **multi-stage build** (~180MB final image):
-1. Stage 1 builds the React client
-2. Stage 2 installs production Node deps only
-3. Runs as non-root user `skillforge`
-4. Health check at `GET /api/health`
-
----
-
-## API Documentation
-
-Interactive Swagger UI is served at **`GET /api/docs`** when the server is running.
+## LLM Cost Optimization
 
 ```
-http://localhost:3001/api/docs
-```
+Monthly cost at 1,000 active users:
+  Before:  ~$90/month
+  After:   ~$28/month  (67% reduction)
 
-Raw OpenAPI JSON: `GET /api/docs.json`
-
-### Key Endpoints
-
-```
-POST /api/auth/register       Register user
-POST /api/auth/login          Login → JWT
-
-POST /api/goal                Submit goal → triggers full agent pipeline
-GET  /api/session             List user sessions
-POST /api/session/:id/complete Complete session → Evaluator + Adaptor run
-
-POST /api/interview/start     Start mock interview
-POST /api/simulation/run      Run what-if scenario (doesn't affect plan)
-POST /api/tutor/chat          Chat with AI tutor (context-aware)
-
-GET  /api/health              Server health + agent status
-GET  /api/docs                Swagger UI
+Strategy:
+  1. Tier-3 tasks (chat, briefs) -> Groq llama-3.1-8b-instant (near-free)
+  2. 7-layer TTL cache -> eliminates duplicate LLM calls
+  3. History trimming (5->3 turns) -> 20% fewer tokens per message
+  4. Domain-level market cache (24h) -> 1 call per domain per day
+  5. Goal decomposition cache (7d) -> never regenerate same curriculum
 ```
 
 ---
@@ -291,137 +247,45 @@ GET  /api/docs                Swagger UI
 ## Project Structure
 
 ```
-HACKap/
-├── .github/
-│   ├── workflows/ci.yml          # CI/CD: lint → test → build → docker → deploy
-│   └── ISSUE_TEMPLATE/           # Bug report & feature request templates
-├── client/                        # React 18 + Vite frontend
-│   ├── src/
-│   │   ├── pages/                 # 15 pages (Dashboard, Session, Interview, etc.)
-│   │   ├── components/            # 30+ reusable components
-│   │   ├── contexts/              # AuthContext (JWT state management)
-│   │   └── utils/api.js           # Axios + Bearer token injection
-│   └── Dockerfile.dev             # Dev container
-├── server/                        # Express + Socket.io backend
-│   ├── agent/                     # 14 AI agents
-│   │   ├── SmartAgent.js          # Orchestrator entry point
-│   │   ├── AgentDebate.js         # 3-agent voting system
-│   │   ├── SkillDecomposer.js     # Gemini-powered skill tree generation
-│   │   └── ...                    # 11 more specialized agents
-│   ├── routes/                    # 18 Express routers (100+ endpoints)
-│   ├── services/                  # GeminiService, GroqService, AuthService
-│   ├── db/                        # Supabase + file-based fallback store
-│   ├── knowledge/                 # 6 domains, 1000+ questions (zero-API fallback)
-│   ├── swagger.js                 # OpenAPI 3.0 spec
-│   └── index.js                   # Server entry + Socket.io setup
-├── Dockerfile                     # Multi-stage production build
-├── docker-compose.yml             # Full stack orchestration
-└── .env.example                   # Environment variable template
+SkillForge AI/
+|__ client/                    # React 18 frontend
+|   |__ src/
+|       |__ pages/
+|       |   |__ admin/         # Admin dashboards + metrics
+|       |   |__ employee/      # Employee analytics + recommendations
+|       |   |__ manager/
+|       |__ components/        # 29 shared UI components
+|__ server/                    # Node.js Express backend
+|   |__ agent/                 # 9 AI agents
+|   |__ routes/                # 25 REST route modules
+|   |__ services/
+|   |   |__ GeminiService.js   # LLM tier routing
+|   |   |__ LLMCache.js        # TTL cache (7 layers)
+|   |__ middleware/            # Auth, rate limiting
+|__ rec-engine/                # Python FastAPI recommendation service
+|   |__ main.py                # FastAPI app + endpoints
+|   |__ recommender.py         # SVD + TF-IDF hybrid
+|   |__ metrics.py             # Precision@K, NDCG, Coverage
+|   |__ requirements.txt
+|__ docs/                      # API documentation
 ```
 
 ---
 
-## Environment Variables
+## Domain Coverage
 
-```bash
-# .env (copy from .env.example)
+SkillForge generates real domain-specific curricula — not generic placeholders:
 
-# Required for AI features (free at aistudio.google.com)
-GEMINI_API_KEY=your_gemini_key_here
-
-# Optional: Groq fallback LLM (free at console.groq.com)
-GROQ_API_KEY=your_groq_key_here
-
-# Optional: Supabase (falls back to JSON files if not set)
-SUPABASE_URL=https://xyz.supabase.co
-SUPABASESERVICE_ROLE_KEY=your_service_role_key
-
-# Security
-JWT_SECRET=change-this-to-a-random-64-char-string
-
-# Server
-PORT=3001
-NODE_ENV=development
-
-# Frontend URL (for CORS)
-FRONTEND_URL=http://localhost:5173
-```
-
-> **Zero-config mode**: The platform works without ANY API keys — it falls back to the built-in rule-based knowledge bank covering 6 domains.
-
----
-
-## Testing
-
-```bash
-# Run all server tests (Vitest)
-npm test
-
-# Watch mode
-npm run test:watch --workspace=server
-
-# Integration test suite (28 tests)
-node server/test-integration.js
-```
-
-Test coverage includes:
-- Authentication flows (register, login, token validation, RBAC)
-- Agent unit tests (SkillDecomposer, QuizGenerator, Evaluator)
-- API endpoint integration tests
-- Knowledge bank validation (domain/question integrity)
-
----
-
-## Deployment
-
-### Vercel (Frontend)
-
-The `vercel.json` and `vercelignore` are preconfigured. Connect your GitHub repo to Vercel — it auto-detects the `vercel-build` script.
-
-Set these environment variables in Vercel:
-```
-VITE_API_URL=https://your-api-domain.com
-```
-
-### Railway / Render (Backend)
-
-```bash
-# Start command
-node server/index.js
-
-# Build command (if needed)
-npm install
-```
-
-Set all `.env` variables in your platform's environment dashboard.
-
-### Self-Hosted (Docker)
-
-```bash
-docker compose up -d
-```
-
-See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for detailed production configuration.
-
----
-
-## Why This Architecture Stands Out
-
-| Design Decision | Rationale |
-|----------------|-----------|
-| **Agent Debate before adaptation** | Prevents impulsive plan changes; adds transparency; mirrors real team decision-making |
-| **Hybrid LLM resilience** | Gemini → Groq → Rule-based means the platform **never breaks** even if all APIs are down |
-| **File-based DB fallback** | Zero-config onboarding; any developer can run it locally without a database |
-| **Socket.io for agent events** | Users see real-time agent "thinking" — makes AI feel alive, not just fast |
-| **Domain-agnostic skill tree** | Single algorithm handles software engineering, music, law, medicine equally well |
-| **Explainability Console** | Every agent logs reasoning chains → auditability, trust, and debugging built-in |
+| Goal | Domain | Example Skills |
+|------|--------|----------------|
+| "Become a doctor" | Medicine | Human Anatomy, Pharmacology, Clinical Diagnosis |
+| "Learn to code" | Full Stack | React, Node.js, PostgreSQL, Docker |
+| "Get into law" | Law | Constitutional Law, Contract Law, Legal Drafting |
+| "Learn guitar" | Music | Music Theory, Chord Shapes, Scales, Performance |
+| "Master machine learning" | ML | PyTorch, Transformers, CUDA, MLOps |
 
 ---
 
 ## License
 
 MIT — see [LICENSE](./LICENSE)
-
----
-
-*Built for HackAP 2026 · Team AI4AP*
