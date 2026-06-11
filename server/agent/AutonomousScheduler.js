@@ -5,6 +5,7 @@
  * This is the "agentic automation" — AI that acts autonomously.
  */
 import GeminiService from '../services/GeminiService.js';
+import LLMCache from '../services/LLMCache.js';
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -74,12 +75,17 @@ class AutonomousScheduler {
     const nextDay = plan.find(d => !d.completed && d.day > completedDays);
     const streak = this._calculateStreak(sessions);
 
-    // Try AI-generated insight — Groq llama-3.1-8b-instant first (Tier-3: simple text, near-free)
+    // Try AI-generated insight — 24h cache per user to avoid regenerating every 6h cycle
     let insight = '';
     try {
       if (this.gemini.isEnabled() || this.gemini.groqEnabled) {
-        const prompt = `Generate a 2-sentence motivational learning insight for a student who: completed ${completedDays} sessions, has avg score ${avgScore}%, last score ${lastScore}%, streak ${streak} days. Be encouraging and specific. No generic platitudes.`;
-        insight = await this.gemini.generateTextFast(prompt) || '';
+        const insightKey = `brief_insight_${LLMCache.hash(userId + '_' + new Date().toISOString().slice(0, 10))}`;
+        insight = LLMCache.get(insightKey) || '';
+        if (!insight) {
+          const prompt = `Generate a 2-sentence motivational learning insight for a student who: completed ${completedDays} sessions, has avg score ${avgScore}%, last score ${lastScore}%, streak ${streak} days. Be encouraging and specific. No generic platitudes.`;
+          insight = await this.gemini.generateTextFast(prompt) || '';
+          if (insight) LLMCache.set(insightKey, insight, 24 * 60 * 60 * 1000);
+        }
       }
     } catch {}
 
