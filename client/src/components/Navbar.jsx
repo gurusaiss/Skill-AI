@@ -94,7 +94,8 @@ function Navbar() {
       { to: '/report',             label: 'Reports',    icon: '📄' },
     ],
     employee: [
-      { to: '/dashboard', label: 'My Learning', icon: '📚' },
+      { to: '/dashboard',           label: 'My Learning', icon: '📚' },
+      { to: '/employee/analytics',  label: 'Analytics',   icon: '📊' },
     ],
   };
 
