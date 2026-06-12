@@ -132,6 +132,48 @@ const TABLES = [
     );
     ALTER TABLE notifications DISABLE ROW LEVEL SECURITY;`,
   },
+  {
+    name: 'approval_requests',
+    sql: `CREATE TABLE IF NOT EXISTS approval_requests (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    ALTER TABLE approval_requests DISABLE ROW LEVEL SECURITY;`,
+  },
+  {
+    name: 'groups',
+    sql: `CREATE TABLE IF NOT EXISTS groups (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    ALTER TABLE groups DISABLE ROW LEVEL SECURITY;`,
+  },
+  {
+    name: 'group_memberships',
+    sql: `CREATE TABLE IF NOT EXISTS group_memberships (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role_in_group TEXT DEFAULT 'member',
+      joined_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    ALTER TABLE group_memberships DISABLE ROW LEVEL SECURITY;`,
+  },
+  {
+    name: 'audit_logs',
+    sql: `CREATE TABLE IF NOT EXISTS audit_logs (
+      log_id TEXT PRIMARY KEY,
+      event_type TEXT,
+      user_id TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      timestamp TIMESTAMPTZ DEFAULT NOW()
+    );
+    ALTER TABLE audit_logs DISABLE ROW LEVEL SECURITY;`,
+  },
 ];
 
 const USER_COLS_SQL = `
