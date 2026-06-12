@@ -112,9 +112,17 @@ class HybridRecommender:
         logger.info("[Recommender] Training complete")
 
     def _build_tfidf(self, skills: List[Dict]) -> None:
-        """Build TF-IDF skill similarity matrix."""
+        """Build TF-IDF skill similarity matrix.
+        Rows are ordered by self.skill_index so that similarity[j] corresponds
+        to the skill at index j — matching how _cb_scores and _derive_reason
+        look up by skill_index values.
+        """
         try:
-            skill_ids_ordered = [s["id"] for s in skills if s["id"] in self.skill_index]
+            # Sort by index value so tfidf_matrix row j == skill at skill_index[j]
+            skill_ids_ordered = sorted(
+                [s["id"] for s in skills if s["id"] in self.skill_index],
+                key=lambda sid: self.skill_index[sid],
+            )
             docs = []
             for sid in skill_ids_ordered:
                 meta = self.skill_metadata.get(sid, {})
@@ -198,7 +206,8 @@ class HybridRecommender:
 
             results.append({
                 "skill_id"  : sid,
-                "skill_name": meta.get("name", sid),
+                "name"      : meta.get("name", sid),   # frontend uses rec.name
+                "skill_name": meta.get("name", sid),   # keep for backwards compat
                 "domain"    : meta.get("domain", ""),
                 "score"     : hybrid,
                 "match_pct" : round(hybrid * 100),
@@ -256,6 +265,7 @@ class HybridRecommender:
         return [
             {
                 "skill_id"  : sid,
+                "name"      : meta.get("name", sid),
                 "skill_name": meta.get("name", sid),
                 "domain"    : meta.get("domain", ""),
                 "score"     : round(dem, 4),
