@@ -198,6 +198,14 @@ export default function Employee() {
   const [excludingSkill, setExcludingSkill] = useState(null);
   const [tooltipSkill, setTooltipSkill] = useState(null);
 
+  // Close tooltip when clicking outside
+  useEffect(() => {
+    if (!tooltipSkill) return;
+    const close = () => setTooltipSkill(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [tooltipSkill]);
+
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, id: Date.now() });
   }, []);
@@ -282,7 +290,8 @@ export default function Employee() {
         body: JSON.stringify({ skillId, engagementScore: 0.7, interactionType: 'view' }),
       });
     } catch { /* non-fatal */ }
-    navigate(`/learn?skill=${skillId}`);
+    // Navigate to profiling with the skill pre-filled so user can start a learning path
+    navigate(`/profiling?goal=${encodeURIComponent(skillId)}`);
   };
 
   const loadAssessments = async () => {

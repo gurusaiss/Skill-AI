@@ -29,7 +29,7 @@ from metrics import evaluate
 from database import (
     fetch_interactions, fetch_skills, fetch_market_demand,
     save_metrics, get_latest_metrics, get_exclusions,
-    log_recommendation, upsert_interaction,
+    log_recommendation, upsert_interaction, add_exclusion,
 )
 
 load_dotenv()
@@ -205,16 +205,7 @@ async def log_interaction(req: InteractionRequest):
 @app.post("/exclude")
 async def exclude_skill(req: ExcludeRequest):
     """Mark a skill as Not Interested for a user."""
-    from database import _headers, SUPABASE_URL
-    import httpx
-    if SUPABASE_URL:
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                url = f"{SUPABASE_URL}/rest/v1/rec_exclusions"
-                payload = {"user_id": req.user_id, "skill_id": req.skill_id}
-                await client.post(url, headers=_headers(), json=payload)
-        except Exception:
-            pass
+    await add_exclusion(req.user_id, req.skill_id)
     return {"success": True}
 
 
@@ -232,19 +223,19 @@ def _synthetic_interactions(skills: List) -> List:
     when real interaction data is insufficient.
     """
     import random
-    random.seed(42)
+    rng = random.Random(42)  # isolated RNG — doesn't affect global random state
     skill_ids = [s["id"] for s in skills]
     interactions = []
     for user_num in range(30):
         uid = f"synthetic_user_{user_num}"
-        n_engaged = random.randint(2, min(8, len(skill_ids)))
-        engaged   = random.sample(skill_ids, n_engaged)
+        n_engaged = rng.randint(2, min(8, len(skill_ids)))
+        engaged   = rng.sample(skill_ids, n_engaged)
         for sid in engaged:
             interactions.append({
                 "user_id"         : uid,
                 "skill_id"        : sid,
-                "engagement_score": round(random.uniform(0.4, 1.0), 2),
-                "interaction_type": random.choice(["complete", "score", "view"]),
+                "engagement_score": round(rng.uniform(0.4, 1.0), 2),
+                "interaction_type": rng.choice(["complete", "score", "view"]),
                 "created_at"      : "2026-01-01T00:00:00Z",
             })
     return interactions

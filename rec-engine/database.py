@@ -167,6 +167,19 @@ async def log_recommendation(user_id: str, skill_ids: List[str]) -> None:
         pass
 
 
+async def add_exclusion(user_id: str, skill_id: str) -> None:
+    """Add a skill to the user's exclusion list (Not Interested)."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            url = f"{SUPABASE_URL}/rest/v1/rec_exclusions"
+            payload = {"user_id": user_id, "skill_id": skill_id}
+            await client.post(url, headers={**_headers(), "Prefer": "resolution=ignore-duplicates"}, json=payload)
+    except Exception:
+        pass
+
+
 async def upsert_interaction(
     user_id: str, skill_id: str, engagement_score: float, interaction_type: str = "view"
 ) -> None:
