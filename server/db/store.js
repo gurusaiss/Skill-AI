@@ -6,6 +6,31 @@ const DATA_DIR = join(new URL('..', import.meta.url).pathname, 'data');
 let supabase = null;
 let enabled = false;
 
+/**
+ * Lazy self-init from process.env.
+ *
+ * index.js starts the HTTP server BEFORE the async initSupabase() call
+ * completes, so early requests used to see enabled=false and write to the
+ * local JSON file fallback — which is EPHEMERAL on Render (wiped on every
+ * restart/spin-down). That was the root cause of "created data disappears
+ * after logout". isOn() closes that window by initializing the client from
+ * env vars on first use.
+ */
+function isOn() {
+  if (enabled) return true;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASESERVICE_ROLE_KEY
+           || process.env.SUPABASE_SECRET_KEY
+           || process.env.SUPABASE_KEY;
+  if (url && key && url.startsWith('http') && key.length >= 10) {
+    try {
+      supabase = createClient(url, key, { auth: { persistSession: false } });
+      enabled = true;
+    } catch { /* stay disabled, fall back to file */ }
+  }
+  return enabled;
+}
+
 async function ensureFile(path, defaultContent) {
   try {
     await access(path);
@@ -50,11 +75,11 @@ export async function initSupabase(url, key) {
 }
 
 export function supabaseEnabled() {
-  return enabled;
+  return isOn();
 }
 
 export function getSupabaseClient() {
-  return enabled ? supabase : null;
+  return isOn() ? supabase : null;
 }
 
 async function readJsonFile(path) {
@@ -72,7 +97,7 @@ async function writeJsonFile(path, data) {
 
 // Content: Packages
 export async function getPackages(filters = {}) {
-  if (enabled) {
+  if (isOn()) {
     let qb = supabase.from('packages').select('*');
     if (filters.category) qb = qb.eq('category', filters.category);
     const { data, error } = await qb;
@@ -133,7 +158,7 @@ function toSupabaseModule(module, createdBy, id) {
 }
 
 export async function getModules(filters = {}) {
-  if (enabled) {
+  if (isOn()) {
     let qb = supabase.from('modules').select('*');
     if (filters.category) qb = qb.eq('category', filters.category);
     if (filters.difficulty) qb = qb.eq('difficulty', filters.difficulty);
@@ -147,7 +172,7 @@ export async function getModules(filters = {}) {
 }
 
 export async function getModuleById(id) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('modules').select('*').eq('id', id).single();
     if (error) throw error;
     return normalizeModule(data);
@@ -160,7 +185,7 @@ export async function createModule(module, createdBy) {
   const { randomUUID } = await import('crypto');
   const id = `mod_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 
-  if (enabled) {
+  if (isOn()) {
     const payload = toSupabaseModule(module, createdBy, id);
     const { data, error } = await supabase.from('modules').insert([payload]).select().single();
     if (error) {
@@ -205,7 +230,7 @@ export async function createModule(module, createdBy) {
 }
 
 export async function updateModule(id, updates) {
-  if (enabled) {
+  if (isOn()) {
     // Normalize updates to snake_case for Supabase
     const sbUpdates = {};
     if (updates.title !== undefined) sbUpdates.title = updates.title;
@@ -238,7 +263,7 @@ export async function updateModule(id, updates) {
 }
 
 export async function deleteModule(id) {
-  if (enabled) {
+  if (isOn()) {
     const { error } = await supabase.from('modules').delete().eq('id', id);
     if (error) throw error;
     return true;
@@ -253,7 +278,7 @@ export async function deleteModule(id) {
 }
 
 export async function createPackage(pkg, createdBy) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('packages').insert([{ ...pkg, created_by: createdBy }]).select().single();
     if (error) throw error;
     return data;
@@ -269,7 +294,7 @@ export async function createPackage(pkg, createdBy) {
 }
 
 export async function updatePackage(id, updates) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('packages').update(updates).eq('id', id).select().single();
     if (error) throw error;
     return data;
@@ -284,7 +309,7 @@ export async function updatePackage(id, updates) {
 }
 
 export async function deletePackage(id) {
-  if (enabled) {
+  if (isOn()) {
     const { error } = await supabase.from('packages').delete().eq('id', id);
     if (error) throw error;
     return true;
@@ -300,7 +325,7 @@ export async function deletePackage(id) {
 
 // Skill packages
 export async function getSkillPackages(filters = {}) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('skill_packages').select('*');
     if (error) throw error;
     return data || [];
@@ -310,7 +335,7 @@ export async function getSkillPackages(filters = {}) {
 }
 
 export async function createSkillPackage(pkg, createdBy) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('skill_packages').insert([{ ...pkg, created_by: createdBy }]).select().single();
     if (error) throw error;
     return data;
@@ -326,7 +351,7 @@ export async function createSkillPackage(pkg, createdBy) {
 }
 
 export async function updateSkillPackage(id, updates) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('skill_packages').update(updates).eq('id', id).select().single();
     if (error) throw error;
     return data;
@@ -342,7 +367,7 @@ export async function updateSkillPackage(id, updates) {
 
 // Learning tracks
 export async function getLearningTracks(filters = {}) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('learning_tracks').select('*');
     if (error) throw error;
     return data || [];
@@ -352,7 +377,7 @@ export async function getLearningTracks(filters = {}) {
 }
 
 export async function createLearningTrack(track, createdBy) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('learning_tracks').insert([{ ...track, created_by: createdBy }]).select().single();
     if (error) throw error;
     return data;
@@ -369,7 +394,7 @@ export async function createLearningTrack(track, createdBy) {
 
 // Groups
 export async function _sbSelect(table) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from(table).select('*');
     if (error) throw error;
     return data || [];
@@ -382,20 +407,26 @@ export async function _sbSelect(table) {
 }
 
 export async function getGroups() {
-  if (enabled) {
-    const { data, error } = await supabase.from('groups').select('*');
+  if (isOn()) {
+    // groups table uses the JSONB { id, data } pattern (shared with DataStore.Groups)
+    const { data, error } = await supabase.from('groups').select('id, data');
     if (error) throw error;
-    return data || [];
+    return (data || []).map(r => ({ id: r.id, ...(r.data || {}) }));
   }
   const f = await readJsonFile(join(DATA_DIR, 'groups.json'));
   return f?.groups || [];
 }
 
 export async function createGroup(group) {
-  if (enabled) {
-    const { data, error } = await supabase.from('groups').insert([group]).select().single();
+  if (isOn()) {
+    const id = group.id || `grp_${Date.now()}`;
+    const { id: _i, ...rest } = group;
+    const { data, error } = await supabase.from('groups')
+      .upsert({ id, data: rest }, { onConflict: 'id' })
+      .select('id, data')
+      .single();
     if (error) throw error;
-    return data;
+    return { id: data.id, ...(data.data || {}) };
   }
   const path = join(DATA_DIR, 'groups.json');
   const f = await readJsonFile(path) || { groups: [], nextId: 1 };
@@ -414,7 +445,7 @@ export async function addGroupMembers(groupId, userIds, roleInGroup = 'member') 
     role_in_group: roleInGroup,
     joined_at: new Date().toISOString(),
   }));
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('group_memberships').insert(memberships).select();
     if (error) throw error;
     return data || memberships;
@@ -427,7 +458,7 @@ export async function addGroupMembers(groupId, userIds, roleInGroup = 'member') 
 }
 
 export async function getGroupMemberships(groupId) {
-  if (enabled) {
+  if (isOn()) {
     let qb = supabase.from('group_memberships').select('*');
     if (groupId) qb = qb.eq('group_id', groupId);
     const { data, error } = await qb;
@@ -442,7 +473,7 @@ export async function getGroupMemberships(groupId) {
 // Audit logging
 export async function logAuthEvent(eventType, userId, metadata = {}) {
   const logEntry = { log_id: `log_${Date.now()}`, event_type: eventType, user_id: userId || null, metadata, timestamp: new Date().toISOString() };
-  if (enabled) {
+  if (isOn()) {
     const { error } = await supabase.from('audit_logs').insert([logEntry]);
     if (error) console.warn('audit log error', error.message);
     return logEntry;
@@ -456,7 +487,7 @@ export async function logAuthEvent(eventType, userId, metadata = {}) {
 }
 
 export async function getAuditLogs(filters = {}) {
-  if (enabled) {
+  if (isOn()) {
     const qb = supabase.from('audit_logs').select('*');
     if (filters.userId) qb.eq('user_id', filters.userId);
     const { data, error } = await qb;
@@ -510,7 +541,7 @@ export default {
 // ─────────────────────────────────────────────────────────────
 // Assignments (Supabase + fallback)
 export async function getAssignments(filters = {}) {
-  if (enabled) {
+  if (isOn()) {
     let qb = supabase.from('assignments').select('*');
     if (filters.user_id) qb = qb.eq('assigned_to_user', filters.user_id);
     if (filters.status) qb = qb.eq('status', filters.status);
@@ -523,7 +554,7 @@ export async function getAssignments(filters = {}) {
 }
 
 export async function createAssignment(assignment) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('assignments').insert([assignment]).select().single();
     if (error) throw error;
     return data;
@@ -539,7 +570,7 @@ export async function createAssignment(assignment) {
 }
 
 export async function updateAssignment(id, updates) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('assignments').update(updates).eq('id', id).select().single();
     if (error) throw error;
     return data;
@@ -555,7 +586,7 @@ export async function updateAssignment(id, updates) {
 
 // Assignment Requests (Manager → Admin)
 export async function createAssignmentRequest(req) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('assignment_requests').insert([req]).select().single();
     if (error) throw error;
     return data;
@@ -571,7 +602,7 @@ export async function createAssignmentRequest(req) {
 }
 
 export async function getAssignmentRequests(filters = {}) {
-  if (enabled) {
+  if (isOn()) {
     let qb = supabase.from('assignment_requests').select('*');
     if (filters.status) qb = qb.eq('status', filters.status);
     const { data, error } = await qb;
@@ -583,7 +614,7 @@ export async function getAssignmentRequests(filters = {}) {
 }
 
 export async function updateAssignmentRequest(id, updates) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('assignment_requests').update(updates).eq('id', id).select().single();
     if (error) throw error;
     return data;
@@ -599,7 +630,7 @@ export async function updateAssignmentRequest(id, updates) {
 
 // Notifications
 export async function createNotification(notif) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('notifications').insert([notif]).select().single();
     if (error) throw error;
     return data;
@@ -614,7 +645,7 @@ export async function createNotification(notif) {
 }
 
 export async function getNotifications(userId) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
@@ -624,7 +655,7 @@ export async function getNotifications(userId) {
 }
 
 export async function markNotificationRead(notifId, userId) {
-  if (enabled) {
+  if (isOn()) {
     const { data, error } = await supabase.from('notifications').update({ read: true }).eq('id', notifId).eq('user_id', userId).select().single();
     if (error) throw error;
     return data;
@@ -639,7 +670,7 @@ export async function markNotificationRead(notifId, userId) {
 }
 
 export async function markAllNotificationsRead(userId) {
-  if (enabled) {
+  if (isOn()) {
     const { error } = await supabase.from('notifications').update({ read: true }).eq('user_id', userId).eq('read', false);
     if (error) throw error;
     return true;

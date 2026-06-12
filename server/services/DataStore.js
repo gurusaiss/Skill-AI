@@ -77,8 +77,10 @@ async function sbInsert(table, id, doc) {
   if (!sb) return null;
   try {
     const { id: _id, _created, _updated, ...rest } = doc;
+    // upsert (not insert): a retry or re-create with the same id must not fail —
+    // a failed insert silently strands the record in the ephemeral file fallback
     const { data, error } = await sb.from(table)
-      .insert({ id, data: rest })
+      .upsert({ id, data: rest }, { onConflict: 'id' })
       .select('id, data')
       .maybeSingle();
     if (error) { console.error(`[DataStore] ${table} insert:`, error.message); return null; }
@@ -95,9 +97,11 @@ async function sbUpdate(table, id, updates) {
     const { _created, _updated, id: _id, ...cleanUpdates } = updates;
     const merged = { ...(existing || {}), ...cleanUpdates };
     const { id: __id, _created: _c, _updated: _u, ...rest } = merged;
+    // upsert (not update): if the row was stranded in the file fallback by an
+    // earlier failed insert, update().eq() matches 0 rows and the change is
+    // silently lost while the route reports success
     const { data, error } = await sb.from(table)
-      .update({ data: rest, updated_at: new Date().toISOString() })
-      .eq('id', id)
+      .upsert({ id, data: rest, updated_at: new Date().toISOString() }, { onConflict: 'id' })
       .select('id, data')
       .maybeSingle();
     if (error) { console.error(`[DataStore] ${table} update:`, error.message); return null; }
@@ -115,17 +119,92 @@ async function sbDelete(table, id) {
   } catch (e) { return false; }
 }
 
+// ── Self-healing read ─────────────────────────────────────────────────────────
+// If a write ever fell back to the local JSON file (Supabase momentarily down,
+// table missing, transient error), that record was INVISIBLE to reads (which
+// prefer Supabase) and got WIPED on the next Render restart. getAllHealed
+// merges file-fallback records into the result and re-uploads them to Supabase
+// once per table per process, so stranded data becomes durable again.
+const _syncedTables = new Set();
+
+// Some fallback files are written as bare arrays, others as wrapped objects
+// (e.g. db/store.js writes groups.json as { groups: [...] }). Normalize both.
+function readFileRecords(fileName) {
+  const raw = readFile(fileName);
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === 'object') {
+    const arr = Object.values(raw).find(Array.isArray);
+    if (arr) return arr;
+  }
+  return [];
+}
+
+async function getAllHealed(table, fileName) {
+  const sb = getSB();
+  if (!sb) return readFileRecords(fileName);
+
+  const sbRows = await sbGetAll(table);
+  if (sbRows === null) {
+    // Supabase errored (e.g. table missing) — file is the source of truth
+    console.warn(`[DataStore] ${table}.getAll: Supabase error, using file fallback`);
+    return readFileRecords(fileName);
+  }
+
+  const fileRows = readFileRecords(fileName);
+  if (fileRows.length === 0) return sbRows;
+
+  const sbIds = new Set(sbRows.map(r => r.id));
+  const stranded = fileRows.filter(r => r?.id && !sbIds.has(r.id));
+  if (stranded.length === 0) return sbRows;
+
+  // Re-upload stranded file records to Supabase (once per table per process)
+  if (!_syncedTables.has(table)) {
+    _syncedTables.add(table);
+    console.warn(`[DataStore] ${table}: re-syncing ${stranded.length} file-fallback record(s) to Supabase`);
+    for (const doc of stranded) {
+      await sbInsert(table, doc.id, doc);
+    }
+  }
+
+  return [...sbRows, ...stranded];
+}
+
+// Update that survives a record stranded in the file fallback: pushes the
+// file copy up to Supabase first so the merge in sbUpdate sees the full
+// document, then applies the update.
+async function updateHealed(table, fileName, id, updates) {
+  const sb = getSB();
+  if (sb) {
+    const inSb = await sbGetById(table, id);
+    if (!inSb) {
+      const fileRec = readFileRecords(fileName).find(r => r?.id === id);
+      if (fileRec) await sbInsert(table, id, fileRec);
+    }
+    const result = await sbUpdate(table, id, updates);
+    if (result) return result;
+  }
+  const all = readFileRecords(fileName);
+  const idx = all.findIndex(r => r?.id === id);
+  if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile(fileName, all); return all[idx]; }
+  return null;
+}
+
+// Delete from BOTH Supabase and the local file — a stale file copy would
+// otherwise be resurrected by the self-healing read.
+async function deleteHealed(table, fileName, id) {
+  const sb = getSB();
+  if (sb) await sbDelete(table, id);
+  const all = readFileRecords(fileName);
+  if (all.some(r => r?.id === id)) {
+    writeFile(fileName, all.filter(r => r?.id !== id));
+  }
+}
+
 // ── ASSESSMENTS ───────────────────────────────────────────────────────────────
 
 export const Assessments = {
   async getAll() {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbGetAll('assessments');
-      if (result !== null) return result;   // ✅ only use Supabase if it worked
-      console.warn('[DataStore] assessments.getAll: Supabase error, using file fallback');
-    }
-    return readFile('assessments.json');
+    return getAllHealed('assessments', 'assessments.json');
   },
   async getById(id) {
     const sb = getSB();
@@ -154,23 +233,10 @@ export const Assessments = {
     return doc;
   },
   async update(id, updates) {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbUpdate('assessments', id, updates);
-      if (result) return result;
-    }
-    const all = readFile('assessments.json');
-    const idx = all.findIndex(a => a.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile('assessments.json', all); return all[idx]; }
-    return null;
+    return updateHealed('assessments', 'assessments.json', id, updates);
   },
   async delete(id) {
-    const sb = getSB();
-    if (sb) {
-      const ok = await sbDelete('assessments', id);
-      if (ok) return;
-    }
-    writeFile('assessments.json', readFile('assessments.json').filter(a => a.id !== id));
+    return deleteHealed('assessments', 'assessments.json', id);
   },
 };
 
@@ -178,13 +244,7 @@ export const Assessments = {
 
 export const Submissions = {
   async getAll() {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbGetAll('assessment_submissions');
-      if (result !== null) return result;
-      console.warn('[DataStore] assessment_submissions.getAll: Supabase error, using file fallback');
-    }
-    return readFile('assessment_submissions.json');
+    return getAllHealed('assessment_submissions', 'assessment_submissions.json');
   },
   async getByUserId(userId) {
     const all = await this.getAll();
@@ -210,15 +270,7 @@ export const Submissions = {
     return doc;
   },
   async update(id, updates) {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbUpdate('assessment_submissions', id, updates);
-      if (result) return result;
-    }
-    const all = readFile('assessment_submissions.json');
-    const idx = all.findIndex(s => s.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile('assessment_submissions.json', all); return all[idx]; }
-    return null;
+    return updateHealed('assessment_submissions', 'assessment_submissions.json', id, updates);
   },
 };
 
@@ -226,13 +278,7 @@ export const Submissions = {
 
 export const Reports = {
   async getAll() {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbGetAll('assessment_reports');
-      if (result !== null) return result;
-      console.warn('[DataStore] assessment_reports.getAll: Supabase error, using file fallback');
-    }
-    return readFile('assessment_reports.json');
+    return getAllHealed('assessment_reports', 'assessment_reports.json');
   },
   async getByUserId(userId) {
     const all = await this.getAll();
@@ -254,15 +300,7 @@ export const Reports = {
     return doc;
   },
   async update(id, updates) {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbUpdate('assessment_reports', id, updates);
-      if (result) return result;
-    }
-    const all = readFile('assessment_reports.json');
-    const idx = all.findIndex(r => r.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile('assessment_reports.json', all); return all[idx]; }
-    return null;
+    return updateHealed('assessment_reports', 'assessment_reports.json', id, updates);
   },
 };
 
@@ -270,13 +308,7 @@ export const Reports = {
 
 export const PendingModules = {
   async getAll() {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbGetAll('pending_modules');
-      if (result !== null) return result;
-      console.warn('[DataStore] pending_modules.getAll: Supabase error, using file fallback');
-    }
-    return readFile('pending_modules.json');
+    return getAllHealed('pending_modules', 'pending_modules.json');
   },
   async getById(id) {
     const sb = getSB();
@@ -298,20 +330,10 @@ export const PendingModules = {
     return doc;
   },
   async update(id, updates) {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbUpdate('pending_modules', id, updates);
-      if (result) return result;
-    }
-    const all = readFile('pending_modules.json');
-    const idx = all.findIndex(m => m.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile('pending_modules.json', all); return all[idx]; }
-    return null;
+    return updateHealed('pending_modules', 'pending_modules.json', id, updates);
   },
   async delete(id) {
-    const sb = getSB();
-    if (sb) { await sbDelete('pending_modules', id); return; }
-    writeFile('pending_modules.json', readFile('pending_modules.json').filter(m => m.id !== id));
+    return deleteHealed('pending_modules', 'pending_modules.json', id);
   },
 };
 
@@ -319,13 +341,7 @@ export const PendingModules = {
 
 export const ModuleAssignments = {
   async getAll() {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbGetAll('module_assignments');
-      if (result !== null) return result;
-      console.warn('[DataStore] module_assignments.getAll: Supabase error, using file fallback');
-    }
-    return readFile('module_assignments.json');
+    return getAllHealed('module_assignments', 'module_assignments.json');
   },
   async getByUserId(userId) {
     const all = await this.getAll();
@@ -343,15 +359,7 @@ export const ModuleAssignments = {
     return doc;
   },
   async update(id, updates) {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbUpdate('module_assignments', id, updates);
-      if (result) return result;
-    }
-    const all = readFile('module_assignments.json');
-    const idx = all.findIndex(a => a.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile('module_assignments.json', all); return all[idx]; }
-    return null;
+    return updateHealed('module_assignments', 'module_assignments.json', id, updates);
   },
 };
 
@@ -359,13 +367,7 @@ export const ModuleAssignments = {
 
 export const Companies = {
   async getAll() {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbGetAll('companies');
-      if (result !== null) return result;
-      console.warn('[DataStore] companies.getAll: Supabase error, using file fallback');
-    }
-    return readFile('companies.json');
+    return getAllHealed('companies', 'companies.json');
   },
   async getById(id) {
     const sb = getSB();
@@ -387,23 +389,10 @@ export const Companies = {
     return doc;
   },
   async update(id, updates) {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbUpdate('companies', id, updates);
-      if (result) return result;
-    }
-    const all = readFile('companies.json');
-    const idx = all.findIndex(c => c.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile('companies.json', all); return all[idx]; }
-    return null;
+    return updateHealed('companies', 'companies.json', id, updates);
   },
   async delete(id) {
-    const sb = getSB();
-    if (sb) {
-      const ok = await sbDelete('companies', id);
-      if (ok) return;
-    }
-    writeFile('companies.json', readFile('companies.json').filter(c => c.id !== id));
+    return deleteHealed('companies', 'companies.json', id);
   },
 };
 
@@ -543,13 +532,7 @@ export const Teams = {
 
 export const ApprovalRequests = {
   async getAll() {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbGetAll('approval_requests');
-      if (result !== null) return result;
-      console.warn('[DataStore] approval_requests.getAll: Supabase error, using file fallback');
-    }
-    return readFile('approval_requests.json');
+    return getAllHealed('approval_requests', 'approval_requests.json');
   },
   async getById(id) {
     const sb = getSB();
@@ -571,23 +554,10 @@ export const ApprovalRequests = {
     return doc;
   },
   async update(id, updates) {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbUpdate('approval_requests', id, updates);
-      if (result) return result;
-    }
-    const all = readFile('approval_requests.json');
-    const idx = all.findIndex(a => a.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile('approval_requests.json', all); return all[idx]; }
-    return null;
+    return updateHealed('approval_requests', 'approval_requests.json', id, updates);
   },
   async delete(id) {
-    const sb = getSB();
-    if (sb) {
-      const ok = await sbDelete('approval_requests', id);
-      if (ok) return;
-    }
-    writeFile('approval_requests.json', readFile('approval_requests.json').filter(a => a.id !== id));
+    return deleteHealed('approval_requests', 'approval_requests.json', id);
   },
 };
 
@@ -595,13 +565,7 @@ export const ApprovalRequests = {
 
 export const Groups = {
   async getAll() {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbGetAll('groups');
-      if (result !== null) return result;
-      console.warn('[DataStore] groups.getAll: Supabase error, using file fallback');
-    }
-    return readFile('groups.json');
+    return getAllHealed('groups', 'groups.json');
   },
   async getById(id) {
     const sb = getSB();
@@ -609,41 +573,25 @@ export const Groups = {
       const result = await sbGetById('groups', id);
       if (result) return result;
     }
-    return readFile('groups.json').find(g => g.id === id) || null;
+    return readFileRecords('groups.json').find(g => g.id === id) || null;
   },
   async create(doc) {
     const sb = getSB();
     if (sb) {
       const result = await sbInsert('groups', doc.id, doc);
       if (result) return result;
+      console.warn('[DataStore] groups.create: Supabase insert failed, using file fallback');
     }
-    const all = readFile('groups.json');
+    const all = readFileRecords('groups.json');
     all.push(doc);
     writeFile('groups.json', all);
     return doc;
   },
   async update(id, updates) {
-    const sb = getSB();
-    if (sb) {
-      const result = await sbUpdate('groups', id, updates);
-      if (result) return result;
-    }
-    const all = readFile('groups.json');
-    const idx = all.findIndex(g => g.id === id);
-    if (idx >= 0) {
-      all[idx] = { ...all[idx], ...updates };
-      writeFile('groups.json', all);
-      return all[idx];
-    }
-    return null;
+    return updateHealed('groups', 'groups.json', id, updates);
   },
   async delete(id) {
-    const sb = getSB();
-    if (sb) {
-      const ok = await sbDelete('groups', id);
-      if (ok) return;
-    }
-    writeFile('groups.json', readFile('groups.json').filter(g => g.id !== id));
+    return deleteHealed('groups', 'groups.json', id);
   },
 };
 

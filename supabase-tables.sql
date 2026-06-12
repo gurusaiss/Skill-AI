@@ -112,6 +112,40 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── 12. Approval Requests (JSONB pattern) ────────────────────
+CREATE TABLE IF NOT EXISTS approval_requests (
+  id           TEXT PRIMARY KEY,
+  data         JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── 13. Groups (JSONB pattern) ───────────────────────────────
+CREATE TABLE IF NOT EXISTS groups (
+  id           TEXT PRIMARY KEY,
+  data         JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── 14. Group Memberships ────────────────────────────────────
+CREATE TABLE IF NOT EXISTS group_memberships (
+  id            TEXT PRIMARY KEY,
+  group_id      TEXT NOT NULL,
+  user_id       TEXT NOT NULL,
+  role_in_group TEXT DEFAULT 'member',
+  joined_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── 15. Audit Logs ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS audit_logs (
+  log_id       TEXT PRIMARY KEY,
+  event_type   TEXT,
+  user_id      TEXT,
+  metadata     JSONB DEFAULT '{}'::jsonb,
+  timestamp    TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ============================================================
 -- Disable Row Level Security on all tables so the service_role
 -- key can read/write without JWT issues.
@@ -127,6 +161,10 @@ ALTER TABLE departments            DISABLE ROW LEVEL SECURITY;
 ALTER TABLE teams                  DISABLE ROW LEVEL SECURITY;
 ALTER TABLE assignment_requests    DISABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications          DISABLE ROW LEVEL SECURITY;
+ALTER TABLE approval_requests      DISABLE ROW LEVEL SECURITY;
+ALTER TABLE groups                 DISABLE ROW LEVEL SECURITY;
+ALTER TABLE group_memberships      DISABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs             DISABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- Also ensure the users table has all required columns
@@ -152,5 +190,6 @@ ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 -- assessments, assessment_submissions, assessment_reports,
 -- pending_modules, module_assignments, companies,
 -- organizations, departments, teams,
--- assignment_requests, notifications
+-- assignment_requests, notifications,
+-- approval_requests, groups, group_memberships, audit_logs
 -- ============================================================

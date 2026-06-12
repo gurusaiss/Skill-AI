@@ -448,8 +448,18 @@ class UserStore {
         status:              newA.status,
         progress:            newA.progress,
       };
-      const { data, error } = await sb.from('assignments').insert(sbRow).select().single();
-      if (error) { console.error('[UserStore] createAssignment:', error.message); }
+      // upsert (not insert): id retries must not fail silently
+      const { data, error } = await sb.from('assignments')
+        .upsert(sbRow, { onConflict: 'id' }).select().maybeSingle();
+      if (error) {
+        console.error('[UserStore] createAssignment:', error.message);
+        // Don't lose the assignment — persist to the file fallback so the
+        // self-healing layer can re-sync it later
+        const fileData = await this.readAssignmentsFile();
+        fileData.assignments.push(newA);
+        fileData.nextAssignmentId = (fileData.nextAssignmentId || 1) + 1;
+        await this.writeAssignmentsFile(fileData);
+      }
       return data || newA;
     }
 
@@ -528,8 +538,16 @@ class UserStore {
         decided_by:   null,
         decided_at:   null,
       };
-      const { data, error } = await sb.from('assignment_requests').insert([newReq]).select().maybeSingle();
-      if (error) { console.error('[UserStore] createAssignmentRequest:', error.message); }
+      const { data, error } = await sb.from('assignment_requests')
+        .upsert(newReq, { onConflict: 'id' }).select().maybeSingle();
+      if (error) {
+        console.error('[UserStore] createAssignmentRequest:', error.message);
+        // Persist to file fallback so the request isn't silently lost
+        const fileData = await this.readRequestsFile();
+        fileData.requests.push(newReq);
+        fileData.nextId = (fileData.nextId || 1) + 1;
+        await this.writeRequestsFile(fileData);
+      }
       return data || newReq;
     }
     const fileData = await this.readRequestsFile();
