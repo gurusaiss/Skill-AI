@@ -109,7 +109,7 @@ function Navbar() {
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#1E293B] bg-[#0F172A]/95 backdrop-blur">
-      <div className="flex items-center w-full px-4 py-2.5 gap-2 min-w-0">
+      <div className="flex items-center w-full px-4 py-2 gap-1.5 min-w-0">
 
         {/* Brand — never shrinks, always single line */}
         <Link to="/" className="flex items-center gap-2.5 flex-shrink-0 mr-3">
@@ -117,18 +117,18 @@ function Navbar() {
           <span className="font-bold text-white text-sm tracking-wide whitespace-nowrap">SKILL FORGE</span>
         </Link>
 
-        {/* Role nav links — flex-1 so it fills remaining space; overflow scrolls on small screens */}
+        {/* Role nav links — flex-1 fills remaining space; scrolls invisibly on mid screens */}
         {!hideNavLinks && (
-          <nav className="hidden md:flex items-center gap-0.5 text-sm flex-1 min-w-0 overflow-x-auto scrollbar-hide">
+          <nav className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-hide">
             {roleLinks.map(({ to, label, icon }) => (
               <Link key={to} to={to}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap flex-shrink-0 text-xs lg:text-sm
+                className={`flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all whitespace-nowrap flex-shrink-0 text-[11px] xl:text-xs font-medium
                   ${location.pathname === to
                     || (location.pathname === '/employee/dashboard' && to === '/dashboard')
                     || (to !== '/admin/dashboard' && to !== '/dashboard' && to !== '/manager/dashboard' && location.pathname.startsWith(to))
                     ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
-                <span>{icon}</span>
+                <span className="text-[13px] leading-none">{icon}</span>
                 {label}
               </Link>
             ))}
@@ -138,30 +138,29 @@ function Navbar() {
         {/* Spacer when no nav links (landing page) */}
         {hideNavLinks && <div className="flex-1" />}
 
-        {/* Right section — never shrinks: Theme toggle + Bell + Profile + Mobile toggle */}
+        {/* Right section — fixed width icons: Theme toggle + Bell + Profile + Mobile toggle */}
         {isAuthenticated && (location.pathname !== '/' && location.pathname !== '/demo') && (
-          <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+          <div className="flex items-center gap-0.5 flex-shrink-0 ml-1">
 
-            {/* Theme Toggle */}
+            {/* Theme Toggle — icon only, no label */}
             <button
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              className="theme-toggle-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white hover:bg-slate-800"
+              className="theme-toggle-btn flex items-center justify-center w-7 h-7 rounded-lg transition-all text-slate-400 hover:text-white hover:bg-slate-800"
             >
-              <span className="text-base leading-none">{theme === 'dark' ? '☀️' : '🌙'}</span>
-              <span className="hidden sm:inline text-xs font-medium">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+              <span className="text-sm leading-none">{theme === 'dark' ? '☀️' : '🌙'}</span>
             </button>
 
             {/* Notification Bell */}
             <div className="relative" ref={notifRef}>
               <button
                 onClick={() => setNotifOpen(!notifOpen)}
-                className="relative flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+                className="relative flex items-center justify-center w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
               >
-                🔔
+                <span className="text-sm leading-none">🔔</span>
                 {unreadCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-indigo-600 text-white text-[10px] font-bold px-1">
-                    {unreadCount > 99 ? '99+' : unreadCount}
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 flex items-center justify-center rounded-full bg-indigo-600 text-white text-[9px] font-bold px-0.5">
+                    {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
               </button>
@@ -209,10 +208,10 @@ function Navbar() {
               <div className="relative">
                 <button
                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all whitespace-nowrap"
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all whitespace-nowrap"
                 >
-                  <span className="text-sm">👤</span>
-                  <span className="text-sm hidden sm:inline truncate max-w-[120px]">{user.name}</span>
+                  <span className="text-sm leading-none">👤</span>
+                  <span className="text-[11px] font-medium hidden sm:inline truncate max-w-[100px]">{user.name}</span>
                 </button>
 
                 {profileMenuOpen && (
@@ -249,7 +248,7 @@ function Navbar() {
 
             {/* Mobile hamburger */}
             <button onClick={() => setMenuOpen(!menuOpen)}
-              className="md:hidden flex items-center justify-center w-8 h-8 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all">
+              className="md:hidden flex items-center justify-center w-7 h-7 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all text-sm">
               {menuOpen ? '✕' : '☰'}
             </button>
           </div>
