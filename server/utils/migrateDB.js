@@ -52,6 +52,27 @@ const TABLES = [
     ALTER TABLE pending_modules DISABLE ROW LEVEL SECURITY;`,
   },
   {
+    name: 'modules',
+    sql: `CREATE TABLE IF NOT EXISTS modules (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      category TEXT DEFAULT 'General',
+      difficulty TEXT DEFAULT 'beginner',
+      estimated_duration INTEGER DEFAULT 30,
+      skills JSONB DEFAULT '[]'::jsonb,
+      tasks JSONB DEFAULT '[]'::jsonb,
+      resources JSONB DEFAULT '[]'::jsonb,
+      completion_criteria TEXT DEFAULT 'Complete all tasks',
+      content JSONB DEFAULT '{}'::jsonb,
+      created_by TEXT,
+      company_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    ALTER TABLE modules DISABLE ROW LEVEL SECURITY;`,
+  },
+  {
     name: 'module_assignments',
     sql: `CREATE TABLE IF NOT EXISTS module_assignments (
       id TEXT PRIMARY KEY,

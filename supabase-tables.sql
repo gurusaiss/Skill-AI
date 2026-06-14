@@ -41,6 +41,26 @@ CREATE TABLE IF NOT EXISTS pending_modules (
   updated_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── 4b. Modules ─────────────────────────────────────────────
+-- All approved/active learning modules (admin + AI-generated)
+CREATE TABLE IF NOT EXISTS modules (
+  id                  TEXT PRIMARY KEY,
+  title               TEXT NOT NULL,
+  description         TEXT DEFAULT '',
+  category            TEXT DEFAULT 'General',
+  difficulty          TEXT DEFAULT 'beginner',
+  estimated_duration  INTEGER DEFAULT 30,
+  skills              JSONB DEFAULT '[]'::jsonb,
+  tasks               JSONB DEFAULT '[]'::jsonb,
+  resources           JSONB DEFAULT '[]'::jsonb,
+  completion_criteria TEXT DEFAULT 'Complete all tasks',
+  content             JSONB DEFAULT '{}'::jsonb,
+  created_by          TEXT,
+  company_id          TEXT,
+  created_at          TIMESTAMPTZ DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ── 5. Module Assignments ────────────────────────────────────
 -- Maps approved modules to specific employees
 CREATE TABLE IF NOT EXISTS module_assignments (
@@ -154,6 +174,7 @@ ALTER TABLE assessments            DISABLE ROW LEVEL SECURITY;
 ALTER TABLE assessment_submissions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE assessment_reports     DISABLE ROW LEVEL SECURITY;
 ALTER TABLE pending_modules        DISABLE ROW LEVEL SECURITY;
+ALTER TABLE modules                DISABLE ROW LEVEL SECURITY;
 ALTER TABLE module_assignments     DISABLE ROW LEVEL SECURITY;
 ALTER TABLE companies              DISABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations          DISABLE ROW LEVEL SECURITY;
@@ -188,7 +209,7 @@ ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 -- ============================================================
 -- DONE. You should now see these tables in Table Editor:
 -- assessments, assessment_submissions, assessment_reports,
--- pending_modules, module_assignments, companies,
+-- pending_modules, modules, module_assignments, companies,
 -- organizations, departments, teams,
 -- assignment_requests, notifications,
 -- approval_requests, groups, group_memberships, audit_logs
