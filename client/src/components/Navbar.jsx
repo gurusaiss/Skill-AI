@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 function useNotifications(isAuthenticated) {
   const [notifications, setNotifications] = useState([]);
@@ -51,6 +52,7 @@ function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAuthenticated, getDashboardRoute, hasRole, logout } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -136,9 +138,19 @@ function Navbar() {
         {/* Spacer when no nav links (landing page) */}
         {hideNavLinks && <div className="flex-1" />}
 
-        {/* Right section — never shrinks: Bell + Profile + Mobile toggle */}
+        {/* Right section — never shrinks: Theme toggle + Bell + Profile + Mobile toggle */}
         {isAuthenticated && (location.pathname !== '/' && location.pathname !== '/demo') && (
           <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="theme-toggle-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white hover:bg-slate-800"
+            >
+              <span className="text-base leading-none">{theme === 'dark' ? '☀️' : '🌙'}</span>
+              <span className="hidden sm:inline text-xs font-medium">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+            </button>
 
             {/* Notification Bell */}
             <div className="relative" ref={notifRef}>
