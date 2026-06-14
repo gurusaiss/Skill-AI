@@ -13,19 +13,7 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   AreaChart, Area,
 } from 'recharts';
-
-const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
-
-const authFetch = async (path) => {
-  const token = localStorage.getItem('auth_token');
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
-  const text = await res.text();
-  if (!text) return null;
-  const data = JSON.parse(text);
-  return data?.data ?? data;
-};
+import { authFetch } from '../../utils/authFetch.js';
 
 const COLORS = {
   indigo : '#6366f1',

@@ -7,25 +7,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-
-const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
-
-const authFetch = async (path, options = {}) => {
-  const token = localStorage.getItem('auth_token');
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
-  const text = await res.text();
-  let data = null;
-  if (text) { try { data = JSON.parse(text); } catch { throw new Error(`Server error (${res.status})`); } }
-  if (!res.ok) throw new Error(data?.error?.message || data?.error || `Request failed (${res.status})`);
-  return data?.data ?? data;
-};
+import { authFetch } from '../utils/authFetch.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
