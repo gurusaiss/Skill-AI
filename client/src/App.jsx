@@ -4,6 +4,7 @@ import Navbar from './components/Navbar.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AiTutorChat from './components/AiTutorChat.jsx';
+import ServerStatusBanner from './components/ServerStatusBanner.jsx';
 
 const Landing              = lazy(() => import('./pages/Landing.jsx'));
 const Profiling            = lazy(() => import('./pages/Profiling.jsx'));
@@ -65,6 +66,7 @@ const App = () => {
       <ErrorBoundary>
         <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
           <Navbar />
+          <ServerStatusBanner />
           <Suspense fallback={<Loader />}>
             <Routes>
               <Route path="/"             element={<Landing />} />

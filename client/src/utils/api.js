@@ -15,12 +15,30 @@ const getAuthHeaders = () => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+// Retry a fetch up to `maxRetries` times on network errors (not on HTTP errors).
+// Covers Render free-tier cold starts which can take 20-30 seconds.
+const fetchWithRetry = async (url, fetchOptions, maxRetries = 2) => {
+  let lastErr;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fetch(url, fetchOptions);
+    } catch (err) {
+      lastErr = err;
+      const isRetryable = err.name !== 'TimeoutError' && err.name !== 'AbortError';
+      if (!isRetryable || attempt === maxRetries) throw err;
+      // Exponential back-off: 2s, 4s
+      await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+};
+
 const request = async (path, options = {}) => {
   let response;
   const fullUrl = `${API_BASE_URL}${path}`;
 
   try {
-    response = await fetch(fullUrl, {
+    response = await fetchWithRetry(fullUrl, {
       headers: {
         'Content-Type': 'application/json',
         ...getAuthHeaders(),
@@ -31,9 +49,9 @@ const request = async (path, options = {}) => {
     });
   } catch (err) {
     if (err.name === 'TimeoutError' || err.name === 'AbortError') {
-      throw new Error('Request timed out. The AI is taking too long — please try again.');
+      throw new Error('Request timed out. The server may be waking up — please try again in a moment.');
     }
-    throw new Error('Could not reach the app server. Make sure the frontend and backend are both running.');
+    throw new Error('Server is temporarily unavailable. Please wait a moment and try again.');
   }
 
   const rawBody = await response.text();
@@ -43,7 +61,7 @@ const request = async (path, options = {}) => {
     try {
       payload = JSON.parse(rawBody);
     } catch (_error) {
-      throw new Error(`Server returned a non-JSON response (${response.status}). Make sure the backend is running on port 3001.`);
+      throw new Error(`Unexpected server response (${response.status}). Please try again.`);
     }
   }
 
@@ -51,12 +69,12 @@ const request = async (path, options = {}) => {
     const errorBody = payload?.error;
     const errorMessage = typeof errorBody === 'string'
       ? errorBody
-      : (errorBody?.message || errorBody?.detail || `Request failed with status ${response.status}.`);
+      : (errorBody?.message || errorBody?.detail || `Request failed (${response.status}). Please try again.`);
     throw new Error(errorMessage);
   }
 
   if (!payload) {
-    throw new Error('Server returned an empty response.');
+    throw new Error('Empty response from server. Please try again.');
   }
 
   if (payload.success === false) {
@@ -262,6 +280,39 @@ export const api = {
       body: JSON.stringify({ goal, sessions, skills, planDay }),
     }),
   getReactDemo: () => request('/api/react/demo'),
+};
+
+// Convenience helper used by pages that do raw fetch() calls.
+// Retries on network errors, attaches auth token, returns parsed JSON.
+export const authFetch = async (path, options = {}) => {
+  const fullUrl = `${API_BASE_URL}${path}`;
+  const token   = localStorage.getItem('auth_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
+
+  let response;
+  try {
+    response = await fetchWithRetry(fullUrl, {
+      ...options,
+      headers,
+      signal: options.signal ?? AbortSignal.timeout(60000),
+    });
+  } catch (err) {
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      throw new Error('Request timed out. Please try again.');
+    }
+    throw new Error('Server is temporarily unavailable. Please wait a moment and try again.');
+  }
+
+  const rawBody = await response.text();
+  let payload = null;
+  if (rawBody) {
+    try { payload = JSON.parse(rawBody); } catch (_) {}
+  }
+  return { ok: response.ok, status: response.status, data: payload };
 };
 
 export { safeString };

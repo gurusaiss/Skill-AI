@@ -98,36 +98,57 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Initialize auth state from localStorage on mount
+  // Retries up to 4 times (covers Render ~30s cold-start) before giving up.
+  // IMPORTANT: never clears the token on a network error — only on a 401/403.
   useEffect(() => {
     const initializeAuth = async () => {
       const storedToken = localStorage.getItem('auth_token');
-      
-      if (storedToken) {
-        setToken(storedToken);
-        
+
+      if (!storedToken) {
+        setIsLoading(false);
+        return;
+      }
+
+      setToken(storedToken);
+
+      const MAX_TRIES = 4;
+      const RETRY_MS  = [2000, 4000, 6000, 8000];
+
+      for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
         try {
-          // Verify token and get user profile
+          const controller = new AbortController();
+          const timeoutId  = setTimeout(() => controller.abort(), 15000);
+
           const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-            headers: {
-              Authorization: `Bearer ${storedToken}`,
-            },
+            headers: { Authorization: `Bearer ${storedToken}` },
+            signal: controller.signal,
           });
+
+          clearTimeout(timeoutId);
 
           if (response.ok) {
             const payload = await response.json();
-            setUser(payload.data);
-          } else {
-            // Token is invalid or expired
+            setUser(payload.data ?? payload);
+            break;
+          }
+
+          // 401 / 403 → token is genuinely invalid; clear it and stop retrying
+          if (response.status === 401 || response.status === 403) {
             localStorage.removeItem('auth_token');
             setToken(null);
+            break;
           }
-        } catch (error) {
-          console.error('Failed to verify token:', error);
-          localStorage.removeItem('auth_token');
-          setToken(null);
+
+          // Any other HTTP error (5xx, etc.) → retry
+        } catch (_err) {
+          // Network error / timeout → backend is cold-starting; wait and retry
+          if (attempt < MAX_TRIES - 1) {
+            await new Promise(r => setTimeout(r, RETRY_MS[attempt]));
+          }
+          // On final attempt, keep the token — we'll try again on next navigation
         }
       }
-      
+
       setIsLoading(false);
     };
 
