@@ -319,13 +319,17 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
     const {
       title,
       targetUsers = [],
-      targetGroup,
+      targetGroup: _targetGroup,
+      groupId,
       questionCount = 10,
       questionTypes = ['mcq'],
       assessmentDate,
       deadline,
       duration = 30,
     } = req.body;
+
+    // Accept both targetGroup (correct) and groupId (legacy client bug)
+    const targetGroup = _targetGroup || groupId || null;
 
     if (!title) {
       return res.status(400).json({ success: false, data: null, error: 'Title is required' });
@@ -449,9 +453,12 @@ router.get('/my', authenticate, async (req, res) => {
     const now = new Date();
 
     const myAssessments = assessments
-      .filter(a => a.employeeAssignments?.some(ea => ea.userId === req.user.userId))
+      .filter(a =>
+        a.employeeAssignments?.some(ea => ea.userId === req.user.userId) ||
+        a.targetUsers?.includes(req.user.userId)
+      )
       .map(a => {
-        const myAssignment = a.employeeAssignments.find(ea => ea.userId === req.user.userId);
+        const myAssignment = a.employeeAssignments?.find(ea => ea.userId === req.user.userId);
 
         const assessmentDate = a.assessmentDate ? new Date(a.assessmentDate) : null;
         const deadline = a.deadline ? new Date(a.deadline) : null;
@@ -459,20 +466,21 @@ router.get('/my', authenticate, async (req, res) => {
         const isVisible = !assessmentDate || now >= assessmentDate;
         const isExpired = deadline ? now > deadline : false;
 
+        const assignmentStatus = myAssignment?.status || 'assigned';
         return {
           id: a.id,
           title: a.title,
           assessmentDate: a.assessmentDate,
           deadline: a.deadline || null,
           duration: a.duration,
-          status: isExpired && myAssignment.status !== 'submitted' ? 'expired' : myAssignment.status,
-          questions: isVisible ? myAssignment.questions : null,
-          assignedAt: myAssignment.assignedAt,
-          submittedAt: myAssignment.submittedAt,
-          jobRole: myAssignment.jobRole,
+          status: isExpired && assignmentStatus !== 'submitted' ? 'expired' : assignmentStatus,
+          questions: (isVisible && myAssignment) ? myAssignment.questions : null,
+          assignedAt: myAssignment?.assignedAt || a.createdAt,
+          submittedAt: myAssignment?.submittedAt || null,
+          jobRole: myAssignment?.jobRole || '',
           isVisible,
           isExpired,
-          scoring: myAssignment.status === 'submitted' ? myAssignment.scoring : null,
+          scoring: assignmentStatus === 'submitted' ? myAssignment?.scoring : null,
         };
       });
 

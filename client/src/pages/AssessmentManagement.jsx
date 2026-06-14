@@ -168,7 +168,7 @@ export default function AssessmentManagement() {
         assessmentDate: modal.assessmentDate,
         duration: modal.duration,
         deadline: modal.deadline,
-        ...(modal.targetType === 'group' && modal.selectedGroup ? { groupId: modal.selectedGroup } : {}),
+        ...(modal.targetType === 'group' && modal.selectedGroup ? { targetGroup: modal.selectedGroup } : {}),
       };
 
       const saved = await authFetch('/api/assessments', {
