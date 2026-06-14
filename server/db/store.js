@@ -165,7 +165,9 @@ export async function getModules(filters = {}) {
     if (filters.companyId) qb = qb.eq('companyId', filters.companyId);
     const { data, error } = await qb;
     if (error) throw error;
-    return (data || []).map(normalizeModule);
+    const sbModules = (data || []).map(normalizeModule);
+    if (sbModules.length > 0) return sbModules;
+    // Supabase returned empty — check file fallback for stranded modules
   }
   const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
   return f?.modules || [];
@@ -173,12 +175,24 @@ export async function getModules(filters = {}) {
 
 export async function getModuleById(id) {
   if (isOn()) {
-    const { data, error } = await supabase.from('modules').select('*').eq('id', id).single();
-    if (error) throw error;
-    return normalizeModule(data);
+    // maybeSingle() returns null (not error) when no row matches
+    const { data, error } = await supabase.from('modules').select('*').eq('id', id).maybeSingle();
+    if (error && error.code !== 'PGRST116') throw error;
+    if (data) return normalizeModule(data);
+    // Not in Supabase — fall through to file fallback (handles stranded modules)
   }
   const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
   return (f?.modules || []).find(m => m.id === id) || null;
+}
+
+export async function getModulesByIds(ids) {
+  if (!ids?.length) return [];
+  if (isOn()) {
+    const { data, error } = await supabase.from('modules').select('*').in('id', ids);
+    if (!error && data?.length) return data.map(normalizeModule);
+  }
+  const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
+  return (f?.modules || []).filter(m => ids.includes(m.id));
 }
 
 export async function createModule(module, createdBy) {
