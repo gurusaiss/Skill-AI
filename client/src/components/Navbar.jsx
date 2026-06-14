@@ -106,104 +106,101 @@ function Navbar() {
       : (ROLE_LINKS[user?.role] || []);
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#1E293B] bg-[#0F172A]/90 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
-        {/* Brand */}
-        <Link to="/" className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600/20 border border-indigo-500/20 text-lg">🧠</div>
-          <div>
-            <p className="font-bold text-white text-sm leading-tight tracking-wide">SKILL FORGE</p>
-            <p className="text-xs text-slate-500">Autonomous Career AI</p>
-          </div>
+    <header className="sticky top-0 z-30 border-b border-[#1E293B] bg-[#0F172A]/95 backdrop-blur">
+      <div className="flex items-center w-full px-4 py-2.5 gap-2 min-w-0">
+
+        {/* Brand — never shrinks, always single line */}
+        <Link to="/" className="flex items-center gap-2.5 flex-shrink-0 mr-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-600/20 border border-indigo-500/20 text-base flex-shrink-0">🧠</div>
+          <span className="font-bold text-white text-sm tracking-wide whitespace-nowrap">SKILL FORGE</span>
         </Link>
 
-        {/* Spacer on landing page so brand stays left-aligned */}
-        {!isAuthenticated && location.pathname === '/' && <div />}
-
-        {/* Role nav links — hidden on landing, demo, and module pages */}
+        {/* Role nav links — flex-1 so it fills remaining space; overflow scrolls on small screens */}
         {!hideNavLinks && (
-          <nav className="hidden md:flex items-center gap-1 text-sm">
+          <nav className="hidden md:flex items-center gap-0.5 text-sm flex-1 min-w-0 overflow-x-auto scrollbar-hide">
             {roleLinks.map(({ to, label, icon }) => (
               <Link key={to} to={to}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all whitespace-nowrap
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all whitespace-nowrap flex-shrink-0 text-xs lg:text-sm
                   ${location.pathname === to
-                    || location.pathname === '/employee/dashboard' && to === '/dashboard'
+                    || (location.pathname === '/employee/dashboard' && to === '/dashboard')
                     || (to !== '/admin/dashboard' && to !== '/dashboard' && to !== '/manager/dashboard' && location.pathname.startsWith(to))
                     ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
-                <span className="text-sm">{icon}</span>
+                <span>{icon}</span>
                 {label}
               </Link>
             ))}
           </nav>
         )}
 
-        {/* Notification Bell + Profile — always shown when authenticated (except landing/demo) */}
-        {isAuthenticated && (location.pathname !== '/' && location.pathname !== '/demo') && (
-          <>
-            {/* Notification Bell (Desktop) */}
-            {isAuthenticated && (
-              <div className="relative ml-1" ref={notifRef}>
-                <button
-                  onClick={() => setNotifOpen(!notifOpen)}
-                  className="relative flex items-center justify-center w-9 h-9 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
-                >
-                  🔔
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-bold px-1">
-                      {unreadCount > 99 ? '99+' : unreadCount}
-                    </span>
-                  )}
-                </button>
+        {/* Spacer when no nav links (landing page) */}
+        {hideNavLinks && <div className="flex-1" />}
 
-                {notifOpen && (
-                  <div className="absolute right-0 mt-2 w-80 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-                      <span className="text-sm font-bold text-white">Notifications</span>
-                      {unreadCount > 0 && (
-                        <button onClick={markAllRead} className="text-xs text-indigo-400 hover:text-indigo-300">
-                          Mark all read
-                        </button>
-                      )}
-                    </div>
-                    <div className="max-h-80 overflow-y-auto">
-                      {notifications.length === 0 ? (
-                        <div className="px-4 py-6 text-center text-slate-500 text-sm">No notifications</div>
-                      ) : (
-                        notifications.slice(0, 20).map(n => (
-                          <div
-                            key={n.id}
-                            onClick={() => markRead(n.id)}
-                            className={`px-4 py-3 border-b border-slate-700/50 cursor-pointer hover:bg-slate-700/40 transition-colors ${!n.read ? 'bg-indigo-900/10' : ''}`}
-                          >
-                            <div className="flex items-start gap-2">
-                              {!n.read && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 flex-shrink-0" />}
-                              <div className={!n.read ? '' : 'ml-3.5'}>
-                                <p className="text-sm font-semibold text-white leading-snug">{n.title}</p>
-                                <p className="text-xs text-slate-400 mt-0.5 leading-snug">{n.message}</p>
-                                <p className="text-xs text-slate-600 mt-1">
-                                  {n.created_at ? new Date(n.created_at).toLocaleDateString() : ''}
-                                </p>
-                              </div>
+        {/* Right section — never shrinks: Bell + Profile + Mobile toggle */}
+        {isAuthenticated && (location.pathname !== '/' && location.pathname !== '/demo') && (
+          <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+
+            {/* Notification Bell */}
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={() => setNotifOpen(!notifOpen)}
+                className="relative flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+              >
+                🔔
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-indigo-600 text-white text-[10px] font-bold px-1">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 mt-2 w-80 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+                    <span className="text-sm font-bold text-white">Notifications</span>
+                    {unreadCount > 0 && (
+                      <button onClick={markAllRead} className="text-xs text-indigo-400 hover:text-indigo-300">
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-slate-500 text-sm">No notifications</div>
+                    ) : (
+                      notifications.slice(0, 20).map(n => (
+                        <div
+                          key={n.id}
+                          onClick={() => markRead(n.id)}
+                          className={`px-4 py-3 border-b border-slate-700/50 cursor-pointer hover:bg-slate-700/40 transition-colors ${!n.read ? 'bg-indigo-900/10' : ''}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            {!n.read && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 flex-shrink-0" />}
+                            <div className={!n.read ? '' : 'ml-3.5'}>
+                              <p className="text-sm font-semibold text-white leading-snug">{n.title}</p>
+                              <p className="text-xs text-slate-400 mt-0.5 leading-snug">{n.message}</p>
+                              <p className="text-xs text-slate-600 mt-1">
+                                {n.created_at ? new Date(n.created_at).toLocaleDateString() : ''}
+                              </p>
                             </div>
                           </div>
-                        ))
-                      )}
-                    </div>
+                        </div>
+                      ))
+                    )}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
 
-            {/* Profile Menu (Desktop) */}
-            {isAuthenticated && user && (
-              <div className="relative ml-2">
+            {/* Profile Menu */}
+            {user && (
+              <div className="relative">
                 <button
                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all whitespace-nowrap"
                 >
                   <span className="text-sm">👤</span>
-                  <span className="text-sm">{user.name}</span>
+                  <span className="text-sm hidden sm:inline truncate max-w-[120px]">{user.name}</span>
                 </button>
 
                 {profileMenuOpen && (
@@ -225,12 +222,9 @@ function Navbar() {
                           ⚙️ Settings
                         </Link>
                       )}
-                      <div className="border-t border-slate-700 my-1"></div>
+                      <div className="border-t border-slate-700 my-1" />
                       <button
-                        onClick={() => {
-                          setProfileMenuOpen(false);
-                          logout();
-                        }}
+                        onClick={() => { setProfileMenuOpen(false); logout(); }}
                         className="w-full text-left block px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-slate-700 rounded-lg"
                       >
                         🚪 Logout
@@ -241,52 +235,47 @@ function Navbar() {
               </div>
             )}
 
-            {/* Mobile menu toggle */}
+            {/* Mobile hamburger */}
             <button onClick={() => setMenuOpen(!menuOpen)}
-              className="md:hidden text-slate-400 hover:text-white p-2">
+              className="md:hidden flex items-center justify-center w-8 h-8 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all">
               {menuOpen ? '✕' : '☰'}
             </button>
-          </>
+          </div>
         )}
       </div>
 
       {/* Mobile Menu */}
       {!hideNavLinks && menuOpen && (
-        <div className="md:hidden border-t border-slate-800 bg-[#0F172A] px-6 py-4">
-          <nav className="flex flex-col gap-2">
+        <div className="md:hidden border-t border-slate-800 bg-[#0F172A] px-4 py-4">
+          <nav className="flex flex-col gap-1">
             {roleLinks.map(({ to, label, icon }) => (
               <Link key={to} to={to} onClick={() => setMenuOpen(false)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-all
                   ${location.pathname === to || (location.pathname === '/employee/dashboard' && to === '/dashboard')
-                    ? 'bg-indigo-600/20 text-indigo-300' : 'text-slate-400'}`}>
+                    ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
                 {icon} {label}
               </Link>
             ))}
-            <button onClick={() => { logout(); setMenuOpen(false); }}
-              className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium">
-              🚪 Logout
-            </button>
-            <div className="border-t border-slate-700 my-2"></div>
+            <div className="border-t border-slate-700 my-2" />
             {isAuthenticated && user && (
               <>
-                <Link
-                  to="/profile"
-                  onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-400"
-                >
+                <Link to="/profile" onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-slate-800">
                   👤 Profile Settings
                 </Link>
                 {hasRole('admin') && (
-                  <Link
-                    to="/settings"
-                    onClick={() => setMenuOpen(false)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-400"
-                  >
+                  <Link to="/settings" onClick={() => setMenuOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-slate-800">
                     ⚙️ Settings
                   </Link>
                 )}
               </>
             )}
+            <button onClick={() => { logout(); setMenuOpen(false); }}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-red-400 hover:text-red-300 hover:bg-slate-800 transition-all">
+              🚪 Logout
+            </button>
           </nav>
         </div>
       )}
