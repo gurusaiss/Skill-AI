@@ -589,6 +589,7 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
       resources: [],
       completionCriteria: 'Complete all sessions',
       progressTracking: true,
+      companyId: pending.companyId || req.user.companyId || null,
       content: {
         isMandatory: true,
         sessions: pending.module.sessions,

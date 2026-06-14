@@ -131,6 +131,7 @@ function normalizeModule(m) {
     projects: content.projects || m.projects || [],
     content,
     createdBy: m.created_by || m.createdBy,
+    companyId: m.company_id || m.companyId || null,
     createdAt: m.created_at || m.createdAt,
     updatedAt: m.updated_at || m.updatedAt,
   };
@@ -153,7 +154,7 @@ function toSupabaseModule(module, createdBy, id) {
     completion_criteria: module.completionCriteria || module.completion_criteria || 'Complete all tasks',
     content: module.content || {},
     created_by: createdBy,
-    companyId: module.companyId || null,
+    company_id: module.companyId || module.company_id || null,
   };
 }
 
@@ -162,7 +163,7 @@ export async function getModules(filters = {}) {
     let qb = supabase.from('modules').select('*');
     if (filters.category) qb = qb.eq('category', filters.category);
     if (filters.difficulty) qb = qb.eq('difficulty', filters.difficulty);
-    if (filters.companyId) qb = qb.eq('companyId', filters.companyId);
+    if (filters.companyId) qb = qb.eq('company_id', filters.companyId);
     const { data, error } = await qb;
     if (error) throw error;
     const sbModules = (data || []).map(normalizeModule);
@@ -201,13 +202,13 @@ export async function createModule(module, createdBy) {
 
   if (isOn()) {
     const payload = toSupabaseModule(module, createdBy, id);
-    const { data, error } = await supabase.from('modules').insert([payload]).select().single();
+    const { data, error } = await supabase.from('modules').upsert([payload], { onConflict: 'id' }).select().single();
     if (error) {
       console.error('[createModule] Supabase error:', JSON.stringify(error));
       // If content column doesn't exist yet, retry without it
       if (error.code === '42703' || (error.message && error.message.includes('content'))) {
         const { content: _c, ...payloadNoContent } = payload;
-        const retry = await supabase.from('modules').insert([payloadNoContent]).select().single();
+        const retry = await supabase.from('modules').upsert([payloadNoContent], { onConflict: 'id' }).select().single();
         if (retry.error) {
           console.error('[createModule] Retry error:', JSON.stringify(retry.error));
           throw retry.error;
@@ -256,6 +257,8 @@ export async function updateModule(id, updates) {
     if (updates.tasks !== undefined) sbUpdates.tasks = updates.tasks;
     if (updates.resources !== undefined) sbUpdates.resources = updates.resources;
     if (updates.completionCriteria !== undefined) sbUpdates.completion_criteria = updates.completionCriteria;
+    if (updates.companyId !== undefined) sbUpdates.company_id = updates.companyId;
+    if (updates.company_id !== undefined) sbUpdates.company_id = updates.company_id;
     // sessions passed top-level → merge into content
     if (updates.sessions !== undefined) {
       sbUpdates.content = { ...(sbUpdates.content || updates.content || {}), sessions: updates.sessions };
@@ -263,8 +266,24 @@ export async function updateModule(id, updates) {
     if (updates.content !== undefined) {
       sbUpdates.content = { ...(sbUpdates.content || {}), ...updates.content };
     }
+    sbUpdates.updated_at = new Date().toISOString();
     const { data, error } = await supabase.from('modules').update(sbUpdates).eq('id', id).select().single();
-    if (error) throw error;
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // Row not in Supabase yet (stranded in file) — upsert it
+        const existing = await (async () => {
+          const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
+          return (f?.modules || []).find(m => m.id === id) || null;
+        })();
+        if (existing) {
+          const payload = toSupabaseModule({ ...existing, ...updates }, existing.createdBy, id);
+          const { data: d2, error: e2 } = await supabase.from('modules').upsert([payload], { onConflict: 'id' }).select().single();
+          if (e2) throw e2;
+          return normalizeModule(d2);
+        }
+      }
+      throw error;
+    }
     return normalizeModule(data);
   }
   const path = join(DATA_DIR, 'modules.json');
