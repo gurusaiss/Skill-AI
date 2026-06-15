@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
-import AiTutorChat from './components/AiTutorChat.jsx';
 import ServerStatusBanner from './components/ServerStatusBanner.jsx';
 
 const Landing              = lazy(() => import('./pages/Landing.jsx'));
@@ -232,7 +231,6 @@ const App = () => {
               } />
             </Routes>
           </Suspense>
-          <AiTutorChat />
         </div>
       </ErrorBoundary>
     </BrowserRouter>
