@@ -178,6 +178,26 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ── DB health endpoint (admin use) ────────────────────────────────────────────
+app.get('/api/health/db', async (req, res) => {
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASESERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_KEY;
+    if (!url || !key) return res.json({ success: true, data: { mode: 'file-only', tables: [] } });
+    const sb = createClient(url, key, { auth: { persistSession: false } });
+    const CRITICAL = ['assessments', 'assessment_submissions', 'assessment_reports', 'pending_modules', 'module_assignments', 'user_jd_profiles', 'users', 'assignments', 'modules'];
+    const status = await Promise.all(CRITICAL.map(async t => {
+      const { error } = await sb.from(t).select('id').limit(1);
+      return { table: t, exists: !error, error: error?.message };
+    }));
+    const missing = status.filter(s => !s.exists).map(s => s.table);
+    res.json({ success: true, data: { tables: status, missing, healthy: missing.length === 0 } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ── Routes ─────────────────────────────────────────────────────────────────────
 
 // Authentication routes (public)

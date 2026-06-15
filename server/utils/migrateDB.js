@@ -174,6 +174,16 @@ const TABLES = [
     ALTER TABLE groups DISABLE ROW LEVEL SECURITY;`,
   },
   {
+    name: 'user_jd_profiles',
+    sql: `CREATE TABLE IF NOT EXISTS user_jd_profiles (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    ALTER TABLE user_jd_profiles DISABLE ROW LEVEL SECURITY;`,
+  },
+  {
     name: 'group_memberships',
     sql: `CREATE TABLE IF NOT EXISTS group_memberships (
       id TEXT PRIMARY KEY,
@@ -198,17 +208,25 @@ const TABLES = [
 ];
 
 const USER_COLS_SQL = `
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS job_role           TEXT;
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS department         TEXT;
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN DEFAULT FALSE;
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id         TEXT    DEFAULT 'default';
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS otp                TEXT;
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_expiry         TIMESTAMPTZ;
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login         TIMESTAMPTZ;
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS learning_uuid      TEXT;
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS job_description    TEXT;
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified     BOOLEAN DEFAULT FALSE;
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash      TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS job_role              TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS department            TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_complete   BOOLEAN DEFAULT FALSE;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id            TEXT    DEFAULT 'default';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name          TEXT    DEFAULT '';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id           TEXT    DEFAULT '';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS phone                 TEXT    DEFAULT '';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS status                TEXT    DEFAULT 'active';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS otp                   TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_expiry            TIMESTAMPTZ;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login            TIMESTAMPTZ;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS learning_uuid         TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS job_description       TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS job_description_file  JSONB;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS jd_skills             JSONB   DEFAULT '[]'::jsonb;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS jd_source_url         TEXT    DEFAULT '';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS jd_source_type        TEXT    DEFAULT 'text';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified        BOOLEAN DEFAULT FALSE;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash         TEXT;
   ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 `;
 
