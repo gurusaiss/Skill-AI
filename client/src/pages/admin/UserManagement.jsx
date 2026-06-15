@@ -322,8 +322,14 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   const [existingJDFile, setExistingJDFile] = useState(user.jobDescriptionFile || null);
   const fileInputRef = useRef(null);
 
-  // Module/Manager assignment
-  const [assignModuleId, setAssignModuleId] = useState('');
+  // Module/Manager assignment — preload current module from assignments prop
+  const [assignModuleId, setAssignModuleId] = useState(() => {
+    const current = assignments.find(a =>
+      (a.employeeId === user.userId || a.userId === user.userId) &&
+      (a.type === 'module' || a.assignable_type === 'module')
+    );
+    return current?.assignable_id || current?.assignableId || current?.moduleId || '';
+  });
   const [assignManagerId, setAssignManagerId] = useState('');
   const [currentManagerId, setCurrentManagerId] = useState(null);
   const [assigning, setAssigning] = useState(false);
@@ -352,6 +358,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
         body: JSON.stringify({
           name: form.name.trim(),
           email: form.email.trim(),
+          status: form.status,
           jobRole: form.jobRole.trim(),
           department: form.department.trim(),
           jobDescription: form.jobDescription, // no trim — preserve formatting

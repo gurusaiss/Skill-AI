@@ -196,7 +196,7 @@ router.put('/:userId', authenticate, async (req, res) => {
       return res.status(404).json({ success: false, data: null, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
     }
 
-    const { name, email, role, jobRole, department, jobDescription, companyName, onboardingComplete } = req.body;
+    const { name, email, role, status, jobRole, department, jobDescription, companyName, onboardingComplete } = req.body;
     const updates = {};
 
     // Name — anyone can update own name; admin/manager can update any
@@ -221,6 +221,12 @@ router.put('/:userId', authenticate, async (req, res) => {
     if (role !== undefined && isAdmin) {
       const validRoles = ['admin', 'manager', 'employee'];
       if (validRoles.includes(role)) updates.role = role;
+    }
+
+    // Status — admin or manager only
+    if (status !== undefined && (isAdmin || isManager)) {
+      const validStatuses = ['active', 'inactive', 'blocked'];
+      if (validStatuses.includes(status)) updates.status = status;
     }
 
     // Extended profile — admin or manager can set; self can set own

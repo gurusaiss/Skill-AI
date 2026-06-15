@@ -36,9 +36,9 @@ async function generateQuestionsFromJD({ jobRole, jobDescription, jobDescription
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const seed = employeeSeed || randomUUID().slice(0, 8);
 
-  // Try to get richer JD text from uploaded file
-  let jdContent = (jobDescription || '').slice(0, 4000);
-  if (jobDescriptionFile?.path && jdContent.length < 200) {
+  // Try to get richer JD text from uploaded file — file takes priority over text
+  let jdContent = jobDescription || '';
+  if (jobDescriptionFile?.path) {
     try {
       const { parseJDFile } = await import('../utils/parseJDFile.js');
       const fileText = await parseJDFile(
@@ -46,7 +46,7 @@ async function generateQuestionsFromJD({ jobRole, jobDescription, jobDescription
         jobDescriptionFile.name || ''
       );
       if (fileText && fileText.length > 50) {
-        jdContent = fileText.slice(0, 4000);
+        jdContent = fileText;
         console.log(`[Assessment] Using JD file content (${fileText.length} chars) for question generation`);
       }
     } catch (e) {
