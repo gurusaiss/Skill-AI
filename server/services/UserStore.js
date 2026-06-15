@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { createClient } from '@supabase/supabase-js';
 import ws from 'ws';
+import { UserJDProfiles } from './DataStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,6 +96,21 @@ function userToRow(u) {
   if (u.resetToken   !== undefined) row.reset_token        = u.resetToken;
   if (u.resetTokenExpires !== undefined) row.reset_token_expires = u.resetTokenExpires;
   return row;
+}
+
+// JD fields stored in user_jd_profiles table (separate from users table schema)
+const JD_FIELDS = ['jobDescription', 'jobDescriptionFile', 'jdSkills', 'jdSourceUrl', 'jdSourceType'];
+
+function mergeJD(user, jdProfile) {
+  if (!jdProfile) return user;
+  return {
+    ...user,
+    jobDescription:     jdProfile.jobDescription     ?? user.jobDescription     ?? '',
+    jobDescriptionFile: jdProfile.jobDescriptionFile ?? user.jobDescriptionFile ?? null,
+    jdSkills:           jdProfile.jdSkills           ?? user.jdSkills           ?? [],
+    jdSourceUrl:        jdProfile.jdSourceUrl        ?? user.jdSourceUrl        ?? '',
+    jdSourceType:       jdProfile.jdSourceType       ?? user.jdSourceType       ?? 'text',
+  };
 }
 
 class UserStore {
@@ -218,7 +234,9 @@ class UserStore {
     if (sb) {
       const { data, error } = await sb.from('users').select('*').eq('user_id', userId).maybeSingle();
       if (error) { console.error('[UserStore] getUserById:', error.message); return null; }
-      return rowToUser(data);
+      const user = rowToUser(data);
+      if (!user) return null;
+      try { return mergeJD(user, await UserJDProfiles.getById(userId)); } catch { return user; }
     }
     const data = await this.readUsersFile();
     return data.users.find(u => u.userId === userId) || null;
@@ -229,7 +247,9 @@ class UserStore {
     if (sb) {
       const { data, error } = await sb.from('users').select('*').eq('email', email).maybeSingle();
       if (error) { console.error('[UserStore] getUserByEmail:', error.message); return null; }
-      return rowToUser(data);
+      const user = rowToUser(data);
+      if (!user) return null;
+      try { return mergeJD(user, await UserJDProfiles.getById(user.userId)); } catch { return user; }
     }
     const data = await this.readUsersFile();
     return data.users.find(u => u.email === email) || null;
@@ -247,6 +267,13 @@ class UserStore {
   }
 
   async updateUser(userId, updates) {
+    // Always persist JD fields to separate table — immune to users table schema gaps
+    const jdUpdates = {};
+    JD_FIELDS.forEach(f => { if (updates[f] !== undefined) jdUpdates[f] = updates[f]; });
+    if (Object.keys(jdUpdates).length > 0) {
+      try { await UserJDProfiles.upsert(userId, jdUpdates); } catch {}
+    }
+
     const sb = getSB();
     if (sb) {
       try {
@@ -259,7 +286,9 @@ class UserStore {
           // Don't throw — fall through and return partial update
           return { userId, ...updates };
         }
-        return data ? rowToUser(data) : { userId, ...updates };
+        const user = data ? rowToUser(data) : { userId, ...updates };
+        // Merge JD from separate table so the response always has JD data
+        return mergeJD(user, jdUpdates.jobDescription !== undefined ? jdUpdates : null);
       } catch (err) {
         console.error('[UserStore] updateUser exception:', err.message);
         return { userId, ...updates };
@@ -304,7 +333,16 @@ class UserStore {
       if (filters.emailVerified !== undefined) q = q.eq('email_verified', filters.emailVerified);
       const { data, error } = await q;
       if (error) throw new Error(error.message);
-      return (data || []).map(rowToUser);
+      const users = (data || []).map(rowToUser);
+      // Batch-merge JD profiles: one extra query, not N
+      try {
+        const jdProfiles = await UserJDProfiles.getAll();
+        if (jdProfiles && jdProfiles.length > 0) {
+          const jdMap = new Map(jdProfiles.map(p => [p.id, p]));
+          return users.map(u => mergeJD(u, jdMap.get(u.userId)));
+        }
+      } catch {}
+      return users;
     }
     const data = await this.readUsersFile();
     let users = data.users;
