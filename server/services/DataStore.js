@@ -599,4 +599,37 @@ export const Groups = {
   },
 };
 
-export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups };
+// ── USER JD PROFILES ──────────────────────────────────────────────────────────
+// Separate JSONB table so JD data persists even when the users table lacks
+// job_description / jd_skills / jd_source_url columns (older Supabase schemas).
+// id = userId, data = { jobDescription, jobDescriptionFile, jdSkills, jdSourceUrl, jdSourceType }
+
+export const UserJDProfiles = {
+  async upsert(userId, jdData) {
+    const sb = getSB();
+    if (sb) {
+      // sbInsert uses upsert under the hood — safe for both create and update
+      const result = await sbInsert('user_jd_profiles', userId, jdData);
+      if (result) return result;
+    }
+    const all = readFile('user_jd_profiles.json');
+    const idx = all.findIndex(p => p.id === userId);
+    const entry = { id: userId, ...jdData };
+    if (idx >= 0) all[idx] = entry; else all.push(entry);
+    writeFile('user_jd_profiles.json', all);
+    return entry;
+  },
+  async getAll() {
+    return getAllHealed('user_jd_profiles', 'user_jd_profiles.json');
+  },
+  async getById(userId) {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbGetById('user_jd_profiles', userId);
+      if (result) return result;
+    }
+    return readFile('user_jd_profiles.json').find(p => p.id === userId) || null;
+  },
+};
+
+export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles };
