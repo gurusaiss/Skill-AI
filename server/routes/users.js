@@ -660,9 +660,40 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
         });
 
         existingEmails.add(row.email.toLowerCase()); // prevent duplicate within same batch
-        created.push({ userId: user.userId, name: user.name, email: user.email, tempPassword: !row.password ? tempPassword : undefined });
+        created.push({
+          userId: user.userId,
+          name: user.name,
+          email: user.email,
+          managerEmail: row.managerEmail || '',
+          tempPassword: !row.password ? tempPassword : undefined,
+        });
       } catch (e) {
         failed.push({ row, reason: e.message });
+      }
+    }
+
+    // ── Manager linking pass ──────────────────────────────────────────────────
+    // Re-fetch all users so newly created ones are visible
+    const managerLinked = [], managerFailed = [];
+    const needsManager = created.filter(u => u.managerEmail);
+    if (needsManager.length > 0) {
+      const freshUsers = await UserStore.getAllUsers({});
+      const byEmail = Object.fromEntries(freshUsers.map(u => [u.email?.toLowerCase(), u]));
+
+      for (const emp of needsManager) {
+        const managerEmail = emp.managerEmail.toLowerCase();
+        const manager = byEmail[managerEmail];
+        if (!manager || !['manager', 'admin'].includes(manager.role)) {
+          managerFailed.push({ email: emp.email, reason: `Manager "${emp.managerEmail}" not found or not a manager role` });
+          continue;
+        }
+        try {
+          await UserStore.updateUser(emp.userId, { managerId: manager.userId });
+          await UserStore.assignEmployeesToManager(manager.userId, [emp.userId], req.user.userId).catch(() => {});
+          managerLinked.push({ email: emp.email, manager: manager.email });
+        } catch (e) {
+          managerFailed.push({ email: emp.email, reason: e.message });
+        }
       }
     }
 
@@ -672,7 +703,8 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
         created: created.length,
         skipped: skipped.length,
         failed:  failed.length,
-        results: { created, skipped, failed },
+        managerLinked: managerLinked.length,
+        results: { created: created.map(({ managerEmail: _m, ...u }) => u), skipped, failed, managerLinked, managerFailed },
       },
     });
   } catch (e) {
