@@ -11,6 +11,7 @@
 import express from 'express';
 import { authenticate } from '../middleware/auth.js';
 import LLMCache from '../services/LLMCache.js';
+import RecEngine from '../services/RecEngine.js';
 
 const router = express.Router();
 
@@ -59,18 +60,26 @@ router.get('/', authenticate, async (req, res) => {
     LLMCache.set(cacheKey, data, REC_CACHE_TTL);
     return res.json({ success: true, data });
   } catch (err) {
-    // Graceful degradation — return empty list, don't break dashboard
-    console.warn('[recommendations] rec-engine unreachable:', err.message);
-    return res.json({
-      success: true,
-      data: {
+    // Python service unreachable — fall back to in-process JS engine
+    console.warn('[recommendations] Python engine unreachable, using JS fallback:', err.message);
+    try {
+      const recs = await RecEngine.recommend(userId, 5);
+      const data = {
         user_id         : userId,
-        recommendations : [],
+        recommendations : recs,
         generated_at    : new Date().toISOString(),
-        model_version   : null,
-        unavailable     : true,
-      },
-    });
+        model_version   : 'js-cosine-cf-v1',
+        engine          : 'js_fallback',
+      };
+      LLMCache.set(cacheKey, data, REC_CACHE_TTL);
+      return res.json({ success: true, data });
+    } catch (jsErr) {
+      console.error('[recommendations] JS fallback also failed:', jsErr.message);
+      return res.json({
+        success: true,
+        data: { user_id: userId, recommendations: [], generated_at: new Date().toISOString(), unavailable: true },
+      });
+    }
   }
 });
 
@@ -132,19 +141,20 @@ router.get('/metrics', authenticate, async (req, res) => {
 
   try {
     const data = await callRecEngine('/metrics');
-    LLMCache.set(cacheKey, data, 30 * 60 * 1000); // 30-min cache for metrics
+    LLMCache.set(cacheKey, data, 30 * 60 * 1000);
     return res.json({ success: true, data });
   } catch (err) {
-    return res.json({
-      success: true,
-      data: {
-        precision_at_5: 0,
-        recall_at_5   : 0,
-        ndcg_at_10    : 0,
-        coverage      : 0,
-        unavailable   : true,
-      },
-    });
+    // JS fallback metrics
+    try {
+      const metrics = await RecEngine.computeMetrics(5);
+      LLMCache.set(cacheKey, metrics, 30 * 60 * 1000);
+      return res.json({ success: true, data: metrics });
+    } catch (e) {
+      return res.json({
+        success: true,
+        data: { precision_at_k: 0, ndcg_at_k: 0, coverage: 0, n_users: 0, unavailable: true },
+      });
+    }
   }
 });
 
