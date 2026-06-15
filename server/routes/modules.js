@@ -597,7 +597,10 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
       },
     }, req.user.userId);
 
-    const moduleId = newModule.id || newModule;
+    const moduleId = newModule?.id;
+    if (!moduleId) {
+      return res.status(500).json({ success: false, error: { message: 'Module creation failed — no ID returned' } });
+    }
 
     // Write module assignment to Supabase via DataStore
     const moduleAssignment = {

@@ -176,8 +176,8 @@ export default function AssessmentManagement() {
         body: JSON.stringify(payload),
       });
 
-      const newRecord = saved || { id: Date.now().toString(), ...payload, createdAt: new Date().toISOString() };
-      setAssessments(prev => [newRecord, ...prev]);
+      if (!saved) throw new Error('Assessment creation failed — no record returned');
+      await loadAll();
       showToast(`Assessment created for ${modal.selectedUsers.length || 'group'} employee(s)`, 'success');
       closeModal();
     } catch (e) {

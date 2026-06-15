@@ -430,10 +430,19 @@ router.get('/', authenticate, async (req, res) => {
         const employeeIds = employees.map(e => e.userId || e.id);
         // Return all assignments for these employees
         const allAssignments = await UserStore.getAssignments({});
-        const filtered = allAssignments.filter(a =>
+        let filtered = allAssignments.filter(a =>
           employeeIds.includes(a.assigned_to_user) ||
           a.assigned_by === req.user.userId
         );
+        filtered = await Promise.all(filtered.map(async a => {
+          if ((a.type === 'module' || a.assignable_type === 'module') && !a.title && !a.module_name && a.assignable_id) {
+            try {
+              const mod = await db.getModuleById(a.assignable_id);
+              if (mod) return { ...a, title: mod.title, module_name: mod.title };
+            } catch {}
+          }
+          return a;
+        }));
         return res.json({ success: true, data: { assignments: filtered, count: filtered.length }, error: null });
       }
     }
@@ -450,6 +459,17 @@ router.get('/', authenticate, async (req, res) => {
         companyUserIds.has(a.assigned_to_user) || companyUserIds.has(a.assigned_by)
       );
     }
+
+    // Enrich assignments missing title/module_name by looking up the module
+    result = await Promise.all(result.map(async a => {
+      if ((a.type === 'module' || a.assignable_type === 'module') && !a.title && !a.module_name && a.assignable_id) {
+        try {
+          const mod = await db.getModuleById(a.assignable_id);
+          if (mod) return { ...a, title: mod.title, module_name: mod.title };
+        } catch {}
+      }
+      return a;
+    }));
 
     res.json({
       success: true,
