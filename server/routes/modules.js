@@ -536,6 +536,8 @@ Return JSON:
       status: 'pending_approval',
       targetUserId: userId,
       targetUserName: user?.name || '',
+      employeeName: user?.name || '',
+      companyId: req.user.companyId || null,
       jobRole: jobRole || '',
       assessmentReportId: assessmentReportId || null,
       assessmentTitle: assessmentTitle || '',

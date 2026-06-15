@@ -96,7 +96,7 @@ export default function AssessmentManagement() {
       }
       if (groupRes.status === 'fulfilled') {
         const v = groupRes.value;
-        setGroups(Array.isArray(v) ? v : []);
+        setGroups(Array.isArray(v) ? v : (v?.groups || []));
       }
     } catch (e) {
       showToast(e.message || 'Failed to load data', 'error');
