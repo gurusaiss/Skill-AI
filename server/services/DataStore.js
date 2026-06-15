@@ -57,9 +57,10 @@ async function sbGetAll(table) {
   try {
     const { data, error } = await sb.from(table).select('id, data, created_at, updated_at');
     if (error) {
+      console.warn(`[DataStore] ${table}.getAll full-select error (${error.code}): ${error.message}`);
       // Graceful fallback: table may not have created_at/updated_at columns
       const { data: d2, error: e2 } = await sb.from(table).select('id, data');
-      if (e2) { console.error(`[DataStore] ${table}.getAll: Supabase error, using file fallback`); return null; }
+      if (e2) { console.error(`[DataStore] ${table}.getAll: Supabase error (${e2.code} ${e2.message}), using file fallback`); return null; }
       return (d2 || []).map(row => ({ id: row.id, ...row.data }));
     }
     return (data || []).map(row => ({ id: row.id, ...row.data, _created: row.created_at, _updated: row.updated_at }));
