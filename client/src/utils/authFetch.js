@@ -12,8 +12,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export const authFetch = async (path, options = {}) => {
   const token = localStorage.getItem('auth_token');
+  // Don't set Content-Type for FormData — the browser must set it automatically
+  // so it includes the multipart boundary. Overriding it breaks file uploads.
   const headers = {
-    'Content-Type': 'application/json',
+    ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
