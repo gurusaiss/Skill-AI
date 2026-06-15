@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import UserStore from '../services/UserStore.js';
 import AuthService from '../services/AuthService.js';
@@ -10,9 +10,62 @@ import { v4 as uuidv4 } from 'uuid';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.join(__dirname, '../data/uploads/jd');
+const IMPORT_DIR  = path.join(__dirname, '../data/uploads/import');
 if (!existsSync(UPLOADS_DIR)) mkdirSync(UPLOADS_DIR, { recursive: true });
+if (!existsSync(IMPORT_DIR))  mkdirSync(IMPORT_DIR,  { recursive: true });
 
 const router = express.Router();
+
+// ── Multer setup for import file uploads ─────────────────────────────────────
+const importStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, IMPORT_DIR),
+  filename: (_req, file, cb) => {
+    cb(null, `import-${Date.now()}-${uuidv4().slice(0, 6)}${path.extname(file.originalname)}`);
+  },
+});
+const importUpload = multer({
+  storage: importStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.csv', '.xls', '.xlsx'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, allowed.includes(ext));
+  },
+});
+
+// ── Parse import sheet → array of row objects ─────────────────────────────────
+async function parseImportFile(filePath) {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.default.readFile(filePath, { cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.default.utils.sheet_to_json(ws, { defval: '' });
+  return rows;
+}
+
+// Normalise column name variants to canonical keys
+const COL_MAP = {
+  name: 'name', full_name: 'name', fullname: 'name', 'full name': 'name',
+  email: 'email', email_address: 'email', 'email address': 'email',
+  role: 'role', user_role: 'role',
+  employee_id: 'employeeId', 'employee id': 'employeeId', employeeid: 'employeeId', emp_id: 'employeeId',
+  job_role: 'jobRole', jobrole: 'jobRole', 'job role': 'jobRole', position: 'jobRole', title: 'jobRole',
+  department: 'department', dept: 'department',
+  job_description: 'jobDescription', 'job description': 'jobDescription', jd: 'jobDescription',
+  company_name: 'companyName', 'company name': 'companyName', company: 'companyName',
+  password: 'password', temp_password: 'password', 'temp password': 'password',
+  phone: 'phone', phone_number: 'phone', 'phone number': 'phone',
+  status: 'status',
+  manager_email: 'managerEmail', 'manager email': 'managerEmail',
+};
+
+function normaliseRow(raw) {
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const canon = COL_MAP[k.toLowerCase().trim()];
+    if (canon) out[canon] = String(v ?? '').trim();
+  }
+  return out;
+}
 
 // ── Multer setup for JD file uploads ─────────────────────────────────────────
 const jdStorage = multer.diskStorage({
@@ -52,6 +105,9 @@ function sanitizeUser(user) {
     jobDescriptionFile: user.jobDescriptionFile || null,
     onboardingComplete: user.onboardingComplete || false,
     companyName: user.companyName || '',
+    employeeId: user.employeeId || '',
+    phone: user.phone || '',
+    status: user.status || 'active',
   };
 }
 
@@ -499,6 +555,129 @@ router.get('/:userId/jd-file', authenticate, async (req, res) => {
   } catch (error) {
     console.error('[User Routes] JD file download error:', error.message);
     if (!res.headersSent) res.status(500).json({ success: false, error: 'Download failed' });
+  }
+});
+
+/**
+ * POST /api/users/bulk-import/preview
+ * Parse an import file and return preview rows with validation — no DB writes.
+ */
+router.post('/bulk-import/preview', authenticate, requireRole('admin', 'manager'),
+  importUpload.single('file'), async (req, res) => {
+  const filePath = req.file?.path;
+  try {
+    if (!filePath) {
+      return res.status(400).json({ success: false, error: 'No file uploaded. Supported: CSV, XLS, XLSX' });
+    }
+    const rawRows = await parseImportFile(filePath);
+    if (!rawRows.length) {
+      return res.status(400).json({ success: false, error: 'File is empty or has no data rows' });
+    }
+
+    const allUsers = await UserStore.getAllUsers({});
+    const existingEmails = new Set(allUsers.map(u => u.email?.toLowerCase()));
+    const existingEmpIds = new Set(allUsers.map(u => u.employeeId).filter(Boolean));
+    const seenInBatch = new Set();
+
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const preview = rawRows.map((raw, idx) => {
+      const row = normaliseRow(raw);
+      const errors = [];
+
+      if (!row.name) errors.push('name required');
+      if (!row.email) errors.push('email required');
+      else if (!EMAIL_RE.test(row.email)) errors.push('invalid email format');
+      else if (existingEmails.has(row.email.toLowerCase())) errors.push('email already exists');
+      else if (seenInBatch.has(row.email.toLowerCase())) errors.push('duplicate email in file');
+      else seenInBatch.add(row.email.toLowerCase());
+
+      if (row.employeeId && existingEmpIds.has(row.employeeId)) errors.push('employee ID already exists');
+      if (row.role && !['employee', 'manager', 'admin'].includes(row.role.toLowerCase())) {
+        errors.push(`invalid role "${row.role}" — use employee/manager/admin`);
+      }
+
+      return {
+        rowNum: idx + 2, // +2 because row 1 = header
+        ...row,
+        role: row.role?.toLowerCase() || 'employee',
+        status: errors.length ? 'error' : 'valid',
+        errors,
+      };
+    });
+
+    const valid   = preview.filter(r => r.status === 'valid').length;
+    const invalid = preview.filter(r => r.status === 'error').length;
+    res.json({ success: true, data: { preview, summary: { total: preview.length, valid, invalid } } });
+  } catch (e) {
+    console.error('[bulk-import/preview]', e);
+    res.status(500).json({ success: false, error: e.message });
+  } finally {
+    if (filePath) { try { unlinkSync(filePath); } catch {} }
+  }
+});
+
+/**
+ * POST /api/users/bulk-import
+ * Accept validated rows (JSON array) and create users in DB.
+ */
+router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const { rows } = req.body; // array of normalised row objects from preview
+    if (!Array.isArray(rows) || !rows.length) {
+      return res.status(400).json({ success: false, error: 'rows array required' });
+    }
+
+    const companyId  = req.user.companyId || 'default';
+    const allUsers   = await UserStore.getAllUsers({});
+    const existingEmails = new Set(allUsers.map(u => u.email?.toLowerCase()));
+
+    const created = [], skipped = [], failed = [];
+
+    for (const row of rows) {
+      if (!row.email || !row.name) { skipped.push({ row, reason: 'Missing name or email' }); continue; }
+      if (existingEmails.has(row.email.toLowerCase())) { skipped.push({ row, reason: 'Email already registered' }); continue; }
+
+      try {
+        const assignedRole = req.user.role === 'manager' ? 'employee' : (row.role || 'employee');
+        const tempPassword = row.password || `SF@${Math.random().toString(36).slice(2, 8)}`;
+        const passwordHash = await AuthService.hashPassword(tempPassword);
+
+        const user = await UserStore.createUser({
+          email: row.email.trim(),
+          passwordHash,
+          name: row.name.trim(),
+          role: assignedRole,
+          emailVerified: true,
+          onboardingComplete: true,
+          jobRole:        row.jobRole || '',
+          department:     row.department || '',
+          jobDescription: row.jobDescription || '',
+          companyName:    row.companyName || '',
+          companyId,
+          employeeId:     row.employeeId || '',
+          phone:          row.phone || '',
+          status:         row.status && ['active','inactive','blocked'].includes(row.status) ? row.status : 'active',
+        });
+
+        existingEmails.add(row.email.toLowerCase()); // prevent duplicate within same batch
+        created.push({ userId: user.userId, name: user.name, email: user.email, tempPassword: !row.password ? tempPassword : undefined });
+      } catch (e) {
+        failed.push({ row, reason: e.message });
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      data: {
+        created: created.length,
+        skipped: skipped.length,
+        failed:  failed.length,
+        results: { created, skipped, failed },
+      },
+    });
+  } catch (e) {
+    console.error('[bulk-import]', e);
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 

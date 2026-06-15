@@ -1,7 +1,7 @@
 /**
  * GroupManagement.jsx — Company-scoped group CRUD for Admin
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
@@ -47,6 +47,7 @@ function GroupModal({ mode, group, managers, employees, onClose, onSave }) {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [empSearch, setEmpSearch] = useState('');
 
   const toggleEmployee = (id) => {
     setForm(f => ({
@@ -55,6 +56,29 @@ function GroupModal({ mode, group, managers, employees, onClose, onSave }) {
         ? f.employeeIds.filter(e => e !== id)
         : [...f.employeeIds, id],
     }));
+  };
+
+  const filteredEmployees = useMemo(() => {
+    const q = empSearch.toLowerCase().trim();
+    if (!q) return employees;
+    return employees.filter(emp =>
+      emp.name?.toLowerCase().includes(q) ||
+      emp.email?.toLowerCase().includes(q) ||
+      emp.jobRole?.toLowerCase().includes(q) ||
+      emp.department?.toLowerCase().includes(q) ||
+      emp.employeeId?.toLowerCase().includes(q)
+    );
+  }, [employees, empSearch]);
+
+  const allFilteredSelected = filteredEmployees.length > 0 && filteredEmployees.every(emp => form.employeeIds.includes(emp.userId || emp.id));
+
+  const toggleSelectAllFiltered = () => {
+    const ids = filteredEmployees.map(e => e.userId || e.id);
+    if (allFilteredSelected) {
+      setForm(f => ({ ...f, employeeIds: f.employeeIds.filter(id => !ids.includes(id)) }));
+    } else {
+      setForm(f => ({ ...f, employeeIds: [...new Set([...f.employeeIds, ...ids])] }));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -115,7 +139,7 @@ function GroupModal({ mode, group, managers, employees, onClose, onSave }) {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Group Manager</label>
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Group Manager / Group Head</label>
             <select
               value={form.managerId}
               onChange={e => setForm(f => ({ ...f, managerId: e.target.value }))}
@@ -143,14 +167,40 @@ function GroupModal({ mode, group, managers, employees, onClose, onSave }) {
           )}
 
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-              Employees ({form.employeeIds.length} selected)
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Employees ({form.employeeIds.length} selected)
+              </label>
+              {filteredEmployees.length > 0 && (
+                <button type="button" onClick={toggleSelectAllFiltered}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold transition-colors">
+                  {allFilteredSelected ? 'Deselect all' : `Select all (${filteredEmployees.length})`}
+                </button>
+              )}
+            </div>
+
+            {/* Employee search */}
+            <div className="relative mb-2">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs">🔍</span>
+              <input
+                type="text"
+                value={empSearch}
+                onChange={e => setEmpSearch(e.target.value)}
+                placeholder="Search by name, email, job role, department..."
+                className="w-full bg-slate-900/60 border border-slate-700 rounded-xl pl-8 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60"
+              />
+              {empSearch && (
+                <button type="button" onClick={() => setEmpSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs">✕</button>
+              )}
+            </div>
+
             {employees.length === 0 ? (
               <p className="text-slate-500 text-sm italic">No employees in your company yet.</p>
+            ) : filteredEmployees.length === 0 ? (
+              <p className="text-slate-500 text-sm italic text-center py-4">No employees match "{empSearch}"</p>
             ) : (
               <div className="bg-slate-900/60 border border-slate-700 rounded-xl max-h-48 overflow-y-auto divide-y divide-slate-700/40">
-                {employees.map(emp => {
+                {filteredEmployees.map(emp => {
                   const id = emp.userId || emp.id;
                   const selected = form.employeeIds.includes(id);
                   return (
@@ -166,15 +216,18 @@ function GroupModal({ mode, group, managers, employees, onClose, onSave }) {
                       />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-white truncate">{emp.name}</p>
-                        <p className="text-xs text-slate-500 truncate">{emp.email}</p>
+                        <p className="text-xs text-slate-500 truncate">{emp.email}{emp.employeeId ? ` · ${emp.employeeId}` : ''}</p>
                       </div>
                       {emp.jobRole && (
-                        <span className="text-xs text-slate-500 flex-shrink-0">{emp.jobRole}</span>
+                        <span className="text-xs text-indigo-400 flex-shrink-0 bg-indigo-500/10 px-1.5 py-0.5 rounded">{emp.jobRole}</span>
                       )}
                     </label>
                   );
                 })}
               </div>
+            )}
+            {form.employeeIds.length > 0 && (
+              <p className="text-xs text-slate-500 mt-1.5">{form.employeeIds.length} employee{form.employeeIds.length !== 1 ? 's' : ''} will be in this group</p>
             )}
           </div>
         </form>
