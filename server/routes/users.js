@@ -108,6 +108,9 @@ function sanitizeUser(user) {
     employeeId: user.employeeId || '',
     phone: user.phone || '',
     status: user.status || 'active',
+    jdSkills: user.jdSkills || [],
+    jdSourceUrl: user.jdSourceUrl || '',
+    jdSourceType: user.jdSourceType || 'text',
   };
 }
 
@@ -313,9 +316,11 @@ router.put('/:userId', authenticate, async (req, res) => {
 /**
  * POST /api/users/:userId/jd-upload
  * Upload JD file (PDF, DOCX, TXT, etc.) — admin/manager or self
- * Replaces any previous JD file for this user
+ * Replaces any previous JD for this user.
+ * Extracts full text + skills from file, stores in DB, then deletes the file.
  */
 router.post('/:userId/jd-upload', authenticate, jdUpload.single('jd'), async (req, res) => {
+  const uploadedPath = req.file?.path;
   try {
     const { userId } = req.params;
     const isSelf = req.user.userId === userId;
@@ -335,26 +340,132 @@ router.post('/:userId/jd-upload', authenticate, jdUpload.single('jd'), async (re
       return res.status(400).json({ success: false, data: null, error: { code: 'NO_FILE', message: 'No file uploaded' } });
     }
 
-    const fileInfo = {
-      name: req.file.originalname,
-      storageName: req.file.filename,
-      path: req.file.path,
-      type: req.file.mimetype,
-      size: req.file.size,
-      uploadedAt: new Date().toISOString(),
-    };
+    // Extract full text from the uploaded file — no character limit
+    const { parseJDFile, extractSkillsFromJDText } = await import('../utils/parseJDFile.js');
+    const extractedText = await parseJDFile(req.file.path, req.file.originalname);
 
+    if (!extractedText || extractedText.length < 20) {
+      return res.status(422).json({ success: false, data: null, error: { code: 'JD_EMPTY', message: 'Could not extract text from this file. Try PDF, DOCX, or TXT.' } });
+    }
+
+    const skills = extractSkillsFromJDText(extractedText);
+
+    // Persist extracted text + skills; keep metadata (name/size) but clear file path
     const updatedUser = await UserStore.updateUser(userId, {
-      jobDescriptionFile: fileInfo,
+      jobDescription: extractedText,          // canonical text used everywhere
+      jobDescriptionFile: {                   // metadata only — path cleared
+        name: req.file.originalname,
+        size: req.file.size,
+        type: req.file.mimetype,
+        uploadedAt: new Date().toISOString(),
+        path: null,                           // file is deleted below
+      },
+      jdSkills: skills,
+      jdSourceType: 'file',
+      jdSourceUrl: '',
       updatedAt: new Date().toISOString(),
     });
 
-    await UserStore.logAuthEvent('jd_uploaded', userId, { uploadedBy: req.user.userId, fileName: req.file.originalname, ipAddress: req.ip });
+    await UserStore.logAuthEvent('jd_uploaded', userId, {
+      uploadedBy: req.user.userId,
+      fileName: req.file.originalname,
+      extractedChars: extractedText.length,
+      skillsFound: skills.length,
+      ipAddress: req.ip,
+    });
 
-    res.json({ success: true, data: { jobDescriptionFile: fileInfo, user: sanitizeUser(updatedUser) }, error: null });
+    res.json({
+      success: true,
+      data: {
+        extractedChars: extractedText.length,
+        skillsFound: skills,
+        jdSourceType: 'file',
+        user: sanitizeUser(updatedUser),
+      },
+      error: null,
+    });
   } catch (error) {
     console.error('[User Routes] JD upload error:', error.message);
-    res.status(500).json({ success: false, data: null, error: { code: 'UPLOAD_ERROR', message: 'File upload failed' } });
+    res.status(500).json({ success: false, data: null, error: { code: 'UPLOAD_ERROR', message: 'File upload failed: ' + error.message } });
+  } finally {
+    // Always delete the uploaded file — text is now stored in DB
+    if (uploadedPath) { try { unlinkSync(uploadedPath); } catch {} }
+  }
+});
+
+/**
+ * POST /api/users/:userId/jd-url
+ * Fetch JD from a public URL (Google Drive, OneDrive, Dropbox, direct link).
+ * Extracts text + skills, stores in DB. No file is kept.
+ */
+router.post('/:userId/jd-url', authenticate, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const isSelf = req.user.userId === userId;
+    const isAdmin = req.user.role === 'admin';
+    const isManager = req.user.role === 'manager';
+
+    if (!isSelf && !isAdmin && !isManager) {
+      return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
+    }
+
+    const user = await UserStore.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, data: null, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+    }
+
+    const { url } = req.body;
+    if (!url || !url.trim()) {
+      return res.status(400).json({ success: false, data: null, error: { code: 'NO_URL', message: 'URL is required' } });
+    }
+
+    // Basic URL validation
+    let parsed;
+    try { parsed = new URL(url.trim()); } catch {
+      return res.status(400).json({ success: false, data: null, error: { code: 'INVALID_URL', message: 'Invalid URL format' } });
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return res.status(400).json({ success: false, data: null, error: { code: 'INVALID_URL', message: 'Only http/https URLs are supported' } });
+    }
+
+    const { fetchJDFromUrl } = await import('../utils/fetchJDUrl.js');
+    const { extractSkillsFromJDText } = await import('../utils/parseJDFile.js');
+
+    const { text: extractedText, source } = await fetchJDFromUrl(url.trim());
+    const skills = extractSkillsFromJDText(extractedText);
+
+    const updatedUser = await UserStore.updateUser(userId, {
+      jobDescription: extractedText,
+      jobDescriptionFile: null,               // no file — URL source
+      jdSkills: skills,
+      jdSourceUrl: url.trim(),
+      jdSourceType: 'url',
+      updatedAt: new Date().toISOString(),
+    });
+
+    await UserStore.logAuthEvent('jd_url_saved', userId, {
+      savedBy: req.user.userId,
+      sourceUrl: url.trim(),
+      source,
+      extractedChars: extractedText.length,
+      skillsFound: skills.length,
+      ipAddress: req.ip,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        extractedChars: extractedText.length,
+        skillsFound: skills,
+        jdSourceType: 'url',
+        jdSourceUrl: url.trim(),
+        user: sanitizeUser(updatedUser),
+      },
+      error: null,
+    });
+  } catch (error) {
+    console.error('[User Routes] JD URL error:', error.message);
+    res.status(422).json({ success: false, data: null, error: { code: 'JD_URL_ERROR', message: error.message } });
   }
 });
 

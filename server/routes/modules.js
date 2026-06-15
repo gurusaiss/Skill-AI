@@ -470,13 +470,9 @@ router.post('/auto-generate', authenticate, async (req, res) => {
     const user = await UserStore.getUserById(userId);
     const skills = Array.isArray(weakAreas) && weakAreas.length > 0 ? weakAreas : ['Core Skills'];
 
-    let jdContext = user?.jobDescription || '';
-    if (!jdContext && user?.jobDescriptionFile?.path) {
-      try {
-        const { parseJDFile } = await import('../utils/parseJDFile.js');
-        jdContext = (await parseJDFile(user.jobDescriptionFile.path, user.jobDescriptionFile.name || '')).slice(0, 2000);
-      } catch {}
-    }
+    // Use pre-extracted JD text — no file parsing
+    const jdContext = (user?.jobDescription || '').slice(0, 2000);
+    const jdSkillsCtx = (user?.jdSkills || []).join(', ');
 
     let moduleContent = null;
     try {
@@ -486,7 +482,8 @@ router.post('/auto-generate', authenticate, async (req, res) => {
 Role: ${jobRole || 'Employee'}
 Weak areas from assessment: ${skills.join(', ')}
 Assessment: ${assessmentTitle || 'Role Assessment'}
-${jdContext ? `Job Description context:\n${jdContext.slice(0, 800)}` : ''}
+${jdSkillsCtx ? `Key skills from JD: ${jdSkillsCtx}` : ''}
+${jdContext ? `Job Description context:\n${jdContext}` : ''}
 
 Create a comprehensive training module with 3-5 sessions. Each session should have:
 - Clear title and learning objectives
