@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { authFetch } from '../utils/authFetch.js';
 
 export default function ModuleLearn() {
   const { moduleId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const assignmentId = new URLSearchParams(location.search).get('assignmentId');
   const [module, setModule] = useState(null);
   const [sessionIdx, setSessionIdx] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -45,7 +47,9 @@ export default function ModuleLearn() {
     if (sessionIdx < (module?.content?.sessions?.length || 7) - 1) {
       setSessionIdx(sessionIdx + 1);
     }
-    try { await authFetch(`/api/assignments/${moduleId}/progress`, { method: 'PUT', body: JSON.stringify({ progress: newPct }) }); } catch {}
+    if (assignmentId) {
+      try { await authFetch(`/api/assignments/${assignmentId}`, { method: 'PUT', body: JSON.stringify({ progress: newPct, status: newPct >= 100 ? 'completed' : 'in_progress' }) }); } catch {}
+    }
   };
 
   if (loading) return (
