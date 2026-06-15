@@ -23,8 +23,9 @@ function resolveDownloadUrl(rawUrl) {
   // https://drive.google.com/file/d/{ID}/view  OR  /open?id={ID}
   const driveFile = url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=)([a-zA-Z0-9_-]{10,})/);
   if (driveFile) {
+    // confirm=t bypasses the virus-scan confirmation page Google shows for large files
     return {
-      downloadUrl: `https://drive.google.com/uc?export=download&id=${driveFile[1]}`,
+      downloadUrl: `https://drive.usercontent.google.com/download?id=${driveFile[1]}&export=download&authuser=0&confirm=t`,
       ext: '',           // content-type will tell us
       source: 'google_drive',
     };

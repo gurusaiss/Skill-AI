@@ -17,13 +17,15 @@ export async function parseJDFile(filePath, originalName = '') {
   const ext = path.extname(originalName || filePath).toLowerCase();
 
   try {
-    // PDF
+    // PDF  (pdf-parse v2 class-based API)
     if (ext === '.pdf') {
       try {
-        const pdfParse = (await import('pdf-parse')).default;
+        const { PDFParse } = await import('pdf-parse');
         const buffer = readFileSync(filePath);
-        const data = await pdfParse(buffer);
-        return (data.text || '').trim();
+        const parser = new PDFParse({ data: buffer });
+        const result = await parser.getText();
+        await parser.destroy().catch(() => {});
+        return (result?.text || '').trim();
       } catch (e) {
         console.warn('[parseJDFile] PDF parse failed:', e.message);
         return '';
