@@ -54,6 +54,9 @@ function rowToUser(row) {
     employeeId:          row.employee_id || '',
     phone:               row.phone || '',
     status:              row.status || 'active',
+    jdSkills:            row.jd_skills || [],
+    jdSourceUrl:         row.jd_source_url || '',
+    jdSourceType:        row.jd_source_type || 'text',
     // Auth fields
     otp:                 row.otp || null,
     otpExpires:          row.otp_expires || null,
@@ -84,6 +87,9 @@ function userToRow(u) {
   if (u.employeeId   !== undefined) row.employee_id        = u.employeeId;
   if (u.phone        !== undefined) row.phone              = u.phone;
   if (u.status       !== undefined) row.status             = u.status;
+  if (u.jdSkills     !== undefined) row.jd_skills          = u.jdSkills;
+  if (u.jdSourceUrl  !== undefined) row.jd_source_url      = u.jdSourceUrl;
+  if (u.jdSourceType !== undefined) row.jd_source_type     = u.jdSourceType;
   if (u.otp          !== undefined) row.otp                = u.otp;
   if (u.otpExpires   !== undefined) row.otp_expires        = u.otpExpires;
   if (u.resetToken   !== undefined) row.reset_token        = u.resetToken;

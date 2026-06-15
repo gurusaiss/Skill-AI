@@ -31,33 +31,22 @@ const router = express.Router();
  * Generate unique questions per employee from job role + JD
  * Uses a seed (userId + assessmentId) to ensure uniqueness even for same JD
  */
-async function generateQuestionsFromJD({ jobRole, jobDescription, jobDescriptionFile, questionCount, questionTypes, employeeSeed }) {
+async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed }) {
   const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 30);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const seed = employeeSeed || randomUUID().slice(0, 8);
 
-  // Try to get richer JD text from uploaded file — file takes priority over text
-  let jdContent = jobDescription || '';
-  if (jobDescriptionFile?.path) {
-    try {
-      const { parseJDFile } = await import('../utils/parseJDFile.js');
-      const fileText = await parseJDFile(
-        jobDescriptionFile.path,
-        jobDescriptionFile.name || ''
-      );
-      if (fileText && fileText.length > 50) {
-        jdContent = fileText;
-        console.log(`[Assessment] Using JD file content (${fileText.length} chars) for question generation`);
-      }
-    } catch (e) {
-      console.warn('[Assessment] JD file parse failed, using text fallback:', e.message);
-    }
-  }
-  const jdText = jdContent;
+  // jobDescription already contains pre-extracted full text — no file parsing needed
+  const jdText = jobDescription || '';
+
+  const skillsLine = Array.isArray(jdSkills) && jdSkills.length
+    ? `Key Skills Identified: ${jdSkills.join(', ')}`
+    : '';
 
   const prompt = `Generate exactly ${num} assessment questions for an employee with this profile.
 
 Job Role: ${jobRole || 'Not specified'}
+${skillsLine}
 Job Description:
 ${jdText || 'No job description provided. Use the job role to infer responsibilities.'}
 
@@ -364,7 +353,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       const questions = await generateQuestionsFromJD({
         jobRole: user.jobRole || 'Employee',
         jobDescription: user.jobDescription || '',
-        jobDescriptionFile: user.jobDescriptionFile || null,
+        jdSkills: user.jdSkills || [],
         questionCount,
         questionTypes,
         employeeSeed: `${userId}-${Date.now()}`,

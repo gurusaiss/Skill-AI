@@ -1,0 +1,6 @@
+name,email,role,employee_id,job_role,department,job_description,company_name,password,phone,manager_email
+Jane Smith,jane.smith@company.com,employee,EMP001,Frontend Developer,Engineering,Responsible for building and maintaining React-based web applications. Works closely with the design and backend teams to deliver high-quality user interfaces.,Acme Corp,,+91-9876543210,sara.lee@company.com
+John Doe,john.doe@company.com,employee,EMP002,Data Analyst,Analytics,Analyzes business data to generate actionable insights. Builds dashboards and reports using SQL and Excel. Supports strategic decision-making.,Acme Corp,,+91-9123456789,sara.lee@company.com
+Priya Sharma,priya.sharma@company.com,employee,EMP003,Backend Developer,Engineering,Develops and maintains Node.js APIs and microservices. Integrates third-party services and manages database schemas.,Acme Corp,,+91-9988776655,sara.lee@company.com
+Rahul Verma,rahul.verma@company.com,employee,EMP004,ML Engineer,AI/ML,Builds and deploys machine learning models. Works on data pipelines and model evaluation. Collaborates with the data science team.,Acme Corp,,+91-9001122334,
+Sara Lee,sara.lee@company.com,manager,MGR001,Engineering Manager,Engineering,Leads the frontend and backend engineering teams. Responsible for sprint planning and code reviews.,Acme Corp,,,

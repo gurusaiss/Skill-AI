@@ -316,10 +316,15 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   });
   const [saving, setSaving] = useState(false);
 
-  // JD file upload
+  // JD upload / URL
+  const [jdInputMode, setJdInputMode] = useState('file'); // 'file' | 'url'
   const [jdFile, setJdFile] = useState(null);
+  const [jdUrl, setJdUrl] = useState('');
   const [jdUploading, setJdUploading] = useState(false);
+  const [jdResult, setJdResult] = useState(null); // { extractedChars, skillsFound }
   const [existingJDFile, setExistingJDFile] = useState(user.jobDescriptionFile || null);
+  const [existingJDSkills, setExistingJDSkills] = useState(user.jdSkills || []);
+  const [existingJDSourceUrl, setExistingJDSourceUrl] = useState(user.jdSourceUrl || '');
   const fileInputRef = useRef(null);
 
   // Module/Manager assignment — preload current module from assignments prop
@@ -371,11 +376,6 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
         await authFetch(`/api/users/${user.userId}/role`, { method: 'PUT', body: JSON.stringify({ role: form.role }) });
       }
 
-      // Upload JD file if selected
-      if (jdFile) {
-        await handleJDUpload();
-      }
-
       setToast({ message: `${form.name} updated successfully`, type: 'success' });
       onSaved();
       onClose();
@@ -394,15 +394,41 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
       fd.append('jd', jdFile);
       const result = await authFetch(`/api/users/${user.userId}/jd-upload`, {
         method: 'POST',
-        isFile: true, // skip Content-Type header so browser sets multipart boundary
+        isFile: true,
         body: fd,
       });
-      setExistingJDFile(result?.jobDescriptionFile || null);
+      setExistingJDFile(result?.user?.jobDescriptionFile || null);
+      setExistingJDSkills(result?.skillsFound || []);
+      setExistingJDSourceUrl('');
+      setJdResult({ extractedChars: result?.extractedChars, skillsFound: result?.skillsFound || [] });
       setJdFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
-      setToast({ message: 'JD file uploaded', type: 'success' });
+      setToast({ message: `JD extracted: ${result?.extractedChars?.toLocaleString()} chars, ${result?.skillsFound?.length || 0} skills found`, type: 'success' });
+      onSaved();
     } catch (err) {
       setToast({ message: `Upload failed: ${err.message}`, type: 'error' });
+    } finally {
+      setJdUploading(false);
+    }
+  };
+
+  const handleJDUrl = async () => {
+    if (!jdUrl.trim()) return;
+    setJdUploading(true);
+    try {
+      const result = await authFetch(`/api/users/${user.userId}/jd-url`, {
+        method: 'POST',
+        body: JSON.stringify({ url: jdUrl.trim() }),
+      });
+      setExistingJDFile(null);
+      setExistingJDSkills(result?.skillsFound || []);
+      setExistingJDSourceUrl(jdUrl.trim());
+      setJdResult({ extractedChars: result?.extractedChars, skillsFound: result?.skillsFound || [] });
+      setJdUrl('');
+      setToast({ message: `JD fetched: ${result?.extractedChars?.toLocaleString()} chars, ${result?.skillsFound?.length || 0} skills found`, type: 'success' });
+      onSaved();
+    } catch (err) {
+      setToast({ message: err.message, type: 'error' });
     } finally {
       setJdUploading(false);
     }
@@ -532,89 +558,118 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
 
           {/* ── JD TAB ── */}
           {activeSection === 'jd' && (
-            <div className="space-y-5">
-              {/* Notice */}
+            <div className="space-y-4">
               <div className="flex items-start gap-3 p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-sm text-indigo-300">
                 <span className="text-lg">💡</span>
-                <p>The Job Description is used to generate <strong>unique, role-specific assessment questions</strong> and training modules for this employee.</p>
+                <p>Text is extracted once and stored — no file kept on server. Used for assessments and modules.</p>
               </div>
 
-              {/* Job Role (quick edit also available here) */}
               <div>
                 <FieldLabel>Job Role</FieldLabel>
                 <input type="text" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Senior React Developer" />
               </div>
 
-              {/* JD Text */}
-              <div>
-                <FieldLabel>Job Description (Text)</FieldLabel>
-                <textarea
-                  value={form.jobDescription}
-                  onChange={f('jobDescription')}
-                  rows={8}
-                  className={`${inputCls} resize-y min-h-[120px] font-mono text-xs leading-relaxed`}
-                  placeholder="Paste the full Job Description here. No character limit. The more detail, the better the AI-generated assessments…"
-                />
-                <p className="text-slate-600 text-xs mt-1">{form.jobDescription.length} characters · No limit</p>
-              </div>
-
-              {/* JD File Upload */}
-              <div>
-                <FieldLabel>Upload JD File</FieldLabel>
-                <p className="text-slate-500 text-xs mb-2">Accepts PDF, DOCX, DOC, TXT, RTF — up to 50MB. Replaces the previous file.</p>
-
-                {/* Existing file */}
-                {existingJDFile && (
-                  <div className="flex items-center gap-3 p-3 mb-3 bg-slate-900/60 rounded-xl border border-slate-700/60">
-                    <span className="text-2xl">📎</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{existingJDFile.name}</p>
-                      <p className="text-slate-500 text-xs">{formatBytes(existingJDFile.size)} · Uploaded {formatDate(existingJDFile.uploadedAt)}</p>
+              {/* Current JD status */}
+              {(existingJDFile || existingJDSourceUrl || form.jobDescription) && (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 space-y-2">
+                  <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Current JD</p>
+                  {existingJDSourceUrl && (
+                    <p className="text-xs text-slate-400 truncate">🔗 {existingJDSourceUrl}</p>
+                  )}
+                  {existingJDFile?.name && (
+                    <p className="text-xs text-slate-400">📎 {existingJDFile.name} · {formatBytes(existingJDFile.size)}</p>
+                  )}
+                  {form.jobDescription && (
+                    <p className="text-xs text-slate-400">{form.jobDescription.length.toLocaleString()} chars stored</p>
+                  )}
+                  {existingJDSkills.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {existingJDSkills.slice(0, 12).map(s => (
+                        <span key={s} className="px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs">{s}</span>
+                      ))}
+                      {existingJDSkills.length > 12 && <span className="text-slate-500 text-xs">+{existingJDSkills.length - 12} more</span>}
                     </div>
-                    <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">Active</span>
-                  </div>
-                )}
-
-                {/* File picker */}
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors
-                    ${jdFile ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500 bg-slate-900/40 hover:bg-slate-900/60'}`}
-                >
-                  {jdFile ? (
-                    <>
-                      <p className="text-indigo-300 font-semibold text-sm">{jdFile.name}</p>
-                      <p className="text-slate-500 text-xs mt-1">{formatBytes(jdFile.size)} · Click to change</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-4xl mb-2">📂</p>
-                      <p className="text-slate-300 text-sm font-semibold">Click to choose file</p>
-                      <p className="text-slate-600 text-xs mt-1">PDF, DOCX, TXT and more</p>
-                    </>
                   )}
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.doc,.docx,.txt,.rtf,.odt"
-                  className="hidden"
-                  onChange={e => { if (e.target.files[0]) setJdFile(e.target.files[0]); }}
-                />
+              )}
 
-                {/* Upload button (standalone) */}
-                {jdFile && (
-                  <button
-                    onClick={handleJDUpload}
-                    disabled={jdUploading}
-                    className="mt-3 w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-xl text-white font-bold text-sm transition-colors flex items-center justify-center gap-2"
-                  >
-                    {jdUploading ? (
-                      <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Uploading…</>
-                    ) : (
-                      '⬆ Upload JD File Now'
+              {/* Result banner after fresh extract */}
+              {jdResult && (
+                <div className="bg-emerald-600/20 border border-emerald-500/40 rounded-xl p-3">
+                  <p className="text-emerald-300 font-semibold text-sm">✓ JD saved to database</p>
+                  <p className="text-emerald-400/70 text-xs mt-0.5">{jdResult.extractedChars?.toLocaleString()} chars · {jdResult.skillsFound?.length || 0} skills extracted</p>
+                </div>
+              )}
+
+              {/* Mode selector */}
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Update JD via</p>
+                <div className="flex gap-2 mb-3">
+                  {[{ id: 'file', label: '📂 Upload File' }, { id: 'url', label: '🔗 Paste Link' }, { id: 'text', label: '✏️ Paste Text' }].map(m => (
+                    <button key={m.id} type="button" onClick={() => setJdInputMode(m.id)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${jdInputMode === m.id ? 'bg-indigo-600 text-white' : 'bg-slate-700/60 text-slate-400 hover:text-white'}`}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* File mode */}
+                {jdInputMode === 'file' && (
+                  <>
+                    <p className="text-slate-500 text-xs mb-2">PDF, DOCX, DOC, TXT, RTF — up to 50MB. Text is extracted and stored; file is deleted.</p>
+                    <div onClick={() => fileInputRef.current?.click()}
+                      className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors ${jdFile ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500 bg-slate-900/40'}`}>
+                      {jdFile ? (
+                        <>
+                          <p className="text-indigo-300 font-semibold text-sm">{jdFile.name}</p>
+                          <p className="text-slate-500 text-xs mt-1">{formatBytes(jdFile.size)} · Click to change</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-4xl mb-2">📂</p>
+                          <p className="text-slate-300 text-sm font-semibold">Click to choose file</p>
+                          <p className="text-slate-600 text-xs mt-1">PDF, DOCX, DOC, TXT, RTF</p>
+                        </>
+                      )}
+                    </div>
+                    <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.rtf,.odt" className="hidden"
+                      onChange={e => { if (e.target.files[0]) setJdFile(e.target.files[0]); }} />
+                    {jdFile && (
+                      <button onClick={handleJDUpload} disabled={jdUploading}
+                        className="mt-3 w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-xl text-white font-bold text-sm transition-colors flex items-center justify-center gap-2">
+                        {jdUploading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Extracting…</> : '⬆ Extract & Save JD'}
+                      </button>
                     )}
-                  </button>
+                  </>
+                )}
+
+                {/* URL mode */}
+                {jdInputMode === 'url' && (
+                  <>
+                    <p className="text-slate-500 text-xs mb-2">Google Drive, OneDrive, Dropbox, or any public direct link. Must be publicly accessible (no login).</p>
+                    <input type="url" value={jdUrl} onChange={e => setJdUrl(e.target.value)}
+                      placeholder="https://drive.google.com/file/d/... or https://..."
+                      className={`${inputCls} font-mono text-xs`} />
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {['Google Drive', 'Google Docs', 'OneDrive', 'Dropbox', 'Direct PDF/DOCX'].map(hint => (
+                        <span key={hint} className="text-xs text-slate-500 bg-slate-700/40 px-2 py-0.5 rounded-full">{hint}</span>
+                      ))}
+                    </div>
+                    <button onClick={handleJDUrl} disabled={!jdUrl.trim() || jdUploading}
+                      className="mt-3 w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-xl text-white font-bold text-sm transition-colors flex items-center justify-center gap-2">
+                      {jdUploading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Fetching…</> : '🔗 Fetch & Save JD'}
+                    </button>
+                  </>
+                )}
+
+                {/* Text paste mode */}
+                {jdInputMode === 'text' && (
+                  <>
+                    <textarea value={form.jobDescription} onChange={f('jobDescription')} rows={8}
+                      className={`${inputCls} resize-y min-h-[120px] font-mono text-xs leading-relaxed`}
+                      placeholder="Paste the full Job Description here. No character limit…" />
+                    <p className="text-slate-600 text-xs mt-1">{form.jobDescription.length.toLocaleString()} chars · Saved when you click Save Changes below</p>
+                  </>
                 )}
               </div>
             </div>
