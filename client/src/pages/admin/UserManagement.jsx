@@ -401,6 +401,9 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
       setExistingJDSkills(result?.skillsFound || []);
       setExistingJDSourceUrl('');
       setJdResult({ extractedChars: result?.extractedChars, skillsFound: result?.skillsFound || [] });
+      if (result?.user?.jobDescription) {
+        setForm(prev => ({ ...prev, jobDescription: result.user.jobDescription }));
+      }
       setJdFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       setToast({ message: `JD extracted: ${result?.extractedChars?.toLocaleString()} chars, ${result?.skillsFound?.length || 0} skills found`, type: 'success' });
@@ -424,6 +427,10 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
       setExistingJDSkills(result?.skillsFound || []);
       setExistingJDSourceUrl(jdUrl.trim());
       setJdResult({ extractedChars: result?.extractedChars, skillsFound: result?.skillsFound || [] });
+      // Sync form so the "Current JD" status card shows the extracted text immediately
+      if (result?.user?.jobDescription) {
+        setForm(prev => ({ ...prev, jobDescription: result.user.jobDescription }));
+      }
       setJdUrl('');
       setToast({ message: `JD fetched: ${result?.extractedChars?.toLocaleString()} chars, ${result?.skillsFound?.length || 0} skills found`, type: 'success' });
       onSaved();
@@ -1142,7 +1149,12 @@ export default function UserManagement() {
       ]);
       if (usersData.status === 'fulfilled') {
         const u = usersData.value;
-        setUsers(Array.isArray(u) ? u : u?.users || u?.data || []);
+        const freshUsers = Array.isArray(u) ? u : u?.users || u?.data || [];
+        setUsers(freshUsers);
+        // Keep open panels in sync with fresh data
+        const findFresh = (prev) => prev ? freshUsers.find(x => (x.userId || x.id) === (prev.userId || prev.id)) || prev : null;
+        setDetailUser(findFresh);
+        setEditUser(findFresh);
       }
       if (assignmentsData.status === 'fulfilled') {
         const a = assignmentsData.value;
