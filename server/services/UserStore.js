@@ -51,6 +51,9 @@ function rowToUser(row) {
     onboardingComplete:  row.onboarding_complete || false,
     companyName:         row.company_name || '',
     companyId:           row.company_id || 'default',
+    employeeId:          row.employee_id || '',
+    phone:               row.phone || '',
+    status:              row.status || 'active',
     // Auth fields
     otp:                 row.otp || null,
     otpExpires:          row.otp_expires || null,
@@ -78,6 +81,9 @@ function userToRow(u) {
   if (u.onboardingComplete !== undefined) row.onboarding_complete  = u.onboardingComplete;
   if (u.companyName  !== undefined) row.company_name       = u.companyName;
   if (u.companyId    !== undefined) row.company_id         = u.companyId;
+  if (u.employeeId   !== undefined) row.employee_id        = u.employeeId;
+  if (u.phone        !== undefined) row.phone              = u.phone;
+  if (u.status       !== undefined) row.status             = u.status;
   if (u.otp          !== undefined) row.otp                = u.otp;
   if (u.otpExpires   !== undefined) row.otp_expires        = u.otpExpires;
   if (u.resetToken   !== undefined) row.reset_token        = u.resetToken;
@@ -151,6 +157,9 @@ class UserStore {
       onboardingComplete: userData.onboardingComplete || false,
       companyName:        userData.companyName || '',
       companyId:          userData.companyId || 'default',
+      employeeId:         userData.employeeId || '',
+      phone:              userData.phone || '',
+      status:             userData.status || 'active',
     };
 
     if (sb) {
@@ -176,6 +185,9 @@ class UserStore {
       try { row.onboarding_complete = newUser.onboardingComplete || false; } catch {}
       try { row.company_name = newUser.companyName || ''; } catch {}
       try { row.company_id = newUser.companyId || 'default'; } catch {}
+      try { if (newUser.employeeId) row.employee_id = newUser.employeeId; } catch {}
+      try { if (newUser.phone) row.phone = newUser.phone; } catch {}
+      try { if (newUser.status) row.status = newUser.status; } catch {}
 
       const { data, error } = await sb.from('users').insert(row).select().maybeSingle();
       if (error) {

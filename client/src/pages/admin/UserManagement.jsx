@@ -758,6 +758,264 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
   );
 }
 
+// ─── Bulk Import Modal ────────────────────────────────────────────────────────
+
+const IMPORT_TEMPLATE_CSV = `name,email,role,employee_id,job_role,department,job_description,company_name,password,phone,manager_email
+Jane Smith,jane@company.com,employee,EMP001,Frontend Developer,Engineering,Builds React UIs,Acme Corp,,+91-9876543210,
+John Doe,john@company.com,employee,EMP002,Data Analyst,Analytics,Analyzes business data,Acme Corp,,+91-9123456789,
+Sara Lee,sara@company.com,manager,MGR001,Engineering Manager,Engineering,Leads frontend team,Acme Corp,,,
+`;
+
+function ImportModal({ onClose, onImported, setToast }) {
+  const [step, setStep] = useState('upload'); // upload | preview | result
+  const [file, setFile] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState(null); // { preview[], summary{} }
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState(null);
+  const fileRef = useRef(null);
+
+  const downloadTemplate = () => {
+    const blob = new Blob([IMPORT_TEMPLATE_CSV], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'skillforge-user-import-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFile = (f) => {
+    if (!f) return;
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!['csv', 'xls', 'xlsx'].includes(ext)) {
+      setToast({ message: 'Only CSV, XLS, XLSX files are supported', type: 'error' });
+      return;
+    }
+    setFile(f);
+  };
+
+  const handlePreview = async () => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await authFetch('/api/users/bulk-import/preview', { method: 'POST', body: fd, isFile: true });
+      setPreview(res);
+      setStep('preview');
+    } catch (e) {
+      setToast({ message: e.message || 'Failed to parse file', type: 'error' });
+    } finally { setUploading(false); }
+  };
+
+  const handleImport = async () => {
+    const validRows = preview.preview.filter(r => r.status === 'valid');
+    if (!validRows.length) return;
+    setImporting(true);
+    try {
+      const res = await authFetch('/api/users/bulk-import', {
+        method: 'POST',
+        body: JSON.stringify({ rows: validRows }),
+      });
+      setResult(res);
+      setStep('result');
+      onImported();
+    } catch (e) {
+      setToast({ message: e.message || 'Import failed', type: 'error' });
+    } finally { setImporting(false); }
+  };
+
+  const validCount   = preview?.preview.filter(r => r.status === 'valid').length || 0;
+  const invalidCount = preview?.preview.filter(r => r.status === 'error').length || 0;
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
+
+        {/* Header */}
+        <div className="p-5 border-b border-slate-700/60 flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-lg font-bold text-white">📥 Bulk Import Users</h2>
+            <p className="text-slate-500 text-xs mt-0.5">Upload CSV, XLS, or XLSX file to create multiple users at once</p>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-white p-1 rounded-lg hover:bg-slate-700 transition-colors">✕</button>
+        </div>
+
+        {/* Step: Upload */}
+        {step === 'upload' && (
+          <div className="p-6 space-y-5 flex-1 overflow-y-auto">
+            {/* Template download */}
+            <div className="flex items-start gap-3 p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl">
+              <span className="text-2xl">📋</span>
+              <div className="flex-1">
+                <p className="text-indigo-300 font-semibold text-sm mb-1">Download the import template first</p>
+                <p className="text-slate-400 text-xs mb-3">Fill in user data following the column headers. Supported columns: name, email, role, employee_id, job_role, department, job_description, company_name, password, phone, manager_email</p>
+                <button onClick={downloadTemplate} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 rounded-lg text-indigo-300 text-xs font-bold transition-colors">
+                  ⬇ Download Template (CSV)
+                </button>
+              </div>
+            </div>
+
+            {/* Drop zone */}
+            <div
+              onClick={() => fileRef.current?.click()}
+              onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all ${dragOver ? 'border-indigo-500 bg-indigo-500/10' : file ? 'border-emerald-500/60 bg-emerald-500/5' : 'border-slate-600 hover:border-slate-500 hover:bg-slate-700/20'}`}
+            >
+              <input ref={fileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={e => handleFile(e.target.files[0])} />
+              {file ? (
+                <>
+                  <div className="text-4xl mb-3">✅</div>
+                  <p className="text-emerald-400 font-bold text-sm">{file.name}</p>
+                  <p className="text-slate-500 text-xs mt-1">{(file.size / 1024).toFixed(1)} KB · Click to change</p>
+                </>
+              ) : (
+                <>
+                  <div className="text-4xl mb-3">📂</div>
+                  <p className="text-slate-300 font-semibold text-sm">Drop file here or click to browse</p>
+                  <p className="text-slate-500 text-xs mt-1">CSV, XLS, XLSX · Max 10 MB</p>
+                </>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={onClose} className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-white font-bold text-sm transition-colors">Cancel</button>
+              <button onClick={handlePreview} disabled={!file || uploading}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-white font-bold text-sm transition-colors flex items-center justify-center gap-2">
+                {uploading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Parsing…</> : '→ Preview Import'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step: Preview */}
+        {step === 'preview' && preview && (
+          <div className="flex flex-col flex-1 overflow-hidden">
+            {/* Summary bar */}
+            <div className="px-5 py-3 border-b border-slate-700/60 flex items-center gap-4 shrink-0">
+              <span className="text-sm text-slate-400">{preview.summary.total} rows found</span>
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30">{validCount} valid</span>
+              {invalidCount > 0 && <span className="px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-400 text-xs font-bold border border-red-500/30">{invalidCount} will be skipped</span>}
+            </div>
+
+            {/* Preview table */}
+            <div className="flex-1 overflow-auto p-4">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-slate-800">
+                  <tr className="border-b border-slate-700/60">
+                    <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">#</th>
+                    <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">Name</th>
+                    <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">Email</th>
+                    <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">Role</th>
+                    <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">Dept</th>
+                    <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">Job Role</th>
+                    <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/30">
+                  {preview.preview.map(row => (
+                    <tr key={row.rowNum} className={row.status === 'error' ? 'bg-red-500/5' : 'hover:bg-slate-700/20'}>
+                      <td className="py-2 px-3 text-slate-500">{row.rowNum}</td>
+                      <td className="py-2 px-3 text-white font-medium">{row.name || '—'}</td>
+                      <td className="py-2 px-3 text-slate-300">{row.email || '—'}</td>
+                      <td className="py-2 px-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${
+                          row.role === 'admin' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' :
+                          row.role === 'manager' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' :
+                          'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                        }`}>{row.role || 'employee'}</span>
+                      </td>
+                      <td className="py-2 px-3 text-slate-400">{row.department || '—'}</td>
+                      <td className="py-2 px-3 text-slate-400">{row.jobRole || '—'}</td>
+                      <td className="py-2 px-3">
+                        {row.status === 'valid'
+                          ? <span className="text-emerald-400 font-bold">✓ Ready</span>
+                          : <span className="text-red-400 font-bold" title={row.errors.join(', ')}>✕ {row.errors[0]}</span>
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-4 border-t border-slate-700/60 flex gap-3 shrink-0">
+              <button onClick={() => setStep('upload')} className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-white font-bold text-sm transition-colors">← Back</button>
+              <button onClick={handleImport} disabled={validCount === 0 || importing}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-white font-bold text-sm transition-colors flex items-center justify-center gap-2">
+                {importing ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Importing…</> : `Import ${validCount} User${validCount !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step: Result */}
+        {step === 'result' && result && (
+          <div className="p-6 space-y-5 flex-1 overflow-y-auto">
+            <div className="text-center">
+              <div className="text-5xl mb-3">{result.created > 0 ? '🎉' : '⚠️'}</div>
+              <h3 className="text-xl font-bold text-white mb-1">Import Complete</h3>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-center">
+                <p className="text-3xl font-black text-emerald-400">{result.created}</p>
+                <p className="text-xs text-emerald-300 font-bold mt-1">Created</p>
+              </div>
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-center">
+                <p className="text-3xl font-black text-amber-400">{result.skipped}</p>
+                <p className="text-xs text-amber-300 font-bold mt-1">Skipped</p>
+              </div>
+              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center">
+                <p className="text-3xl font-black text-red-400">{result.failed}</p>
+                <p className="text-xs text-red-300 font-bold mt-1">Failed</p>
+              </div>
+            </div>
+            {result.results?.created?.length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Created Users</p>
+                <div className="bg-slate-900/60 rounded-xl divide-y divide-slate-700/40 max-h-48 overflow-y-auto">
+                  {result.results.created.map(u => (
+                    <div key={u.userId} className="flex items-center justify-between px-4 py-2.5">
+                      <div>
+                        <p className="text-sm font-medium text-white">{u.name}</p>
+                        <p className="text-xs text-slate-500">{u.email}</p>
+                      </div>
+                      {u.tempPassword && (
+                        <span className="font-mono text-xs text-amber-300 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">{u.tempPassword}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {result.results?.created?.some(u => u.tempPassword) && (
+                  <p className="text-xs text-slate-500 mt-2">⚠️ Save these temp passwords — they won't be shown again.</p>
+                )}
+              </div>
+            )}
+            {result.results?.skipped?.length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Skipped</p>
+                <div className="bg-slate-900/60 rounded-xl divide-y divide-slate-700/40 max-h-32 overflow-y-auto">
+                  {result.results.skipped.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between px-4 py-2">
+                      <span className="text-xs text-slate-400">{s.row?.email || '—'}</span>
+                      <span className="text-xs text-amber-400">{s.reason}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button onClick={onClose} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-sm transition-colors">Done</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Temp Password Modal ──────────────────────────────────────────────────────
 
 function TempPasswordModal({ user, onClose }) {
@@ -807,6 +1065,7 @@ export default function UserManagement() {
   const [detailUser, setDetailUser] = useState(null);
   const [editUser, setEditUser] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [tempPasswordUser, setTempPasswordUser] = useState(null);
 
   const isAdmin = hasRole('admin');
@@ -921,6 +1180,9 @@ export default function UserManagement() {
       {showCreate && (
         <CreateUserModal onClose={() => setShowCreate(false)} onCreated={handleUserCreated} setToast={setToast} currentUserRole={currentUserRole} />
       )}
+      {showImport && (
+        <ImportModal onClose={() => setShowImport(false)} onImported={fetchData} setToast={setToast} />
+      )}
       {tempPasswordUser && (
         <TempPasswordModal user={tempPasswordUser} onClose={() => setTempPasswordUser(null)} />
       )}
@@ -951,6 +1213,11 @@ export default function UserManagement() {
                   <div className="text-slate-500 text-xs">Staff</div>
                 </div>
               </div>
+              {/* Import button */}
+              <button onClick={() => setShowImport(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-xl text-white font-bold text-sm transition-colors">
+                📥 Import
+              </button>
               {/* Create button */}
               <button onClick={() => setShowCreate(true)}
                 className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-sm transition-colors shadow-lg shadow-indigo-500/20">
