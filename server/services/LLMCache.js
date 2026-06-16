@@ -127,5 +127,7 @@ const instance = new LLMCache();
 
 // Re-export TTL constants on the instance for convenience
 instance.TTL = TTL;
+// Re-export static hash so callers using `LLMCache.hash(...)` work
+instance.hash = LLMCache.hash.bind(LLMCache);
 
 export default instance;

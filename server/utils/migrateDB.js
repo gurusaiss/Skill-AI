@@ -237,10 +237,11 @@ const USER_COLS_SQL = `
  */
 async function checkTable(sb, tableName) {
   try {
-    const { error } = await sb.from(tableName).select('id').limit(1);
-    if (!error) return true;   // table exists
-    if (error.message?.includes('does not exist') || error.code === '42P01') return false;
-    // Other error (permissions, etc.)
+    // select('*').limit(0) returns 0 rows but fails only if the table doesn't exist —
+    // avoids false-negatives for tables whose PK is not named 'id' (e.g. audit_logs)
+    const { error } = await sb.from(tableName).select('*').limit(0);
+    if (!error) return true;
+    if (error.code === '42P01') return false; // table does not exist
     console.warn(`[migrate] ${tableName}: ${error.message}`);
     return false;
   } catch (e) {
