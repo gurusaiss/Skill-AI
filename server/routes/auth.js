@@ -755,7 +755,7 @@ router.post('/activate', async (req, res) => {
     await UserStore.updateUser(record.userId, { passwordHash, emailVerified: true });
     await ActivationTokens.delete(token);
 
-    const authToken = AuthService.generateToken({ userId: user.userId, email: user.email, role: user.role, companyId: user.companyId });
+    const authToken = AuthService.generateJWT(user.userId, user.email, user.role);
     res.json({ success: true, data: { token: authToken, user: { userId: user.userId, email: user.email, name: user.name, role: user.role } } });
   } catch (e) {
     console.error('[auth/activate]', e.message);

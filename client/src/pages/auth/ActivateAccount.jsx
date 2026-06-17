@@ -15,9 +15,11 @@ export default function ActivateAccount() {
   const [error, setError]       = useState('');
   const [saving, setSaving]     = useState(false);
 
+  const BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+
   useEffect(() => {
     if (!token) { setStatus('invalid'); return; }
-    fetch(`/api/auth/validate-token/${token}`)
+    fetch(`${BASE}/api/auth/validate-token/${token}`)
       .then(r => r.json())
       .then(res => {
         if (res?.data?.valid) { setInfo(res.data); setStatus('valid'); }
@@ -26,7 +28,12 @@ export default function ActivateAccount() {
       .catch(() => setStatus('invalid'));
   }, [token]);
 
-  const BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+  useEffect(() => {
+    if (status === 'done') {
+      const t = setTimeout(() => navigate('/'), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [status, navigate]);
 
   const handleSubmit = async e => {
     e.preventDefault();
