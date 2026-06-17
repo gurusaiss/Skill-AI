@@ -173,16 +173,16 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
 
     // Managers can only create employees
     const assignedRole = (req.user.role === 'manager') ? 'employee' : (role || 'employee');
-    const tempPassword = password || `SkillForge@${Math.random().toString(36).slice(2, 8)}`;
-    const passwordHash = await AuthService.hashPassword(tempPassword);
+    // Generate a placeholder hash — user will set real password via activation link
+    const placeholderHash = await AuthService.hashPassword(uuidv4());
 
     const user = await UserStore.createUser({
       email,
-      passwordHash,
+      passwordHash: placeholderHash,
       name: name.trim(),
       role: assignedRole,
-      emailVerified: true,
-      onboardingComplete: true,
+      emailVerified: false,
+      onboardingComplete: false,
       jobRole: jobRole || '',
       department: department || '',
       jobDescription: jobDescription || '',
@@ -196,35 +196,44 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       ipAddress: req.ip,
     });
 
-    // Respond immediately — do NOT await email
-    res.status(201).json({
-      success: true,
-      data: {
-        ...sanitizeUser(user),
-        tempPassword: !password ? tempPassword : undefined,
-      },
-      error: null,
-    });
-
-    // Send invitation email after responding — truly non-blocking
-    setImmediate(async () => {
-      try {
-        const tokenId = uuidv4();
-        const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
-        await ActivationTokens.create({ id: tokenId, userId: user.userId, email: user.email, expiresAt, used: false });
-        const frontendUrl = process.env.FRONTEND_URL || 'https://skillforge-swart-mu.vercel.app';
-        const activationUrl = `${frontendUrl}/auth/activate?token=${tokenId}`;
-        await EmailService.sendInvitationEmail(user.email, {
+    // Create activation token and attempt email — 8s timeout so we can report status
+    let emailSent = false;
+    let emailError = null;
+    let activationUrl = null;
+    try {
+      const tokenId = uuidv4();
+      const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+      await ActivationTokens.create({ id: tokenId, userId: user.userId, email: user.email, expiresAt, used: false });
+      const frontendUrl = process.env.FRONTEND_URL || 'https://skillforge-swart-mu.vercel.app';
+      activationUrl = `${frontendUrl}/auth/activate?token=${tokenId}`;
+      const timeout = new Promise(resolve => setTimeout(() => resolve({ success: false, error: 'timeout' }), 8000));
+      const result = await Promise.race([
+        EmailService.sendInvitationEmail(user.email, {
           name: user.name,
           role: user.role,
           companyName: user.companyName || req.user.companyName || 'SkillForge AI',
           activationUrl,
           fromEmail: req.user.email,
           fromName: req.user.name || user.companyName || 'SkillForge AI',
-        });
-      } catch (emailErr) {
-        console.warn('[users] Invitation email failed (non-critical):', emailErr.message);
-      }
+        }),
+        timeout,
+      ]);
+      emailSent = result?.success === true;
+      if (!emailSent) emailError = result?.error || 'Unknown error';
+    } catch (emailErr) {
+      emailError = emailErr.message;
+      console.warn('[users] Invitation email failed:', emailErr.message);
+    }
+
+    res.status(201).json({
+      success: true,
+      data: {
+        ...sanitizeUser(user),
+        emailSent,
+        emailError,
+        activationUrl,
+      },
+      error: null,
     });
   } catch (error) {
     console.error('[User Routes] Create user error:', error.message);
@@ -626,6 +635,42 @@ router.delete('/:userId', authenticate, requireRole('admin'), async (req, res) =
   } catch (error) {
     console.error('[User Routes] Delete user error:', error.message);
     res.status(500).json({ success: false, data: null, error: { code: 'USER_ERROR', message: 'Failed to delete user' } });
+  }
+});
+
+/**
+ * POST /api/users/:userId/resend-invite
+ * Resend activation email to a user (admin/manager only)
+ */
+router.post('/:userId/resend-invite', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const user = await UserStore.getUserById(req.params.userId);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+    const tokenId = uuidv4();
+    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+    await ActivationTokens.create({ id: tokenId, userId: user.userId, email: user.email, expiresAt, used: false });
+    const frontendUrl = process.env.FRONTEND_URL || 'https://skillforge-swart-mu.vercel.app';
+    const activationUrl = `${frontendUrl}/auth/activate?token=${tokenId}`;
+
+    const timeout = new Promise(resolve => setTimeout(() => resolve({ success: false, error: 'timeout' }), 8000));
+    const result = await Promise.race([
+      EmailService.sendInvitationEmail(user.email, {
+        name: user.name,
+        role: user.role,
+        companyName: user.companyName || 'SkillForge AI',
+        activationUrl,
+        fromEmail: req.user.email,
+        fromName: req.user.name || 'SkillForge AI',
+      }),
+      timeout,
+    ]);
+
+    const emailSent = result?.success === true;
+    res.json({ success: true, data: { emailSent, emailError: emailSent ? null : result?.error, activationUrl } });
+  } catch (e) {
+    console.error('[resend-invite]', e.message);
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 
