@@ -850,33 +850,48 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
 
       try {
         const assignedRole = req.user.role === 'manager' ? 'employee' : (row.role || 'employee');
-        const tempPassword = row.password || `SF@${Math.random().toString(36).slice(2, 8)}`;
-        const passwordHash = await AuthService.hashPassword(tempPassword);
+        // Use placeholder hash — user sets own password via activation link
+        const passwordHash = await AuthService.hashPassword(`placeholder_${uuidv4()}`);
 
         const user = await UserStore.createUser({
           email: row.email.trim(),
           passwordHash,
           name: row.name.trim(),
           role: assignedRole,
-          emailVerified: true,
-          onboardingComplete: true,
+          emailVerified: false,
+          onboardingComplete: false,
           jobRole:        row.jobRole || '',
           department:     row.department || '',
           jobDescription: row.jobDescription || '',
-          companyName:    row.companyName || '',
+          companyName:    row.companyName || req.user.companyName || '',
           companyId,
           employeeId:     row.employeeId || '',
           phone:          row.phone || '',
           status:         row.status && ['active','inactive','blocked'].includes(row.status) ? row.status : 'active',
         });
 
-        existingEmails.add(row.email.toLowerCase()); // prevent duplicate within same batch
+        existingEmails.add(row.email.toLowerCase());
+
+        // Create activation token
+        const tokenId = uuidv4();
+        const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+        await ActivationTokens.create({ id: tokenId, userId: user.userId, email: user.email, expiresAt, used: false });
+        const frontendUrl = process.env.FRONTEND_URL || 'https://skillforge-swart-mu.vercel.app';
+        const activationUrl = `${frontendUrl}/auth/activate?token=${tokenId}`;
+
         created.push({
           userId: user.userId,
           name: user.name,
           email: user.email,
           managerEmail: row.managerEmail || '',
-          tempPassword: !row.password ? tempPassword : undefined,
+          activationUrl,
+          _emailPayload: {
+            name: user.name,
+            role: assignedRole,
+            companyName: user.companyName || req.user.companyName || 'SkillForge AI',
+            activationUrl,
+            fromEmail: req.user.email,
+          },
         });
       } catch (e) {
         failed.push({ row, reason: e.message });
@@ -908,6 +923,26 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
       }
     }
 
+    // ── Send invitation emails (fire-and-forget — don't block response) ─────────
+    const emailResults = {};
+    setImmediate(async () => {
+      for (const u of created) {
+        if (!u._emailPayload) continue;
+        try {
+          const result = await Promise.race([
+            EmailService.sendInvitationEmail(u.email, u._emailPayload),
+            new Promise(resolve => setTimeout(() => resolve({ success: false, error: 'timeout' }), 25000)),
+          ]);
+          emailResults[u.email] = result?.success ? 'sent' : (result?.error || 'failed');
+          if (!result?.success) console.warn(`[bulk-import] Email to ${u.email}: ${result?.error}`);
+        } catch (e) {
+          emailResults[u.email] = e.message;
+          console.warn(`[bulk-import] Email to ${u.email} failed:`, e.message);
+        }
+      }
+      console.log('[bulk-import] Email results:', emailResults);
+    });
+
     res.status(201).json({
       success: true,
       data: {
@@ -915,7 +950,13 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
         skipped: skipped.length,
         failed:  failed.length,
         managerLinked: managerLinked.length,
-        results: { created: created.map(({ managerEmail: _m, ...u }) => u), skipped, failed, managerLinked, managerFailed },
+        results: {
+          created: created.map(({ managerEmail: _m, _emailPayload: _ep, ...u }) => u),
+          skipped,
+          failed,
+          managerLinked,
+          managerFailed,
+        },
       },
     });
   } catch (e) {
