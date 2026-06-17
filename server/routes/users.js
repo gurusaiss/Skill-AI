@@ -196,25 +196,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       ipAddress: req.ip,
     });
 
-    // Send invitation email with activation link (non-blocking)
-    try {
-      const tokenId = uuidv4();
-      const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
-      await ActivationTokens.create({ id: tokenId, userId: user.userId, email: user.email, expiresAt, used: false });
-      const frontendUrl = process.env.FRONTEND_URL || 'https://skillforge-swart-mu.vercel.app';
-      const activationUrl = `${frontendUrl}/auth/activate?token=${tokenId}`;
-      await EmailService.sendInvitationEmail(user.email, {
-        name: user.name,
-        role: user.role,
-        companyName: user.companyName || req.user.companyName || 'SkillForge AI',
-        activationUrl,
-        fromEmail: req.user.email,
-        fromName:  req.user.name || user.companyName || 'SkillForge AI',
-      });
-    } catch (emailErr) {
-      console.warn('[users] Invitation email failed (non-critical):', emailErr.message);
-    }
-
+    // Respond immediately — do NOT await email
     res.status(201).json({
       success: true,
       data: {
@@ -222,6 +204,27 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
         tempPassword: !password ? tempPassword : undefined,
       },
       error: null,
+    });
+
+    // Send invitation email after responding — truly non-blocking
+    setImmediate(async () => {
+      try {
+        const tokenId = uuidv4();
+        const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+        await ActivationTokens.create({ id: tokenId, userId: user.userId, email: user.email, expiresAt, used: false });
+        const frontendUrl = process.env.FRONTEND_URL || 'https://skillforge-swart-mu.vercel.app';
+        const activationUrl = `${frontendUrl}/auth/activate?token=${tokenId}`;
+        await EmailService.sendInvitationEmail(user.email, {
+          name: user.name,
+          role: user.role,
+          companyName: user.companyName || req.user.companyName || 'SkillForge AI',
+          activationUrl,
+          fromEmail: req.user.email,
+          fromName: req.user.name || user.companyName || 'SkillForge AI',
+        });
+      } catch (emailErr) {
+        console.warn('[users] Invitation email failed (non-critical):', emailErr.message);
+      }
     });
   } catch (error) {
     console.error('[User Routes] Create user error:', error.message);
