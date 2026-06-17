@@ -732,4 +732,53 @@ router.post('/change-password', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/auth/activate
+ * Validate activation token and set password — completes account setup from invitation email
+ */
+router.post('/activate', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) return res.status(400).json({ success: false, error: { message: 'Token and password required' } });
+    if (password.length < 6) return res.status(400).json({ success: false, error: { message: 'Password must be at least 6 characters' } });
+
+    const { ActivationTokens } = await import('../services/DataStore.js');
+    const record = await ActivationTokens.getById(token);
+    if (!record) return res.status(400).json({ success: false, error: { message: 'Invalid or expired activation link' } });
+    if (record.used) return res.status(400).json({ success: false, error: { message: 'This activation link has already been used' } });
+    if (new Date(record.expiresAt) < new Date()) return res.status(400).json({ success: false, error: { message: 'Activation link expired — ask your admin to resend the invite' } });
+
+    const user = await UserStore.getUserById(record.userId);
+    if (!user) return res.status(404).json({ success: false, error: { message: 'User account not found' } });
+
+    const passwordHash = await AuthService.hashPassword(password);
+    await UserStore.updateUser(record.userId, { passwordHash, emailVerified: true });
+    await ActivationTokens.delete(token);
+
+    const authToken = AuthService.generateToken({ userId: user.userId, email: user.email, role: user.role, companyId: user.companyId });
+    res.json({ success: true, data: { token: authToken, user: { userId: user.userId, email: user.email, name: user.name, role: user.role } } });
+  } catch (e) {
+    console.error('[auth/activate]', e.message);
+    res.status(500).json({ success: false, error: { message: 'Activation failed' } });
+  }
+});
+
+/**
+ * GET /api/auth/validate-token/:token
+ * Check if an activation token is valid (for preflight on the activation page)
+ */
+router.get('/validate-token/:token', async (req, res) => {
+  try {
+    const { ActivationTokens } = await import('../services/DataStore.js');
+    const record = await ActivationTokens.getById(req.params.token);
+    if (!record || record.used || new Date(record.expiresAt) < new Date()) {
+      return res.json({ success: true, data: { valid: false } });
+    }
+    const user = await UserStore.getUserById(record.userId);
+    res.json({ success: true, data: { valid: true, email: record.email, name: user?.name, role: user?.role } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 export default router;

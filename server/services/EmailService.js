@@ -330,6 +330,43 @@ The SkillForge AI Team
 
     return await this.sendEmail(email, subject, htmlBody, textBody);
   }
+
+  async sendInvitationEmail(email, { name, role, companyName, activationUrl }) {
+    const subject = `You're invited to ${companyName || 'SkillForge AI'} — Set Up Your Account`;
+    const displayRole = (role || 'employee').charAt(0).toUpperCase() + (role || 'employee').slice(1);
+    const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background: #f4f4f4; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .header { background: #4F46E5; padding: 32px 40px; text-align: center; }
+    .header h1 { color: #fff; margin: 0; font-size: 24px; }
+    .body { padding: 32px 40px; }
+    .btn { display: inline-block; background: #4F46E5; color: #fff !important; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-size: 16px; font-weight: bold; margin: 24px 0; }
+    .footer { background: #f9f9f9; padding: 16px 40px; text-align: center; color: #888; font-size: 13px; }
+    .badge { display: inline-block; background: #EEF2FF; color: #4F46E5; border-radius: 4px; padding: 4px 12px; font-size: 14px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>Welcome to ${companyName || 'SkillForge AI'}</h1></div>
+    <div class="body">
+      <p>Hi ${name || 'there'},</p>
+      <p>You've been invited to join <strong>${companyName || 'SkillForge AI'}</strong> as a <span class="badge">${displayRole}</span>.</p>
+      <p>Click the button below to set up your password and activate your account. This link expires in <strong>72 hours</strong>.</p>
+      <div style="text-align:center"><a href="${activationUrl}" class="btn">Set Up My Account</a></div>
+      <p style="font-size:13px;color:#666">Or copy this link: <a href="${activationUrl}">${activationUrl}</a></p>
+      <p>If you were not expecting this invitation, you can safely ignore this email.</p>
+    </div>
+    <div class="footer">SkillForge AI — Workforce Development Platform</div>
+  </div>
+</body>
+</html>`;
+    const textBody = `Hi ${name},\n\nYou've been invited to ${companyName || 'SkillForge AI'} as ${displayRole}.\n\nActivate your account: ${activationUrl}\n\nThis link expires in 72 hours.`;
+    return await this.sendEmail(email, subject, htmlBody, textBody);
+  }
 }
 
 export default new EmailService();

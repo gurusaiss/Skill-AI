@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
@@ -351,7 +351,36 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
       .catch(() => {});
   }, [user.userId, user.role]);
 
-  const f = (key) => (e) => setForm(prev => ({ ...prev, [key]: e.target.value }));
+  // Auto-fetch JD from Role Library when job role changes
+  const [roleLibLookup, setRoleLibLookup] = useState(false);
+  const roleLibTimeout = useRef(null);
+  const handleJobRoleChange = e => {
+    const val = e.target.value;
+    setForm(prev => ({ ...prev, jobRole: val }));
+    clearTimeout(roleLibTimeout.current);
+    if (!val.trim()) return;
+    roleLibTimeout.current = setTimeout(async () => {
+      try {
+        setRoleLibLookup(true);
+        const match = await authFetch(`/api/roles/search?role=${encodeURIComponent(val.trim())}`);
+        if (match?.id) {
+          setForm(prev => ({
+            ...prev,
+            department:     prev.department || match.department || prev.department,
+            jobDescription: match.jobDescription || prev.jobDescription,
+          }));
+          if ((match.skills || []).length > 0) setExistingJDSkills(match.skills);
+          setToast({ message: `JD auto-filled from Role Library: "${match.roleName}"`, type: 'success' });
+        }
+      } catch {}
+      finally { setRoleLibLookup(false); }
+    }, 800);
+  };
+
+  const f = (key) => (e) => {
+    if (key === 'jobRole') return handleJobRoleChange(e);
+    setForm(prev => ({ ...prev, [key]: e.target.value }));
+  };
 
   const handleSave = async () => {
     if (!form.name.trim()) { setToast({ message: 'Name is required', type: 'error' }); return; }
@@ -477,7 +506,34 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
     { id: 'profile', label: '👤 Profile' },
     { id: 'jd', label: '📄 Job Description' },
     ...(isEmployee ? [{ id: 'assign', label: '📦 Assignments' }] : []),
+    ...(isEmployee ? [{ id: 'gap', label: '🎯 Skills Gap' }] : []),
+    ...(isEmployee ? [{ id: 'checklist', label: '✅ Onboarding' }] : []),
   ];
+
+  // Skills gap data
+  const [gapData, setGapData] = useState(null);
+  const [gapLoading, setGapLoading] = useState(false);
+  const loadGap = useCallback(async () => {
+    if (gapData || gapLoading) return;
+    setGapLoading(true);
+    try { const d = await authFetch(`/api/users/${user.userId}/skills-gap`); setGapData(d?.data ?? d); }
+    catch {} finally { setGapLoading(false); }
+  }, [user.userId, gapData, gapLoading]);
+
+  // Checklist
+  const [checklistData, setChecklistData] = useState(null);
+  const [clLoading, setClLoading] = useState(false);
+  const loadChecklist = useCallback(async () => {
+    if (checklistData || clLoading) return;
+    setClLoading(true);
+    try { const d = await authFetch(`/api/users/${user.userId}/checklist`); setChecklistData(d?.data ?? d); }
+    catch {} finally { setClLoading(false); }
+  }, [user.userId, checklistData, clLoading]);
+
+  useEffect(() => {
+    if (activeSection === 'gap') loadGap();
+    if (activeSection === 'checklist') loadChecklist();
+  }, [activeSection]);
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -547,8 +603,9 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
               {/* Job Role + Department */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <FieldLabel>Job Role</FieldLabel>
+                  <FieldLabel>Job Role {roleLibLookup && <span className="text-indigo-400 text-xs ml-1">↻ looking up…</span>}</FieldLabel>
                   <input type="text" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Frontend Developer" />
+                  <p className="text-xs text-slate-600 mt-0.5">JD auto-fills from Role Library on match</p>
                 </div>
                 <div>
                   <FieldLabel>Department</FieldLabel>
@@ -717,6 +774,70 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Skills Gap Panel */}
+          {activeSection === 'gap' && isEmployee && (
+            <div className="space-y-4">
+              {gapLoading && <p className="text-slate-400 text-sm">Analysing skills gap…</p>}
+              {!gapLoading && !gapData && <p className="text-slate-500 text-sm">No role defined or role not found in Role Library.</p>}
+              {gapData && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-white">{gapData.roleName || 'Unknown Role'}</p>
+                    {gapData.coverage !== null && (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${gapData.coverage >= 80 ? 'bg-emerald-500/20 text-emerald-300' : gapData.coverage >= 50 ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'}`}>
+                        {gapData.coverage}% coverage
+                      </span>
+                    )}
+                  </div>
+                  {!gapData.roleFound && <p className="text-xs text-amber-400">Role not found in Role Library. Add it to enable full skills tracking.</p>}
+                  {gapData.required.length === 0 && gapData.roleFound && <p className="text-xs text-slate-500">Role has no required skills defined in Role Library.</p>}
+                  {gapData.matched.length > 0 && (
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1.5">Demonstrated ({gapData.matched.length})</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {gapData.matched.map(s => <span key={s} className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">{s}</span>)}
+                      </div>
+                    </div>
+                  )}
+                  {gapData.missing.length > 0 && (
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1.5">Missing ({gapData.missing.length})</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {gapData.missing.map(s => <span key={s} className="px-2 py-0.5 rounded-full text-xs bg-red-500/20 text-red-300 border border-red-500/30">{s}</span>)}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Onboarding Checklist Panel */}
+          {activeSection === 'checklist' && isEmployee && (
+            <div className="space-y-3">
+              {clLoading && <p className="text-slate-400 text-sm">Loading checklist…</p>}
+              {!clLoading && !checklistData && <p className="text-slate-500 text-sm">No checklist assigned. Go to Role Library → edit the role → add Onboarding Checklist items, then assign employee to that role.</p>}
+              {checklistData && (
+                <>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-slate-400">Checklist for: <span className="text-white font-medium">{checklistData.roleName}</span></p>
+                    <span className="text-xs text-slate-500">{(checklistData.items || []).filter(i => i.completed).length}/{(checklistData.items || []).length} done</span>
+                  </div>
+                  {(checklistData.items || []).map(item => (
+                    <div key={item.id} className={`flex gap-3 p-3 rounded-lg border ${item.completed ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-slate-700 bg-[#0F172A]'}`}>
+                      <div className="mt-0.5">{item.completed ? '✅' : '⬜'}</div>
+                      <div className="flex-1">
+                        <p className={`text-sm font-medium ${item.completed ? 'line-through text-slate-500' : 'text-white'}`}>{item.title}</p>
+                        {item.description && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
+                        {item.dueDay && <p className="text-xs text-indigo-400 mt-0.5">Due: Day {item.dueDay}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </div>

@@ -88,7 +88,7 @@ export default function ModuleManagement() {
     title: '', description: '', category: 'Web Development', difficulty: 'beginner',
     estimatedDuration: '7 days', skills: [''], tasks: [''], resources: [''],
     completionCriteria: 'Complete all tasks', roadmap: [], sessions: [], quizzes: [],
-    milestones: [], timeline: 14,
+    milestones: [], timeline: 14, targetRoles: '',
   });
 
   const isManagerOrAdmin = hasRole('admin') || hasRole('manager');
@@ -196,7 +196,7 @@ export default function ModuleManagement() {
     title: '', description: '', category: 'Web Development', difficulty: 'beginner',
     estimatedDuration: '7 days', skills: [''], tasks: [''], resources: [''],
     completionCriteria: 'Complete all tasks', roadmap: [], sessions: [], quizzes: [],
-    milestones: [], timeline: 14,
+    milestones: [], timeline: 14, targetRoles: '',
   });
 
   const closeCreate = () => {
@@ -223,6 +223,7 @@ export default function ModuleManagement() {
       tasks: mod.tasks?.length ? mod.tasks : [''],
       resources: mod.resources?.length ? mod.resources : [''],
       completionCriteria: mod.completionCriteria || 'Complete all tasks',
+      targetRoles: (mod.targetRoles || []).join(', '),
       roadmap: mod.roadmap || mod.sessions || [],
       sessions: mod.sessions || mod.roadmap || [],
       quizzes: mod.quizzes || [],
@@ -265,6 +266,7 @@ export default function ModuleManagement() {
       tasks: cleanTasks,
       resources: cleanResources,
       completionCriteria: form.completionCriteria || 'Complete all tasks',
+      targetRoles: (form.targetRoles || '').split(/[,;|]/).map(r => r.trim()).filter(Boolean),
       progressTracking: true,
       content: {
         roadmap: form.roadmap || form.sessions || [],
@@ -954,6 +956,16 @@ export default function ModuleManagement() {
                   type="text" value={form.completionCriteria} onChange={e => updateField('completionCriteria', e.target.value)}
                   className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Auto-Assign to Roles <span className="text-slate-600 normal-case font-normal">(comma-separated role names)</span></label>
+                <input
+                  type="text" value={form.targetRoles} onChange={e => updateField('targetRoles', e.target.value)}
+                  placeholder="e.g. Frontend Developer, Backend Developer"
+                  className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                />
+                <p className="text-xs text-slate-500 mt-1">Employees assigned these roles will automatically receive this module.</p>
               </div>
 
               {/* Generated content summary (read-only info) */}
