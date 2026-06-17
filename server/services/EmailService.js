@@ -1,5 +1,5 @@
 import { createRequire } from 'module';
-import { promises as dnsPromises } from 'dns';
+import { lookup as dnsLookup } from 'dns';
 const require = createRequire(import.meta.url);
 const nodemailer = require('nodemailer');
 
@@ -9,11 +9,10 @@ class EmailService {
     this.from = process.env.SMTP_FROM || 'SkillForge AI <noreply@skillforge.ai>';
     this.maxRetries = 1;
     this.retryDelay = 3000;
-    // Async init — resolves hostname to IPv4 before creating transporter
-    this._ready = this._init();
+    this._init();
   }
 
-  async _init() {
+  _init() {
     const smtpHostname = process.env.SMTP_HOST || 'smtp.gmail.com';
     const port = parseInt(process.env.SMTP_PORT || '587');
 
@@ -22,41 +21,27 @@ class EmailService {
       return;
     }
 
-    // Resolve hostname → IPv4 explicitly so nodemailer never touches IPv6.
-    // Render free tier has no outbound IPv6 routing.
-    let host = smtpHostname;
-    try {
-      const { address } = await dnsPromises.lookup(smtpHostname, { family: 4 });
-      host = address;
-      console.log(`[EmailService] SMTP resolved ${smtpHostname} → ${host} (IPv4)`);
-    } catch (e) {
-      console.warn(`[EmailService] IPv4 DNS lookup failed (${e.message}), using hostname`);
-    }
+    // Override nodemailer's DNS lookup to always resolve to IPv4.
+    // Render free tier has no outbound IPv6 routing — without this, Node.js
+    // picks an IPv6 address (AAAA) first and the TCP connect hangs/fails.
+    const ipv4Lookup = (hostname, options, callback) => {
+      dnsLookup(hostname, { ...options, family: 4 }, callback);
+    };
 
     this.transporter = nodemailer.createTransport({
-      host,
+      host: smtpHostname,
       port,
       secure: process.env.SMTP_SECURE === 'true',
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
-      // When host is a raw IP, TLS must validate against the original hostname
-      tls: { servername: smtpHostname },
+      lookup: ipv4Lookup,
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 15000,
     });
+
+    console.log(`[EmailService] SMTP configured → ${smtpHostname}:${port} (IPv4-forced)`);
   }
 
-  /** Wait for async init then check if usable */
-  async isEnabledAsync() {
-    await this._ready;
-    return this.transporter !== null;
-  }
-
-  isEnabled() {
-    return this.transporter !== null;
-  }
-
-  /**
-   * Check if email service is enabled
-   * @returns {boolean}
-   */
   isEnabled() {
     return this.transporter !== null;
   }
@@ -71,8 +56,6 @@ class EmailService {
    * @returns {Promise<Object>} Send result
    */
   async sendEmail(to, subject, htmlBody, textBody, retryCount = 0, fromOverride = null, replyTo = null) {
-    // Ensure async init (IPv4 DNS resolution) is complete before sending
-    await this._ready;
     if (!this.isEnabled()) {
       console.log(`[EmailService] Email would be sent to ${to}: ${subject}`);
       return { success: false, error: 'Email service not configured' };
