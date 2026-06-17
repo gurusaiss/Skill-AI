@@ -54,7 +54,7 @@ class EmailService {
    * @param {number} retryCount - Current retry attempt
    * @returns {Promise<Object>} Send result
    */
-  async sendEmail(to, subject, htmlBody, textBody, retryCount = 0) {
+  async sendEmail(to, subject, htmlBody, textBody, retryCount = 0, fromOverride = null) {
     if (!this.isEnabled()) {
       console.log(`[EmailService] Email would be sent to ${to}: ${subject}`);
       console.log(`[EmailService] Text: ${textBody}`);
@@ -63,7 +63,7 @@ class EmailService {
 
     try {
       const mailOptions = {
-        from: this.from,
+        from: fromOverride || this.from,
         to,
         subject,
         text: textBody,
@@ -80,7 +80,7 @@ class EmailService {
       if (retryCount < this.maxRetries) {
         console.log(`[EmailService] Retrying... (${retryCount + 1}/${this.maxRetries})`);
         await this.delay(this.retryDelay);
-        return await this.sendEmail(to, subject, htmlBody, textBody, retryCount + 1);
+        return await this.sendEmail(to, subject, htmlBody, textBody, retryCount + 1, fromOverride);
       }
 
       return { success: false, error: error.message };
@@ -107,7 +107,7 @@ class EmailService {
    * @param {number} expiresInMinutes - OTP expiration time in minutes
    * @returns {Promise<Object>} Send result
    */
-  async sendOTP(email, otp, expiresInMinutes = 10) {
+  async sendOTP(email, otp, expiresInMinutes = 10, { fromEmail, fromName } = {}) {
     const subject = 'Verify Your Email - SkillForge AI';
     
     const htmlBody = `
@@ -161,7 +161,8 @@ Best regards,
 The SkillForge AI Team
     `;
 
-    return await this.sendEmail(email, subject, htmlBody, textBody);
+    const from = fromEmail ? `${fromName || 'SkillForge AI'} <${fromEmail}>` : null;
+    return await this.sendEmail(email, subject, htmlBody, textBody, 0, from);
   }
 
   /**
@@ -171,7 +172,7 @@ The SkillForge AI Team
    * @param {number} expiresInMinutes - Token expiration time in minutes
    * @returns {Promise<Object>} Send result
    */
-  async sendPasswordReset(email, resetToken, expiresInMinutes = 60) {
+  async sendPasswordReset(email, resetToken, expiresInMinutes = 60, { fromEmail, fromName } = {}) {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
     
@@ -234,7 +235,8 @@ Best regards,
 The SkillForge AI Team
     `;
 
-    return await this.sendEmail(email, subject, htmlBody, textBody);
+    const from = fromEmail ? `${fromName || 'SkillForge AI'} <${fromEmail}>` : null;
+    return await this.sendEmail(email, subject, htmlBody, textBody, 0, from);
   }
 
   /**
@@ -243,7 +245,7 @@ The SkillForge AI Team
    * @param {string} name - User's name
    * @returns {Promise<Object>} Send result
    */
-  async sendWelcomeEmail(email, name) {
+  async sendWelcomeEmail(email, name, { fromEmail, fromName } = {}) {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const subject = 'Welcome to SkillForge AI!';
     
@@ -328,10 +330,11 @@ Happy learning!
 The SkillForge AI Team
     `;
 
-    return await this.sendEmail(email, subject, htmlBody, textBody);
+    const from = fromEmail ? `${fromName || 'SkillForge AI'} <${fromEmail}>` : null;
+    return await this.sendEmail(email, subject, htmlBody, textBody, 0, from);
   }
 
-  async sendInvitationEmail(email, { name, role, companyName, activationUrl }) {
+  async sendInvitationEmail(email, { name, role, companyName, activationUrl, fromEmail, fromName }) {
     const subject = `You're invited to ${companyName || 'SkillForge AI'} — Set Up Your Account`;
     const displayRole = (role || 'employee').charAt(0).toUpperCase() + (role || 'employee').slice(1);
     const htmlBody = `
@@ -365,7 +368,8 @@ The SkillForge AI Team
 </body>
 </html>`;
     const textBody = `Hi ${name},\n\nYou've been invited to ${companyName || 'SkillForge AI'} as ${displayRole}.\n\nActivate your account: ${activationUrl}\n\nThis link expires in 72 hours.`;
-    return await this.sendEmail(email, subject, htmlBody, textBody);
+    const from = fromEmail ? `${fromName || companyName || 'SkillForge AI'} <${fromEmail}>` : null;
+    return await this.sendEmail(email, subject, htmlBody, textBody, 0, from);
   }
 }
 

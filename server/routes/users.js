@@ -208,6 +208,8 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
         role: user.role,
         companyName: user.companyName || req.user.companyName || 'SkillForge AI',
         activationUrl,
+        fromEmail: req.user.email,
+        fromName:  req.user.name || user.companyName || 'SkillForge AI',
       });
     } catch (emailErr) {
       console.warn('[users] Invitation email failed (non-critical):', emailErr.message);
