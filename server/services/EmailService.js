@@ -54,7 +54,7 @@ class EmailService {
    * @param {number} retryCount - Current retry attempt
    * @returns {Promise<Object>} Send result
    */
-  async sendEmail(to, subject, htmlBody, textBody, retryCount = 0, fromOverride = null) {
+  async sendEmail(to, subject, htmlBody, textBody, retryCount = 0, fromOverride = null, replyTo = null) {
     if (!this.isEnabled()) {
       console.log(`[EmailService] Email would be sent to ${to}: ${subject}`);
       console.log(`[EmailService] Text: ${textBody}`);
@@ -69,6 +69,7 @@ class EmailService {
         text: textBody,
         html: htmlBody
       };
+      if (replyTo) mailOptions.replyTo = replyTo;
 
       const info = await this.transporter.sendMail(mailOptions);
       console.log(`[EmailService] Email sent successfully to ${to}: ${info.messageId}`);
@@ -76,11 +77,10 @@ class EmailService {
     } catch (error) {
       console.error(`[EmailService] Error sending email to ${to}:`, error.message);
 
-      // Retry logic for transient failures
       if (retryCount < this.maxRetries) {
         console.log(`[EmailService] Retrying... (${retryCount + 1}/${this.maxRetries})`);
         await this.delay(this.retryDelay);
-        return await this.sendEmail(to, subject, htmlBody, textBody, retryCount + 1, fromOverride);
+        return await this.sendEmail(to, subject, htmlBody, textBody, retryCount + 1, fromOverride, replyTo);
       }
 
       return { success: false, error: error.message };
@@ -161,8 +161,7 @@ Best regards,
 The SkillForge AI Team
     `;
 
-    const from = fromEmail ? `${fromName || 'SkillForge AI'} <${fromEmail}>` : null;
-    return await this.sendEmail(email, subject, htmlBody, textBody, 0, from);
+    return await this.sendEmail(email, subject, htmlBody, textBody, 0, null, fromEmail || null);
   }
 
   /**
@@ -235,8 +234,7 @@ Best regards,
 The SkillForge AI Team
     `;
 
-    const from = fromEmail ? `${fromName || 'SkillForge AI'} <${fromEmail}>` : null;
-    return await this.sendEmail(email, subject, htmlBody, textBody, 0, from);
+    return await this.sendEmail(email, subject, htmlBody, textBody, 0, null, fromEmail || null);
   }
 
   /**
@@ -330,8 +328,7 @@ Happy learning!
 The SkillForge AI Team
     `;
 
-    const from = fromEmail ? `${fromName || 'SkillForge AI'} <${fromEmail}>` : null;
-    return await this.sendEmail(email, subject, htmlBody, textBody, 0, from);
+    return await this.sendEmail(email, subject, htmlBody, textBody, 0, null, fromEmail || null);
   }
 
   async sendInvitationEmail(email, { name, role, companyName, activationUrl, fromEmail, fromName }) {
@@ -368,8 +365,10 @@ The SkillForge AI Team
 </body>
 </html>`;
     const textBody = `Hi ${name},\n\nYou've been invited to ${companyName || 'SkillForge AI'} as ${displayRole}.\n\nActivate your account: ${activationUrl}\n\nThis link expires in 72 hours.`;
-    const from = fromEmail ? `${fromName || companyName || 'SkillForge AI'} <${fromEmail}>` : null;
-    return await this.sendEmail(email, subject, htmlBody, textBody, 0, from);
+    // Always send from the verified platform address for deliverability.
+    // Admin email goes in Reply-To so replies reach them directly.
+    const replyTo = fromEmail || null;
+    return await this.sendEmail(email, subject, htmlBody, textBody, 0, null, replyTo);
   }
 }
 
