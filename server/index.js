@@ -1,3 +1,7 @@
+// Force IPv4 DNS resolution — Render free tier has no IPv6 outbound routing
+import dns from 'dns';
+dns.setDefaultResultOrder('ipv4first');
+
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
