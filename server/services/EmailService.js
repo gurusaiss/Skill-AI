@@ -12,8 +12,8 @@ class EmailService {
   constructor() {
     this.transporter = null;
     this.from = process.env.SMTP_FROM || 'SkillForge AI <noreply@skillforge.ai>';
-    this.maxRetries = 3;
-    this.retryDelay = 2000; // 2 seconds
+    this.maxRetries = 1;
+    this.retryDelay = 3000; // 3 seconds between retries
     this.initializeTransporter();
   }
 
