@@ -1,4 +1,6 @@
-import nodemailer from 'nodemailer';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const nodemailer = require('nodemailer');
 
 /**
  * EmailService - Handles email sending operations
@@ -31,7 +33,7 @@ class EmailService {
 
     // Only create transporter if SMTP credentials are configured
     if (process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
-      this.transporter = nodemailer.createTransporter(smtpConfig);
+      this.transporter = nodemailer.createTransport(smtpConfig);
     } else {
       console.warn('[EmailService] SMTP credentials not configured. Email sending will be disabled.');
     }
