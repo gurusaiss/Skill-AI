@@ -1,5 +1,6 @@
 import { createRequire } from 'module';
 import { lookup as dnsLookup } from 'dns';
+import https from 'https';
 const require = createRequire(import.meta.url);
 const nodemailer = require('nodemailer');
 
@@ -55,7 +56,59 @@ class EmailService {
    * @param {number} retryCount - Current retry attempt
    * @returns {Promise<Object>} Send result
    */
+  // ── Resend HTTP API (bypasses SMTP entirely — works from any cloud provider) ──
+  _resendRequest(payload) {
+    return new Promise((resolve, reject) => {
+      const body = JSON.stringify(payload);
+      const req = https.request({
+        hostname: 'api.resend.com',
+        path: '/emails',
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      }, (res) => {
+        let raw = '';
+        res.on('data', c => raw += c);
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(raw);
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              resolve({ success: true, messageId: parsed.id });
+            } else {
+              resolve({ success: false, error: parsed.message || `HTTP ${res.statusCode}: ${raw}` });
+            }
+          } catch {
+            resolve({ success: false, error: `Resend parse error: ${raw}` });
+          }
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(20000, () => req.destroy(new Error('Resend API timeout')));
+      req.write(body);
+      req.end();
+    });
+  }
+
   async sendEmail(to, subject, htmlBody, textBody, retryCount = 0, fromOverride = null, replyTo = null) {
+    // Prefer Resend HTTP API — works from cloud providers where Gmail SMTP is blocked
+    if (process.env.RESEND_API_KEY) {
+      const from = fromOverride || process.env.RESEND_FROM || this.from;
+      const payload = { from, to: Array.isArray(to) ? to : [to], subject, html: htmlBody, text: textBody };
+      if (replyTo) payload.reply_to = replyTo;
+      try {
+        const result = await this._resendRequest(payload);
+        if (result.success) console.log(`[EmailService] Resend OK → ${to}: ${result.messageId}`);
+        else console.error(`[EmailService] Resend failed → ${to}: ${result.error}`);
+        return result;
+      } catch (err) {
+        console.error(`[EmailService] Resend error → ${to}:`, err.message);
+        return { success: false, error: err.message };
+      }
+    }
+
     if (!this.isEnabled()) {
       console.log(`[EmailService] Email would be sent to ${to}: ${subject}`);
       return { success: false, error: 'Email service not configured' };
