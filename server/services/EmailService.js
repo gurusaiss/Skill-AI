@@ -1,45 +1,56 @@
 import { createRequire } from 'module';
-import dns from 'dns';
-// Force IPv4 — Render free tier cannot route outbound IPv6 traffic
-dns.setDefaultResultOrder('ipv4first');
+import { promises as dnsPromises } from 'dns';
 const require = createRequire(import.meta.url);
 const nodemailer = require('nodemailer');
 
-/**
- * EmailService - Handles email sending operations
- * - SMTP configuration
- * - Transactional emails (OTP, password reset, welcome)
- * - Retry logic for transient failures
- */
 class EmailService {
   constructor() {
     this.transporter = null;
     this.from = process.env.SMTP_FROM || 'SkillForge AI <noreply@skillforge.ai>';
     this.maxRetries = 1;
-    this.retryDelay = 3000; // 3 seconds between retries
-    this.initializeTransporter();
+    this.retryDelay = 3000;
+    // Async init — resolves hostname to IPv4 before creating transporter
+    this._ready = this._init();
   }
 
-  /**
-   * Initialize nodemailer transporter with SMTP settings
-   */
-  initializeTransporter() {
-    const smtpConfig = {
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASSWORD
-      }
-    };
+  async _init() {
+    const smtpHostname = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const port = parseInt(process.env.SMTP_PORT || '587');
 
-    // Only create transporter if SMTP credentials are configured
-    if (process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
-      this.transporter = nodemailer.createTransport(smtpConfig);
-    } else {
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
       console.warn('[EmailService] SMTP credentials not configured. Email sending will be disabled.');
+      return;
     }
+
+    // Resolve hostname → IPv4 explicitly so nodemailer never touches IPv6.
+    // Render free tier has no outbound IPv6 routing.
+    let host = smtpHostname;
+    try {
+      const { address } = await dnsPromises.lookup(smtpHostname, { family: 4 });
+      host = address;
+      console.log(`[EmailService] SMTP resolved ${smtpHostname} → ${host} (IPv4)`);
+    } catch (e) {
+      console.warn(`[EmailService] IPv4 DNS lookup failed (${e.message}), using hostname`);
+    }
+
+    this.transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+      // When host is a raw IP, TLS must validate against the original hostname
+      tls: { servername: smtpHostname },
+    });
+  }
+
+  /** Wait for async init then check if usable */
+  async isEnabledAsync() {
+    await this._ready;
+    return this.transporter !== null;
+  }
+
+  isEnabled() {
+    return this.transporter !== null;
   }
 
   /**
@@ -60,9 +71,10 @@ class EmailService {
    * @returns {Promise<Object>} Send result
    */
   async sendEmail(to, subject, htmlBody, textBody, retryCount = 0, fromOverride = null, replyTo = null) {
+    // Ensure async init (IPv4 DNS resolution) is complete before sending
+    await this._ready;
     if (!this.isEnabled()) {
       console.log(`[EmailService] Email would be sent to ${to}: ${subject}`);
-      console.log(`[EmailService] Text: ${textBody}`);
       return { success: false, error: 'Email service not configured' };
     }
 
