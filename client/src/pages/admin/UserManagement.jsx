@@ -315,6 +315,20 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
     companyName: user.companyName || '',
   });
   const [saving, setSaving] = useState(false);
+  const [resending, setResending] = useState(false);
+
+  const handleResendInvite = async () => {
+    setResending(true);
+    try {
+      const res = await authFetch(`/api/users/${user.userId}/resend-invite`, { method: 'POST' });
+      if (res?.emailSent) {
+        setToast({ message: `Activation email resent to ${user.email}`, type: 'success' });
+      } else {
+        setToast({ message: `Email failed: ${res?.emailError || 'check SMTP config'}`, type: 'error' });
+      }
+    } catch (err) { setToast({ message: err.message, type: 'error' }); }
+    finally { setResending(false); }
+  };
 
   // JD upload / URL
   const [jdInputMode, setJdInputMode] = useState('file'); // 'file' | 'url'
@@ -617,6 +631,18 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                 <FieldLabel>Company Name</FieldLabel>
                 <input type="text" value={form.companyName} onChange={f('companyName')} className={inputCls} placeholder="e.g. Acme Corp" />
               </div>
+
+              <div className="pt-1 border-t border-slate-700/40">
+                <p className="text-xs text-slate-500 mb-2">Resend activation email if the user hasn't set up their account yet.</p>
+                <button
+                  type="button"
+                  onClick={handleResendInvite}
+                  disabled={resending}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-xl text-indigo-300 text-sm font-semibold transition-colors disabled:opacity-50"
+                >
+                  {resending ? <><span className="w-3.5 h-3.5 border-2 border-indigo-300/30 border-t-indigo-300 rounded-full animate-spin" /> Sending…</> : '📧 Resend Invitation Email'}
+                </button>
+              </div>
             </>
           )}
 
@@ -878,7 +904,6 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
         method: 'POST',
         body: JSON.stringify({ ...form, name: form.name.trim(), email: form.email.trim() }),
       });
-      setToast({ message: `User "${form.name}" created successfully`, type: 'success' });
       onCreated(user);
       onClose();
     } catch (err) { setToast({ message: err.message, type: 'error' }); }
@@ -948,8 +973,8 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
               placeholder="Paste Job Description here (optional — can be added/uploaded later)" />
           </div>
           <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-900/50 rounded-xl p-3">
-            <span>🔑</span>
-            <span>A temporary password will be auto-generated and shown after creation. Share it with the user to let them log in and change it.</span>
+            <span>📧</span>
+            <span>An activation email will be sent to the user's email. They click the link to set their own password and log in.</span>
           </div>
         </div>
 
@@ -1223,31 +1248,52 @@ function ImportModal({ onClose, onImported, setToast }) {
   );
 }
 
-// ─── Temp Password Modal ──────────────────────────────────────────────────────
+// ─── Invite Result Modal ──────────────────────────────────────────────────────
 
-function TempPasswordModal({ user, onClose }) {
+function InviteResultModal({ user, onClose }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
-    navigator.clipboard.writeText(user.tempPassword || '');
+    navigator.clipboard.writeText(user.activationUrl || '');
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  if (user.emailSent) {
+    return (
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+        <div className="bg-slate-800 border border-emerald-500/40 rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
+          <div className="text-4xl mb-3">✅</div>
+          <h3 className="text-lg font-bold text-white mb-1">Invitation Sent!</h3>
+          <p className="text-slate-400 text-sm mb-2">
+            An activation email has been sent to <span className="text-emerald-400 font-semibold">{user.email}</span>
+          </p>
+          <p className="text-slate-500 text-xs mb-5">The user will click the link in the email to set their password and log in. The link expires in 72 hours.</p>
+          <button onClick={onClose} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white font-bold text-sm transition-colors">Done</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
-        <div className="text-4xl mb-3">🔑</div>
-        <h3 className="text-lg font-bold text-white mb-1">User Created!</h3>
-        <p className="text-slate-400 text-sm mb-4">Share this temporary password with <span className="text-white font-semibold">{user.name}</span>:</p>
-        <div className="bg-slate-900 rounded-xl p-3 font-mono text-amber-300 text-sm tracking-widest mb-4 border border-amber-500/30">
-          {user.tempPassword}
+      <div className="bg-slate-800 border border-amber-500/40 rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
+        <div className="text-4xl mb-3">⚠️</div>
+        <h3 className="text-lg font-bold text-white mb-1">User Created — Email Failed</h3>
+        <p className="text-slate-400 text-sm mb-1">
+          <span className="text-white font-semibold">{user.name}</span> was created but the invitation email could not be delivered to <span className="text-amber-300">{user.email}</span>.
+        </p>
+        {user.emailError && <p className="text-red-400 text-xs mb-3 bg-red-500/10 rounded-lg p-2">{user.emailError}</p>}
+        <p className="text-slate-500 text-xs mb-3">Share this activation link manually — it expires in 72 hours:</p>
+        <div className="bg-slate-900 rounded-xl p-3 text-indigo-300 text-xs font-mono break-all mb-4 border border-indigo-500/30 text-left">
+          {user.activationUrl}
         </div>
-        <p className="text-slate-500 text-xs mb-4">⚠️ This is shown only once. The user should change it after first login.</p>
         <div className="flex gap-3">
           <button onClick={copy} className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
-            {copied ? '✓ Copied!' : '📋 Copy Password'}
+            {copied ? '✓ Copied!' : '📋 Copy Link'}
           </button>
           <button onClick={onClose} className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-slate-300 text-sm transition-colors">Done</button>
         </div>
+        <p className="text-slate-600 text-xs mt-3">Check Render logs and verify SMTP env vars are set correctly.</p>
       </div>
     </div>
   );
@@ -1273,7 +1319,7 @@ export default function UserManagement() {
   const [editUser, setEditUser] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [tempPasswordUser, setTempPasswordUser] = useState(null);
+  const [inviteResultUser, setInviteResultUser] = useState(null);
 
   const isAdmin = hasRole('admin');
   const isManager = user?.role === 'manager';
@@ -1358,7 +1404,7 @@ export default function UserManagement() {
 
   const handleUserCreated = (newUser) => {
     setUsers(prev => [newUser, ...prev]);
-    if (newUser.tempPassword) setTempPasswordUser(newUser);
+    setInviteResultUser(newUser);
   };
 
   if (loading && users.length === 0) {
@@ -1395,8 +1441,8 @@ export default function UserManagement() {
       {showImport && (
         <ImportModal onClose={() => setShowImport(false)} onImported={fetchData} setToast={setToast} />
       )}
-      {tempPasswordUser && (
-        <TempPasswordModal user={tempPasswordUser} onClose={() => setTempPasswordUser(null)} />
+      {inviteResultUser && (
+        <InviteResultModal user={inviteResultUser} onClose={() => setInviteResultUser(null)} />
       )}
 
       <div className="max-w-7xl mx-auto p-6 lg:p-8">
