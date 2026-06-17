@@ -1,4 +1,7 @@
 import { createRequire } from 'module';
+import dns from 'dns';
+// Force IPv4 — Render free tier cannot route outbound IPv6 traffic
+dns.setDefaultResultOrder('ipv4first');
 const require = createRequire(import.meta.url);
 const nodemailer = require('nodemailer');
 
@@ -22,10 +25,9 @@ class EmailService {
    */
   initializeTransporter() {
     const smtpConfig = {
-      host: process.env.SMTP_HOST || 'smtp.example.com',
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
       port: parseInt(process.env.SMTP_PORT || '587'),
       secure: process.env.SMTP_SECURE === 'true',
-      family: 4, // Force IPv4 — Render free tier cannot reach Gmail over IPv6
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASSWORD
