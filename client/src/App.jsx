@@ -47,6 +47,8 @@ const MetricsDashboard     = lazy(() => import('./pages/admin/MetricsDashboard.j
 const EmployeeAnalytics    = lazy(() => import('./pages/employee/Analytics.jsx'));
 const ApprovalCenter      = lazy(() => import('./pages/admin/ApprovalCenter.jsx'));
 const GroupManagement     = lazy(() => import('./pages/admin/GroupManagement.jsx'));
+const RoleLibrary         = lazy(() => import('./pages/admin/RoleLibrary.jsx'));
+const ActivateAccount     = lazy(() => import('./pages/auth/ActivateAccount.jsx'));
 const ModuleStart          = lazy(() => import('./pages/ModuleStart.jsx'));
 const ModuleDashboard      = lazy(() => import('./pages/ModuleDashboard.jsx'));
 const ModuleSession        = lazy(() => import('./pages/ModuleSession.jsx'));
@@ -156,6 +158,7 @@ const App = () => {
               <Route path="/auth/verify-otp"      element={<VerifyOTP />} />
               <Route path="/auth/forgot-password" element={<ForgotPassword />} />
               <Route path="/auth/reset-password"  element={<ResetPassword />} />
+              <Route path="/auth/activate"        element={<ActivateAccount />} />
               <Route path="/oauth/callback"       element={<OAuthCallback />} />
               
               {/* Profile & Admin Pages - Protected with Role Requirements */}
@@ -192,6 +195,11 @@ const App = () => {
               <Route path="/admin/groups" element={
                 <ProtectedRoute requiredRole="admin">
                   <GroupManagement />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/roles" element={
+                <ProtectedRoute requiredRole="admin">
+                  <RoleLibrary />
                 </ProtectedRoute>
               } />
               <Route path="/admin/metrics" element={

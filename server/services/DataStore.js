@@ -633,4 +633,74 @@ export const UserJDProfiles = {
   },
 };
 
-export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles };
+// ── ROLE LIBRARY ──────────────────────────────────────────────────────────────
+// Company-scoped master list of job roles with JD and skills.
+// id = uuid, data = { companyId, roleName, department, jobDescription, skills[], status }
+
+// ── ACTIVATION TOKENS ─────────────────────────────────────────────────────────
+export const ActivationTokens = {
+  async create(doc)       { return (await (async () => { const sb = getSB(); if (sb) { const r = await sbInsert('activation_tokens', doc.id, doc); if (r) return r; } const all = readFile('activation_tokens.json'); all.push(doc); writeFile('activation_tokens.json', all); return doc; })()) },
+  async getById(id) {
+    const sb = getSB();
+    if (sb) { const r = await sbGetById('activation_tokens', id); if (r) return r; }
+    return readFile('activation_tokens.json').find(t => t.id === id) || null;
+  },
+  async delete(id)        { return deleteHealed('activation_tokens', 'activation_tokens.json', id); },
+};
+
+// ── ROLE LIBRARY ──────────────────────────────────────────────────────────────
+export const RoleLibrary = {
+  async getAll()           { return getAllHealed('role_library', 'role_library.json'); },
+  async getByCompany(cid)  {
+    const all = await this.getAll();
+    return (all || []).filter(r => (r.companyId || 'default') === (cid || 'default'));
+  },
+  async getById(id) {
+    const sb = getSB();
+    if (sb) { const r = await sbGetById('role_library', id); if (r) return r; }
+    return readFile('role_library.json').find(r => r.id === id) || null;
+  },
+  async findByName(roleName, companyId) {
+    const all = await this.getByCompany(companyId);
+    const q = roleName?.toLowerCase().trim();
+    return all.find(r => r.roleName?.toLowerCase().trim() === q) || null;
+  },
+  async create(doc) {
+    const sb = getSB();
+    if (sb) { const r = await sbInsert('role_library', doc.id, doc); if (r) return r; }
+    const all = readFile('role_library.json');
+    all.push(doc);
+    writeFile('role_library.json', all);
+    return doc;
+  },
+  async update(id, updates) { return updateHealed('role_library', 'role_library.json', id, updates); },
+  async delete(id)           { return deleteHealed('role_library', 'role_library.json', id); },
+};
+
+// ── EMPLOYEE CHECKLISTS ───────────────────────────────────────────────────────
+// id = userId, data = { roleId, roleName, items:[{id,title,description,dueDay,completed,completedAt}] }
+export const EmployeeChecklists = {
+  async getByUserId(userId) {
+    const sb = getSB();
+    if (sb) { const r = await sbGetById('employee_checklists', userId); if (r) return r; }
+    return readFile('employee_checklists.json').find(c => c.id === userId) || null;
+  },
+  async upsert(userId, doc) {
+    const sb = getSB();
+    if (sb) { const r = await sbInsert('employee_checklists', userId, doc); if (r) return r; }
+    const all = readFile('employee_checklists.json');
+    const idx = all.findIndex(c => c.id === userId);
+    const entry = { id: userId, ...doc };
+    if (idx >= 0) all[idx] = entry; else all.push(entry);
+    writeFile('employee_checklists.json', all);
+    return entry;
+  },
+  async updateItem(userId, itemId, updates) {
+    const existing = await this.getByUserId(userId);
+    if (!existing) return null;
+    const items = (existing.items || []).map(i => i.id === itemId ? { ...i, ...updates } : i);
+    return this.upsert(userId, { ...existing, items });
+  },
+};
+
+export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists };

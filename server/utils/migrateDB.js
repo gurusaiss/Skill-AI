@@ -195,6 +195,36 @@ const TABLES = [
     ALTER TABLE group_memberships DISABLE ROW LEVEL SECURITY;`,
   },
   {
+    name: 'role_library',
+    sql: `CREATE TABLE IF NOT EXISTS role_library (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    ALTER TABLE role_library DISABLE ROW LEVEL SECURITY;`,
+  },
+  {
+    name: 'employee_checklists',
+    sql: `CREATE TABLE IF NOT EXISTS employee_checklists (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    ALTER TABLE employee_checklists DISABLE ROW LEVEL SECURITY;`,
+  },
+  {
+    name: 'activation_tokens',
+    sql: `CREATE TABLE IF NOT EXISTS activation_tokens (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    ALTER TABLE activation_tokens DISABLE ROW LEVEL SECURITY;`,
+  },
+  {
     name: 'audit_logs',
     sql: `CREATE TABLE IF NOT EXISTS audit_logs (
       log_id TEXT PRIMARY KEY,

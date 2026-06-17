@@ -160,7 +160,7 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(403).json({ success: false, error: { message: 'Only admins and managers can create modules' } });
     }
 
-    const { title, description, category, difficulty, estimatedDuration, skills, tasks, resources, completionCriteria, content } = req.body;
+    const { title, description, category, difficulty, estimatedDuration, skills, tasks, resources, completionCriteria, content, targetRoles } = req.body;
 
     if (!title) {
       return res.status(400).json({ success: false, error: { message: 'Module title is required' } });
@@ -179,6 +179,7 @@ router.post('/', authenticate, async (req, res) => {
       progressTracking: true,
       content: content || {},
       companyId: req.user.companyId || null,
+      targetRoles: Array.isArray(targetRoles) ? targetRoles : [],
     }, user.userId || user.id);
 
     res.status(201).json({ success: true, data: newModule });

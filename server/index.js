@@ -40,6 +40,7 @@ import adminDashboardRouter from './routes/adminDashboard.js';
 import approvalsRouter from './routes/approvals.js';
 import groupsRouter from './routes/groups.js';
 import recommendationsRouter from './routes/recommendations.js';
+import rolesRouter from './routes/roles.js';
 import { autoSeed } from './utils/autoSeed.js';
 import { migrateDB } from './utils/migrateDB.js';
 import { migrateDefaultUsersToGSS } from './utils/migrateGSS.js';
@@ -239,6 +240,7 @@ app.use('/api/react', reactRouter);
 app.use('/api/memory', memoryRouter);
 app.use('/api/agent-control', agentControlRouter);
 app.use('/api/recommendations', recommendationsRouter);
+app.use('/api/roles', rolesRouter);
 
 // ── Autonomous Agent Brief routes ──────────────────────────────────────────
 app.get('/api/brief/:userId', (req, res) => {

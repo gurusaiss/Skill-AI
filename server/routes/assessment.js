@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import UserStore from '../services/UserStore.js';
-import { Assessments, Submissions, Reports } from '../services/DataStore.js';
+import { Assessments, Submissions, Reports, RoleLibrary } from '../services/DataStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -350,10 +350,24 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       const user = await UserStore.getUserById(userId);
       if (!user) continue;
 
+      // JD resolution priority:
+      // 1. Employee-specific JD override
+      // 2. Role Library JD (matched by job role name)
+      // 3. Employee skills alone
+      let resolvedJD   = user.jobDescription || '';
+      let resolvedSkills = user.jdSkills || [];
+      if (!resolvedJD && user.jobRole) {
+        try {
+          const roleMatch = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
+          if (roleMatch?.jobDescription) { resolvedJD = roleMatch.jobDescription; }
+          if (!resolvedSkills.length && (roleMatch?.skills || []).length) { resolvedSkills = roleMatch.skills; }
+        } catch {}
+      }
+
       const questions = await generateQuestionsFromJD({
         jobRole: user.jobRole || 'Employee',
-        jobDescription: user.jobDescription || '',
-        jdSkills: user.jdSkills || [],
+        jobDescription: resolvedJD,
+        jdSkills: resolvedSkills,
         questionCount,
         questionTypes,
         employeeSeed: `${userId}-${Date.now()}`,

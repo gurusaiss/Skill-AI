@@ -7,6 +7,8 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import UserStore from '../services/UserStore.js';
 import AuthService from '../services/AuthService.js';
 import { v4 as uuidv4 } from 'uuid';
+import EmailService from '../services/EmailService.js';
+import { ActivationTokens } from '../services/DataStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.join(__dirname, '../data/uploads/jd');
@@ -194,11 +196,28 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       ipAddress: req.ip,
     });
 
+    // Send invitation email with activation link (non-blocking)
+    try {
+      const tokenId = uuidv4();
+      const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+      await ActivationTokens.create({ id: tokenId, userId: user.userId, email: user.email, expiresAt, used: false });
+      const frontendUrl = process.env.FRONTEND_URL || 'https://skillforge-swart-mu.vercel.app';
+      const activationUrl = `${frontendUrl}/auth/activate?token=${tokenId}`;
+      await EmailService.sendInvitationEmail(user.email, {
+        name: user.name,
+        role: user.role,
+        companyName: user.companyName || req.user.companyName || 'SkillForge AI',
+        activationUrl,
+      });
+    } catch (emailErr) {
+      console.warn('[users] Invitation email failed (non-critical):', emailErr.message);
+    }
+
     res.status(201).json({
       success: true,
       data: {
         ...sanitizeUser(user),
-        tempPassword: !password ? tempPassword : undefined, // only return if auto-generated
+        tempPassword: !password ? tempPassword : undefined,
       },
       error: null,
     });
@@ -305,6 +324,34 @@ router.put('/:userId', authenticate, async (req, res) => {
 
     const updatedUser = await UserStore.updateUser(userId, updates);
     await UserStore.logAuthEvent('profile_updated', userId, { updates: Object.keys(updates), updatedBy: req.user.userId, ipAddress: req.ip });
+
+    // Priority 6: Role changed → auto-assign role-tagged modules (non-blocking)
+    if (updates.jobRole && updates.jobRole !== user.jobRole) {
+      (async () => {
+        try {
+          const { RoleLibrary } = await import('../services/DataStore.js');
+          const db = await import('../db/store.js');
+          const roleMatch = await RoleLibrary.findByName(updates.jobRole, updatedUser.companyId || 'default');
+          if (!roleMatch) return;
+          const allModules = await db.getModules();
+          const roleModules = allModules.filter(m =>
+            (m.targetRoles || []).some(r => r.toLowerCase() === updates.jobRole.toLowerCase())
+          );
+          for (const mod of roleModules) {
+            try {
+              await db.createAssignment({
+                employeeId: userId, assignableId: mod.id, assignable_type: 'module',
+                type: 'module', title: mod.title, module_name: mod.title,
+                status: 'assigned', progress: 0,
+                companyId: updatedUser.companyId || 'default',
+                assignedBy: req.user.userId, assignedByRole: req.user.role,
+                autoAssigned: true, autoAssignedReason: `Role: ${updates.jobRole}`,
+              });
+            } catch {}
+          }
+        } catch (e) { console.warn('[auto-assign modules] role change trigger:', e.message); }
+      })();
+    }
 
     res.json({ success: true, data: sanitizeUser(updatedUser), error: null });
   } catch (error) {
@@ -820,6 +867,46 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
     });
   } catch (e) {
     console.error('[bulk-import]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * GET /api/users/:userId/skills-gap
+ * Compare role's required skills vs employee's demonstrated skills
+ */
+router.get('/:userId/skills-gap', authenticate, async (req, res) => {
+  try {
+    const user = await UserStore.getUserById(req.params.userId);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    const { RoleLibrary } = await import('../services/DataStore.js');
+    const role = user.jobRole ? await RoleLibrary.findByName(user.jobRole, user.companyId || 'default') : null;
+    const required    = role?.skills || [];
+    const demonstrated = user.jdSkills || [];
+    const missing = required.filter(s => !demonstrated.some(d => d.toLowerCase() === s.toLowerCase()));
+    const matched = required.filter(s =>  demonstrated.some(d => d.toLowerCase() === s.toLowerCase()));
+    const coverage = required.length ? Math.round((matched.length / required.length) * 100) : null;
+    res.json({ success: true, data: {
+      roleName: user.jobRole || null,
+      roleFound: !!role,
+      required, demonstrated, missing, matched,
+      coverage, // null if role has no skills defined
+    }});
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * GET /api/users/:userId/checklist
+ * Get onboarding checklist for employee
+ */
+router.get('/:userId/checklist', authenticate, async (req, res) => {
+  try {
+    const { EmployeeChecklists } = await import('../services/DataStore.js');
+    const checklist = await EmployeeChecklists.getByUserId(req.params.userId);
+    res.json({ success: true, data: checklist });
+  } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
 });
