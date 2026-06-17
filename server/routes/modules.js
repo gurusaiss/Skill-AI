@@ -235,62 +235,83 @@ router.post('/:id/generate-content', authenticate, async (req, res) => {
     const daysMatch = durationStr.match(/(\d+)/);
     const numSessions = Math.min(Math.max(parseInt(daysMatch?.[1]) || 7, 3), 14);
 
-    const systemPrompt = `You are an expert corporate learning and development specialist. Generate comprehensive, practical training content that employees can immediately apply in their work. Always return valid JSON.`;
+    // Pull role/JD context from module metadata if available
+    const jobRole = module.content?.jobRole || module.category || '';
+    const jdContext = (module.content?.jobDescription || '').slice(0, 1500);
+    const assessmentGaps = Array.isArray(module.content?.weakAreas) ? module.content.weakAreas : [];
+    const assessmentContext = assessmentGaps.length
+      ? `Assessment identified these specific skill gaps: ${assessmentGaps.join(', ')}`
+      : '';
 
-    const userPrompt = `Create a complete learning curriculum for this corporate training module:
+    const systemPrompt = `You are an expert corporate Learning & Development specialist who designs training for ALL job functions — HR, Operations, Finance, Sales, Marketing, Customer Success, Procurement, IT, Engineering, Legal, Healthcare, and any other domain.
 
-Module: "${title}"
+CRITICAL RULES:
+1. Match the training content to the specific domain of the module title and job role — never inject irrelevant content.
+2. All sessions must directly address skills and knowledge gaps relevant to this exact role and module topic.
+3. Examples, scenarios, and definitions must come from the correct industry/domain.
+4. Build sessions progressively: foundational → applied → advanced.
+5. Always return valid JSON.`;
+
+    const userPrompt = `Create a complete learning curriculum for this training module.
+
+=== MODULE CONTEXT ===
+Title: "${title}"
 Description: ${description}
-Skills to develop: ${skills.join(', ') || 'Professional skills'}
+Job Role: ${jobRole || 'Professional'}
+Skills to develop: ${skills.join(', ') || 'Core role competencies'}
 Difficulty: ${difficulty}
-Number of learning sessions/days: ${numSessions}
+Sessions needed: ${numSessions}
+${assessmentContext}
+${jdContext ? `Job Description context:\n${jdContext}` : ''}
 
-Generate a JSON object with exactly these fields:
+=== GENERATION INSTRUCTIONS ===
+1. Every session must address a specific skill, competency, or knowledge area from the module's domain.
+2. Content must be immediately applicable — not abstract theory.
+3. Scenarios, examples, and case studies must match the role's industry and day-to-day responsibilities.
+4. Definitions should be real domain-specific terms (not generic management jargon unless that IS the domain).
+5. If assessment gaps are provided, structure early sessions to address the most critical gaps first.
+6. Build sessions progressively so each builds on the previous.
+
+Generate a JSON object:
 {
   "sessions": [
     {
-      "title": "Day N: <specific topic>",
-      "description": "What this session covers and why it matters",
-      "objective": "By end of this session, learner will be able to...",
-      "topics": ["topic1", "topic2", "topic3"],
+      "title": "Day N: <specific skill/topic from this domain>",
+      "description": "What this session covers and why it matters for this role",
+      "objective": "By end of this session, the learner will be able to [specific action relevant to their job]",
+      "topics": ["specific topic 1", "specific topic 2", "specific topic 3"],
       "keyPoints": [
-        "Key insight 1 — be specific and actionable",
+        "Actionable insight directly applicable to this role — be specific, not generic",
         "Key insight 2",
         "Key insight 3",
         "Key insight 4",
         "Key insight 5"
       ],
       "definitions": [
-        {"term": "Technical term", "definition": "Clear explanation"},
+        {"term": "Domain-specific term", "definition": "Clear, accurate definition from this field"},
         {"term": "Another term", "definition": "Explanation"}
       ],
-      "explanation": "2-3 paragraphs of detailed explanation covering the session content. Include real-world context, why it matters in corporate settings, and practical applications.",
-      "notes": "Additional tips, warnings, best practices, and common mistakes to avoid.",
+      "explanation": "2-3 paragraphs written like a subject-matter expert mentoring someone in this specific role. Include real-world context from the correct industry, why this matters for job performance, and practical application examples from the actual domain.",
+      "notes": "Practical tips, common mistakes professionals in this role make, and how to avoid them.",
       "duration": "45 min"
     }
   ],
   "roadmap": [
-    {"title": "Phase name", "description": "What this phase achieves", "duration": "Days 1-3"},
-    {"title": "Phase name", "description": "What this phase achieves", "duration": "Days 4-6"},
-    {"title": "Phase name", "description": "What this phase achieves", "duration": "Days 7+"}
+    {"title": "Foundation", "description": "Core concepts and vocabulary for this domain", "duration": "Days 1-${Math.ceil(numSessions/3)}"},
+    {"title": "Application", "description": "Applying skills to real role scenarios", "duration": "Days ${Math.ceil(numSessions/3)+1}-${Math.ceil(2*numSessions/3)}"},
+    {"title": "Mastery", "description": "Advanced application and independent practice", "duration": "Days ${Math.ceil(2*numSessions/3)+1}-${numSessions}"}
   ],
   "projects": [
-    {"title": "Hands-on project title", "description": "Detailed project description and deliverables", "difficulty": "${difficulty}"},
-    {"title": "Another project", "description": "Description", "difficulty": "advanced"}
+    {"title": "Role-specific project title", "description": "A realistic project this employee would complete in their actual job — with specific deliverables", "difficulty": "${difficulty}"},
+    {"title": "Practical application project", "description": "Applies module skills to a real workplace scenario from this role's domain", "difficulty": "intermediate"}
   ],
   "resources": [
-    {"title": "Resource name", "type": "article/video/book/tool", "description": "Why this resource is valuable"},
-    {"title": "Another resource", "type": "tool", "description": "How to use it"}
+    {"title": "Relevant resource for this domain", "type": "article/video/book/tool/framework", "description": "Why this specific resource helps this role"},
+    {"title": "Another domain-specific resource", "type": "tool", "description": "How it applies to the role"}
   ]
 }
 
-IMPORTANT:
-- Create exactly ${numSessions} sessions
-- Each session must cover SPECIFIC topics related to "${title}" — not generic learning advice
-- Sessions should build progressively in complexity
-- keyPoints must be factual statements about the subject matter
-- definitions must be real technical/domain terms from the field
-- explanation should read like a knowledgeable mentor explaining the topic`;
+IMPORTANT: Create exactly ${numSessions} sessions. All content must be specific to "${title}" and the ${jobRole || 'professional'} role — not generic.`;
 
     let generated = null;
 
@@ -479,36 +500,64 @@ router.post('/auto-generate', authenticate, async (req, res) => {
     try {
       const groqKey = process.env.GROQ_API_KEY;
       if (groqKey?.length > 10) {
-        const prompt = `Create a focused training module for an employee who needs improvement in these areas:
-Role: ${jobRole || 'Employee'}
-Weak areas from assessment: ${skills.join(', ')}
-Assessment: ${assessmentTitle || 'Role Assessment'}
-${jdSkillsCtx ? `Key skills from JD: ${jdSkillsCtx}` : ''}
-${jdContext ? `Job Description context:\n${jdContext}` : ''}
+        const prompt = `Design a targeted remedial training module for an employee based on their assessment results.
 
-Create a comprehensive training module with 3-5 sessions. Each session should have:
-- Clear title and learning objectives
-- Key topics to cover
-- A short quiz (3 MCQ questions) to verify understanding
+=== EMPLOYEE CONTEXT ===
+Job Role: ${jobRole || 'Professional'}
+${jdSkillsCtx ? `Skills from their JD: ${jdSkillsCtx}` : ''}
+${jdContext ? `Their Job Description:\n${jdContext}` : ''}
+
+=== ASSESSMENT RESULTS ===
+Assessment: ${assessmentTitle || 'Role Assessment'}
+Skill gaps identified (areas where employee underperformed): ${skills.join(', ')}
+
+=== MODULE DESIGN INSTRUCTIONS ===
+1. The module must DIRECTLY address the specific skill gaps identified in the assessment.
+2. Every session topic must connect to either a gap area OR a prerequisite required to close that gap.
+3. Content must be appropriate for the employee's actual job role — do NOT generate content from unrelated domains.
+4. If the role is non-technical (HR, Operations, Finance, Sales, etc.), generate domain-appropriate content — not software/coding content.
+5. Sessions must build progressively from foundational to applied to advanced.
+6. Each session's quiz must test the specific gap topic covered in that session.
+7. Use realistic workplace scenarios from the employee's actual domain in examples and quiz questions.
 
 Return JSON:
 {
-  "title": "string",
-  "description": "string",
-  "objectives": ["string"],
+  "title": "targeted module title that clearly describes what skill gap is being addressed",
+  "description": "1-2 sentence description: what gap this addresses, why it matters for this specific role",
+  "objectives": [
+    "Specific, measurable learning outcome 1 — what employee will be able to DO after this module",
+    "Specific, measurable learning outcome 2",
+    "Specific, measurable learning outcome 3"
+  ],
   "estimatedDuration": "X days",
   "sessions": [
     {
-      "title": "string",
-      "duration": "30 mins",
-      "topics": ["string"],
-      "keyPoints": ["string"],
+      "title": "Session title — specific to the gap topic",
+      "duration": "45 mins",
+      "topics": ["specific topic relevant to gap and role", "another topic", "practical application"],
+      "keyPoints": [
+        "Actionable insight specific to this role and gap — not generic advice",
+        "Key concept 2",
+        "Key concept 3"
+      ],
       "quiz": [
         {
-          "question": "string",
+          "question": "Scenario-based question testing the gap skill in context of the employee's actual job role",
+          "options": ["A) correct approach", "B) plausible wrong answer", "C) another wrong answer", "D) another wrong answer"],
+          "answer": "A",
+          "explanation": "Why this is correct for someone in this role"
+        },
+        {
+          "question": "Second quiz question testing a different aspect of this gap",
+          "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+          "answer": "B",
+          "explanation": "Explanation"
+        },
+        {
+          "question": "Third quiz question",
           "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
           "answer": "A",
-          "explanation": "string"
+          "explanation": "Explanation"
         }
       ]
     }

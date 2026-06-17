@@ -35,44 +35,78 @@ async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, ques
   const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 30);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const seed = employeeSeed || randomUUID().slice(0, 8);
+  const jdText = (jobDescription || '').trim();
+  const skillsList = Array.isArray(jdSkills) && jdSkills.length ? jdSkills : [];
 
-  // jobDescription already contains pre-extracted full text — no file parsing needed
-  const jdText = jobDescription || '';
+  // ── System prompt: domain-agnostic, anti-contamination ──────────────────────
+  const system = `You are an expert HR assessment designer who creates role-specific assessments for ALL job functions across ALL industries — HR, Operations, Finance, Sales, Marketing, Customer Success, Procurement, L&D, Project Management, IT, Engineering, Healthcare, Legal, and any other domain.
 
-  const skillsLine = Array.isArray(jdSkills) && jdSkills.length
-    ? `Key Skills Identified: ${jdSkills.join(', ')}`
-    : '';
+ABSOLUTE RULES:
+1. Read and extract the actual domain, responsibilities, tools, and required knowledge from the JD FIRST.
+2. Generate questions ONLY about what the JD explicitly requires — never introduce topics from unrelated domains.
+3. Domain must match: HR role → HR questions. Finance role → Finance questions. Operations → Operations questions. Do NOT cross domains.
+4. Every question must trace directly to a specific responsibility, skill, process, tool, or competency in the JD.
+5. Match seniority level: Executive/Director → strategy, policy, P&L, stakeholder decisions. Manager → team management, planning, escalation, reporting. Specialist/Executive → applied process, tools, day-to-day procedures. Junior/Coordinator → foundational knowledge, process steps.
+6. Never generate software coding or engineering architecture questions unless the JD explicitly lists programming as a requirement.
+7. Always return valid JSON with exactly a "questions" array.`;
 
-  const prompt = `Generate exactly ${num} assessment questions for an employee with this profile.
+  // ── User prompt: 3-step JD-first pipeline ───────────────────────────────────
+  const prompt = `Generate ${num} assessment questions for this employee.
 
-Job Role: ${jobRole || 'Not specified'}
-${skillsLine}
-Job Description:
-${jdText || 'No job description provided. Use the job role to infer responsibilities.'}
+=== EMPLOYEE PROFILE ===
+Job Role: ${jobRole || 'Professional'}
+${skillsList.length ? `Skills identified from JD: ${skillsList.join(', ')}` : ''}
 
-Employee Seed (use this to vary question selection): ${seed}
+=== JOB DESCRIPTION ===
+${jdText || '(No JD provided — use only the job role to infer responsibilities)'}
 
-REQUIREMENTS:
-- Questions MUST be specific to the job role and JD content
-- Every employee gets different questions even if they share the same JD (use the seed to vary)
-- Test real on-the-job knowledge, not generic knowledge
-- Question types requested: ${types.join(', ')}
-- Difficulty mix: 30% easy, 50% medium, 20% hard
+=== VARIATION SEED: ${seed} ===
 
-Return a JSON object with a "questions" array. Each question:
-- "type": "${types.includes('mcq') ? 'mcq' : types[0]}" (use types requested above, cycling through them)
-- "question": specific, role-relevant question
-- "difficulty": "easy", "medium", or "hard"
-- "options": for mcq only — exactly 4 options as ["A) ...", "B) ...", "C) ...", "D) ..."]
-- "answer": for mcq: "A"/"B"/"C"/"D"; fill_blank: exact answer; subjective: model answer
-- "explanation": why this is relevant to the role
-- "skillArea": which skill or competency this tests`;
+=== STEP-BY-STEP GENERATION PROCESS ===
 
-  const system = `You are an expert HR assessment designer specializing in creating job-specific assessments.
-Generate questions that test whether candidates can actually perform the job, not just recall facts.
-Always return valid JSON with exactly a "questions" array.`;
+STEP 1 — EXTRACT THE ROLE PROFILE FROM THE JD:
+Identify before generating any question:
+• Primary domain/industry (HR / Finance / Operations / Sales / IT / Healthcare / Legal / etc.)
+• Seniority level (junior / specialist / senior / manager / director / executive)
+• Top 5 day-to-day responsibilities described in the JD
+• Required tools, platforms, systems (HRMS, SAP, Salesforce, Excel, Jira, etc.)
+• Required processes (recruitment, budgeting, pipeline management, vendor evaluation, etc.)
+• Required knowledge areas (labor law, IFRS, Agile, ISO standards, etc.)
+• Required soft skills and competencies (stakeholder management, negotiation, team leadership, etc.)
+• Key performance indicators or expected outcomes mentioned
 
-  // Try Groq first
+STEP 2 — GENERATE QUESTIONS GROUNDED IN THE EXTRACTED PROFILE:
+• Use exactly this question type mix (cycle through): ${types.join(', ')}
+• Difficulty distribution: 30% easy, 50% medium, 20% hard
+• Each question must test something from the profile extracted in Step 1
+• Prefer scenario-based questions: "In your role as ${jobRole || 'a professional'}, when [situation], what do you do?"
+• For non-technical roles: test processes, decisions, communication, and domain knowledge — NOT coding or engineering
+• For managerial roles: include team management, delegation, conflict resolution, resource planning, KPI reporting
+• For finance/procurement: include budgeting, approval workflows, vendor management, compliance
+• For HR roles: include recruitment processes, employee relations, HR policies, performance management
+• For sales/marketing: include pipeline management, client handling, campaign strategy, metrics tracking
+• Use the variation seed (${seed}) to select different angles and scenarios even if two employees share the same JD
+
+STEP 3 — VALIDATE EACH QUESTION BEFORE RETURNING:
+For every question ask: "Can I point to a specific line or responsibility in the JD that makes this question relevant?"
+If the answer is NO — replace the question with one that passes this test.
+
+=== OUTPUT FORMAT ===
+{
+  "questions": [
+    {
+      "type": "mcq|fill_blank|subjective",
+      "question": "specific, scenario-grounded question relevant to this exact role and JD",
+      "difficulty": "easy|medium|hard",
+      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+      "answer": "A (or B/C/D for mcq) | exact phrase for fill_blank | detailed model answer for subjective",
+      "explanation": "one sentence — which JD requirement this question tests and why it matters for this role",
+      "skillArea": "the specific responsibility, skill, or competency from the JD being tested"
+    }
+  ]
+}`;
+
+  // Try Groq first (faster, higher rate limit)
   try {
     const groqKey = process.env.GROQ_API_KEY;
     if (groqKey?.length > 10) {
@@ -82,8 +116,8 @@ Always return valid JSON with exactly a "questions" array.`;
         body: JSON.stringify({
           model: 'llama-3.3-70b-versatile',
           messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-          temperature: 0.85,
-          max_tokens: 4000,
+          temperature: 0.8,
+          max_tokens: 5000,
           response_format: { type: 'json_object' },
         }),
         signal: AbortSignal.timeout(30000),
@@ -108,7 +142,7 @@ Always return valid JSON with exactly a "questions" array.`;
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: system + '\n\n' + prompt }] }],
-            generationConfig: { temperature: 0.85, maxOutputTokens: 4000, responseMimeType: 'application/json' },
+            generationConfig: { temperature: 0.8, maxOutputTokens: 5000, responseMimeType: 'application/json' },
           }),
           signal: AbortSignal.timeout(30000),
         }
@@ -121,28 +155,33 @@ Always return valid JSON with exactly a "questions" array.`;
     }
   } catch (e) { console.warn('[assessment] Gemini failed:', e.message); }
 
-  // Fallback — deterministic rule-based questions from job role
+  // Fallback — skill-grounded rule-based questions (never fully generic)
   const role = jobRole || 'Professional';
+  const fallbackSkills = skillsList.length > 0 ? skillsList
+    : ['core responsibilities', 'stakeholder communication', 'process management', 'performance delivery', 'problem solving'];
   return Array.from({ length: num }, (_, i) => {
     const t = types[i % types.length];
     const difficulty = ['easy', 'medium', 'hard'][i % 3];
+    const skill = fallbackSkills[i % fallbackSkills.length];
     return {
       type: t,
       question: t === 'mcq'
-        ? `As a ${role}, what is the most critical aspect of ${['planning', 'execution', 'communication', 'quality assurance', 'stakeholder management'][i % 5]}?`
+        ? `As a ${role}, when facing a challenge related to ${skill}, what is the most effective first step?`
         : t === 'fill_blank'
-        ? `A ${role} is primarily responsible for ______ in their day-to-day work.`
-        : `Describe a situation where you would apply ${['analytical thinking', 'problem-solving', 'leadership', 'technical expertise', 'collaboration'][i % 5]} in your role as ${role}.`,
+        ? `A key outcome of strong ${skill} in the ${role} role is ______.`
+        : `Describe a specific situation in your ${role} role where ${skill} was critical. What approach did you take and what was the result?`,
       difficulty,
       options: t === 'mcq' ? [
-        'A) Ensuring all stakeholders are aligned on goals',
-        'B) Completing tasks as quickly as possible',
-        'C) Avoiding difficult conversations',
-        'D) Working independently without feedback',
+        `A) Assess the situation, identify root cause, and develop a structured plan`,
+        `B) Escalate immediately without gathering information`,
+        `C) Wait for the situation to resolve on its own`,
+        `D) Delegate without providing context or follow-up`,
       ] : undefined,
-      answer: t === 'mcq' ? 'A' : t === 'fill_blank' ? 'delivering results' : `In my role as ${role}, I would approach this systematically by first assessing the situation, then applying relevant frameworks.`,
-      explanation: `This tests core competency for a ${role}.`,
-      skillArea: ['Core Skills', 'Communication', 'Technical', 'Leadership', 'Problem Solving'][i % 5],
+      answer: t === 'mcq' ? 'A'
+        : t === 'fill_blank' ? 'consistent, measurable, and high-quality outcomes'
+        : `In my ${role} role, I approach ${skill} challenges by first clarifying objectives and constraints, then systematically identifying root causes, designing solutions aligned with organizational goals, and tracking outcomes against defined KPIs.`,
+      explanation: `Tests applied ${skill} competency directly required in the ${role} role.`,
+      skillArea: skill,
     };
   });
 }
