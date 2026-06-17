@@ -215,20 +215,7 @@ export default function Assessment() {
       const scoring = result?.scoring || result?.report || result;
       setReport(scoring);
 
-      // Auto-trigger module generation for weak areas
-      const weakAreas = scoring?.weakAreas || [];
-      if (weakAreas.length > 0) {
-        authFetch('/api/modules/auto-generate', {
-          method: 'POST',
-          body: JSON.stringify({
-            userId: user?.userId || user?.id,
-            jobRole: assessment.jobRole || assessment.job_role,
-            weakAreas,
-            assessmentTitle: assessment.title,
-            assessmentReportId: scoring?.id || id,
-          }),
-        }).catch(() => {}); // fire-and-forget
-      }
+      // Module generation + assignment now happens automatically on the server after submit
     } catch (e) {
       setError(e.message || 'Failed to submit assessment');
       setSubmitting(false);
@@ -319,6 +306,10 @@ export default function Assessment() {
     const total = report.total ?? report.totalQuestions ?? (assessment?.questions?.length ?? 0);
     const strengths = report.strengths || report.strongAreas || [];
     const weakAreas = report.weakAreas || report.weaknesses || [];
+    const missingCompetencies = report.missingCompetencies || [];
+    const recommendedLearningAreas = report.recommendedLearningAreas || [];
+    const classification = report.performanceClassification;
+    const readinessLevel = report.readinessLevel;
     const skillBreakdown = report.skillBreakdown || [];
 
     return (
@@ -333,7 +324,7 @@ export default function Assessment() {
 
             <ScoreRing pct={pct} />
 
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-3 gap-3 mb-4">
               {[
                 { label: 'Grade', value: gradeFromScore(pct), color: scoreColor(pct) },
                 { label: 'Correct', value: `${correct}/${total}` },
@@ -345,6 +336,28 @@ export default function Assessment() {
                 </div>
               ))}
             </div>
+
+            {/* Performance Classification */}
+            {classification && (
+              <div className="rounded-xl px-4 py-3 mb-4 border" style={{ borderColor: classification.color + '40', backgroundColor: classification.color + '15' }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase tracking-widest" style={{ color: classification.color }}>
+                    {classification.label}
+                  </span>
+                </div>
+                {readinessLevel && (
+                  <p className="text-xs text-slate-400 mt-1">{readinessLevel}</p>
+                )}
+              </div>
+            )}
+
+            {weakAreas.length > 0 && (
+              <div className="rounded-xl px-4 py-2.5 mb-4 bg-indigo-500/8 border border-indigo-500/20">
+                <p className="text-xs text-indigo-300 font-semibold">
+                  A personalized training module has been assigned to you based on your assessment results.
+                </p>
+              </div>
+            )}
 
             {strengths.length > 0 && (
               <div className="mb-5">
@@ -385,6 +398,28 @@ export default function Assessment() {
                       value={item.correct ?? item.score ?? 0}
                       max={item.total ?? item.max ?? 1}
                     />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {missingCompetencies.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-black text-red-400 uppercase tracking-widest mb-2">Missing Competencies</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {missingCompetencies.map((m, i) => (
+                    <span key={i} className="text-xs px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300">{m}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {recommendedLearningAreas.length > 0 && (
+              <div className="mb-6">
+                <p className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-2">Recommended Learning</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {recommendedLearningAreas.map((r, i) => (
+                    <span key={i} className="text-xs px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">{r}</span>
                   ))}
                 </div>
               </div>

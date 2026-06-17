@@ -17,7 +17,8 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import UserStore from '../services/UserStore.js';
-import { Assessments, Submissions, Reports, RoleLibrary } from '../services/DataStore.js';
+import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments } from '../services/DataStore.js';
+import * as db from '../db/store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -212,6 +213,31 @@ function normaliseResponses(rawAnswers, rawResponses, questionCount) {
   return new Array(questionCount).fill({ answer: '' });
 }
 
+// ── Performance classification ─────────────────────────────────────────────────
+// Default thresholds; admin can override via performance_config table in future
+const DEFAULT_THRESHOLDS = [
+  { min: 95, label: 'Outstanding',                  color: '#10B981' },
+  { min: 85, label: 'Excellent',                    color: '#22C55E' },
+  { min: 75, label: 'Good',                         color: '#84CC16' },
+  { min: 60, label: 'Average',                      color: '#EAB308' },
+  { min: 40, label: 'Needs Improvement',            color: '#F97316' },
+  { min: 0,  label: 'Critical Improvement Required',color: '#EF4444' },
+];
+
+function classifyPerformance(score) {
+  for (const t of DEFAULT_THRESHOLDS) {
+    if (score >= t.min) return { label: t.label, color: t.color, score };
+  }
+  return { label: 'Critical Improvement Required', color: '#EF4444', score };
+}
+
+function getReadinessLevel(score) {
+  if (score >= 85) return 'Ready for Advanced Responsibilities';
+  if (score >= 70) return 'Ready with Minor Gaps';
+  if (score >= 55) return 'Needs Targeted Development';
+  return 'Requires Significant Training Before Progression';
+}
+
 // ── Score a submission ────────────────────────────────────────────────────────
 // responses: dense array of { answer: string } indexed by question position
 function scoreSubmission(questions, responses) {
@@ -304,7 +330,18 @@ function scoreSubmission(questions, responses) {
   const strengths = Object.entries(skillAreas).filter(([, v]) => v.correct / v.total >= 0.7).map(([k]) => k);
   const weakAreas = Object.entries(skillAreas).filter(([, v]) => v.correct / v.total < 0.7).map(([k]) => k);
 
-  return { score, grade, correct, total, breakdown, skillAreas, skillBreakdown, strengths, weakAreas };
+  // Missing competencies: skill areas with 0% score
+  const missingCompetencies = Object.entries(skillAreas)
+    .filter(([, v]) => v.correct === 0)
+    .map(([k]) => k);
+
+  const performanceClassification = classifyPerformance(score);
+  const readinessLevel = getReadinessLevel(score);
+
+  // Recommended learning areas derived from weak/missing areas
+  const recommendedLearningAreas = [...new Set([...missingCompetencies, ...weakAreas])];
+
+  return { score, grade, correct, total, breakdown, skillAreas, skillBreakdown, strengths, weakAreas, missingCompetencies, performanceClassification, readinessLevel, recommendedLearningAreas };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -676,9 +713,126 @@ router.post('/:id/submit', authenticate, async (req, res) => {
       questions,
       responses,
       generatedAt: new Date().toISOString(),
+      improvementRecommendations: scoring.weakAreas?.length
+        ? scoring.weakAreas.map(a => `Focus on strengthening "${a}" through targeted practice and study`)
+        : [],
     };
 
     await Reports.create(report);
+
+    // ── Auto-generate + auto-assign module (non-blocking) ─────────────────────
+    setImmediate(async () => {
+      try {
+        const targetUserId = req.user.userId;
+        const user = await UserStore.getUserById(targetUserId);
+        const skills = report.weakAreas?.length > 0 ? report.weakAreas : ['Core Skills'];
+        const jdContext = (user?.jobDescription || '').slice(0, 2000);
+        const jdSkillsCtx = (user?.jdSkills || []).join(', ');
+        const jobRole = report.jobRole || user?.jobRole || 'Professional';
+
+        let moduleContent = null;
+        const groqKey = process.env.GROQ_API_KEY;
+        if (groqKey?.length > 10) {
+          try {
+            const prompt = `Design a targeted remedial training module for an employee based on their assessment results.
+
+=== EMPLOYEE CONTEXT ===
+Job Role: ${jobRole}
+${jdSkillsCtx ? `Skills from their JD: ${jdSkillsCtx}` : ''}
+${jdContext ? `Their Job Description:\n${jdContext}` : ''}
+
+=== ASSESSMENT RESULTS ===
+Assessment: ${report.assessmentTitle}
+Performance: ${report.performanceClassification?.label} (${report.score}%)
+Skill gaps identified: ${skills.join(', ')}
+
+=== MODULE DESIGN INSTRUCTIONS ===
+1. Directly address the specific skill gaps identified.
+2. Every session topic must connect to a gap area or its prerequisite.
+3. Match the employee's actual job domain — no unrelated content.
+4. For non-technical roles (HR, Operations, Finance, Sales), generate domain-appropriate content — not software/coding.
+5. Sessions build progressively: foundational → applied → advanced.
+6. Each session quiz tests the specific gap topic covered.
+
+Return JSON: {"title":"...","description":"...","objectives":["..."],"estimatedDuration":"X days","sessions":[{"title":"...","duration":"45 mins","topics":["..."],"keyPoints":["..."],"quiz":[{"question":"...","options":["A)...","B)...","C)...","D)..."],"answer":"A","explanation":"..."}]}]}`;
+
+            const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
+              body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 3000, response_format: { type: 'json_object' } }),
+              signal: AbortSignal.timeout(30000),
+            });
+            if (r.ok) {
+              const d = await r.json();
+              moduleContent = JSON.parse(d.choices?.[0]?.message?.content || '{}');
+            }
+          } catch (e) { console.warn('[auto-assign] AI module generation failed:', e.message); }
+        }
+
+        const moduleTitle = moduleContent?.title || `Remedial Training: ${skills[0]}`;
+        const newModule = await db.createModule({
+          title: moduleTitle,
+          description: moduleContent?.description || `Targeted training for ${jobRole} covering ${skills.join(', ')}`,
+          category: jobRole || 'Training',
+          difficulty: 'intermediate',
+          estimatedDuration: moduleContent?.estimatedDuration || '5 days',
+          skills,
+          tasks: moduleContent?.sessions?.map(s => ({ title: s.title, duration: s.duration, type: 'session' })) || [],
+          resources: [],
+          completionCriteria: 'Complete all sessions',
+          progressTracking: true,
+          companyId: req.user.companyId || null,
+          content: {
+            isMandatory: true,
+            sessions: moduleContent?.sessions || skills.map(s => ({ title: s, topics: [s], duration: '30 mins' })),
+            objectives: moduleContent?.objectives || [`Improve ${skills.join(', ')} skills`],
+            assessmentSource: report.id,
+            jobRole,
+            assessmentGaps: skills,
+          },
+        }, 'system');
+
+        const moduleId = newModule?.id;
+        if (!moduleId) { console.error('[auto-assign] Module creation returned no ID'); return; }
+
+        await ModuleAssignments.create({
+          id: randomUUID(),
+          moduleId,
+          userId: targetUserId,
+          isMandatory: true,
+          assignedAt: new Date().toISOString(),
+          assignedBy: 'system',
+          status: 'assigned',
+          assessmentReportId: report.id,
+        });
+
+        await UserStore.createAssignment({
+          type: 'module',
+          assignable_id: moduleId,
+          assignable_type: 'module',
+          assigned_by: 'system',
+          assigned_to_user: targetUserId,
+          priority: 'high',
+          status: 'assigned',
+          progress: 0,
+          isMandatory: true,
+          title: moduleTitle,
+          name: moduleTitle,
+          module_name: moduleTitle,
+          description: moduleContent?.description || '',
+          moduleRef: {
+            id: moduleId,
+            title: moduleTitle,
+            skills,
+            estimatedDuration: moduleContent?.estimatedDuration || '5 days',
+          },
+        });
+
+        console.log(`[auto-assign] Module "${moduleTitle}" created and assigned to user ${targetUserId} from report ${report.id}`);
+      } catch (e) {
+        console.error('[auto-assign] Failed:', e.message);
+      }
+    });
 
     res.json({ success: true, data: { report, scoring }, error: null });
   } catch (e) {

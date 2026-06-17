@@ -359,9 +359,9 @@ export default function AssessmentManagement() {
           {/* Table Header */}
           <div
             className="hidden md:grid px-5 py-3 border-b border-slate-700/40 bg-slate-800/30"
-            style={{ gridTemplateColumns: '2.5fr 1.5fr 1fr 1fr 140px 150px' }}
+            style={{ gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 130px' }}
           >
-            {['Title', 'Employees', 'Date', 'Status', 'Report', 'Assign Module'].map(h => (
+            {['Title', 'Employees', 'Date', 'Duration', 'Status', 'Report'].map(h => (
               <span key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</span>
             ))}
           </div>
@@ -387,20 +387,41 @@ export default function AssessmentManagement() {
             </div>
           ) : (
             <div className="divide-y divide-slate-700/20">
-              {filtered.map(a => (
+              {filtered.map(a => {
+                const submittedCount = a.employeeAssignments?.filter(ea => ea.status === 'submitted').length || 0;
+                const totalAssigned = a.employeeAssignments?.length || a.targetUsers?.length || 0;
+                const employeeNames = a.employeeAssignments?.map(ea => ea.userName || ea.name || ea.userId) || [];
+                return (
                 <div
                   key={a.id}
                   className="group px-5 py-4 hover:bg-slate-800/30 transition-all"
-                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1fr 140px 150px', alignItems: 'center', gap: '12px' }}
+                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 130px', alignItems: 'center', gap: '12px' }}
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-white truncate">{a.title}</p>
-                    {a.description && <p className="text-xs text-slate-500 truncate mt-0.5">{a.description}</p>}
+                    <button
+                      onClick={() => setViewDetail(a)}
+                      className="text-sm font-bold text-white hover:text-indigo-300 truncate transition-colors text-left"
+                    >
+                      {a.title}
+                    </button>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {a.targetGroup ? `Group: ${a.targetGroup}` : `${totalAssigned} ${totalAssigned === 1 ? 'employee' : 'employees'}`}
+                      {a.questionCount ? ` · ${a.questionCount} Qs` : ''}
+                    </p>
                   </div>
-                  <div>
-                    <span className="text-sm text-slate-300">
-                      {a.targetUsers?.length || 0} {(a.targetUsers?.length || 0) === 1 ? 'employee' : 'employees'}
-                    </span>
+                  <div className="min-w-0">
+                    {employeeNames.length > 0 ? (
+                      <div className="flex flex-col gap-0.5">
+                        {employeeNames.slice(0, 2).map((n, i) => (
+                          <span key={i} className="text-xs text-slate-300 truncate">{n}</span>
+                        ))}
+                        {employeeNames.length > 2 && (
+                          <span className="text-xs text-slate-500">+{employeeNames.length - 2} more</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-600">—</span>
+                    )}
                   </div>
                   <div>
                     <span className="text-xs text-slate-400">
@@ -412,39 +433,35 @@ export default function AssessmentManagement() {
                     </span>
                   </div>
                   <div>
-                    <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-semibold border capitalize ${STATUS_COLORS[a.status] || STATUS_COLORS.pending}`}>
-                      {a.status || 'assigned'}
+                    <span className="text-xs text-slate-400">
+                      {a.duration ? `${a.duration} min` : '—'}
                     </span>
                   </div>
                   <div>
-                    {a.employeeAssignments?.some(ea => ea.status === 'submitted') ? (
+                    <div className="flex flex-col gap-0.5">
+                      <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-semibold border capitalize w-fit ${STATUS_COLORS[a.status] || STATUS_COLORS.pending}`}>
+                        {a.status || 'assigned'}
+                      </span>
+                      {totalAssigned > 0 && (
+                        <span className="text-xs text-slate-500">{submittedCount}/{totalAssigned} submitted</span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    {submittedCount > 0 ? (
                       <button
                         onClick={() => setViewReport(a)}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-indigo-300 text-xs font-semibold transition-colors"
                       >
-                        📄 View Report
+                        View Report
                       </button>
                     ) : (
                       <span className="text-slate-600 text-xs">—</span>
                     )}
                   </div>
-                  <div>
-                    {a.employeeAssignments?.some(ea => ea.status === 'submitted') ? (
-                      <button
-                        onClick={() => handleAutoAssignModule(a)}
-                        disabled={assigningModuleId === a.id}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/30 rounded-lg text-emerald-300 text-xs font-semibold transition-colors disabled:opacity-50"
-                      >
-                        {assigningModuleId === a.id ? '⏳ Generating…' : '📦 Assign Module'}
-                      </button>
-                    ) : (
-                      <button disabled className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700/30 border border-slate-600/30 rounded-lg text-slate-600 text-xs font-semibold cursor-not-allowed">
-                        📦 Assign Module
-                      </button>
-                    )}
-                  </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -890,34 +907,95 @@ export default function AssessmentManagement() {
                 viewReport.employeeAssignments
                   .filter(ea => ea.status === 'submitted')
                   .map((ea, i) => {
-                    const score = ea.scoring?.score ?? ea.score;
-                    const grade = ea.scoring?.grade ?? ea.grade;
-                    const strengths = ea.scoring?.strengths || [];
-                    const weakAreas = ea.scoring?.weakAreas || [];
+                    const sc = ea.scoring || {};
+                    const score = sc.score ?? ea.score;
+                    const grade = sc.grade ?? ea.grade;
+                    const strengths = sc.strengths || [];
+                    const weakAreas = sc.weakAreas || [];
+                    const missing = sc.missingCompetencies || [];
+                    const recommended = sc.recommendedLearningAreas || [];
+                    const classification = sc.performanceClassification;
+                    const readiness = sc.readinessLevel;
+                    const skillBreakdown = sc.skillBreakdown || [];
                     const emp = employees.find(e => (e.userId || e.id || e._id) === ea.userId);
                     return (
-                      <div key={i} className="rounded-xl border border-slate-700/50 bg-slate-800/30 px-5 py-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-sm font-bold text-white">{emp?.name || ea.userId}</p>
+                      <div key={i} className="rounded-xl border border-slate-700/50 bg-slate-800/30 px-5 py-4 space-y-3">
+                        {/* Header */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-bold text-white">{emp?.name || ea.userName || ea.userId}</p>
+                            {ea.jobRole && <p className="text-xs text-slate-500">{ea.jobRole}</p>}
+                          </div>
                           <div className="flex items-center gap-2">
                             {score !== undefined && (
-                              <span className="text-xs font-black text-emerald-300">{score}%</span>
+                              <span className="text-lg font-black" style={{ color: classification?.color || '#10B981' }}>{score}%</span>
                             )}
                             {grade && (
-                              <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">{grade}</span>
+                              <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">Grade {grade}</span>
                             )}
                           </div>
                         </div>
-                        {strengths.length > 0 && (
-                          <p className="text-xs text-slate-400 mb-1">
-                            <span className="text-emerald-400 font-semibold">Strengths: </span>
-                            {strengths.join(', ')}
-                          </p>
+
+                        {/* Performance Classification */}
+                        {classification && (
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border" style={{ borderColor: classification.color + '40', backgroundColor: classification.color + '15' }}>
+                            <span className="text-xs font-black" style={{ color: classification.color }}>{classification.label}</span>
+                            {readiness && <span className="text-xs text-slate-400 ml-auto">{readiness}</span>}
+                          </div>
                         )}
+
+                        {/* Skill breakdown */}
+                        {skillBreakdown.length > 0 && (
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Skill Scores</p>
+                            {skillBreakdown.map((sb, si) => (
+                              <div key={si} className="flex items-center gap-2">
+                                <span className="text-xs text-slate-400 w-28 truncate flex-shrink-0">{sb.skill}</span>
+                                <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                  <div className="h-full rounded-full transition-all" style={{ width: `${sb.pct}%`, backgroundColor: sb.pct >= 70 ? '#10B981' : sb.pct >= 40 ? '#F59E0B' : '#EF4444' }} />
+                                </div>
+                                <span className="text-xs font-bold w-9 text-right" style={{ color: sb.pct >= 70 ? '#10B981' : sb.pct >= 40 ? '#F59E0B' : '#EF4444' }}>{sb.pct}%</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Strengths & Weak Areas */}
+                        <div className="grid grid-cols-2 gap-2">
+                          {strengths.length > 0 && (
+                            <div>
+                              <p className="text-xs font-bold text-emerald-400 mb-1">Strengths</p>
+                              <div className="flex flex-wrap gap-1">{strengths.map((s, si) => <span key={si} className="text-xs px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">{s}</span>)}</div>
+                            </div>
+                          )}
+                          {weakAreas.length > 0 && (
+                            <div>
+                              <p className="text-xs font-bold text-amber-400 mb-1">Weak Areas</p>
+                              <div className="flex flex-wrap gap-1">{weakAreas.map((w, wi) => <span key={wi} className="text-xs px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300">{w}</span>)}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Missing Competencies */}
+                        {missing.length > 0 && (
+                          <div>
+                            <p className="text-xs font-bold text-red-400 mb-1">Missing Competencies</p>
+                            <div className="flex flex-wrap gap-1">{missing.map((m, mi) => <span key={mi} className="text-xs px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/20 text-red-300">{m}</span>)}</div>
+                          </div>
+                        )}
+
+                        {/* Recommended Learning */}
+                        {recommended.length > 0 && (
+                          <div>
+                            <p className="text-xs font-bold text-indigo-400 mb-1">Recommended Learning Areas</p>
+                            <div className="flex flex-wrap gap-1">{recommended.map((r, ri) => <span key={ri} className="text-xs px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">{r}</span>)}</div>
+                          </div>
+                        )}
+
+                        {/* Auto-module notice */}
                         {weakAreas.length > 0 && (
-                          <p className="text-xs text-slate-400">
-                            <span className="text-amber-400 font-semibold">Weak Areas: </span>
-                            {weakAreas.join(', ')}
+                          <p className="text-xs text-slate-500 border-t border-slate-700/40 pt-2">
+                            Training module auto-generated and assigned based on weak areas.
                           </p>
                         )}
                       </div>
