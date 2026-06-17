@@ -105,10 +105,17 @@ async function sbUpdate(table, id, updates) {
     // upsert (not update): if the row was stranded in the file fallback by an
     // earlier failed insert, update().eq() matches 0 rows and the change is
     // silently lost while the route reports success
-    const { data, error } = await sb.from(table)
+    let { data, error } = await sb.from(table)
       .upsert({ id, data: rest, updated_at: new Date().toISOString() }, { onConflict: 'id' })
       .select('id, data')
       .maybeSingle();
+    if (error?.code === '42703') {
+      // Table missing updated_at column — retry without it
+      ({ data, error } = await sb.from(table)
+        .upsert({ id, data: rest }, { onConflict: 'id' })
+        .select('id, data')
+        .maybeSingle());
+    }
     if (error) { console.error(`[DataStore] ${table} update:`, error.message); return null; }
     return data ? { id: data.id, ...data.data } : merged;
   } catch (e) { console.error(`[DataStore] ${table} update exception:`, e.message); return null; }

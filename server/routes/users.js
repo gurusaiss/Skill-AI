@@ -196,7 +196,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       ipAddress: req.ip,
     });
 
-    // Create activation token and attempt email — 8s timeout so we can report status
+    // Create activation token and attempt email — 25s timeout to survive SMTP retries
     let emailSent = false;
     let emailError = null;
     let activationUrl = null;
@@ -206,7 +206,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       await ActivationTokens.create({ id: tokenId, userId: user.userId, email: user.email, expiresAt, used: false });
       const frontendUrl = process.env.FRONTEND_URL || 'https://skillforge-swart-mu.vercel.app';
       activationUrl = `${frontendUrl}/auth/activate?token=${tokenId}`;
-      const timeout = new Promise(resolve => setTimeout(() => resolve({ success: false, error: 'timeout' }), 8000));
+      const timeout = new Promise(resolve => setTimeout(() => resolve({ success: false, error: 'timeout' }), 25000));
       const result = await Promise.race([
         EmailService.sendInvitationEmail(user.email, {
           name: user.name,
@@ -219,7 +219,10 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
         timeout,
       ]);
       emailSent = result?.success === true;
-      if (!emailSent) emailError = result?.error || 'Unknown error';
+      if (!emailSent) {
+        emailError = result?.error || 'Unknown error';
+        console.warn(`[users] Invitation email to ${user.email} failed: ${emailError}`);
+      }
     } catch (emailErr) {
       emailError = emailErr.message;
       console.warn('[users] Invitation email failed:', emailErr.message);
@@ -653,7 +656,7 @@ router.post('/:userId/resend-invite', authenticate, requireRole('admin', 'manage
     const frontendUrl = process.env.FRONTEND_URL || 'https://skillforge-swart-mu.vercel.app';
     const activationUrl = `${frontendUrl}/auth/activate?token=${tokenId}`;
 
-    const timeout = new Promise(resolve => setTimeout(() => resolve({ success: false, error: 'timeout' }), 8000));
+    const timeout = new Promise(resolve => setTimeout(() => resolve({ success: false, error: 'timeout' }), 25000));
     const result = await Promise.race([
       EmailService.sendInvitationEmail(user.email, {
         name: user.name,
