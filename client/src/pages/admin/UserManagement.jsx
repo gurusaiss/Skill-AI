@@ -860,7 +860,15 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
 function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
   const [form, setForm] = useState({ name: '', email: '', role: 'employee', jobRole: '', department: '', jobDescription: '', companyName: '' });
   const [saving, setSaving] = useState(false);
+  const [roleOptions, setRoleOptions] = useState([]);
   const f = (key) => (e) => setForm(prev => ({ ...prev, [key]: e.target.value }));
+
+  useEffect(() => {
+    authFetch('/api/roles').then(res => {
+      const list = Array.isArray(res) ? res : res?.roles || res?.data || [];
+      setRoleOptions(list.map(r => ({ name: r.roleName || r.name || '', dept: r.department || '' })).filter(r => r.name));
+    }).catch(() => {});
+  }, []);
 
   const handleCreate = async () => {
     if (!form.name.trim() || !form.email.trim()) { setToast({ message: 'Name and email are required', type: 'error' }); return; }
@@ -910,7 +918,23 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <FieldLabel>Job Role</FieldLabel>
-              <input type="text" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Developer" />
+              <input
+                type="text"
+                list="create-role-options"
+                value={form.jobRole}
+                onChange={e => {
+                  const val = e.target.value;
+                  setForm(prev => ({ ...prev, jobRole: val }));
+                  const match = roleOptions.find(r => r.name.toLowerCase() === val.toLowerCase());
+                  if (match?.dept) setForm(prev => ({ ...prev, jobRole: val, department: prev.department || match.dept }));
+                }}
+                className={inputCls}
+                placeholder="e.g. Developer"
+                autoComplete="off"
+              />
+              <datalist id="create-role-options">
+                {roleOptions.map(r => <option key={r.name} value={r.name}>{r.dept ? `${r.name} — ${r.dept}` : r.name}</option>)}
+              </datalist>
             </div>
             <div>
               <FieldLabel>Department</FieldLabel>
