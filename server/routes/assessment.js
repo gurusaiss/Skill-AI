@@ -233,6 +233,17 @@ export function classifyPerformance(score, customThresholds) {
   return { label: 'Critical Improvement Required', color: '#EF4444', score };
 }
 
+// GET /api/assessments/generated-content — list all AI-generated content for this company
+router.get('/generated-content', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const companyId = req.user.companyId || 'default';
+    const all = await GeneratedContent.getByCompany(companyId);
+    res.json({ success: true, data: all || [] });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // GET /api/assessments/thresholds — return company thresholds
 router.get('/thresholds', authenticate, async (req, res) => {
   try {

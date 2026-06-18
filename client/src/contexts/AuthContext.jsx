@@ -228,11 +228,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Register new user
-  const register = async (email, password, name) => {
+  const register = async (email, password, name, extras = {}) => {
     try {
       const response = await authRequest('/api/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ email, password, name, ...extras }),
       });
 
       if (response.success) {
