@@ -1,34 +1,34 @@
 import { createRequire } from 'module';
 import { lookup as dnsLookup } from 'dns';
-import https from 'https';
 const require = createRequire(import.meta.url);
 const nodemailer = require('nodemailer');
 
 class EmailService {
   constructor() {
     this.transporter = null;
+    this.mailjetApiKey = process.env.MAILJET_API_KEY || process.env.SMTP_USER;
+    this.mailjetSecretKey = process.env.MAILJET_SECRET_KEY || process.env.SMTP_PASSWORD;
+    this.useMailjetApi = !!(
+      process.env.MAILJET_API_KEY ||
+      (process.env.SMTP_HOST && process.env.SMTP_HOST.includes('mailjet'))
+    );
     this.from = process.env.SMTP_FROM || 'SkillForge AI <noreply@skillforge.ai>';
     this.maxRetries = 1;
     this.retryDelay = 3000;
-    this._init();
+    if (!this.useMailjetApi) this._initSmtp();
+    else console.log('[EmailService] Mailjet HTTP API mode — SMTP bypassed');
   }
 
-  _init() {
+  _initSmtp() {
     const smtpHostname = process.env.SMTP_HOST || 'smtp.gmail.com';
     const port = parseInt(process.env.SMTP_PORT || '587');
-
     if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
-      console.warn('[EmailService] SMTP credentials not configured. Email sending will be disabled.');
+      console.warn('[EmailService] SMTP credentials not configured.');
       return;
     }
-
-    // Override nodemailer's DNS lookup to always resolve to IPv4.
-    // Render free tier has no outbound IPv6 routing — without this, Node.js
-    // picks an IPv6 address (AAAA) first and the TCP connect hangs/fails.
     const ipv4Lookup = (hostname, options, callback) => {
       dnsLookup(hostname, { ...options, family: 4 }, callback);
     };
-
     this.transporter = nodemailer.createTransport({
       host: smtpHostname,
       port,
@@ -39,12 +39,54 @@ class EmailService {
       greetingTimeout: 8000,
       socketTimeout: 15000,
     });
-
-    console.log(`[EmailService] SMTP configured → ${smtpHostname}:${port} (IPv4-forced)`);
+    console.log(`[EmailService] SMTP configured → ${smtpHostname}:${port}`);
   }
 
   isEnabled() {
-    return this.transporter !== null;
+    return this.useMailjetApi
+      ? !!(this.mailjetApiKey && this.mailjetSecretKey)
+      : this.transporter !== null;
+  }
+
+  // Send via Mailjet REST API (HTTPS — never blocked by Render)
+  async _sendViaMailjetApi(to, subject, htmlBody, textBody, fromOverride, replyTo) {
+    const fromRaw = fromOverride || this.from;
+    // Parse "Name <email>" or plain email
+    const match = fromRaw.match(/^(.+?)\s*<(.+?)>$/);
+    const fromName = match ? match[1].trim() : 'SkillForge AI';
+    const fromEmail = match ? match[2].trim() : fromRaw.trim();
+
+    const payload = {
+      Messages: [{
+        From: { Email: fromEmail, Name: fromName },
+        To: [{ Email: to }],
+        Subject: subject,
+        HTMLPart: htmlBody,
+        TextPart: textBody || '',
+        ...(replyTo ? { ReplyTo: { Email: replyTo } } : {}),
+      }],
+    };
+
+    const auth = Buffer.from(`${this.mailjetApiKey}:${this.mailjetSecretKey}`).toString('base64');
+    const body = JSON.stringify(payload);
+
+    const response = await fetch('https://api.mailjet.com/v3.1/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${auth}`,
+      },
+      body,
+    });
+
+    const result = await response.json();
+    if (!response.ok || result.Messages?.[0]?.Status !== 'success') {
+      const errMsg = result.Messages?.[0]?.Errors?.[0]?.ErrorMessage
+        || result.ErrorMessage
+        || `HTTP ${response.status}`;
+      throw new Error(errMsg);
+    }
+    return result.Messages[0].To[0].MessageID;
   }
 
   /**
@@ -93,7 +135,24 @@ class EmailService {
   }
 
   async sendEmail(to, subject, htmlBody, textBody, retryCount = 0, fromOverride = null, replyTo = null) {
-    // Prefer Resend HTTP API — works from cloud providers where Gmail SMTP is blocked
+    // Mailjet HTTP API — works from any cloud provider (SMTP is blocked on Render free tier)
+    if (this.useMailjetApi) {
+      if (!this.isEnabled()) return { success: false, error: 'Mailjet credentials not configured' };
+      try {
+        const messageId = await this._sendViaMailjetApi(to, subject, htmlBody, textBody, fromOverride, replyTo);
+        console.log(`[EmailService] Mailjet API: sent to ${to} (id:${messageId})`);
+        return { success: true, messageId };
+      } catch (err) {
+        console.error(`[EmailService] Mailjet API error → ${to}:`, err.message);
+        if (retryCount < this.maxRetries) {
+          await this.delay(this.retryDelay);
+          return this.sendEmail(to, subject, htmlBody, textBody, retryCount + 1, fromOverride, replyTo);
+        }
+        return { success: false, error: err.message };
+      }
+    }
+
+    // Resend HTTP API fallback
     if (process.env.RESEND_API_KEY) {
       const from = fromOverride || process.env.RESEND_FROM || this.from;
       const payload = { from, to: Array.isArray(to) ? to : [to], subject, html: htmlBody, text: textBody };
@@ -109,33 +168,24 @@ class EmailService {
       }
     }
 
+    // SMTP fallback
     if (!this.isEnabled()) {
       console.log(`[EmailService] Email would be sent to ${to}: ${subject}`);
       return { success: false, error: 'Email service not configured' };
     }
 
     try {
-      const mailOptions = {
-        from: fromOverride || this.from,
-        to,
-        subject,
-        text: textBody,
-        html: htmlBody
-      };
+      const mailOptions = { from: fromOverride || this.from, to, subject, text: textBody, html: htmlBody };
       if (replyTo) mailOptions.replyTo = replyTo;
-
       const info = await this.transporter.sendMail(mailOptions);
-      console.log(`[EmailService] Email sent successfully to ${to}: ${info.messageId}`);
+      console.log(`[EmailService] Email sent to ${to}: ${info.messageId}`);
       return { success: true, messageId: info.messageId };
     } catch (error) {
       console.error(`[EmailService] Error sending email to ${to}:`, error.message);
-
       if (retryCount < this.maxRetries) {
-        console.log(`[EmailService] Retrying... (${retryCount + 1}/${this.maxRetries})`);
         await this.delay(this.retryDelay);
-        return await this.sendEmail(to, subject, htmlBody, textBody, retryCount + 1, fromOverride, replyTo);
+        return this.sendEmail(to, subject, htmlBody, textBody, retryCount + 1, fromOverride, replyTo);
       }
-
       return { success: false, error: error.message };
     }
   }
