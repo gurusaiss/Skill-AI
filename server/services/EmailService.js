@@ -385,41 +385,120 @@ The SkillForge AI Team
   }
 
   async sendInvitationEmail(email, { name, role, companyName, activationUrl, fromEmail, fromName }) {
-    const subject = `You're invited to ${companyName || 'SkillForge AI'} — Set Up Your Account`;
-    const displayRole = (role || 'employee').charAt(0).toUpperCase() + (role || 'employee').slice(1);
+    const subject = `${name ? name + ', you' : 'You'}'ve been invited to ${companyName || 'SkillForge AI'} — Activate Your Account`;
+    const displayRole = (role || 'Employee').charAt(0).toUpperCase() + (role || 'Employee').slice(1);
+    const displayCompany = companyName || 'SkillForge AI';
     const htmlBody = `
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <style>
-    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background: #f4f4f4; margin: 0; padding: 0; }
-    .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .header { background: #4F46E5; padding: 32px 40px; text-align: center; }
-    .header h1 { color: #fff; margin: 0; font-size: 24px; }
-    .body { padding: 32px 40px; }
-    .btn { display: inline-block; background: #4F46E5; color: #fff !important; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-size: 16px; font-weight: bold; margin: 24px 0; }
-    .footer { background: #f9f9f9; padding: 16px 40px; text-align: center; color: #888; font-size: 13px; }
-    .badge { display: inline-block; background: #EEF2FF; color: #4F46E5; border-radius: 4px; padding: 4px 12px; font-size: 14px; font-weight: 600; }
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>You're Invited</title>
 </head>
-<body>
-  <div class="container">
-    <div class="header"><h1>Welcome to ${companyName || 'SkillForge AI'}</h1></div>
-    <div class="body">
-      <p>Hi ${name || 'there'},</p>
-      <p>You've been invited to join <strong>${companyName || 'SkillForge AI'}</strong> as a <span class="badge">${displayRole}</span>.</p>
-      <p>Click the button below to set up your password and activate your account. This link expires in <strong>72 hours</strong>.</p>
-      <div style="text-align:center"><a href="${activationUrl}" class="btn">Set Up My Account</a></div>
-      <p style="font-size:13px;color:#666">Or copy this link: <a href="${activationUrl}">${activationUrl}</a></p>
-      <p>If you were not expecting this invitation, you can safely ignore this email.</p>
-    </div>
-    <div class="footer">SkillForge AI — Workforce Development Platform</div>
-  </div>
+<body style="margin:0;padding:0;background:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+        <!-- Header -->
+        <tr><td style="background:linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%);border-radius:12px 12px 0 0;padding:40px 48px;text-align:center;">
+          <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:50%;width:64px;height:64px;line-height:64px;font-size:28px;margin-bottom:16px;">⚡</div>
+          <h1 style="margin:0;color:#fff;font-size:26px;font-weight:700;letter-spacing:-0.5px;">Welcome to ${displayCompany}</h1>
+          <p style="margin:8px 0 0;color:rgba(255,255,255,0.80);font-size:15px;">Your AI-powered learning journey starts here</p>
+        </td></tr>
+
+        <!-- Body -->
+        <tr><td style="background:#ffffff;padding:40px 48px;">
+          <p style="margin:0 0 20px;font-size:16px;color:#374151;">Hi <strong>${name || 'there'}</strong>,</p>
+          <p style="margin:0 0 24px;font-size:15px;color:#4B5563;line-height:1.7;">
+            You've been added to <strong>${displayCompany}</strong>'s workforce development platform as a
+            <span style="display:inline-block;background:#EEF2FF;color:#4F46E5;border-radius:20px;padding:2px 12px;font-size:13px;font-weight:600;">${displayRole}</span>.
+            Click below to set your password and activate your account.
+          </p>
+
+          <!-- Feature highlights -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 32px;">
+            <tr>
+              <td width="33%" style="padding:16px 8px 16px 0;vertical-align:top;">
+                <div style="background:#F8FAFC;border-radius:10px;padding:20px 16px;text-align:center;">
+                  <div style="font-size:24px;margin-bottom:8px;">🎯</div>
+                  <div style="font-size:13px;font-weight:600;color:#1E293B;">Skill Assessments</div>
+                  <div style="font-size:12px;color:#64748B;margin-top:4px;">Know exactly where you stand</div>
+                </div>
+              </td>
+              <td width="33%" style="padding:16px 4px;vertical-align:top;">
+                <div style="background:#F8FAFC;border-radius:10px;padding:20px 16px;text-align:center;">
+                  <div style="font-size:24px;margin-bottom:8px;">🤖</div>
+                  <div style="font-size:13px;font-weight:600;color:#1E293B;">AI Learning Paths</div>
+                  <div style="font-size:12px;color:#64748B;margin-top:4px;">Personalized just for you</div>
+                </div>
+              </td>
+              <td width="33%" style="padding:16px 0 16px 8px;vertical-align:top;">
+                <div style="background:#F8FAFC;border-radius:10px;padding:20px 16px;text-align:center;">
+                  <div style="font-size:24px;margin-bottom:8px;">📈</div>
+                  <div style="font-size:13px;font-weight:600;color:#1E293B;">Track Progress</div>
+                  <div style="font-size:12px;color:#64748B;margin-top:4px;">See your growth in real time</div>
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <!-- CTA Button -->
+          <div style="text-align:center;margin:0 0 28px;">
+            <a href="${activationUrl}"
+               style="display:inline-block;background:linear-gradient(135deg,#4F46E5,#7C3AED);color:#ffffff;text-decoration:none;padding:16px 48px;border-radius:8px;font-size:16px;font-weight:700;letter-spacing:0.3px;box-shadow:0 4px 14px rgba(79,70,229,0.4);">
+              Activate My Account →
+            </a>
+          </div>
+
+          <!-- Expiry notice -->
+          <div style="background:#FEF3C7;border-left:4px solid #F59E0B;border-radius:0 6px 6px 0;padding:12px 16px;margin-bottom:28px;">
+            <p style="margin:0;font-size:13px;color:#92400E;">
+              ⏰ <strong>This link expires in 72 hours.</strong> Please activate your account before it expires.
+            </p>
+          </div>
+
+          <!-- Fallback link -->
+          <p style="margin:0 0 24px;font-size:13px;color:#94A3B8;">
+            Button not working? Copy and paste this link into your browser:<br>
+            <a href="${activationUrl}" style="color:#4F46E5;word-break:break-all;">${activationUrl}</a>
+          </p>
+
+          <hr style="border:none;border-top:1px solid #E2E8F0;margin:0 0 24px;">
+          <p style="margin:0;font-size:13px;color:#94A3B8;">
+            If you weren't expecting this invitation, you can safely ignore this email — no account will be created without your activation.
+          </p>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="background:#F8FAFC;border-radius:0 0 12px 12px;padding:24px 48px;text-align:center;border-top:1px solid #E2E8F0;">
+          <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#4F46E5;">⚡ SkillForge AI</p>
+          <p style="margin:0;font-size:12px;color:#94A3B8;">AI-Powered Workforce Development Platform</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
 </body>
 </html>`;
-    const textBody = `Hi ${name},\n\nYou've been invited to ${companyName || 'SkillForge AI'} as ${displayRole}.\n\nActivate your account: ${activationUrl}\n\nThis link expires in 72 hours.`;
-    // Always send from the verified platform address for deliverability.
-    // Admin email goes in Reply-To so replies reach them directly.
+
+    const textBody = `Hi ${name || 'there'},
+
+You've been invited to join ${displayCompany} as ${displayRole}.
+
+Activate your account (link expires in 72 hours):
+${activationUrl}
+
+What you get access to:
+- Skill assessments to know where you stand
+- AI-powered personalized learning paths
+- Real-time progress tracking
+
+If you weren't expecting this, you can safely ignore this email.
+
+— SkillForge AI Team`;
+
     const replyTo = fromEmail || null;
     return await this.sendEmail(email, subject, htmlBody, textBody, 0, null, replyTo);
   }
