@@ -710,4 +710,50 @@ export const EmployeeChecklists = {
   },
 };
 
-export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists };
+// ── GENERATED CONTENT ─────────────────────────────────────────────────────────
+// Tracks all AI-generated content (assessments, modules, learning paths) for admin review.
+export const GeneratedContent = {
+  async getAll()           { return getAllHealed('generated_content', 'generated_content.json'); },
+  async getByCompany(cid)  {
+    const all = await this.getAll();
+    return (all || []).filter(r => (r.companyId || 'default') === (cid || 'default'));
+  },
+  async getById(id) {
+    const sb = getSB();
+    if (sb) { const r = await sbGetById('generated_content', id); if (r) return r; }
+    return readFile('generated_content.json').find(r => r.id === id) || null;
+  },
+  async create(doc) {
+    const sb = getSB();
+    if (sb) { const r = await sbInsert('generated_content', doc.id, doc); if (r) return r; }
+    const all = readFile('generated_content.json');
+    all.push(doc);
+    writeFile('generated_content.json', all);
+    return doc;
+  },
+  async update(id, updates) { return updateHealed('generated_content', 'generated_content.json', id, updates); },
+};
+
+// ── ASSESSMENT THRESHOLDS ─────────────────────────────────────────────────────
+// Per-company configurable performance classification thresholds.
+export const AssessmentThresholds = {
+  async getByCompany(companyId) {
+    const id = companyId || 'default';
+    const sb = getSB();
+    if (sb) { const r = await sbGetById('assessment_thresholds', id); if (r) return r; }
+    return readFile('assessment_thresholds.json').find(r => r.id === id) || null;
+  },
+  async upsert(companyId, thresholds) {
+    const id = companyId || 'default';
+    const doc = { id, thresholds, updatedAt: new Date().toISOString() };
+    const sb = getSB();
+    if (sb) { const r = await sbInsert('assessment_thresholds', id, doc); if (r) return r; }
+    const all = readFile('assessment_thresholds.json');
+    const idx = all.findIndex(r => r.id === id);
+    if (idx >= 0) all[idx] = doc; else all.push(doc);
+    writeFile('assessment_thresholds.json', all);
+    return doc;
+  },
+};
+
+export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds };
