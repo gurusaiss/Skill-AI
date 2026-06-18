@@ -1,5 +1,6 @@
 import { createRequire } from 'module';
 import { lookup as dnsLookup } from 'dns';
+import https from 'https';
 const require = createRequire(import.meta.url);
 const nodemailer = require('nodemailer');
 
@@ -48,10 +49,9 @@ class EmailService {
       : this.transporter !== null;
   }
 
-  // Send via Mailjet REST API (HTTPS — never blocked by Render)
+  // Send via Mailjet REST API using Node https module (fetch uses undici which ignores IPv4 DNS fix)
   async _sendViaMailjetApi(to, subject, htmlBody, textBody, fromOverride, replyTo) {
     const fromRaw = fromOverride || this.from;
-    // Parse "Name <email>" or plain email
     const match = fromRaw.match(/^(.+?)\s*<(.+?)>$/);
     const fromName = match ? match[1].trim() : 'SkillForge AI';
     const fromEmail = match ? match[2].trim() : fromRaw.trim();
@@ -70,23 +70,48 @@ class EmailService {
     const auth = Buffer.from(`${this.mailjetApiKey}:${this.mailjetSecretKey}`).toString('base64');
     const body = JSON.stringify(payload);
 
-    const response = await fetch('https://api.mailjet.com/v3.1/send', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Basic ${auth}`,
-      },
-      body,
-    });
+    return new Promise((resolve, reject) => {
+      // Force IPv4 for api.mailjet.com
+      dnsLookup('api.mailjet.com', { family: 4 }, (dnsErr, address) => {
+        if (dnsErr) return reject(new Error(`DNS lookup failed: ${dnsErr.message}`));
 
-    const result = await response.json();
-    if (!response.ok || result.Messages?.[0]?.Status !== 'success') {
-      const errMsg = result.Messages?.[0]?.Errors?.[0]?.ErrorMessage
-        || result.ErrorMessage
-        || `HTTP ${response.status}`;
-      throw new Error(errMsg);
-    }
-    return result.Messages[0].To[0].MessageID;
+        const req = https.request({
+          host: address,
+          path: '/v3.1/send',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${auth}`,
+            'Content-Length': Buffer.byteLength(body),
+            'Host': 'api.mailjet.com',
+          },
+          servername: 'api.mailjet.com',
+        }, (res) => {
+          let data = '';
+          res.on('data', chunk => { data += chunk; });
+          res.on('end', () => {
+            try {
+              const result = JSON.parse(data);
+              if (res.statusCode >= 200 && res.statusCode < 300 && result.Messages?.[0]?.Status === 'success') {
+                resolve(result.Messages[0].To[0].MessageID);
+              } else {
+                const errMsg = result.Messages?.[0]?.Errors?.[0]?.ErrorMessage
+                  || result.ErrorMessage
+                  || `HTTP ${res.statusCode}`;
+                reject(new Error(errMsg));
+              }
+            } catch (e) {
+              reject(new Error(`Invalid JSON response: ${data.slice(0, 100)}`));
+            }
+          });
+        });
+
+        req.on('error', err => reject(err));
+        req.setTimeout(15000, () => { req.destroy(); reject(new Error('Request timeout')); });
+        req.write(body);
+        req.end();
+      });
+    });
   }
 
   /**
