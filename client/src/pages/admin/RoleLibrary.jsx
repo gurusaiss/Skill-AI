@@ -371,14 +371,30 @@ export default function RoleLibrary() {
                       : <span className="text-slate-600 text-xs">—</span>}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${role.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-600'}`}>
-                      {role.status}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold w-fit ${role.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-600'}`}>
+                        {role.status}
+                      </span>
+                      {role.assessmentTemplateId && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold w-fit bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          ✓ Assessment Ready
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-2">
+                    <div className="flex gap-1.5 flex-wrap">
                       <button onClick={() => setModal({ type: 'view', role })} className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">View</button>
                       <button onClick={() => setModal({ type: 'edit', role })} className="text-xs px-2 py-1 rounded bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50">Edit</button>
+                      <button onClick={async () => {
+                        try {
+                          await authFetch(`/api/roles/${role.id}/generate-assessment`, { method: 'POST', body: JSON.stringify({ questionCount: 10 }) });
+                          toast(`Assessment template generated for ${role.roleName}`);
+                          load();
+                        } catch (e) { toast(e.message, 'error'); }
+                      }} className="text-xs px-2 py-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 whitespace-nowrap">
+                        {role.assessmentTemplateId ? '↻ Regen' : '⚡ Gen Assessment'}
+                      </button>
                       <button onClick={() => setDelId(role.id)} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40">Delete</button>
                     </div>
                   </td>

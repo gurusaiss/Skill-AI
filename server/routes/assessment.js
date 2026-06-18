@@ -17,8 +17,9 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import UserStore from '../services/UserStore.js';
-import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments } from '../services/DataStore.js';
+import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds } from '../services/DataStore.js';
 import * as db from '../db/store.js';
+import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -28,11 +29,9 @@ const router = express.Router();
 
 // ── AI question generation ────────────────────────────────────────────────────
 
-/**
- * Generate unique questions per employee from job role + JD
- * Uses a seed (userId + assessmentId) to ensure uniqueness even for same JD
- */
-async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed }) {
+// generateQuestionsFromJD is imported from ../services/AssessmentGenerator.js
+// Keeping this stub comment so line references stay stable
+async function _unused_generateQuestionsFromJD_stub({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed }) {
   const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 30);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const seed = employeeSeed || randomUUID().slice(0, 8);
@@ -214,8 +213,7 @@ function normaliseResponses(rawAnswers, rawResponses, questionCount) {
 }
 
 // ── Performance classification ─────────────────────────────────────────────────
-// Default thresholds; admin can override via performance_config table in future
-const DEFAULT_THRESHOLDS = [
+export const DEFAULT_THRESHOLDS = [
   { min: 95, label: 'Outstanding',                  color: '#10B981' },
   { min: 85, label: 'Excellent',                    color: '#22C55E' },
   { min: 75, label: 'Good',                         color: '#84CC16' },
@@ -224,12 +222,42 @@ const DEFAULT_THRESHOLDS = [
   { min: 0,  label: 'Critical Improvement Required',color: '#EF4444' },
 ];
 
-function classifyPerformance(score) {
-  for (const t of DEFAULT_THRESHOLDS) {
+// Accepts optional custom thresholds array (from company/role config)
+export function classifyPerformance(score, customThresholds) {
+  const thresholds = (Array.isArray(customThresholds) && customThresholds.length > 0)
+    ? customThresholds
+    : DEFAULT_THRESHOLDS;
+  for (const t of thresholds) {
     if (score >= t.min) return { label: t.label, color: t.color, score };
   }
   return { label: 'Critical Improvement Required', color: '#EF4444', score };
 }
+
+// GET /api/assessments/thresholds — return company thresholds
+router.get('/thresholds', authenticate, async (req, res) => {
+  try {
+    const companyId = req.user.companyId || 'default';
+    const saved = await AssessmentThresholds.getByCompany(companyId);
+    res.json({ success: true, data: { thresholds: saved?.thresholds || DEFAULT_THRESHOLDS } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// PUT /api/assessments/thresholds — update company thresholds (admin only)
+router.put('/thresholds', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const companyId = req.user.companyId || 'default';
+    const { thresholds } = req.body;
+    if (!Array.isArray(thresholds) || thresholds.length < 2) {
+      return res.status(400).json({ success: false, error: 'Provide at least 2 threshold entries' });
+    }
+    const saved = await AssessmentThresholds.upsert(companyId, thresholds);
+    res.json({ success: true, data: saved });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
 
 function getReadinessLevel(score) {
   if (score >= 85) return 'Ready for Advanced Responsibilities';
