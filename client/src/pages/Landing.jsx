@@ -646,15 +646,22 @@ export default function Landing() {
               SKILL FORGE
             </span>
           </h1>
-          <p className="text-2xl md:text-3xl font-black text-slate-300 mb-5">
-            Master Any Skill.{' '}
-            <span className="text-slate-500">Autonomously.</span>
+          <p className="text-2xl md:text-3xl font-black text-slate-300 mb-4">
+            AI-Powered Workforce Development.{' '}
+            <span className="text-indigo-400">Built for Teams.</span>
           </p>
-          <p className="max-w-2xl mx-auto text-base text-slate-400 leading-relaxed">
-            A multi-agent AI system that diagnoses your gaps, builds a personalized plan,
-            runs adaptive practice sessions, and certifies mastery —{' '}
-            <em className="text-slate-300">without waiting for human instruction.</em>
+          <p className="max-w-xl mx-auto text-base text-slate-400 leading-relaxed mb-6">
+            Assess your employees' skills, auto-generate personalized training modules,
+            and track every individual's growth —{' '}
+            <em className="text-slate-300">all from one intelligent dashboard.</em>
           </p>
+          <div className="flex flex-wrap justify-center gap-2 mb-2">
+            {['Skill Assessments', 'AI Training Modules', 'Auto-Assignment', 'Progress Tracking', 'Bulk Onboarding'].map(tag => (
+              <span key={tag} className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                {tag}
+              </span>
+            ))}
+          </div>
         </motion.div>
 
         {/* ── MAIN GRID ──────────────────────────────────────────────────── */}
