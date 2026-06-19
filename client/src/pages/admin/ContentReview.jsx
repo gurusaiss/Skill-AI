@@ -42,6 +42,125 @@ function TypeBadge({ type }) {
   return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${map[type] || map.assessment}`}>{labels[type] || type}</span>;
 }
 
+// ── Question Editor ───────────────────────────────────────────────────────────
+
+function QuestionEditor({ assessment, onSaved, onClose }) {
+  // Normalise: questions live in .questions or in employeeAssignments[0].questions
+  const getQs = (a) => a?.questions || a?.employeeAssignments?.[0]?.questions || [];
+  const [qs, setQs] = useState(() => getQs(assessment).map((q, i) => ({ ...q, _key: i })));
+  const [saving, setSaving] = useState(false);
+
+  const update = (idx, field, val) =>
+    setQs(prev => prev.map((q, i) => i === idx ? { ...q, [field]: val } : q));
+
+  const updateOption = (qIdx, optIdx, val) =>
+    setQs(prev => prev.map((q, i) => {
+      if (i !== qIdx) return q;
+      const opts = [...(q.options || [])];
+      opts[optIdx] = val;
+      return { ...q, options: opts };
+    }));
+
+  const addQuestion = () =>
+    setQs(prev => [...prev, {
+      question: '', type: 'mcq', difficulty: 'medium', skillArea: '',
+      options: ['Option A', 'Option B', 'Option C', 'Option D'], correctAnswer: 0,
+      _key: Date.now(),
+    }]);
+
+  const removeQuestion = (idx) => setQs(prev => prev.filter((_, i) => i !== idx));
+
+  const save = async () => {
+    if (qs.some(q => !q.question?.trim())) { toast('All questions must have text', 'error'); return; }
+    setSaving(true);
+    try {
+      const cleanQs = qs.map(({ _key, ...q }) => q);
+      // Build body — update both .questions and inside employeeAssignments if present
+      const body = { questions: cleanQs };
+      if (assessment.employeeAssignments?.length > 0) {
+        body.employeeAssignments = assessment.employeeAssignments.map(ea => ({ ...ea, questions: cleanQs }));
+        body.questionCount = cleanQs.length;
+      }
+      await authFetch(`/api/assessments/${assessment.id}`, { method: 'PUT', body: JSON.stringify(body) });
+      toast(`Questions saved (${cleanQs.length} total)`);
+      onSaved();
+    } catch { toast('Failed to save questions', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <div className="bg-[#1E293B] border border-slate-700/80 rounded-2xl w-full max-w-3xl shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 flex-shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-white">Edit Questions</h2>
+            <p className="text-slate-400 text-xs mt-0.5 truncate max-w-sm">{assessment.title}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {qs.map((q, qi) => (
+            <div key={q._key} className="bg-slate-900/60 border border-slate-700/40 rounded-xl p-4">
+              <div className="flex items-start gap-3 mb-3">
+                <span className="text-xs font-bold text-indigo-400 mt-2 flex-shrink-0">Q{qi + 1}</span>
+                <div className="flex-1">
+                  <textarea value={q.question} onChange={e => update(qi, 'question', e.target.value)}
+                    rows={2} placeholder="Question text..."
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none" />
+                </div>
+                <button onClick={() => removeQuestion(qi)}
+                  className="flex-shrink-0 px-2 py-1 rounded-lg bg-red-900/30 hover:bg-red-900/50 text-red-400 text-xs transition-colors mt-1">
+                  ✕
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {(q.options || []).map((opt, oi) => (
+                  <div key={oi} className="flex items-center gap-1.5">
+                    <button onClick={() => update(qi, 'correctAnswer', oi)}
+                      className={`flex-shrink-0 w-4 h-4 rounded-full border-2 transition-colors ${q.correctAnswer === oi ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600 hover:border-slate-400'}`} />
+                    <input value={opt} onChange={e => updateOption(qi, oi, e.target.value)}
+                      className="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500" />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <select value={q.difficulty || 'medium'} onChange={e => update(qi, 'difficulty', e.target.value)}
+                  className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 focus:outline-none">
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+                <input value={q.skillArea || ''} onChange={e => update(qi, 'skillArea', e.target.value)}
+                  placeholder="Skill area..."
+                  className="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 placeholder-slate-600 focus:outline-none" />
+              </div>
+            </div>
+          ))}
+
+          <button onClick={addQuestion}
+            className="w-full py-3 border-2 border-dashed border-slate-700 hover:border-indigo-500/50 rounded-xl text-slate-500 hover:text-indigo-400 text-sm font-semibold transition-colors">
+            + Add Question
+          </button>
+        </div>
+
+        <div className="flex gap-3 px-6 py-4 border-t border-slate-700/60 flex-shrink-0">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm transition-colors">
+            Cancel
+          </button>
+          <button onClick={save} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-bold text-sm transition-colors">
+            {saving ? 'Saving…' : `Save ${qs.length} Questions`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ContentReview() {
   const [items, setItems] = useState([]);
   const [assessments, setAssessments] = useState([]);
@@ -50,6 +169,7 @@ export default function ContentReview() {
   const [selected, setSelected] = useState(null);
   const [previewAssessment, setPreviewAssessment] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [editingAssessment, setEditingAssessment] = useState(null);
   const [thresholds, setThresholds] = useState([]);
   const [thresholdSaving, setThresholdSaving] = useState(false);
   const [search, setSearch] = useState('');
@@ -135,6 +255,13 @@ export default function ContentReview() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-slate-100 p-6">
+      {editingAssessment && (
+        <QuestionEditor
+          assessment={editingAssessment}
+          onClose={() => setEditingAssessment(null)}
+          onSaved={() => { setEditingAssessment(null); viewAssessment(editingAssessment.id); load(); }}
+        />
+      )}
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -224,29 +351,50 @@ export default function ContentReview() {
 
                 {/* Preview panel */}
                 {(selected || previewLoading) && (
-                  <div className="w-96 bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 h-fit sticky top-6 overflow-y-auto max-h-[80vh]">
+                  <div className="w-96 bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 h-fit sticky top-6 overflow-y-auto max-h-[80vh] flex flex-col gap-3">
                     {previewLoading ? (
                       <div className="flex items-center justify-center py-10">
                         <div className="animate-spin text-indigo-400 text-2xl">⟳</div>
                       </div>
                     ) : previewAssessment ? (
                       <>
-                        <h3 className="font-semibold text-white mb-1 text-sm">{previewAssessment.title}</h3>
-                        <p className="text-xs text-slate-400 mb-4">{previewAssessment.roleName || '—'} · {previewAssessment.questionCount} questions</p>
-                        <div className="space-y-3">
-                          {(previewAssessment.questions || previewAssessment.employeeAssignments?.[0]?.questions || []).slice(0, 5).map((q, i) => (
+                        <div>
+                          <h3 className="font-semibold text-white mb-1 text-sm">{previewAssessment.title}</h3>
+                          <p className="text-xs text-slate-400">{previewAssessment.roleName || '—'} · {(previewAssessment.questions || previewAssessment.employeeAssignments?.[0]?.questions || []).length} questions</p>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditingAssessment(previewAssessment)}
+                            className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors">
+                            ✏️ Edit Questions
+                          </button>
+                          <button onClick={() => regenerate(previewAssessment.roleId || selected?.roleId, previewAssessment.roleName || selected?.roleName || previewAssessment.title)}
+                            className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-semibold transition-colors">
+                            ↻ Regen
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          {(previewAssessment.questions || previewAssessment.employeeAssignments?.[0]?.questions || []).map((q, i) => (
                             <div key={i} className="bg-slate-900/50 rounded-lg p-3">
-                              <div className="flex items-center gap-2 mb-2">
+                              <div className="flex items-center gap-2 mb-1.5">
                                 <span className="text-xs font-bold text-indigo-400">Q{i + 1}</span>
                                 <span className="text-xs text-slate-500">{q.difficulty} · {q.type}</span>
+                                {q.skillArea && <span className="text-xs text-slate-600 truncate">· {q.skillArea}</span>}
                               </div>
                               <p className="text-xs text-slate-300 leading-relaxed">{q.question}</p>
-                              {q.skillArea && <p className="text-xs text-slate-500 mt-1">📌 {q.skillArea}</p>}
+                              {q.options?.length > 0 && (
+                                <div className="mt-2 space-y-1">
+                                  {q.options.map((opt, oi) => (
+                                    <div key={oi} className={`text-xs px-2 py-0.5 rounded ${oi === q.correctAnswer ? 'text-emerald-400 bg-emerald-900/20' : 'text-slate-500'}`}>
+                                      {oi === q.correctAnswer ? '✓ ' : '  '}{opt}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           ))}
-                          {((previewAssessment.questions || previewAssessment.employeeAssignments?.[0]?.questions)?.length || 0) > 5 && (
-                            <p className="text-xs text-slate-500 text-center">+ {((previewAssessment.questions || previewAssessment.employeeAssignments?.[0]?.questions)?.length || 0) - 5} more questions</p>
-                          )}
                         </div>
                       </>
                     ) : <p className="text-slate-500 text-sm">Select an assessment to preview</p>}
