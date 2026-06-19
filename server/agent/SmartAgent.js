@@ -7,6 +7,19 @@ import { randomUUID } from 'crypto';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { createClient } from '@supabase/supabase-js';
+
+// Lazy Supabase client — same env vars as DataStore.js
+let _sessionSB = null;
+function getSessionSB() {
+  if (_sessionSB) return _sessionSB;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASESERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_KEY;
+  if (url && key && url.startsWith('http') && key.length > 20) {
+    try { _sessionSB = createClient(url, key, { auth: { persistSession: false } }); } catch {}
+  }
+  return _sessionSB;
+}
 import SkillDecomposer from './SkillDecomposer.js';
 import QuizGenerator from './QuizGenerator.js';
 import Evaluator from './Evaluator.js';
@@ -129,13 +142,13 @@ class SmartAgent {
       createdAt: new Date().toISOString(),
     };
 
-    this.saveSession(session);
+    await this.saveSession(session);
     return { userId, skillTree: session.skillTree, diagnosticQuestions };
   }
 
   // ── submitDiagnostic ──────────────────────────────────────────────────────
   async submitDiagnostic(userId, answers, profilingData = null) {
-    const session = this.loadSession(userId);
+    const session = await this.loadSession(userId);
     const normalizedAnswers = session.diagnosticQuestions.map((question, index) => {
       const rawAnswer = answers[index];
       if (typeof rawAnswer === 'string') return { questionId: question.id, answer: rawAnswer };
@@ -226,13 +239,13 @@ class SmartAgent {
       };
     });
 
-    this.saveSession(session);
+    await this.saveSession(session);
     return { diagnosticScores: session.diagnosticScores, learningPlan: session.learningPlan };
   }
 
   // ── getChallenge ──────────────────────────────────────────────────────────
   async getChallenge(userId, day) {
-    const session = this.loadSession(userId);
+    const session = await this.loadSession(userId);
     const planDay = session.learningPlan.find(e => e.day === parseInt(day, 10));
     if (!planDay) throw new Error(`Day ${day} not found in learning plan`);
 
@@ -243,7 +256,7 @@ class SmartAgent {
 
   // ── submitSession — Agent Debate + Gemini scoring ─────────────────────────
   async submitSession({ userId, day, skillId, challenge, userResponse }) {
-    const session = this.loadSession(userId);
+    const session = await this.loadSession(userId);
 
     // Evaluator.scoreSession is now async (Gemini-powered)
     const evaluation = await this.evaluator.scoreSession(challenge, userResponse, {
@@ -325,7 +338,7 @@ class SmartAgent {
     });
 
     this._detectSkillDrift(session);
-    this.saveSession(session);
+    await this.saveSession(session);
 
     return {
       evaluation,
@@ -364,23 +377,23 @@ class SmartAgent {
   }
 
   // ── getDebates ────────────────────────────────────────────────────────────
-  getDebates(userId) {
-    const session = this.loadSession(userId);
+  async getDebates(userId) {
+    const session = await this.loadSession(userId);
     return session.agentDebates || [];
   }
 
   // ── generateReport ────────────────────────────────────────────────────────
   async generateReport(userId) {
-    const session = this.loadSession(userId);
+    const session = await this.loadSession(userId);
     // ReportGenerator.generate is now async (Gemini-powered)
     session.report = await this.reportGenerator.generate(session);
-    this.saveSession(session);
+    await this.saveSession(session);
     return session.report;
   }
 
   // ── getDashboard ──────────────────────────────────────────────────────────
-  getDashboard(userId) {
-    const session = this.loadSession(userId);
+  async getDashboard(userId) {
+    const session = await this.loadSession(userId);
     const scores = session.sessions.map(e => e.score);
     const stats = {
       avgScore: scores.length ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length) : 0,
@@ -404,15 +417,39 @@ class SmartAgent {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  loadSession(userId) {
+  async loadSession(userId) {
+    // 1. Try Supabase sessions table first
+    const sb = getSessionSB();
+    if (sb) {
+      try {
+        const { data, error } = await sb.from('sessions').select('session_json').eq('id', userId).maybeSingle();
+        if (!error && data?.session_json) return data.session_json;
+      } catch (e) {
+        console.warn('[SmartAgent] Supabase session load failed, trying file:', e.message);
+      }
+    }
+    // 2. Fall back to local file
     const sessionPath = join(DATA_DIR, `${userId}.json`);
     if (!existsSync(sessionPath)) throw new Error(`Session not found: ${userId}`);
     return JSON.parse(readFileSync(sessionPath, 'utf-8'));
   }
 
-  saveSession(session) {
+  async saveSession(session) {
+    // Always write to file (instant, safe local fallback)
     const sessionPath = join(DATA_DIR, `${session.userId}.json`);
     writeFileSync(sessionPath, JSON.stringify(session, null, 2));
+    // Also persist to Supabase (fire-and-forget — never blocks the response)
+    const sb = getSessionSB();
+    if (sb) {
+      sb.from('sessions').upsert({
+        id: session.userId,
+        learning_uuid: session.userId,
+        session_json: session,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' }).then(({ error }) => {
+        if (error) console.warn('[SmartAgent] Supabase session save failed (file copy is safe):', error.message);
+      });
+    }
   }
 
   buildObjective(day, skill, profile) {
