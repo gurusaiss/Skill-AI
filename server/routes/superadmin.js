@@ -7,12 +7,32 @@ import { authenticate, requireSuperAdmin } from '../middleware/auth.js';
 import { randomUUID } from 'crypto';
 import UserStore from '../services/UserStore.js';
 import AuthService from '../services/AuthService.js';
-import { Companies } from '../services/DataStore.js';
+import { Companies, AccessCodes } from '../services/DataStore.js';
 
 const router = express.Router();
 
 // All routes require authentication + superadmin role
 router.use(authenticate, requireSuperAdmin);
+
+// ── Access code generator ─────────────────────────────────────────────────────
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars (0/O, 1/I/L)
+function randSuffix(len = 4) {
+  return Array.from({ length: len }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+}
+async function generateAccessCodes(initials, companyId, createdBy) {
+  const pfx = (initials || 'CO').slice(0, 3).toUpperCase();
+  const all = await AccessCodes.getAll();
+  const usedCodes = new Set((all || []).map(c => c.code));
+
+  let mgrCode, empCode;
+  do { mgrCode = `${pfx}-MGR-${randSuffix()}`; } while (usedCodes.has(mgrCode));
+  do { empCode = `${pfx}-EMP-${randSuffix()}`; } while (usedCodes.has(empCode) || empCode === mgrCode);
+
+  const now = new Date().toISOString();
+  const mgr = await AccessCodes.create({ id: randomUUID(), companyId, code: mgrCode, role: 'manager', isActive: true, usageCount: 0, maxUsage: null, expiresAt: null, label: 'Default Manager Code', createdBy, createdAt: now, updatedAt: now });
+  const emp = await AccessCodes.create({ id: randomUUID(), companyId, code: empCode, role: 'employee', isActive: true, usageCount: 0, maxUsage: null, expiresAt: null, label: 'Default Employee Code', createdBy, createdAt: now, updatedAt: now });
+  return { mgrCode, empCode, mgrId: mgr.id, empId: emp.id };
+}
 
 /**
  * GET /api/superadmin/stats
@@ -97,9 +117,20 @@ router.post('/companies', async (req, res) => {
     }
 
     const companyId = `company_${randomUUID().slice(0, 8)}`;
+
+    // Generate unique company code from initials + random digits (e.g. "GSS-7823")
+    const initials = name.trim().split(/\s+/).map(w => w[0]?.toUpperCase()).filter(Boolean).slice(0, 3).join('');
+    let companyCode = `${initials || 'CO'}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const allCompanies = await Companies.getAll();
+    const usedCodes = new Set((allCompanies || []).map(c => c.companyCode));
+    while (usedCodes.has(companyCode)) {
+      companyCode = `${initials || 'CO'}-${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+
     const company = {
       id: companyId,
       name: name.trim(),
+      companyCode,
       domain: domain || '',
       plan,
       status: 'active',
@@ -125,12 +156,20 @@ router.post('/companies', async (req, res) => {
     company.primaryAdminId = adminUser.userId;
     const saved = await Companies.create(company);
 
+    // Generate manager + employee access codes
+    const codes = await generateAccessCodes(initials, companyId, req.user.userId);
+
     res.status(201).json({
       success: true,
       data: {
         company: saved || company,
+        companyCode,
         admin: { userId: adminUser.userId, email: adminUser.email, name: adminUser.name },
         tempPassword: !adminPassword ? tempPassword : undefined,
+        accessCodes: {
+          managerCode: codes.mgrCode,
+          employeeCode: codes.empCode,
+        },
       },
       error: null,
     });
@@ -221,6 +260,108 @@ router.post('/companies/:id/suspend', async (req, res) => {
     const newStatus = existing.status === 'active' ? 'suspended' : 'active';
     await Companies.update(req.params.id, { status: newStatus, updatedAt: new Date().toISOString() });
     res.json({ success: true, data: { status: newStatus }, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+// ── Access Code Management ────────────────────────────────────────────────────
+
+/**
+ * GET /api/superadmin/companies/:id/codes
+ * List all access codes for a company
+ */
+router.get('/companies/:id/codes', async (req, res) => {
+  try {
+    const codes = await AccessCodes.getByCompany(req.params.id);
+    res.json({ success: true, data: codes || [], error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * POST /api/superadmin/companies/:id/codes
+ * Create an additional access code for a company
+ */
+router.post('/companies/:id/codes', async (req, res) => {
+  try {
+    const company = await Companies.getById(req.params.id);
+    if (!company) return res.status(404).json({ success: false, data: null, error: 'Company not found' });
+
+    const { role = 'employee', label, maxUsage, expiresAt } = req.body;
+    if (!['manager', 'employee'].includes(role)) {
+      return res.status(400).json({ success: false, data: null, error: 'role must be manager or employee' });
+    }
+
+    const initials = company.name.trim().split(/\s+/).map(w => w[0]?.toUpperCase()).filter(Boolean).slice(0, 3).join('');
+    const all = await AccessCodes.getAll();
+    const usedCodes = new Set((all || []).map(c => c.code));
+    const pfx = (initials || 'CO').slice(0, 3);
+    const typeTag = role === 'manager' ? 'MGR' : 'EMP';
+    let code;
+    do { code = `${pfx}-${typeTag}-${randSuffix()}`; } while (usedCodes.has(code));
+
+    const now = new Date().toISOString();
+    const doc = { id: randomUUID(), companyId: req.params.id, code, role, isActive: true, usageCount: 0, maxUsage: maxUsage || null, expiresAt: expiresAt || null, label: label || `${role === 'manager' ? 'Manager' : 'Employee'} Code`, createdBy: req.user.userId, createdAt: now, updatedAt: now };
+    const saved = await AccessCodes.create(doc);
+    res.status(201).json({ success: true, data: saved || doc, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * PUT /api/superadmin/companies/:id/codes/:codeId
+ * Update access code — disable, set expiry, update label, regenerate code string
+ */
+router.put('/companies/:id/codes/:codeId', async (req, res) => {
+  try {
+    const existing = await AccessCodes.getById(req.params.codeId);
+    if (!existing || existing.companyId !== req.params.id) {
+      return res.status(404).json({ success: false, data: null, error: 'Code not found' });
+    }
+
+    const { isActive, label, maxUsage, expiresAt, regenerate } = req.body;
+    const updates = { updatedAt: new Date().toISOString() };
+    if (isActive !== undefined) updates.isActive = Boolean(isActive);
+    if (label !== undefined) updates.label = label;
+    if (maxUsage !== undefined) updates.maxUsage = maxUsage;
+    if (expiresAt !== undefined) updates.expiresAt = expiresAt;
+
+    if (regenerate) {
+      // Generate a fresh code string, keeping same role prefix
+      const all = await AccessCodes.getAll();
+      const usedCodes = new Set((all || []).filter(c => c.id !== existing.id).map(c => c.code));
+      const company = await Companies.getById(req.params.id);
+      const initials = (company?.name || 'CO').trim().split(/\s+/).map(w => w[0]?.toUpperCase()).filter(Boolean).slice(0, 3).join('');
+      const pfx = (initials || 'CO').slice(0, 3);
+      const typeTag = existing.role === 'manager' ? 'MGR' : 'EMP';
+      let newCode;
+      do { newCode = `${pfx}-${typeTag}-${randSuffix()}`; } while (usedCodes.has(newCode));
+      updates.code = newCode;
+      updates.usageCount = 0;
+    }
+
+    const updated = await AccessCodes.update(req.params.codeId, updates);
+    res.json({ success: true, data: updated || { ...existing, ...updates }, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * DELETE /api/superadmin/companies/:id/codes/:codeId
+ * Delete an access code
+ */
+router.delete('/companies/:id/codes/:codeId', async (req, res) => {
+  try {
+    const existing = await AccessCodes.getById(req.params.codeId);
+    if (!existing || existing.companyId !== req.params.id) {
+      return res.status(404).json({ success: false, data: null, error: 'Code not found' });
+    }
+    await AccessCodes.delete(req.params.codeId);
+    res.json({ success: true, data: { deleted: true }, error: null });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
   }

@@ -1,8 +1,11 @@
 import express from 'express';
+import { randomUUID } from 'crypto';
 import AuthService from '../services/AuthService.js';
 import UserStore from '../services/UserStore.js';
 import EmailService from '../services/EmailService.js';
 import { authenticate, rateLimitLogin, rateLimitOTP, rateLimitPasswordReset } from '../middleware/auth.js';
+import { Companies, RoleLibrary, UserJDProfiles, Assessments, GeneratedContent, AccessCodes } from '../services/DataStore.js';
+import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
 
 // Helper to generate a UUID (simplified version)
 function generateUUID() {
@@ -15,12 +18,57 @@ function generateUUID() {
 const router = express.Router();
 
 /**
+ * GET /api/auth/validate-company-code?code=GSS-MGR-8X92
+ * Public — validate an access code (manager or employee) and return company info + detected role
+ */
+router.get('/validate-company-code', async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code?.trim()) return res.json({ success: false, error: 'Access code required' });
+
+    const clean = code.trim().toUpperCase();
+    const accessCode = await AccessCodes.findByCode(clean);
+    if (!accessCode) {
+      return res.json({ success: false, error: { message: 'Invalid access code' } });
+    }
+    if (!accessCode.isActive) {
+      return res.json({ success: false, error: { message: 'This access code has been disabled' } });
+    }
+    if (accessCode.expiresAt && new Date(accessCode.expiresAt) < new Date()) {
+      return res.json({ success: false, error: { message: 'This access code has expired' } });
+    }
+    if (accessCode.maxUsage != null && accessCode.usageCount >= accessCode.maxUsage) {
+      return res.json({ success: false, error: { message: 'This access code has reached its usage limit' } });
+    }
+
+    const company = await Companies.getById(accessCode.companyId);
+    if (!company || company.status !== 'active') {
+      return res.json({ success: false, error: { message: 'Company not found or inactive' } });
+    }
+
+    const roles = await RoleLibrary.getByCompany(company.id);
+    res.json({
+      success: true,
+      data: {
+        companyId: company.id,
+        companyName: company.name,
+        detectedRole: accessCode.role,
+        codeId: accessCode.id,
+        roles: (roles || []).filter(r => r.status === 'active').map(r => ({ id: r.id, roleName: r.roleName, department: r.department })),
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * POST /api/auth/register
- * Register a new user with email and password
+ * Register a new user — supports company-code self-onboarding
  */
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, companyCode, jobRole, employeeId, phone } = req.body;
 
     // Validate input
     if (!email || !password) {
@@ -82,35 +130,132 @@ router.post('/register', async (req, res) => {
     // const otp = AuthService.generateOTP();
     // const otpData = AuthService.createOTPData(otp);
 
-    // Create user with email already verified (skip OTP for development)
+    // Access code validation (if provided)
+    let linkedCompany = null;
+    let linkedRole = null;
+    let detectedRole = 'employee';
+    let linkedAccessCode = null;
+    if (companyCode?.trim()) {
+      const clean = companyCode.trim().toUpperCase();
+      linkedAccessCode = await AccessCodes.findByCode(clean);
+      if (!linkedAccessCode) {
+        return res.status(400).json({ success: false, data: null, error: { code: 'REG_INVALID_CODE', message: 'Invalid access code' } });
+      }
+      if (!linkedAccessCode.isActive) {
+        return res.status(400).json({ success: false, data: null, error: { code: 'REG_CODE_DISABLED', message: 'This access code has been disabled' } });
+      }
+      if (linkedAccessCode.expiresAt && new Date(linkedAccessCode.expiresAt) < new Date()) {
+        return res.status(400).json({ success: false, data: null, error: { code: 'REG_CODE_EXPIRED', message: 'This access code has expired' } });
+      }
+      if (linkedAccessCode.maxUsage != null && linkedAccessCode.usageCount >= linkedAccessCode.maxUsage) {
+        return res.status(400).json({ success: false, data: null, error: { code: 'REG_CODE_LIMIT', message: 'This access code has reached its usage limit' } });
+      }
+
+      linkedCompany = await Companies.getById(linkedAccessCode.companyId);
+      if (!linkedCompany || linkedCompany.status !== 'active') {
+        return res.status(400).json({ success: false, data: null, error: { code: 'REG_INVALID_COMPANY', message: 'Company not found or inactive' } });
+      }
+
+      detectedRole = linkedAccessCode.role || 'employee';
+      if (jobRole?.trim()) {
+        linkedRole = await RoleLibrary.findByName(jobRole.trim(), linkedCompany.id);
+      }
+    }
+
     const user = await UserStore.createUser({
       email,
       passwordHash,
       name: name || '',
-      role: 'employee',
-      emailVerified: true, // Auto-verify for development
-      learningUUID: generateUUID(), // Generate learningUUID for user
-      // otp: otpData.otp,
-      // otpExpires: otpData.expiresAt
+      role: detectedRole,
+      emailVerified: true,
+      learningUUID: generateUUID(),
+      companyId: linkedCompany?.id || 'default',
+      companyName: linkedCompany?.name || '',
+      jobRole: linkedRole?.roleName || jobRole || '',
+      department: linkedRole?.department || '',
+      jobDescription: linkedRole?.jobDescription || '',
+      jdSkills: linkedRole?.skills || [],
+      employeeId: employeeId || '',
+      phone: phone || '',
     });
 
-    // Send OTP email (DISABLED FOR DEVELOPMENT)
-    // await EmailService.sendOTP(email, otp, 10);
+    // Save JD profile if role resolved
+    if (linkedRole) {
+      await UserJDProfiles.upsert(user.userId, {
+        jobDescription: linkedRole.jobDescription || '',
+        jdSkills: linkedRole.skills || [],
+        jdSourceType: 'role_library',
+        roleId: linkedRole.id,
+        roleName: linkedRole.roleName,
+        updatedAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
 
-    // Log registration event
-    await UserStore.logAuthEvent('registration', user.userId, {
-      email,
-      ipAddress: req.ip
-    });
+    // Increment access code usage count
+    if (linkedAccessCode) {
+      AccessCodes.update(linkedAccessCode.id, {
+        usageCount: (linkedAccessCode.usageCount || 0) + 1,
+        updatedAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
+
+    await UserStore.logAuthEvent('registration', user.userId, { email, companyCode: companyCode || null, ipAddress: req.ip });
+
+    // Auto-generate + assign pre-assessment (non-blocking)
+    if (user.jobRole || linkedRole) {
+      setImmediate(async () => {
+        try {
+          const jd = linkedRole?.jobDescription || user.jobDescription || '';
+          const skills = linkedRole?.skills || user.jdSkills || [];
+          const role = linkedRole?.roleName || user.jobRole || 'Employee';
+
+          const questions = await generateQuestionsFromJD({
+            jobRole: role, jobDescription: jd, jdSkills: skills,
+            questionCount: 10, questionTypes: ['mcq'],
+            employeeSeed: `${user.userId}-onboard-${Date.now()}`,
+          });
+
+          const assessmentId = randomUUID();
+          const assessment = {
+            id: assessmentId,
+            title: `Pre-Assessment: ${role}`,
+            targetUsers: [user.userId],
+            employeeAssignments: [{
+              userId: user.userId, userName: user.name, userEmail: user.email,
+              jobRole: role, questions, status: 'assigned',
+              assignedAt: new Date().toISOString(), startedAt: null, submittedAt: null,
+            }],
+            questionCount: questions.length, questionTypes: ['mcq'], duration: 30,
+            createdBy: 'system', companyId: user.companyId || 'default',
+            isAutoGenerated: true, autoTrigger: 'self_registration',
+            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), isActive: true,
+          };
+
+          await Assessments.create(assessment);
+          await GeneratedContent.create({
+            id: randomUUID(), type: 'assessment', contentId: assessmentId,
+            userId: user.userId, userName: user.name, jobRole: role,
+            companyId: user.companyId || 'default', status: 'pending_review',
+            generatedAt: new Date().toISOString(),
+          }).catch(() => {});
+          console.log(`[auto-assessment] Pre-assessment created for ${user.email} (${role})`);
+        } catch (e) {
+          console.error(`[auto-assessment] Failed for ${user.email}:`, e.message);
+        }
+      });
+    }
 
     res.status(201).json({
       success: true,
       data: {
         userId: user.userId,
         email: user.email,
-        message: 'Registration successful. You can now log in.'
+        companyName: linkedCompany?.name || null,
+        jobRole: linkedRole?.roleName || jobRole || null,
+        assessmentPending: !!(user.jobRole || linkedRole),
+        message: 'Registration successful. You can now log in.',
       },
-      error: null
+      error: null,
     });
   } catch (error) {
     console.error('[Auth Routes] Registration error:', error.message);
