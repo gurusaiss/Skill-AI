@@ -4,7 +4,8 @@
 import express from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import UserStore from '../services/UserStore.js';
-import { Companies, ApprovalRequests } from '../services/DataStore.js';
+import { Companies, ApprovalRequests, AccessCodes } from '../services/DataStore.js';
+import { randomUUID } from 'crypto';
 import * as db from '../db/store.js';
 
 const router = express.Router();
@@ -111,6 +112,109 @@ router.get('/dashboard', authenticate, requireRole('admin'), async (req, res) =>
     });
   } catch (e) {
     console.error('[admin/dashboard]', e);
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+// ── Access Code Management (company-scoped, admin/manager) ───────────────────
+
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function randSuffix(len = 4) {
+  return Array.from({ length: len }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+}
+
+/**
+ * GET /api/admin/codes
+ * List all access codes for the admin's company
+ */
+router.get('/codes', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const companyId = req.user.companyId || 'default';
+    const codes = await AccessCodes.getByCompany(companyId);
+    res.json({ success: true, data: codes || [], error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * POST /api/admin/codes
+ * Create additional access code (admin only)
+ */
+router.post('/codes', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const companyId = req.user.companyId || 'default';
+    const { role = 'employee', label, maxUsage, expiresAt } = req.body;
+    if (!['manager', 'employee'].includes(role)) {
+      return res.status(400).json({ success: false, data: null, error: 'role must be manager or employee' });
+    }
+    const company = await Companies.getById(companyId);
+    const initials = (company?.name || 'CO').trim().split(/\s+/).map(w => w[0]?.toUpperCase()).filter(Boolean).slice(0, 3).join('');
+    const all = await AccessCodes.getAll();
+    const usedCodes = new Set((all || []).map(c => c.code));
+    const pfx = (initials || 'CO').slice(0, 3);
+    const typeTag = role === 'manager' ? 'MGR' : 'EMP';
+    let code;
+    do { code = `${pfx}-${typeTag}-${randSuffix()}`; } while (usedCodes.has(code));
+    const now = new Date().toISOString();
+    const doc = { id: randomUUID(), companyId, code, role, isActive: true, usageCount: 0, maxUsage: maxUsage || null, expiresAt: expiresAt || null, label: label || `${role === 'manager' ? 'Manager' : 'Employee'} Code`, createdBy: req.user.userId, createdAt: now, updatedAt: now };
+    const saved = await AccessCodes.create(doc);
+    res.status(201).json({ success: true, data: saved || doc, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * PUT /api/admin/codes/:codeId
+ * Update code (disable, regenerate, set expiry) — admin only
+ */
+router.put('/codes/:codeId', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const companyId = req.user.companyId || 'default';
+    const existing = await AccessCodes.getById(req.params.codeId);
+    if (!existing || existing.companyId !== companyId) {
+      return res.status(404).json({ success: false, data: null, error: 'Code not found' });
+    }
+    const { isActive, label, maxUsage, expiresAt, regenerate } = req.body;
+    const updates = { updatedAt: new Date().toISOString() };
+    if (isActive !== undefined) updates.isActive = Boolean(isActive);
+    if (label !== undefined) updates.label = label;
+    if (maxUsage !== undefined) updates.maxUsage = maxUsage;
+    if (expiresAt !== undefined) updates.expiresAt = expiresAt;
+    if (regenerate) {
+      const all = await AccessCodes.getAll();
+      const usedCodes = new Set((all || []).filter(c => c.id !== existing.id).map(c => c.code));
+      const company = await Companies.getById(companyId);
+      const initials = (company?.name || 'CO').trim().split(/\s+/).map(w => w[0]?.toUpperCase()).filter(Boolean).slice(0, 3).join('');
+      const pfx = (initials || 'CO').slice(0, 3);
+      const typeTag = existing.role === 'manager' ? 'MGR' : 'EMP';
+      let newCode;
+      do { newCode = `${pfx}-${typeTag}-${randSuffix()}`; } while (usedCodes.has(newCode));
+      updates.code = newCode;
+      updates.usageCount = 0;
+    }
+    const updated = await AccessCodes.update(req.params.codeId, updates);
+    res.json({ success: true, data: updated || { ...existing, ...updates }, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * DELETE /api/admin/codes/:codeId
+ * Delete an access code (admin only)
+ */
+router.delete('/codes/:codeId', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const companyId = req.user.companyId || 'default';
+    const existing = await AccessCodes.getById(req.params.codeId);
+    if (!existing || existing.companyId !== companyId) {
+      return res.status(404).json({ success: false, data: null, error: 'Code not found' });
+    }
+    await AccessCodes.delete(req.params.codeId);
+    res.json({ success: true, data: { deleted: true }, error: null });
+  } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
   }
 });

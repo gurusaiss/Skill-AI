@@ -49,6 +49,7 @@ const ApprovalCenter      = lazy(() => import('./pages/admin/ApprovalCenter.jsx'
 const GroupManagement     = lazy(() => import('./pages/admin/GroupManagement.jsx'));
 const RoleLibrary         = lazy(() => import('./pages/admin/RoleLibrary.jsx'));
 const ContentReview       = lazy(() => import('./pages/admin/ContentReview.jsx'));
+const AccessCodes         = lazy(() => import('./pages/admin/AccessCodes.jsx'));
 const ActivateAccount     = lazy(() => import('./pages/auth/ActivateAccount.jsx'));
 const ModuleStart          = lazy(() => import('./pages/ModuleStart.jsx'));
 const ModuleDashboard      = lazy(() => import('./pages/ModuleDashboard.jsx'));
@@ -206,6 +207,11 @@ const App = () => {
               <Route path="/admin/content-review" element={
                 <ProtectedRoute requiredRole="admin">
                   <ContentReview />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/access-codes" element={
+                <ProtectedRoute requiredRole="admin">
+                  <AccessCodes />
                 </ProtectedRoute>
               } />
               <Route path="/admin/metrics" element={

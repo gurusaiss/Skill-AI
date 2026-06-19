@@ -69,43 +69,242 @@ function StatCard({ icon, label, value, color = 'violet' }) {
   );
 }
 
-// ─── Temp Password Modal ──────────────────────────────────────────────────────
+// ─── Copy button helper ───────────────────────────────────────────────────────
 
-function TempPasswordModal({ company, onClose }) {
+function CopyBtn({ text, small = false }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
-    navigator.clipboard.writeText(company.tempPassword || '');
+    navigator.clipboard.writeText(text || '');
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+  if (small) return (
+    <button onClick={copy} title="Copy"
+      className={`ml-1.5 px-2 py-0.5 rounded text-xs font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}>
+      {copied ? '✓' : '📋'}
+    </button>
+  );
+  return (
+    <button onClick={copy}
+      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}>
+      {copied ? '✓ Copied' : '📋 Copy'}
+    </button>
+  );
+}
+
+// ─── Company Created Modal (shows codes + temp password) ──────────────────────
+
+function CompanyCreatedModal({ company, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
-        <div className="text-4xl mb-3">🔑</div>
-        <h3 className="text-lg font-bold text-white mb-1">Company Created!</h3>
-        <p className="text-slate-400 text-sm mb-1">
-          <span className="text-white font-semibold">{company.companyName}</span> is live.
-        </p>
-        <p className="text-slate-400 text-sm mb-4">
-          Admin account: <span className="text-white font-semibold">{company.adminEmail}</span>
-        </p>
-        <p className="text-slate-500 text-xs mb-2">Temporary password:</p>
-        <div className="bg-slate-900 rounded-xl p-3 font-mono text-amber-300 text-sm tracking-widest mb-4 border border-amber-500/30">
-          {company.tempPassword}
+      <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="px-6 py-4 border-b border-slate-700/60 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🎉</span>
+            <h3 className="text-lg font-bold text-white">Company Created!</h3>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
         </div>
-        <p className="text-slate-500 text-xs mb-4">⚠️ This is shown only once. The admin should change it after first login.</p>
-        <div className="flex gap-3">
-          <button
-            onClick={copy}
-            className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-violet-600 hover:bg-violet-500 text-white'}`}
-          >
-            {copied ? '✓ Copied!' : '📋 Copy Password'}
-          </button>
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm transition-colors"
-          >
+
+        <div className="p-6 space-y-5">
+          <div>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Company</p>
+            <p className="text-white font-semibold">{company.companyName}</p>
+          </div>
+
+          <div>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Admin Account</p>
+            <p className="text-white text-sm">{company.adminEmail}</p>
+          </div>
+
+          {company.tempPassword && (
+            <div>
+              <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Temporary Password</p>
+              <div className="flex items-center gap-2 bg-slate-900 rounded-xl px-4 py-2.5 border border-amber-500/30">
+                <span className="font-mono text-amber-300 text-sm flex-1 tracking-widest">{company.tempPassword}</span>
+                <CopyBtn text={company.tempPassword} small />
+              </div>
+              <p className="text-slate-500 text-xs mt-1">Shown once — admin must change after first login</p>
+            </div>
+          )}
+
+          <div className="border-t border-slate-700/60 pt-4">
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">Access Codes — share with your team</p>
+            <div className="space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold text-amber-300 uppercase tracking-wider">Manager Code</span>
+                  <span className="text-xs text-slate-500">Role auto-assigned on signup</span>
+                </div>
+                <div className="flex items-center gap-2 bg-slate-900 rounded-xl px-4 py-2.5 border border-amber-500/30">
+                  <span className="font-mono text-amber-300 text-sm flex-1 tracking-widest">{company.managerCode || '—'}</span>
+                  <CopyBtn text={company.managerCode} small />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold text-indigo-300 uppercase tracking-wider">Employee Code</span>
+                  <span className="text-xs text-slate-500">Role auto-assigned on signup</span>
+                </div>
+                <div className="flex items-center gap-2 bg-slate-900 rounded-xl px-4 py-2.5 border border-indigo-500/30">
+                  <span className="font-mono text-indigo-300 text-sm flex-1 tracking-widest">{company.employeeCode || '—'}</span>
+                  <CopyBtn text={company.employeeCode} small />
+                </div>
+              </div>
+            </div>
+            <p className="text-slate-500 text-xs mt-3">Codes are also visible in the Company Codes panel at any time.</p>
+          </div>
+        </div>
+
+        <div className="px-6 pb-5">
+          <button onClick={onClose}
+            className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-sm transition-colors">
             Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Company Codes Modal ──────────────────────────────────────────────────────
+
+function CompanyCodesModal({ company, onClose, setToast }) {
+  const [codes, setCodes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(null);
+
+  const fetchCodes = () => {
+    setLoading(true);
+    authFetch(`/api/superadmin/companies/${company.id}/codes`)
+      .then(d => setCodes(Array.isArray(d) ? d : (d?.codes || [])))
+      .catch(err => setToast({ message: err.message, type: 'error' }))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchCodes(); }, [company.id]);
+
+  const doAction = async (codeId, payload, label) => {
+    setBusy(codeId + label);
+    try {
+      await authFetch(`/api/superadmin/companies/${company.id}/codes/${codeId}`, {
+        method: 'PUT', body: JSON.stringify(payload),
+      });
+      setToast({ message: `Code ${label}`, type: 'success' });
+      fetchCodes();
+    } catch (err) {
+      setToast({ message: err.message, type: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const createCode = async (role) => {
+    setBusy('create' + role);
+    try {
+      await authFetch(`/api/superadmin/companies/${company.id}/codes`, {
+        method: 'POST', body: JSON.stringify({ role }),
+      });
+      setToast({ message: `New ${role} code created`, type: 'success' });
+      fetchCodes();
+    } catch (err) {
+      setToast({ message: err.message, type: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const deleteCode = async (codeId) => {
+    if (!window.confirm('Delete this access code? Users holding it can no longer sign up.')) return;
+    setBusy(codeId + 'del');
+    try {
+      await authFetch(`/api/superadmin/companies/${company.id}/codes/${codeId}`, { method: 'DELETE' });
+      setToast({ message: 'Code deleted', type: 'success' });
+      fetchCodes();
+    } catch (err) {
+      setToast({ message: err.message, type: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const ROLE_STYLE = {
+    manager: 'bg-amber-500/15 border-amber-500/40 text-amber-300',
+    employee: 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300',
+  };
+  const CODE_COLOR = {
+    manager: 'text-amber-300 border-amber-500/30',
+    employee: 'text-indigo-300 border-indigo-500/30',
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <div className="bg-[#1E293B] border border-slate-700/80 rounded-2xl w-full max-w-xl shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 flex-shrink-0">
+          <div>
+            <h2 className="text-lg font-bold text-white">Access Codes</h2>
+            <p className="text-slate-400 text-xs mt-0.5">{company.name || company.companyName}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-3">
+          {loading ? (
+            <p className="text-slate-400 text-sm text-center py-8">Loading codes...</p>
+          ) : codes.length === 0 ? (
+            <p className="text-slate-500 text-sm text-center py-8">No access codes yet.</p>
+          ) : codes.map(code => (
+            <div key={code.id} className={`bg-slate-900/60 rounded-xl p-4 border ${code.isActive ? 'border-slate-700/40' : 'border-slate-700/20 opacity-60'}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`font-mono text-sm tracking-widest ${CODE_COLOR[code.role] || 'text-white'}`}>{code.code}</span>
+                    <CopyBtn text={code.code} small />
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${ROLE_STYLE[code.role] || 'bg-slate-700 text-slate-300 border-slate-600'}`}>
+                      {code.role}
+                    </span>
+                    {!code.isActive && (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/40 text-red-300">Disabled</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4 mt-1.5 text-xs text-slate-500">
+                    {code.label && <span>{code.label}</span>}
+                    <span>Used: <span className="text-slate-300">{code.usageCount ?? 0}</span>{code.maxUsage != null ? `/${code.maxUsage}` : ''}</span>
+                    {code.expiresAt && <span>Expires: <span className="text-slate-300">{new Date(code.expiresAt).toLocaleDateString()}</span></span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button onClick={() => doAction(code.id, { regenerate: true }, 'regenerated')}
+                    disabled={busy === code.id + 'regenerated'}
+                    className="px-2.5 py-1.5 rounded-lg bg-violet-900/40 hover:bg-violet-900/60 text-violet-300 text-xs font-semibold transition-colors disabled:opacity-50">
+                    {busy === code.id + 'regenerated' ? '...' : 'Regen'}
+                  </button>
+                  <button onClick={() => doAction(code.id, { isActive: !code.isActive }, code.isActive ? 'disabled' : 'enabled')}
+                    disabled={busy === code.id + (code.isActive ? 'disabled' : 'enabled')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${
+                      code.isActive ? 'bg-red-900/30 hover:bg-red-900/50 text-red-400' : 'bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400'
+                    }`}>
+                    {code.isActive ? 'Disable' : 'Enable'}
+                  </button>
+                  <button onClick={() => deleteCode(code.id)}
+                    disabled={!!busy}
+                    className="px-2.5 py-1.5 rounded-lg bg-red-900/30 hover:bg-red-900/50 text-red-400 text-xs font-semibold transition-colors disabled:opacity-50">
+                    Del
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-3 px-6 py-4 border-t border-slate-700/60 flex-shrink-0">
+          <button onClick={() => createCode('manager')} disabled={!!busy}
+            className="flex-1 py-2.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 font-bold text-xs transition-colors disabled:opacity-50">
+            {busy === 'createmanager' ? '...' : '+ New Manager Code'}
+          </button>
+          <button onClick={() => createCode('employee')} disabled={!!busy}
+            className="flex-1 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 font-bold text-xs transition-colors disabled:opacity-50">
+            {busy === 'createemployee' ? '...' : '+ New Employee Code'}
           </button>
         </div>
       </div>
@@ -439,6 +638,7 @@ export default function SuperAdminDashboard() {
   const [expandedRows, setExpandedRows] = useState({});
   const [tempPasswordData, setTempPasswordData] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
+  const [codesCompany, setCodesCompany] = useState(null);
 
   const fetchData = async () => {
     try {
@@ -491,13 +691,13 @@ export default function SuperAdminDashboard() {
 
   const handleCompanyCreated = (result) => {
     fetchData();
-    if (result?.tempPassword) {
-      setTempPasswordData({
-        companyName: result.companyName || result.company?.name,
-        adminEmail: result.adminEmail || result.admin?.email,
-        tempPassword: result.tempPassword,
-      });
-    }
+    setTempPasswordData({
+      companyName: result?.company?.name || result?.companyName,
+      adminEmail: result?.admin?.email || result?.adminEmail,
+      tempPassword: result?.tempPassword || null,
+      managerCode: result?.accessCodes?.managerCode || null,
+      employeeCode: result?.accessCodes?.employeeCode || null,
+    });
   };
 
   if (loading) {
@@ -514,7 +714,8 @@ export default function SuperAdminDashboard() {
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-      {tempPasswordData && <TempPasswordModal company={tempPasswordData} onClose={() => setTempPasswordData(null)} />}
+      {tempPasswordData && <CompanyCreatedModal company={tempPasswordData} onClose={() => setTempPasswordData(null)} />}
+      {codesCompany && <CompanyCodesModal company={codesCompany} onClose={() => setCodesCompany(null)} setToast={setToast} />}
       {showCreate && (
         <CreateCompanyModal
           onClose={() => setShowCreate(false)}
@@ -620,6 +821,12 @@ export default function SuperAdminDashboard() {
                               className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-xs font-semibold transition-colors"
                             >
                               {expandedRows[company.id] ? 'Hide Users' : 'View Users'}
+                            </button>
+                            <button
+                              onClick={() => setCodesCompany(company)}
+                              className="px-3 py-1.5 rounded-lg bg-amber-900/40 hover:bg-amber-900/60 text-amber-400 hover:text-amber-300 text-xs font-semibold transition-colors"
+                            >
+                              Codes
                             </button>
                             <button
                               onClick={() => handleToggleStatus(company)}
