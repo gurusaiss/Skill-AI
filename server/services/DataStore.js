@@ -389,6 +389,10 @@ export const Companies = {
     }
     return readFile('companies.json').find(c => c.id === id) || null;
   },
+  async findByCode(code) {
+    const all = await this.getAll();
+    return (all || []).find(c => c.companyCode?.toUpperCase() === code?.toUpperCase().trim()) || null;
+  },
   async create(doc) {
     const sb = getSB();
     if (sb) {
@@ -734,6 +738,35 @@ export const GeneratedContent = {
   async update(id, updates) { return updateHealed('generated_content', 'generated_content.json', id, updates); },
 };
 
+// ── ACCESS CODES ─────────────────────────────────────────────────────────────
+// Role-scoped signup codes per company. id = uuid, data = { companyId, code, role, isActive, ... }
+export const AccessCodes = {
+  async getAll()           { return getAllHealed('access_codes', 'access_codes.json'); },
+  async getByCompany(cid)  {
+    const all = await this.getAll();
+    return (all || []).filter(r => r.companyId === cid);
+  },
+  async getById(id) {
+    const sb = getSB();
+    if (sb) { const r = await sbGetById('access_codes', id); if (r) return r; }
+    return readFile('access_codes.json').find(r => r.id === id) || null;
+  },
+  async findByCode(code) {
+    const all = await this.getAll();
+    return (all || []).find(r => r.code?.toUpperCase() === code?.toUpperCase().trim()) || null;
+  },
+  async create(doc) {
+    const sb = getSB();
+    if (sb) { const r = await sbInsert('access_codes', doc.id, doc); if (r) return r; }
+    const all = readFile('access_codes.json');
+    all.push(doc);
+    writeFile('access_codes.json', all);
+    return doc;
+  },
+  async update(id, updates) { return updateHealed('access_codes', 'access_codes.json', id, updates); },
+  async delete(id)           { return deleteHealed('access_codes', 'access_codes.json', id); },
+};
+
 // ── ASSESSMENT THRESHOLDS ─────────────────────────────────────────────────────
 // Per-company configurable performance classification thresholds.
 export const AssessmentThresholds = {
@@ -756,4 +789,4 @@ export const AssessmentThresholds = {
   },
 };
 
-export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds };
+export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds, AccessCodes };

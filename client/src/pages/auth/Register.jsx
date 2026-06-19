@@ -4,6 +4,11 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+const ROLE_BADGE = {
+  manager: { label: 'Manager', bg: 'bg-amber-500/15 border-amber-500/40 text-amber-300' },
+  employee: { label: 'Employee', bg: 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300' },
+};
+
 export default function Register() {
   const navigate = useNavigate();
   const { register, isAuthenticated } = useAuth();
@@ -21,8 +26,8 @@ export default function Register() {
   const [error, setError] = useState('');
   const [passwordStrength, setPasswordStrength] = useState({ score: 0, label: '', color: '' });
 
-  // Company code validation state
-  const [companyLookup, setCompanyLookup] = useState(null); // { companyId, companyName, roles[] }
+  // Access code validation state
+  const [companyLookup, setCompanyLookup] = useState(null); // { companyId, companyName, detectedRole, roles[] }
   const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
   const [companyLookupError, setCompanyLookupError] = useState('');
   const lookupTimer = useRef(null);
@@ -52,10 +57,10 @@ export default function Register() {
     setPasswordStrength(s[score]);
   }, [formData.password]);
 
-  // Debounced company code lookup
+  // Debounced access code lookup
   const lookupCompanyCode = useCallback(async (code) => {
     const clean = code?.trim().toUpperCase();
-    if (!clean || clean.length < 4) {
+    if (!clean || clean.length < 6) {
       setCompanyLookup(null);
       setCompanyLookupError('');
       return;
@@ -69,10 +74,10 @@ export default function Register() {
       if (json.success && json.data) {
         setCompanyLookup(json.data);
       } else {
-        setCompanyLookupError(json.error?.message || 'Invalid company code');
+        setCompanyLookupError(json.error?.message || 'Invalid access code');
       }
     } catch {
-      setCompanyLookupError('Could not verify company code');
+      setCompanyLookupError('Could not verify access code');
     } finally {
       setCompanyLookupLoading(false);
     }
@@ -88,9 +93,6 @@ export default function Register() {
       clearTimeout(lookupTimer.current);
       lookupTimer.current = setTimeout(() => lookupCompanyCode(value), 600);
     }
-    if (name === 'jobRole') {
-      // handled by select
-    }
   };
 
   const validateForm = () => {
@@ -103,8 +105,7 @@ export default function Register() {
     if (!/[a-z]/.test(formData.password)) { setError('Password must contain at least one lowercase letter'); return false; }
     if (!/\d/.test(formData.password)) { setError('Password must contain at least one number'); return false; }
     if (formData.password !== formData.confirmPassword) { setError('Passwords do not match'); return false; }
-    if (formData.companyCode.trim() && !companyLookup) { setError('Enter a valid company code or leave it blank'); return false; }
-    if (companyLookup && !formData.jobRole) { setError('Please select your job role'); return false; }
+    if (formData.companyCode.trim() && !companyLookup) { setError('Enter a valid access code or leave it blank'); return false; }
     if (!acceptedTerms) { setError('You must accept the terms and conditions'); return false; }
     return true;
   };
@@ -118,7 +119,7 @@ export default function Register() {
       const extras = {};
       if (companyLookup) {
         extras.companyCode = formData.companyCode.trim().toUpperCase();
-        extras.jobRole = formData.jobRole;
+        if (formData.jobRole) extras.jobRole = formData.jobRole;
       }
       await register(formData.email, formData.password, formData.name, extras);
       navigate('/auth/onboarding', {
@@ -132,6 +133,7 @@ export default function Register() {
   };
 
   const hasCompanyCode = formData.companyCode.trim().length > 0;
+  const detectedRoleBadge = companyLookup?.detectedRole ? ROLE_BADGE[companyLookup.detectedRole] : null;
 
   return (
     <div className="min-h-screen bg-[#060B14] flex items-center justify-center px-4 py-12">
@@ -214,15 +216,15 @@ export default function Register() {
               </div>
             </div>
 
-            {/* Company Code */}
+            {/* Access Code */}
             <div>
               <label htmlFor="companyCode" className="block text-sm font-semibold text-slate-300 mb-2">
-                Company Code
-                <span className="ml-2 text-xs font-normal text-slate-500">e.g. GSS-7823</span>
+                Access Code
+                <span className="ml-2 text-xs font-normal text-slate-500">e.g. GSS-MGR-8X92</span>
               </label>
               <div className="relative">
                 <input id="companyCode" name="companyCode" type="text" value={formData.companyCode}
-                  onChange={handleChange} placeholder="Enter company code" disabled={loading}
+                  onChange={handleChange} placeholder="Enter your access code" disabled={loading}
                   className={`w-full px-4 py-3 rounded-xl border bg-[#060B14] text-slate-100 placeholder-slate-600 focus:outline-none transition-colors uppercase tracking-widest ${
                     companyLookup ? 'border-emerald-500' : companyLookupError ? 'border-red-500' : 'border-slate-700 focus:border-indigo-500'
                   }`} />
@@ -232,36 +234,41 @@ export default function Register() {
                   {!companyLookupLoading && companyLookupError && hasCompanyCode && <span className="text-red-400 text-sm">✗</span>}
                 </div>
               </div>
+
+              {/* Validated: show company + role badge */}
               {companyLookup && (
-                <p className="mt-1.5 text-xs text-emerald-400 font-medium">
-                  ✓ {companyLookup.companyName}
-                </p>
+                <div className="mt-2 flex items-center justify-between">
+                  <p className="text-xs text-emerald-400 font-medium">✓ {companyLookup.companyName}</p>
+                  {detectedRoleBadge && (
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${detectedRoleBadge.bg}`}>
+                      {detectedRoleBadge.label}
+                    </span>
+                  )}
+                </div>
               )}
               {companyLookupError && hasCompanyCode && (
                 <p className="mt-1.5 text-xs text-red-400">{companyLookupError}</p>
               )}
             </div>
 
-            {/* Job Role — only shown when company code is validated */}
+            {/* Job Role — only shown when access code is validated */}
             {companyLookup && (
               <div>
                 <label htmlFor="jobRole" className="block text-sm font-semibold text-slate-300 mb-2">
-                  Your Job Role <span className="text-red-400">*</span>
+                  Job Title <span className="text-slate-500 font-normal text-xs ml-1">(optional)</span>
                 </label>
                 <select id="jobRole" name="jobRole" value={formData.jobRole}
                   onChange={handleChange} disabled={loading}
                   className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 focus:border-indigo-500 focus:outline-none transition-colors">
-                  <option value="">Select your role...</option>
+                  <option value="">Select your job title...</option>
                   {(companyLookup.roles || []).map(r => (
-                    <option key={r.id || r.name} value={r.name}>{r.name}</option>
+                    <option key={r.id || r.roleName} value={r.roleName}>{r.roleName}{r.department ? ` — ${r.department}` : ''}</option>
                   ))}
                   <option value="__other">Other / Not listed</option>
                 </select>
-                {companyLookup && (
-                  <p className="mt-1.5 text-xs text-slate-500">
-                    A skill assessment will be auto-generated based on your role
-                  </p>
-                )}
+                <p className="mt-1.5 text-xs text-slate-500">
+                  A skill assessment will be auto-generated based on your job title
+                </p>
               </div>
             )}
 
