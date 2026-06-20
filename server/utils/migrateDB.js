@@ -123,6 +123,30 @@ const TABLES = [
     ALTER TABLE teams DISABLE ROW LEVEL SECURITY;`,
   },
   {
+    name: 'assignments',
+    sql: `CREATE TABLE IF NOT EXISTS assignments (
+      id                  TEXT PRIMARY KEY,
+      type                TEXT NOT NULL DEFAULT 'module',
+      assignable_id       TEXT NOT NULL,
+      assignable_type     TEXT,
+      assigned_by         TEXT,
+      assigned_to_user    TEXT,
+      assigned_to_group   TEXT,
+      assigned_by_manager TEXT,
+      priority            TEXT DEFAULT 'medium',
+      due_date            TIMESTAMPTZ,
+      status              TEXT NOT NULL DEFAULT 'assigned',
+      progress            INTEGER DEFAULT 0,
+      session_progress    JSONB DEFAULT '{}'::jsonb,
+      progress_data       JSONB DEFAULT '{}'::jsonb,
+      created_at          TIMESTAMPTZ DEFAULT NOW(),
+      updated_at          TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_assignments_assignee ON assignments(assigned_to_user);
+    CREATE INDEX IF NOT EXISTS idx_assignments_status   ON assignments(status);
+    ALTER TABLE assignments DISABLE ROW LEVEL SECURITY;`,
+  },
+  {
     name: 'assignment_requests',
     sql: `CREATE TABLE IF NOT EXISTS assignment_requests (
       id TEXT PRIMARY KEY,
@@ -237,6 +261,12 @@ const TABLES = [
   },
 ];
 
+// Extra columns to add to existing tables (idempotent — ADD COLUMN IF NOT EXISTS)
+const ASSIGNMENTS_COLS_SQL = `
+  ALTER TABLE assignments ADD COLUMN IF NOT EXISTS session_progress JSONB DEFAULT '{}'::jsonb;
+  ALTER TABLE assignments ADD COLUMN IF NOT EXISTS progress_data    JSONB DEFAULT '{}'::jsonb;
+`;
+
 const USER_COLS_SQL = `
   ALTER TABLE users ADD COLUMN IF NOT EXISTS job_role              TEXT;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS department            TEXT;
@@ -301,6 +331,15 @@ export async function migrateDB() {
     if (!exists) missing.push(t.name);
   }
 
+  // Always attempt to add new columns to existing tables (idempotent)
+  try {
+    await fetch(`${url}/rest/v1/rpc/exec_sql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': key, 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ sql: ASSIGNMENTS_COLS_SQL }),
+    });
+  } catch (_) { /* silent — RPC may not exist */ }
+
   if (missing.length === 0) {
     console.log('[migrate] ✅ All Supabase tables exist');
     return;
@@ -320,7 +359,7 @@ export async function migrateDB() {
   // The service_role key CAN run DDL via the pg REST endpoint if exposed.
   // We attempt it but don't fail if it doesn't work.
   try {
-    const fullSQL = TABLES.filter(t => missing.includes(t.name)).map(t => t.sql).join('\n') + '\n' + USER_COLS_SQL;
+    const fullSQL = TABLES.filter(t => missing.includes(t.name)).map(t => t.sql).join('\n') + '\n' + USER_COLS_SQL + '\n' + ASSIGNMENTS_COLS_SQL;
     // Supabase exposes a /rest/v1/rpc endpoint — try exec_sql (only works if the function exists)
     const rpcRes = await fetch(`${url}/rest/v1/rpc/exec_sql`, {
       method: 'POST',

@@ -490,31 +490,27 @@ class UserStore {
 
     if (sb) {
       // Only send columns that exist in the Supabase schema
+      // IMPORTANT: assigned_by/assigned_by_manager must be null or a valid user_id (FK constraint)
       const sbRow = {
         id:                  newA.id,
         type:                newA.type,
         assignable_id:       newA.assignable_id,
         assignable_type:     newA.assignable_type,
-        assigned_by:         newA.assigned_by,
+        assigned_by:         newA.assigned_by || null,
         assigned_to_user:    newA.assigned_to_user,
         assigned_to_group:   newA.assigned_to_group,
-        assigned_by_manager: newA.assigned_by_manager,
+        assigned_by_manager: newA.assigned_by_manager || null,
         priority:            newA.priority,
         due_date:            newA.due_date,
         status:              newA.status,
         progress:            newA.progress,
       };
-      // upsert (not insert): id retries must not fail silently
       const { data, error } = await sb.from('assignments')
         .upsert(sbRow, { onConflict: 'id' }).select().maybeSingle();
       if (error) {
-        console.error('[UserStore] createAssignment:', error.message);
-        // Don't lose the assignment — persist to the file fallback so the
-        // self-healing layer can re-sync it later
-        const fileData = await this.readAssignmentsFile();
-        fileData.assignments.push(newA);
-        fileData.nextAssignmentId = (fileData.nextAssignmentId || 1) + 1;
-        await this.writeAssignmentsFile(fileData);
+        console.error('[UserStore] createAssignment Supabase error:', error.message, '| code:', error.code);
+        // Surface the error so callers know persistence failed
+        throw new Error(`[assignments] Supabase insert failed: ${error.message}`);
       }
       return data || newA;
     }
@@ -530,9 +526,19 @@ class UserStore {
   async updateAssignment(assignmentId, updates) {
     const sb = getSB();
     if (sb) {
+      // Map camelCase to Supabase snake_case columns
+      const sbUpdates = { updated_at: new Date().toISOString() };
+      if (updates.status !== undefined)           sbUpdates.status = updates.status;
+      if (updates.progress !== undefined)         sbUpdates.progress = updates.progress;
+      if (updates.due_date !== undefined)         sbUpdates.due_date = updates.due_date;
+      if (updates.priority !== undefined)         sbUpdates.priority = updates.priority;
+      // Session progress stored in JSONB columns
+      if (updates.sessionProgress !== undefined)  sbUpdates.session_progress = updates.sessionProgress;
+      if (updates.session_progress !== undefined) sbUpdates.session_progress = updates.session_progress;
+      if (updates.progress_data !== undefined)    sbUpdates.progress_data = updates.progress_data;
       const { data, error } = await sb.from('assignments')
-        .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq('id', assignmentId).select().single();
+        .update(sbUpdates)
+        .eq('id', assignmentId).select().maybeSingle();
       if (error) throw new Error(error.message);
       return data;
     }

@@ -168,6 +168,7 @@ export default function Employee() {
   // Assessments
   const [myAssessments, setMyAssessments] = useState([]);
   const [assessmentsLoading, setAssessmentsLoading] = useState(true);
+  const [moduleGenerating, setModuleGenerating] = useState(false);
 
   // Recommendations
   const [recommendations, setRecommendations] = useState([]);
@@ -197,6 +198,31 @@ export default function Employee() {
     }
     loadData();
   }, [user, navigate]);
+
+  // Poll for module generation: if employee has a completed assessment but no assignments yet
+  useEffect(() => {
+    if (loading || assessmentsLoading) return;
+    const hasCompletedAssessment = myAssessments.some(a => a.status === 'completed' || a.submittedAt || a.completedAt);
+    const hasNoModules = assignments.length === 0;
+    if (hasCompletedAssessment && hasNoModules) {
+      setModuleGenerating(true);
+      const poll = setInterval(async () => {
+        try {
+          const data = await authFetch(`/api/assignments?userId=${userId}`);
+          const list = Array.isArray(data) ? data : (data?.assignments || data?.data || []);
+          if (list.length > 0) {
+            setAssignments(list);
+            setModuleGenerating(false);
+            clearInterval(poll);
+            showToast('Your personalized module is ready!', 'success');
+          }
+        } catch { /* silent */ }
+      }, 5000);
+      return () => clearInterval(poll);
+    } else {
+      setModuleGenerating(false);
+    }
+  }, [loading, assessmentsLoading, myAssessments, assignments.length, userId]);
 
   const loadData = async () => {
     if (!userId) return;
@@ -372,6 +398,12 @@ export default function Employee() {
         .card-enter { animation: fadeInUp 0.4s ease-out both; }
       `}</style>
 
+      {moduleGenerating && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl border border-indigo-500/40 bg-indigo-900/80 backdrop-blur-xl shadow-2xl text-indigo-200">
+          <span className="w-4 h-4 border-2 border-indigo-400/40 border-t-indigo-300 rounded-full animate-spin flex-shrink-0" />
+          <span className="text-sm font-semibold">Generating your personalized learning module…</span>
+        </div>
+      )}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <ConfirmModal
         isOpen={confirmModal.isOpen}
