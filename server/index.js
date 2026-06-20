@@ -4,6 +4,9 @@ dns.setDefaultResultOrder('ipv4first');
 
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 import { readFileSync, existsSync, mkdirSync } from 'fs';
@@ -113,6 +116,45 @@ const allowedOrigins = [
   process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
   process.env.FRONTEND_URL,
 ].filter(Boolean);
+
+// Security headers (relaxed for API + Socket.io compatibility)
+app.use(helmet({
+  contentSecurityPolicy: false,   // frontend manages its own CSP
+  crossOriginEmbedderPolicy: false,
+}));
+
+// Compress all JSON/text responses — reduces payload 70-85%
+app.use(compression());
+
+// Global API rate limit — 300 req/min per IP (5 req/sec avg)
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path === '/api/health',   // never limit health checks
+  handler: (_req, res) => res.status(429).json({ success: false, error: 'Too many requests — please slow down.' }),
+});
+app.use('/api/', globalLimiter);
+
+// Heavy LLM endpoint rate limit — 10 req/min per IP
+const llmLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ success: false, error: 'LLM rate limit — max 10 generations per minute.' }),
+});
+app.use('/api/goal', llmLimiter);
+app.use('/api/assessments', llmLimiter);
+
+// Global request timeout — 90s hard ceiling (prevents hung connections under load)
+app.use((req, res, next) => {
+  res.setTimeout(90000, () => {
+    if (!res.headersSent) res.status(503).json({ success: false, error: 'Request timeout — server is under load, please retry.' });
+  });
+  next();
+});
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -284,8 +326,11 @@ if (existsSync(clientDist)) {
 
 // Global error handler
 app.use((err, req, res, _next) => {
-  console.error('[error]', err.message);
-  res.status(500).json({
+  const status = err.status || err.statusCode || 500;
+  console.error(`[error] ${req.method} ${req.path} → ${status}:`, err.message);
+  if (status >= 500) console.error(err.stack);
+  if (res.headersSent) return;
+  res.status(status).json({
     success: false,
     data: null,
     error: err.message || 'Internal server error',
@@ -298,6 +343,10 @@ const httpServer = createServer(app);
 export const io = new SocketServer(httpServer, {
   cors: { origin: allowedOrigins.length > 2 ? allowedOrigins : '*', credentials: true },
   transports: ['websocket', 'polling'],
+  pingTimeout:  20000,   // 20s — drop dead connections faster
+  pingInterval: 25000,   // 25s — keep-alive heartbeat
+  maxHttpBufferSize: 1e6, // 1MB max message size — prevents memory bombs
+  connectTimeout: 10000,  // 10s to complete handshake
 });
 
 io.on('connection', (socket) => {

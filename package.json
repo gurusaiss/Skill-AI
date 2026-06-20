@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",
+    "compression": "^1.8.1",
+    "helmet": "^8.2.0",
     "pg": "^8.20.0",
     "pptxgenjs": "^4.0.1"
   }

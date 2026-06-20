@@ -460,47 +460,52 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
 
     userIds = [...new Set(userIds)];
 
-    // Generate per-employee assignments with unique questions
-    const employeeAssignments = [];
-    for (const userId of userIds) {
-      const user = await UserStore.getUserById(userId);
-      if (!user) continue;
+    // Batch-fetch all target users in ONE query instead of N individual queries
+    const allUsers = await UserStore.getAllUsers({});
+    const userMap = new Map(allUsers.map(u => [u.userId || u.id, u]));
+    const validUsers = userIds.map(id => userMap.get(id)).filter(Boolean);
 
-      // JD resolution priority:
-      // 1. Employee-specific JD override
-      // 2. Role Library JD (matched by job role name)
-      // 3. Employee skills alone
-      let resolvedJD   = user.jobDescription || '';
-      let resolvedSkills = user.jdSkills || [];
-      if (!resolvedJD && user.jobRole) {
-        try {
-          const roleMatch = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
-          if (roleMatch?.jobDescription) { resolvedJD = roleMatch.jobDescription; }
-          if (!resolvedSkills.length && (roleMatch?.skills || []).length) { resolvedSkills = roleMatch.skills; }
-        } catch {}
-      }
+    // Generate per-employee assignments — parallel LLM calls via LLMQueue (concurrency-capped)
+    const assignedAt = new Date().toISOString();
+    const employeeAssignments = (await Promise.all(
+      validUsers.map(async (user) => {
+        const userId = user.userId || user.id;
+        // JD resolution priority:
+        // 1. Employee-specific JD override
+        // 2. Role Library JD (matched by job role name)
+        // 3. Employee skills alone
+        let resolvedJD     = user.jobDescription || '';
+        let resolvedSkills = user.jdSkills || [];
+        if (!resolvedJD && user.jobRole) {
+          try {
+            const roleMatch = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
+            if (roleMatch?.jobDescription) { resolvedJD = roleMatch.jobDescription; }
+            if (!resolvedSkills.length && (roleMatch?.skills || []).length) { resolvedSkills = roleMatch.skills; }
+          } catch {}
+        }
 
-      const questions = await generateQuestionsFromJD({
-        jobRole: user.jobRole || 'Employee',
-        jobDescription: resolvedJD,
-        jdSkills: resolvedSkills,
-        questionCount,
-        questionTypes,
-        employeeSeed: `${userId}-${Date.now()}`,
-      });
+        const questions = await generateQuestionsFromJD({
+          jobRole: user.jobRole || 'Employee',
+          jobDescription: resolvedJD,
+          jdSkills: resolvedSkills,
+          questionCount,
+          questionTypes,
+          employeeSeed: `${userId}-${Date.now()}`,
+        });
 
-      employeeAssignments.push({
-        userId,
-        userName: user.name,
-        userEmail: user.email,
-        jobRole: user.jobRole || '',
-        questions,
-        status: 'assigned',
-        assignedAt: new Date().toISOString(),
-        startedAt: null,
-        submittedAt: null,
-      });
-    }
+        return {
+          userId,
+          userName: user.name,
+          userEmail: user.email,
+          jobRole: user.jobRole || '',
+          questions,
+          status: 'assigned',
+          assignedAt,
+          startedAt: null,
+          submittedAt: null,
+        };
+      })
+    )).filter(Boolean);
 
     const newAssessment = {
       id: randomUUID(),
@@ -860,7 +865,11 @@ Return ONLY valid JSON matching exactly this structure:
               console.warn(`[auto-assign] Groq HTTP ${r.status}: ${errText.slice(0, 200)}`);
             }
           } catch (e) {
-            console.warn('[auto-assign] Groq failed:', e.message);
+            if (e.code === 'LLM_QUEUE_FULL') {
+              console.warn('[auto-assign] LLM queue full — using rule-based fallback sessions');
+            } else {
+              console.warn('[auto-assign] Groq failed:', e.message);
+            }
           }
         } else {
           console.warn('[auto-assign] GROQ_API_KEY not set — using fallback sessions');
