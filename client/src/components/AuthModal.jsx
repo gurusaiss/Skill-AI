@@ -4,54 +4,27 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 
 const AuthModal = ({ isOpen, onClose }) => {
-  const [isLogin, setIsLogin] = useState(true);
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    name: '',
-    acceptedTerms: false,
-  });
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
 
-  const { login, register, getDashboardRoute } = useAuth();
+  const { login, getDashboardRoute } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setSuccessMsg('');
-
     try {
-      if (isLogin) {
-        const result = await login(formData.email, formData.password);
-        if (result && result.success) {
-          onClose();
-          const redirectPath = getDashboardRoute();
-          navigate(redirectPath);
-          setSuccessMsg('');
-        } else {
-          setError(result?.error?.message || 'Login failed. Please check your credentials.');
-        }
+      const result = await login(formData.email, formData.password);
+      if (result && result.success) {
+        onClose();
+        navigate(getDashboardRoute());
       } else {
-        if (!formData.acceptedTerms) {
-          setError('Please accept the Terms of Service and Privacy Policy to continue.');
-          setLoading(false);
-          return;
-        }
-        const result = await register(formData.email, formData.password, formData.name);
-        if (result && result.success) {
-          setIsLogin(true);
-          setSuccessMsg('Registration successful! Please log in.');
-          setFormData({ ...formData, email: '', password: '', name: '' });
-        } else {
-          setError(result?.error?.message || 'Registration failed. Please try again.');
-        }
+        setError(result?.error?.message || 'Invalid email or password.');
       }
     } catch (err) {
-      setError(err.message || (isLogin ? 'Login failed. Please check your credentials.' : 'Registration failed.'));
+      setError(err.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -98,9 +71,7 @@ const AuthModal = ({ isOpen, onClose }) => {
             <div className="relative rounded-2xl border border-slate-700/60 bg-slate-900/80 backdrop-blur-xl p-8 shadow-2xl shadow-black/50">
               {/* Header */}
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-black text-white">
-                  {isLogin ? '🔐 Sign In' : '✨ Create Account'}
-                </h3>
+                <h3 className="text-lg font-black text-white">🔐 Sign In</h3>
                 <button
                   onClick={onClose}
                   className="w-8 h-8 rounded-lg bg-slate-800/60 hover:bg-slate-700/60 text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center"
@@ -109,54 +80,14 @@ const AuthModal = ({ isOpen, onClose }) => {
                 </button>
               </div>
 
-              {/* Status messages - properly stringified */}
-              <AnimatePresence>
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm font-medium"
-                  >
-                    ⚠️ {typeof error === 'string' ? error : 'An error occurred'}
-                  </motion.div>
-                )}
-                {successMsg && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm font-medium"
-                  >
-                    ✅ {typeof successMsg === 'string' ? successMsg : 'Success!'}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {error && (
+                <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm font-medium">
+                  ⚠️ {error}
+                </div>
+              )}
 
               {/* Form */}
               <form onSubmit={handleSubmit} className="space-y-4">
-                {!isLogin && (
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1 }}
-                  >
-                    <label htmlFor="name" className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                      Full Name
-                    </label>
-                    <input
-                      type="text"
-                      id="name"
-                      required={!isLogin}
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-700/60 bg-slate-800/60 text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none transition-all duration-200"
-                      placeholder="Enter your full name"
-                      disabled={loading}
-                    />
-                  </motion.div>
-                )}
-
                 <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}>
                   <label htmlFor="email" className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
                     Email Address
@@ -189,39 +120,14 @@ const AuthModal = ({ isOpen, onClose }) => {
                   />
                 </motion.div>
 
-                {!isLogin && (
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.25 }}
-                  >
-                    <label className="flex items-start gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.acceptedTerms}
-                        onChange={(e) => setFormData({ ...formData, acceptedTerms: e.target.checked })}
-                        className="mt-1 w-4 h-4 rounded border-slate-700 bg-slate-800/60 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-900"
-                      />
-                      <span className="text-xs text-slate-400">
-                        I agree to the{' '}
-                        <a href="#" className="text-indigo-400 hover:text-indigo-300 transition-colors">Terms of Service</a>{' '}
-                        and{' '}
-                        <a href="#" className="text-indigo-400 hover:text-indigo-300 transition-colors">Privacy Policy</a>
-                      </span>
-                    </label>
-                  </motion.div>
-                )}
-
                 <motion.button
                   type="submit"
-                  disabled={loading || (!isLogin && !formData.acceptedTerms)}
+                  disabled={loading}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.99] shadow-lg shadow-indigo-500/20"
                 >
-                  {loading
-                    ? (isLogin ? '⏳ Signing in...' : '⏳ Creating account...')
-                    : (isLogin ? '🔐 Sign In' : '✨ Create Account')}
+                  {loading ? '⏳ Signing in...' : '🔐 Sign In'}
                 </motion.button>
               </form>
 
@@ -232,17 +138,12 @@ const AuthModal = ({ isOpen, onClose }) => {
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3 }}
               >
-                {isLogin ? "Don't have an account? " : 'Already have an account? '}
+                {"Don't have an account? "}
                 <button
-                  onClick={() => {
-                    setIsLogin(!isLogin);
-                    setError('');
-                    setSuccessMsg('');
-                    setFormData({ email: '', password: '', name: '', acceptedTerms: false });
-                  }}
+                  onClick={() => { onClose(); navigate('/auth/register'); }}
                   className="font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
                 >
-                  {isLogin ? 'Sign up →' : 'Sign in →'}
+                  Sign up →
                 </button>
               </motion.p>
 
