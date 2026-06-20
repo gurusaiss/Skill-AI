@@ -18,6 +18,7 @@ import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import UserStore from '../services/UserStore.js';
 import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds } from '../services/DataStore.js';
+import LLMQueue from '../services/LLMQueue.js';
 import * as db from '../db/store.js';
 import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
 
@@ -795,12 +796,12 @@ Skill gaps identified: ${skills.join(', ')}
 
 Return JSON: {"title":"...","description":"...","objectives":["..."],"estimatedDuration":"X days","sessions":[{"title":"...","duration":"45 mins","topics":["..."],"keyPoints":["..."],"quiz":[{"question":"...","options":["A)...","B)...","C)...","D)..."],"answer":"A","explanation":"..."}]}]}`;
 
-            const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            const r = await LLMQueue.run(() => fetch('https://api.groq.com/openai/v1/chat/completions', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
               body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 3000, response_format: { type: 'json_object' } }),
               signal: AbortSignal.timeout(30000),
-            });
+            }));
             if (r.ok) {
               const d = await r.json();
               moduleContent = JSON.parse(d.choices?.[0]?.message?.content || '{}');

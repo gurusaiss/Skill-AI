@@ -11,6 +11,7 @@
  */
 
 import LLMCache from './LLMCache.js';
+import LLMQueue from './LLMQueue.js';
 
 class GeminiService {
   constructor() {
@@ -52,7 +53,7 @@ class GeminiService {
       if (system) messages.push({ role: 'system', content: system });
       messages.push({ role: 'user', content: prompt });
 
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await LLMQueue.run(() => fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -66,7 +67,7 @@ class GeminiService {
           response_format: { type: 'json_object' },
         }),
         signal: AbortSignal.timeout(30000),
-      });
+      }));
 
       if (!res.ok) {
         const err = await res.text();
@@ -95,7 +96,7 @@ class GeminiService {
       if (system) messages.push({ role: 'system', content: system });
       messages.push({ role: 'user', content: prompt });
 
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await LLMQueue.run(() => fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -108,7 +109,7 @@ class GeminiService {
           max_tokens: 1024,
         }),
         signal: AbortSignal.timeout(20000),
-      });
+      }));
 
       if (!res.ok) return null;
       const data = await res.json();
@@ -126,7 +127,7 @@ class GeminiService {
       if (system) messages.push({ role: 'system', content: system });
       messages.push({ role: 'user', content: prompt });
 
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await LLMQueue.run(() => fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -139,7 +140,7 @@ class GeminiService {
           max_tokens: 512,
         }),
         signal: AbortSignal.timeout(15000),
-      });
+      }));
 
       if (!res.ok) return null;
       const data = await res.json();
@@ -162,7 +163,7 @@ class GeminiService {
       if (system) messages.push({ role: 'system', content: system });
       messages.push({ role: 'user', content: prompt });
 
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await LLMQueue.run(() => fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -176,7 +177,7 @@ class GeminiService {
           response_format: { type: 'json_object' },
         }),
         signal: AbortSignal.timeout(20000),
-      });
+      }));
 
       if (!res.ok) return null;
       const data = await res.json();
@@ -213,12 +214,12 @@ class GeminiService {
           };
           if (system) body.systemInstruction = { parts: [{ text: system }] };
 
-          const res = await fetch(`${this.endpoint}?key=${this.apiKey}`, {
+          const res = await LLMQueue.run(() => fetch(`${this.endpoint}?key=${this.apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(30000)
-          });
+            signal: AbortSignal.timeout(30000),
+          }));
 
           if (!res.ok) {
             const err = await res.text();
@@ -284,12 +285,12 @@ class GeminiService {
         };
         if (system) body.systemInstruction = { parts: [{ text: system }] };
 
-        const res = await fetch(`${this.endpoint}?key=${this.apiKey}`, {
+        const res = await LLMQueue.run(() => fetch(`${this.endpoint}?key=${this.apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(20000)
-        });
+          signal: AbortSignal.timeout(20000),
+        }));
 
         if (res.ok) {
           const data = await res.json();
@@ -351,6 +352,7 @@ class GeminiService {
       groqEnabled       : this.groqEnabled,
       model             : this.model,
       cacheStats        : LLMCache.getStats(),
+      queue             : LLMQueue.getStats(),
     };
   }
 }
