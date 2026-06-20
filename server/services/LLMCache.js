@@ -26,7 +26,7 @@ export const TTL = {
 };
 
 // ── Max cache entries (prevents unbounded memory growth) ─────────────────────
-const MAX_ENTRIES = 500;
+const MAX_ENTRIES = 2000;
 
 class LLMCache {
   constructor() {
