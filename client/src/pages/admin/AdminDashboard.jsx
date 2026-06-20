@@ -250,7 +250,7 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
           {[
             { label: 'Assessments', value: empReports.length, color: 'text-indigo-400' },
             { label: 'Latest Score', value: latestReport ? `${latestReport.score}%` : '—', color: latestReport?.score >= 70 ? 'text-emerald-400' : latestReport?.score ? 'text-amber-400' : 'text-slate-500' },
-            { label: 'Modules', value: `${completedMods}/${empAssignments.length}`, color: 'text-emerald-400' },
+            { label: 'Avg Progress', value: empAssignments.length > 0 ? `${Math.round(empAssignments.reduce((s,a) => s+(a.progress||0),0)/empAssignments.length)}%` : '—', color: 'text-emerald-400' },
             { label: 'Classification', value: latestReport?.performanceClassification?.label || '—', color: 'text-slate-300' },
           ].map((s, i) => (
             <div key={i} className="py-3 px-4 text-center">
@@ -1210,12 +1210,17 @@ export default function AdminDashboard() {
 
                         {/* Module Progress */}
                         <div>
-                          <p className="text-sm font-semibold text-slate-300">{completedMods}/{empAssignments.length}</p>
-                          {empAssignments.length > 0 && (
-                            <div className="h-1 w-16 rounded-full bg-slate-700/50 mt-1 overflow-hidden">
-                              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.round((completedMods / empAssignments.length) * 100)}%` }} />
-                            </div>
-                          )}
+                          {empAssignments.length > 0 ? (() => {
+                            const avgPct = Math.round(empAssignments.reduce((s, a) => s + (a.progress || 0), 0) / empAssignments.length);
+                            return (
+                              <>
+                                <p className="text-sm font-semibold text-slate-300">{avgPct}%</p>
+                                <div className="h-1 w-16 rounded-full bg-slate-700/50 mt-1 overflow-hidden">
+                                  <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${avgPct}%` }} />
+                                </div>
+                              </>
+                            );
+                          })() : <span className="text-slate-600 text-xs">—</span>}
                         </div>
 
                         {/* Last Activity */}

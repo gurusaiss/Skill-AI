@@ -757,13 +757,6 @@ export default function Employee() {
                              <span>{status === 'in_progress' ? '▶' : status === 'completed' ? '🔁' : '🚀'}</span>
                              {status === 'in_progress' ? 'Continue' : status === 'completed' ? 'Review' : 'Start Module'}
                            </button>
-                          <button
-                            onClick={() => handleStatusClick(a.id, status)}
-                            disabled={!canAdvance || isCompleted || isCancelled}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 text-white hover:from-indigo-600/30 hover:to-purple-600/30 text-xs font-bold transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-indigo-500/10"
-                          >
-                            <span>🏆</span> Get It Win
-                          </button>
                         </div>
                       </div>
                     </div>
