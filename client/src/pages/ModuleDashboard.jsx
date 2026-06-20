@@ -138,9 +138,15 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onRegene
       </p>
       {sessions.map((session, index) => {
         const status = sessionStatuses[index] || 'locked';
-        const isUnlocked = index === 0 || sessionStatuses[index - 1] === 'completed';
+        const isUnlocked = index === 0 || (() => {
+          if (session.unlockDate) return new Date() >= new Date(session.unlockDate);
+          return sessionStatuses[index - 1] === 'completed';
+        })();
         const isCompleted = status === 'completed';
         const isInProgress = status === 'in_progress';
+        const unlockDateLabel = !isUnlocked && session.unlockDate
+          ? new Date(session.unlockDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          : null;
 
         return (
           <button
@@ -182,7 +188,10 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onRegene
                   <span className="text-xs text-slate-600 hidden sm:block">⏱ {session.duration}</span>
                 )}
                 {!isUnlocked && !isCompleted ? (
-                  <span className="text-slate-600">🔒</span>
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="text-slate-600">🔒</span>
+                    {unlockDateLabel && <span className="text-[10px] text-slate-600 whitespace-nowrap">Unlocks {unlockDateLabel}</span>}
+                  </div>
                 ) : (
                   <span className={`text-lg group-hover:translate-x-1 transition-transform ${isCompleted ? 'text-emerald-400' : 'text-indigo-400'}`}>
                     {isCompleted ? '↺' : '→'}

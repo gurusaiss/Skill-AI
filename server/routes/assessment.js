@@ -764,113 +764,212 @@ router.post('/:id/submit', authenticate, async (req, res) => {
     setImmediate(async () => {
       try {
         const targetUserId = req.user.userId;
+        console.log(`[auto-assign] Starting for user=${targetUserId} report=${report.id}`);
+
         const user = await UserStore.getUserById(targetUserId);
-        const skills = report.weakAreas?.length > 0 ? report.weakAreas : ['Core Skills'];
+        const skills = report.weakAreas?.length > 0
+          ? report.weakAreas
+          : report.missingCompetencies?.length > 0
+            ? report.missingCompetencies
+            : ['Core Skills'];
         const jdContext = (user?.jobDescription || '').slice(0, 2000);
         const jdSkillsCtx = (user?.jdSkills || []).join(', ');
         const jobRole = report.jobRole || user?.jobRole || 'Professional';
+        const score = report.score || 0;
+        const classification = report.performanceClassification?.label || 'Average';
 
+        // Determine module depth from classification
+        const depthMap = {
+          'Critical':         { numSessions: 8, difficulty: 'beginner',     priority: 'urgent' },
+          'Needs Improvement':{ numSessions: 6, difficulty: 'intermediate', priority: 'high'   },
+          'Average':          { numSessions: 5, difficulty: 'intermediate', priority: 'high'   },
+          'Good':             { numSessions: 4, difficulty: 'intermediate', priority: 'medium' },
+          'Excellent':        { numSessions: 3, difficulty: 'advanced',     priority: 'medium' },
+          'Outstanding':      { numSessions: 2, difficulty: 'advanced',     priority: 'low'    },
+        };
+        const depth = depthMap[classification] || depthMap['Average'];
+
+        // Groq module generation
         let moduleContent = null;
         const groqKey = process.env.GROQ_API_KEY;
         if (groqKey?.length > 10) {
           try {
-            const prompt = `Design a targeted remedial training module for an employee based on their assessment results.
+            const prompt = `Design a personalized remedial training module for an employee based on their assessment results.
 
 === EMPLOYEE CONTEXT ===
 Job Role: ${jobRole}
-${jdSkillsCtx ? `Skills from their JD: ${jdSkillsCtx}` : ''}
-${jdContext ? `Their Job Description:\n${jdContext}` : ''}
+Classification: ${classification} (Score: ${score}%)
+${jdSkillsCtx ? `JD Skills: ${jdSkillsCtx}` : ''}
+${jdContext ? `Job Description:\n${jdContext}` : ''}
 
-=== ASSESSMENT RESULTS ===
-Assessment: ${report.assessmentTitle}
-Performance: ${report.performanceClassification?.label} (${report.score}%)
-Skill gaps identified: ${skills.join(', ')}
+=== SKILL GAPS (address ALL of these) ===
+${skills.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 
-=== MODULE DESIGN INSTRUCTIONS ===
-1. Directly address the specific skill gaps identified.
-2. Every session topic must connect to a gap area or its prerequisite.
-3. Match the employee's actual job domain — no unrelated content.
-4. For non-technical roles (HR, Operations, Finance, Sales), generate domain-appropriate content — not software/coding.
-5. Sessions build progressively: foundational → applied → advanced.
-6. Each session quiz tests the specific gap topic covered.
+=== MODULE DESIGN RULES ===
+1. Generate EXACTLY ${depth.numSessions} sessions — one per day.
+2. Each session must directly address a specific skill gap above.
+3. Session topics must match the employee's job domain (${jobRole}) — no generic tech content for non-technical roles.
+4. Sessions build progressively: Day 1 = foundational, final day = applied practice.
+5. Each session MUST have a quiz with 3-5 multiple-choice questions that test that day's topic.
+6. Include keyPoints (3-5 bullet points of key takeaways per session).
 
-Return JSON: {"title":"...","description":"...","objectives":["..."],"estimatedDuration":"X days","sessions":[{"title":"...","duration":"45 mins","topics":["..."],"keyPoints":["..."],"quiz":[{"question":"...","options":["A)...","B)...","C)...","D)..."],"answer":"A","explanation":"..."}]}]}`;
+Return ONLY valid JSON matching exactly this structure:
+{
+  "title": "string (specific, not generic)",
+  "description": "string (2-3 sentences)",
+  "objectives": ["string", ...],
+  "estimatedDuration": "${depth.numSessions} days",
+  "sessions": [
+    {
+      "title": "string",
+      "dayNumber": 1,
+      "duration": "45 mins",
+      "topics": ["string", ...],
+      "keyPoints": ["string", ...],
+      "quiz": [
+        {
+          "question": "string",
+          "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+          "answer": "A",
+          "explanation": "string"
+        }
+      ]
+    }
+  ]
+}`;
 
             const r = await LLMQueue.run(() => fetch('https://api.groq.com/openai/v1/chat/completions', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
-              body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 3000, response_format: { type: 'json_object' } }),
-              signal: AbortSignal.timeout(30000),
+              body: JSON.stringify({
+                model: 'llama-3.3-70b-versatile',
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.7,
+                max_tokens: 4000,
+                response_format: { type: 'json_object' },
+              }),
+              signal: AbortSignal.timeout(45000),
             }));
             if (r.ok) {
               const d = await r.json();
-              moduleContent = JSON.parse(d.choices?.[0]?.message?.content || '{}');
+              const raw = d.choices?.[0]?.message?.content || '{}';
+              moduleContent = JSON.parse(raw);
+              console.log(`[auto-assign] Groq generated module: "${moduleContent.title}" with ${moduleContent.sessions?.length} sessions`);
+            } else {
+              const errText = await r.text().catch(() => '');
+              console.warn(`[auto-assign] Groq HTTP ${r.status}: ${errText.slice(0, 200)}`);
             }
-          } catch (e) { console.warn('[auto-assign] AI module generation failed:', e.message); }
+          } catch (e) {
+            console.warn('[auto-assign] Groq failed:', e.message);
+          }
+        } else {
+          console.warn('[auto-assign] GROQ_API_KEY not set — using fallback sessions');
         }
 
-        const moduleTitle = moduleContent?.title || `Remedial Training: ${skills[0]}`;
+        // Build sessions with day-based unlock dates
+        const startDate = new Date();
+        const rawSessions = moduleContent?.sessions?.length > 0
+          ? moduleContent.sessions
+          : skills.slice(0, depth.numSessions).map((s, i) => ({
+              title: `Day ${i + 1}: ${s}`,
+              dayNumber: i + 1,
+              duration: '45 mins',
+              topics: [s],
+              keyPoints: [`Understanding ${s}`, `Applying ${s} in ${jobRole} context`, `Common pitfalls with ${s}`],
+              quiz: [{
+                question: `What is the most important aspect of ${s} for a ${jobRole}?`,
+                options: ['A) Memorizing theory only', `B) Applying ${s} practically`, 'C) Avoiding it entirely', 'D) Delegating to others'],
+                answer: 'B',
+                explanation: `Practical application of ${s} is critical for ${jobRole} effectiveness.`,
+              }],
+            }));
+
+        const sessions = rawSessions.map((s, i) => {
+          const dayNumber = s.dayNumber || (i + 1);
+          const unlockDate = new Date(startDate);
+          unlockDate.setDate(unlockDate.getDate() + (dayNumber - 1));
+          return { ...s, dayNumber, sessionIndex: i, unlockDate: unlockDate.toISOString() };
+        });
+
+        const estimatedDays = sessions.length;
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + estimatedDays + 2);
+
+        const moduleTitle = moduleContent?.title || `${classification} Training Plan: ${skills.slice(0, 2).join(' & ')}`;
+        console.log(`[auto-assign] Creating module "${moduleTitle}" (${sessions.length} sessions, ${depth.difficulty})`);
+
+        // Create module in DB (null createdBy avoids FK issues)
         const newModule = await db.createModule({
           title: moduleTitle,
-          description: moduleContent?.description || `Targeted training for ${jobRole} covering ${skills.join(', ')}`,
+          description: moduleContent?.description || `Personalized ${depth.difficulty} training for ${jobRole} targeting: ${skills.join(', ')}`,
           category: jobRole || 'Training',
-          difficulty: 'intermediate',
-          estimatedDuration: moduleContent?.estimatedDuration || '5 days',
+          difficulty: depth.difficulty,
+          estimatedDuration: `${estimatedDays} days`,
           skills,
-          tasks: moduleContent?.sessions?.map(s => ({ title: s.title, duration: s.duration, type: 'session' })) || [],
-          resources: [],
-          completionCriteria: 'Complete all sessions',
+          tasks: sessions.map(s => ({
+            title: s.title, duration: s.duration, type: 'session',
+            dayNumber: s.dayNumber, topics: s.topics || [],
+          })),
+          resources: moduleContent?.resources || [],
+          completionCriteria: 'Complete all sessions and quizzes',
           progressTracking: true,
           companyId: req.user.companyId || null,
           content: {
             isMandatory: true,
-            sessions: moduleContent?.sessions || skills.map(s => ({ title: s, topics: [s], duration: '30 mins' })),
-            objectives: moduleContent?.objectives || [`Improve ${skills.join(', ')} skills`],
+            sessions,
+            objectives: moduleContent?.objectives || skills.map(s => `Master ${s} skills`),
             assessmentSource: report.id,
             jobRole,
             assessmentGaps: skills,
+            classification,
+            score,
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            contentGeneratedAt: new Date().toISOString(),
           },
-        }, 'system');
+        }, null);
 
         const moduleId = newModule?.id;
-        if (!moduleId) { console.error('[auto-assign] Module creation returned no ID'); return; }
+        if (!moduleId) {
+          console.error('[auto-assign] Module creation returned no ID — possible DB schema issue. Check Supabase modules table.');
+          return;
+        }
+        console.log(`[auto-assign] Module created: id=${moduleId}`);
 
+        // Create assignment — assigned_by MUST be null (not 'system') due to FK constraint
+        await UserStore.createAssignment({
+          type: 'module',
+          assignable_id: moduleId,
+          assignable_type: 'module',
+          assigned_by: null,
+          assigned_to_user: targetUserId,
+          assigned_by_manager: null,
+          priority: depth.priority,
+          due_date: endDate.toISOString(),
+          status: 'assigned',
+          progress: 0,
+        });
+        console.log(`[auto-assign] Assignment created for user=${targetUserId}`);
+
+        // Create DataStore module_assignment record
         await ModuleAssignments.create({
           id: randomUUID(),
           moduleId,
           userId: targetUserId,
           isMandatory: true,
-          assignedAt: new Date().toISOString(),
-          assignedBy: 'system',
+          assignedAt: startDate.toISOString(),
+          assignedBy: null,
           status: 'assigned',
           assessmentReportId: report.id,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          dueDate: endDate.toISOString(),
         });
 
-        await UserStore.createAssignment({
-          type: 'module',
-          assignable_id: moduleId,
-          assignable_type: 'module',
-          assigned_by: 'system',
-          assigned_to_user: targetUserId,
-          priority: 'high',
-          status: 'assigned',
-          progress: 0,
-          isMandatory: true,
-          title: moduleTitle,
-          name: moduleTitle,
-          module_name: moduleTitle,
-          description: moduleContent?.description || '',
-          moduleRef: {
-            id: moduleId,
-            title: moduleTitle,
-            skills,
-            estimatedDuration: moduleContent?.estimatedDuration || '5 days',
-          },
-        });
-
-        console.log(`[auto-assign] Module "${moduleTitle}" created and assigned to user ${targetUserId} from report ${report.id}`);
+        console.log(`[auto-assign] ✅ Complete — module "${moduleTitle}" assigned to user ${targetUserId}`);
       } catch (e) {
-        console.error('[auto-assign] Failed:', e.message);
+        console.error('[auto-assign] FAILED:', e.message);
+        if (e.stack) console.error('[auto-assign] Stack:', e.stack.split('\n').slice(0, 5).join('\n'));
       }
     });
 
