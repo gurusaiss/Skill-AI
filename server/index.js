@@ -320,6 +320,19 @@ export const emitToGoal = (goalId, event, data) => io.to(`goal:${goalId}`).emit(
 const server = httpServer.listen(PORT, () => {
   // Start autonomous background agent
   autonomousScheduler.start();
+
+  // Keep-alive ping — prevents Render free tier from spinning down (spins down after 15 min idle).
+  // Pings own health endpoint every 14 minutes. Only runs in production to avoid noise locally.
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
+    const PING_INTERVAL_MS = 14 * 60 * 1000;
+    setInterval(() => {
+      fetch(`http://localhost:${PORT}/api/health`)
+        .then(() => console.log('[keep-alive] ✅ Ping OK'))
+        .catch(err => console.warn('[keep-alive] ⚠️  Ping failed:', err.message));
+    }, PING_INTERVAL_MS);
+    console.log('[keep-alive] Self-ping enabled (14 min interval)');
+  }
+
   console.log(`
 ╔════════════════════════════════════════╗
 ║       SkillForge AI Server v3          ║
