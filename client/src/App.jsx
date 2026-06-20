@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
@@ -189,11 +189,7 @@ const App = () => {
                    <AssignmentManagement />
                  </ProtectedRoute>
                } />
-              <Route path="/admin/approvals" element={
-                <ProtectedRoute requiredRole="admin">
-                  <ApprovalCenter />
-                </ProtectedRoute>
-              } />
+              <Route path="/admin/approvals" element={<Navigate to="/admin/dashboard" replace />} />
               <Route path="/admin/groups" element={
                 <ProtectedRoute requiredRole="admin">
                   <GroupManagement />
@@ -209,11 +205,7 @@ const App = () => {
                   <ContentReview />
                 </ProtectedRoute>
               } />
-              <Route path="/admin/access-codes" element={
-                <ProtectedRoute requiredRole="admin">
-                  <AccessCodes />
-                </ProtectedRoute>
-              } />
+              <Route path="/admin/access-codes" element={<Navigate to="/admin/dashboard" replace />} />
               <Route path="/admin/metrics" element={
                 <ProtectedRoute requiredRole="admin">
                   <MetricsDashboard />
