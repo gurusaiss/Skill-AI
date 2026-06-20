@@ -673,8 +673,30 @@ export const RoleLibrary = {
   },
   async findByName(roleName, companyId) {
     const all = await this.getByCompany(companyId);
-    const q = roleName?.toLowerCase().trim();
-    return all.find(r => r.roleName?.toLowerCase().trim() === q) || null;
+    if (!roleName?.trim() || !all?.length) return null;
+    const q = roleName.toLowerCase().trim().replace(/[-_/]+/g, ' ');
+
+    // 1. Exact (case-insensitive)
+    const exact = all.find(r => r.roleName?.toLowerCase().trim().replace(/[-_/]+/g, ' ') === q);
+    if (exact) return exact;
+
+    // 2. One fully contains the other
+    const contains = all.find(r => {
+      const rn = r.roleName?.toLowerCase().trim().replace(/[-_/]+/g, ' ');
+      return rn && (rn.includes(q) || q.includes(rn));
+    });
+    if (contains) return contains;
+
+    // 3. Word-overlap score ≥ 50 %
+    const qWords = q.split(/\s+/).filter(Boolean);
+    let best = null, bestScore = 0;
+    for (const r of all) {
+      const rWords = (r.roleName?.toLowerCase().replace(/[-_/]+/g, ' ') || '').split(/\s+/).filter(Boolean);
+      const overlap = qWords.filter(w => rWords.includes(w)).length;
+      const score = overlap / Math.max(qWords.length, rWords.length, 1);
+      if (score > bestScore && score >= 0.5) { best = r; bestScore = score; }
+    }
+    return best;
   },
   async create(doc) {
     const sb = getSB();
