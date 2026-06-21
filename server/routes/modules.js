@@ -222,7 +222,31 @@ router.put('/:id', authenticate, async (req, res) => {
 router.post('/:id/generate-content', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const module = await db.getModuleById(id);
+    let module = await db.getModuleById(id);
+
+    // Module missing from DB (ephemeral file lost on server restart) — recreate from request body
+    if (!module && req.body?.title) {
+      try {
+        module = await db.createModule({
+          title: req.body.title,
+          description: req.body.description || `Training module: ${req.body.title}`,
+          category: req.body.category || 'Training',
+          difficulty: req.body.difficulty || 'intermediate',
+          estimatedDuration: req.body.estimatedDuration || '7 days',
+          skills: req.body.skills || [],
+          content: {},
+          companyId: req.user.companyId || null,
+        }, null);
+        // Re-save with the original ID so the assignment still points to it
+        if (module && module.id !== id) {
+          await db.updateModule(module.id, { id });
+          module = { ...module, id };
+        }
+      } catch (recreateErr) {
+        console.warn('[generate-content] Could not recreate module:', recreateErr.message);
+      }
+    }
+
     if (!module) {
       return res.status(404).json({ success: false, error: { message: 'Module not found' } });
     }

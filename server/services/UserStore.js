@@ -504,6 +504,7 @@ class UserStore {
         due_date:            newA.due_date,
         status:              newA.status,
         progress:            newA.progress,
+        module_name:         newA.title || null,
       };
       const { data, error } = await sb.from('assignments')
         .upsert(sbRow, { onConflict: 'id' }).select().maybeSingle();

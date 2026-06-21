@@ -433,6 +433,9 @@ router.get('/:id', authenticate, async (req, res) => {
       // session_progress → sessionProgress (camelCase for frontend)
       sessionProgress: a.session_progress || a.sessionProgress || {},
       progressData:    a.progress_data    || a.progressData    || {},
+      // module_name persisted to Supabase so it survives server restarts
+      module_name:     a.module_name || a.title || '',
+      title:           a.module_name || a.title || '',
     };
 
     // Embed module title + sessions so frontend never needs a separate module fetch
