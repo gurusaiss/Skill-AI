@@ -526,31 +526,55 @@ export default function ModuleDashboard() {
         assignmentId ? authFetch(`/api/assignments/${assignmentId}`) : Promise.resolve(null),
       ]);
 
-      let mod = null;
-      if (modRes.status === 'fulfilled' && modRes.value) {
-        mod = modRes.value;
-        setModule(mod);
-      } else {
-        throw new Error('Module not found');
-      }
-
+      // ── Assignment (primary source of truth for progress + embedded module) ──
+      let assignData = null;
       if (assignRes.status === 'fulfilled' && assignRes.value) {
-        setAssignment(assignRes.value);
-        const progress = assignRes.value?.sessionProgress || assignRes.value?.progress_data?.sessions || {};
-        // Ensure session 0 always has at least a 'pending' status, without losing other progress
+        assignData = assignRes.value;
+        setAssignment(assignData);
+
+        // session_progress (Supabase snake_case) OR sessionProgress (camelCase)
+        const progress =
+          assignData.sessionProgress ||
+          assignData.session_progress ||
+          assignData.progress_data?.sessions ||
+          {};
         const initialStatuses = progress[0] !== undefined ? progress : { ...progress, 0: 'pending' };
         setSessionStatuses(initialStatuses);
       } else {
         setSessionStatuses({ 0: 'pending' });
       }
 
-      // Auto-generate content if no sessions exist
-      const sessions = mod?.sessions || mod?.content?.sessions || [];
+      // ── Module data: try direct fetch first, fall back to assignment embed ──
+      let mod = null;
+      if (modRes.status === 'fulfilled' && modRes.value && modRes.value.id) {
+        mod = modRes.value;
+      } else if (assignData?.module?.id) {
+        // Assignment GET /:id embeds module — use it as fallback
+        mod = assignData.module;
+      } else if (assignData?.module_name || assignData?.title) {
+        // Bare minimum fallback — at least we have a title
+        mod = {
+          id: moduleId,
+          title: assignData.module_name || assignData.title || 'Your Module',
+          sessions: [],
+          content: {},
+        };
+      }
+
+      if (!mod) {
+        setError('Module not found. Please contact your admin.');
+        return;
+      }
+
+      setModule(mod);
+
+      // Refresh sessions from the latest module data (admin edits reflected immediately)
+      const sessions = mod.sessions || mod.content?.sessions || [];
       if (sessions.length === 0 && !skipGenerate) {
         await generateContent(mod);
       }
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Failed to load module');
     } finally {
       setLoading(false);
     }
