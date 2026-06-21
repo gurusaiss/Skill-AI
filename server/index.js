@@ -88,6 +88,8 @@ import('./db/store.js').then(async db => {
     console.log('[DB] Store initialized:', db.supabaseEnabled() ? 'Supabase' : 'File-based');
     // Check + warn about missing DataStore tables (assessments, companies, etc.)
     await migrateDB();
+    // Sync any modules stranded in the ephemeral JSON file into Supabase
+    await db.syncFileModulesToSupabase();
     await migrateDefaultUsersToGSS();
     // Auto-seed demo accounts if none exist (runs once on first deploy)
     await autoSeed();

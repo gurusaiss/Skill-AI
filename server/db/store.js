@@ -166,9 +166,9 @@ export async function getModules(filters = {}) {
     if (filters.companyId) qb = qb.eq('company_id', filters.companyId);
     const { data, error } = await qb;
     if (error) throw error;
-    const sbModules = (data || []).map(normalizeModule);
-    if (sbModules.length > 0) return sbModules;
-    // Supabase returned empty — check file fallback for stranded modules
+    // When Supabase is ON, always return its result (even if empty).
+    // Never fall through to the ephemeral file — it is wiped on every Render restart.
+    return (data || []).map(normalizeModule);
   }
   const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
   return f?.modules || [];
@@ -180,7 +180,20 @@ export async function getModuleById(id) {
     const { data, error } = await supabase.from('modules').select('*').eq('id', id).maybeSingle();
     if (error && error.code !== 'PGRST116') throw error;
     if (data) return normalizeModule(data);
-    // Not in Supabase — fall through to file fallback (handles stranded modules)
+    // Not in Supabase — check file for stranded modules (pre-migration data)
+    const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
+    const fileModule = (f?.modules || []).find(m => m.id === id) || null;
+    if (fileModule) {
+      // Sync stranded module to Supabase so it persists
+      try {
+        const payload = toSupabaseModule(fileModule, fileModule.createdBy, fileModule.id);
+        await supabase.from('modules').upsert([payload], { onConflict: 'id' });
+        console.log(`[getModuleById] Synced stranded module ${id} to Supabase`);
+      } catch (e) {
+        console.warn(`[getModuleById] Failed to sync stranded module ${id}:`, e.message);
+      }
+    }
+    return fileModule;
   }
   const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
   return (f?.modules || []).find(m => m.id === id) || null;
@@ -190,7 +203,25 @@ export async function getModulesByIds(ids) {
   if (!ids?.length) return [];
   if (isOn()) {
     const { data, error } = await supabase.from('modules').select('*').in('id', ids);
-    if (!error && data?.length) return data.map(normalizeModule);
+    if (!error) {
+      const found = (data || []).map(normalizeModule);
+      const foundIds = new Set(found.map(m => m.id));
+      const missingIds = ids.filter(id => !foundIds.has(id));
+      // For IDs not in Supabase, check file (stranded modules) and sync them up
+      if (missingIds.length) {
+        const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
+        const fileModules = (f?.modules || []).filter(m => missingIds.includes(m.id));
+        for (const fm of fileModules) {
+          try {
+            const payload = toSupabaseModule(fm, fm.createdBy, fm.id);
+            await supabase.from('modules').upsert([payload], { onConflict: 'id' });
+            console.log(`[getModulesByIds] Synced stranded module ${fm.id} to Supabase`);
+          } catch (e) { /* non-fatal */ }
+        }
+        return [...found, ...fileModules];
+      }
+      return found;
+    }
   }
   const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
   return (f?.modules || []).filter(m => ids.includes(m.id));
@@ -220,6 +251,8 @@ export async function createModule(module, createdBy) {
     return normalizeModule(data);
   }
 
+  // Supabase is not available — writing to ephemeral file (data will be lost on Render restart!)
+  console.error('[createModule] ⚠️ Supabase is OFF — module will be written to ephemeral JSON file and will not survive a server restart. Check SUPABASE_URL and SUPABASESERVICE_ROLE_KEY env vars.');
   const path = join(DATA_DIR, 'modules.json');
   const f = await readJsonFile(path) || { modules: [], nextModuleId: 1 };
   const newModule = {
@@ -242,6 +275,33 @@ export async function createModule(module, createdBy) {
   f.nextModuleId += 1;
   await writeJsonFile(path, f);
   return newModule;
+}
+
+/**
+ * Sync any modules stranded in the ephemeral JSON file into Supabase.
+ * Called once at startup after Supabase is confirmed live.
+ */
+export async function syncFileModulesToSupabase() {
+  if (!isOn()) return;
+  try {
+    const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
+    const fileModules = f?.modules || [];
+    if (!fileModules.length) return;
+    let synced = 0;
+    for (const fm of fileModules) {
+      try {
+        const { data: existing } = await supabase.from('modules').select('id').eq('id', fm.id).maybeSingle();
+        if (!existing) {
+          const payload = toSupabaseModule(fm, fm.createdBy, fm.id);
+          const { error } = await supabase.from('modules').upsert([payload], { onConflict: 'id' });
+          if (!error) synced++;
+        }
+      } catch (_) { /* skip individual failures */ }
+    }
+    if (synced > 0) console.log(`[syncFileModules] Synced ${synced} stranded module(s) to Supabase`);
+  } catch (e) {
+    console.warn('[syncFileModules] Error during sync:', e.message);
+  }
 }
 
 export async function updateModule(id, updates) {
@@ -541,6 +601,7 @@ export default {
   supabaseEnabled,
   getSupabaseClient,
   initContentFiles,
+  syncFileModulesToSupabase,
   getPackages,
   getModules,
   getModuleById,

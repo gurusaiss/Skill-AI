@@ -266,6 +266,7 @@ const TABLES = [
 const ASSIGNMENTS_COLS_SQL = `
   ALTER TABLE assignments ADD COLUMN IF NOT EXISTS session_progress JSONB DEFAULT '{}'::jsonb;
   ALTER TABLE assignments ADD COLUMN IF NOT EXISTS progress_data    JSONB DEFAULT '{}'::jsonb;
+  ALTER TABLE assignments ADD COLUMN IF NOT EXISTS module_name      TEXT;
 `;
 
 const USER_COLS_SQL = `
