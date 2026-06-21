@@ -144,7 +144,8 @@ const TABLES = [
     );
     CREATE INDEX IF NOT EXISTS idx_assignments_assignee ON assignments(assigned_to_user);
     CREATE INDEX IF NOT EXISTS idx_assignments_status   ON assignments(status);
-    ALTER TABLE assignments DISABLE ROW LEVEL SECURITY;`,
+    ALTER TABLE assignments DISABLE ROW LEVEL SECURITY;
+    ALTER TABLE assignments ADD COLUMN IF NOT EXISTS module_name TEXT;`,
   },
   {
     name: 'assignment_requests',

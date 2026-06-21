@@ -957,6 +957,7 @@ Return ONLY valid JSON matching exactly this structure:
           due_date: endDate.toISOString(),
           status: 'assigned',
           progress: 0,
+          title: moduleTitle,
         });
         console.log(`[auto-assign] Assignment created for user=${targetUserId}`);
 

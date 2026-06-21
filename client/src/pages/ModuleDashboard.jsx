@@ -596,7 +596,17 @@ export default function ModuleDashboard() {
         setGenerateStatus(messages[msgIdx]);
       }, 2500);
 
-      const result = await authFetch(`/api/modules/${moduleId}/generate-content`, { method: 'POST' });
+      const result = await authFetch(`/api/modules/${moduleId}/generate-content`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: currentModule?.title,
+          description: currentModule?.description,
+          difficulty: currentModule?.difficulty,
+          estimatedDuration: currentModule?.estimatedDuration,
+          skills: currentModule?.skills || [],
+          category: currentModule?.category,
+        }),
+      });
       clearInterval(msgInterval);
 
       if (result) {
