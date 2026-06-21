@@ -67,6 +67,11 @@ export default function AssessmentManagement() {
   const [viewReport, setViewReport] = useState(null);
   const [assigningModuleId, setAssigningModuleId] = useState(null);
 
+  // Edit modal
+  const [editTarget, setEditTarget] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [saving, setSaving] = useState(false);
+
   const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
   useEffect(() => {
@@ -234,6 +239,34 @@ export default function AssessmentManagement() {
     [employees, modal.selectedUsers]
   );
 
+  const openEdit = (a) => {
+    setEditTarget(a);
+    setEditForm({
+      title: a.title || '',
+      assessmentDate: a.assessmentDate ? a.assessmentDate.split('T')[0] : '',
+      duration: a.duration || 30,
+      deadline: a.deadline ? a.deadline.replace('Z', '') : '',
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editTarget) return;
+    setSaving(true);
+    try {
+      await authFetch(`/api/assessments/${editTarget.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(editForm),
+      });
+      setAssessments(prev => prev.map(a => a.id === editTarget.id ? { ...a, ...editForm } : a));
+      showToast('Assessment updated', 'success');
+      setEditTarget(null);
+    } catch (e) {
+      showToast(e.message || 'Failed to update', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleAutoAssignModule = async (assessment) => {
     setAssigningModuleId(assessment.id);
     try {
@@ -359,9 +392,9 @@ export default function AssessmentManagement() {
           {/* Table Header */}
           <div
             className="hidden md:grid px-5 py-3 border-b border-slate-700/40 bg-slate-800/30"
-            style={{ gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 130px' }}
+            style={{ gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 160px' }}
           >
-            {['Title', 'Employees', 'Date', 'Duration', 'Status', 'Report'].map(h => (
+            {['Title', 'Employees', 'Date', 'Duration', 'Status', 'Actions'].map(h => (
               <span key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</span>
             ))}
           </div>
@@ -395,7 +428,7 @@ export default function AssessmentManagement() {
                 <div
                   key={a.id}
                   className="group px-5 py-4 hover:bg-slate-800/30 transition-all"
-                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 130px', alignItems: 'center', gap: '12px' }}
+                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 160px', alignItems: 'center', gap: '12px' }}
                 >
                   <div className="min-w-0">
                     <button
@@ -447,17 +480,29 @@ export default function AssessmentManagement() {
                       )}
                     </div>
                   </div>
-                  <div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => openEdit(a)}
+                      className="px-2.5 py-1.5 bg-slate-700/60 hover:bg-slate-700 border border-slate-600/40 rounded-lg text-slate-300 text-xs font-semibold transition-colors"
+                      title="Edit assessment"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={() => deleteAssessment(a.id)}
+                      className="px-2.5 py-1.5 bg-slate-700/60 hover:bg-red-900/40 border border-slate-600/40 hover:border-red-500/30 rounded-lg text-slate-400 hover:text-red-400 text-xs font-semibold transition-colors"
+                      title="Delete assessment"
+                    >
+                      🗑️
+                    </button>
                     {submittedCount > 0 ? (
                       <button
                         onClick={() => setViewReport(a)}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-indigo-300 text-xs font-semibold transition-colors"
                       >
-                        View Report
+                        Report
                       </button>
-                    ) : (
-                      <span className="text-slate-600 text-xs">—</span>
-                    )}
+                    ) : null}
                   </div>
                 </div>
                 );
@@ -871,6 +916,68 @@ export default function AssessmentManagement() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== EDIT ASSESSMENT MODAL ===== */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setEditTarget(null)}>
+          <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
+              <h3 className="text-lg font-black text-white">Edit Assessment</h3>
+              <button onClick={() => setEditTarget(null)} className="text-slate-500 hover:text-white text-xl">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Title</label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Assessment Date</label>
+                <input
+                  type="date"
+                  value={editForm.assessmentDate}
+                  onChange={e => setEditForm(f => ({ ...f, assessmentDate: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Duration (minutes)</label>
+                <input
+                  type="number"
+                  min={5}
+                  max={180}
+                  value={editForm.duration}
+                  onChange={e => setEditForm(f => ({ ...f, duration: parseInt(e.target.value) || 30 }))}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Deadline</label>
+                <input
+                  type="datetime-local"
+                  value={editForm.deadline}
+                  onChange={e => setEditForm(f => ({ ...f, deadline: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setEditTarget(null)} className="flex-1 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white transition-all">Cancel</button>
+                <button
+                  onClick={saveEdit}
+                  disabled={saving || !editForm.title.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {saving ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : '✓ Save Changes'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

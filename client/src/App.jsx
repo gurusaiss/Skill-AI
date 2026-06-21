@@ -200,11 +200,7 @@ const App = () => {
                   <RoleLibrary />
                 </ProtectedRoute>
               } />
-              <Route path="/admin/content-review" element={
-                <ProtectedRoute requiredRole="admin">
-                  <ContentReview />
-                </ProtectedRoute>
-              } />
+              <Route path="/admin/content-review" element={<Navigate to="/admin/modules" replace />} />
               <Route path="/admin/access-codes" element={<Navigate to="/admin/dashboard" replace />} />
               <Route path="/admin/metrics" element={
                 <ProtectedRoute requiredRole="admin">
@@ -223,7 +219,7 @@ const App = () => {
               } />
               <Route path="/module/:moduleId/start" element={
                 <ProtectedRoute>
-                  <ModuleStart />
+                  <ModuleDashboard />
                 </ProtectedRoute>
               } />
               <Route path="/module/:moduleId/learn" element={
