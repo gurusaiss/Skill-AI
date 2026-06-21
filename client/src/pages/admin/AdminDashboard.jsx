@@ -927,6 +927,37 @@ export default function AdminDashboard() {
       {/* ═══════════════════ ACCESS CODES ═══════════════════ */}
       {activeTab === 'codes' && (
         <div className="space-y-6">
+          {/* Signup Analytics Summary */}
+          {codes.length > 0 && (() => {
+            const empCodes = codes.filter(c => c.role === 'employee');
+            const mgrCodes = codes.filter(c => c.role === 'manager');
+            const totalEmpSignups = empCodes.reduce((s, c) => s + (c.usageCount || 0), 0);
+            const totalMgrSignups = mgrCodes.reduce((s, c) => s + (c.usageCount || 0), 0);
+            const activeEmp = empCodes.filter(c => c.isActive).length;
+            const activeMgr = mgrCodes.filter(c => c.isActive).length;
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'Employee Signups', value: totalEmpSignups, icon: '👤', color: 'indigo' },
+                  { label: 'Manager Signups', value: totalMgrSignups, icon: '👔', color: 'amber' },
+                  { label: 'Active Emp Codes', value: activeEmp, icon: '🔑', color: 'emerald' },
+                  { label: 'Active Mgr Codes', value: activeMgr, icon: '🗝️', color: 'purple' },
+                ].map(s => {
+                  const cls = { indigo: 'border-indigo-500/20 bg-indigo-500/5 text-indigo-400', amber: 'border-amber-500/20 bg-amber-500/5 text-amber-400', emerald: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400', purple: 'border-purple-500/20 bg-purple-500/5 text-purple-400' }[s.color];
+                  return (
+                    <div key={s.label} className={`rounded-xl border p-4 ${cls}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-bold uppercase tracking-widest">{s.label}</p>
+                        <span>{s.icon}</span>
+                      </div>
+                      <p className="text-2xl font-black text-white">{s.value}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
           {/* Info banner */}
           <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 text-sm text-slate-400">
             <p className="font-semibold text-slate-300 mb-1">🔑 How Access Codes Work</p>

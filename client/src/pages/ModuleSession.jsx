@@ -15,6 +15,52 @@ import { authFetch } from '../utils/authFetch.js';
 
 // ─── Content phase ────────────────────────────────────────────────────────────
 
+function downloadSessionNotes(session, sessionIndex, moduleTitle) {
+  const title = session.title || session.topic || `Day ${sessionIndex + 1}`;
+  const keyPoints = session.keyPoints || session.key_points || session.topics || [];
+  const definitions = session.definitions || [];
+  const notes = session.notes || session.content || '';
+  const explanation = session.explanation || '';
+
+  const pointsHtml = keyPoints.length > 0
+    ? `<h2>Key Points</h2><ol>${keyPoints.map(p => `<li>${typeof p === 'string' ? p : p.title || p.point || ''}</li>`).join('')}</ol>`
+    : '';
+  const defsHtml = definitions.length > 0
+    ? `<h2>Key Definitions</h2><dl>${definitions.map(d => `<dt><strong>${typeof d === 'string' ? d : d.term || ''}</strong></dt>${d.definition ? `<dd>${d.definition}</dd>` : ''}`).join('')}</dl>`
+    : '';
+  const notesHtml = (explanation || notes)
+    ? `<h2>Explanation & Notes</h2><div style="white-space:pre-wrap">${explanation || notes}</div>`
+    : '';
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title} — Learning Notes</title>
+<style>
+  body{font-family:'Segoe UI',Arial,sans-serif;max-width:800px;margin:40px auto;padding:0 32px;color:#1e293b;line-height:1.7}
+  h1{color:#1e40af;font-size:24px;border-bottom:3px solid #e2e8f0;padding-bottom:12px}
+  h2{color:#334155;font-size:16px;margin:28px 0 10px;border-bottom:1px solid #e2e8f0;padding-bottom:6px}
+  .meta{font-size:12px;color:#64748b;margin-bottom:24px}
+  ol,ul{padding-left:20px}
+  li{margin-bottom:8px;font-size:14px}
+  dt{font-weight:700;font-size:14px;margin-top:10px}
+  dd{font-size:13px;color:#475569;margin-left:16px}
+  div[style]{font-size:14px;color:#334155}
+  .footer{margin-top:40px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px}
+</style></head><body>
+<div class="meta">Module: <strong>${moduleTitle || 'Learning Module'}</strong></div>
+<h1>Day ${sessionIndex + 1}: ${title}</h1>
+${session.description ? `<p style="color:#475569">${session.description}</p>` : ''}
+${defsHtml}${pointsHtml}${notesHtml}
+<div class="footer">Downloaded from SkillForge AI &nbsp;|&nbsp; ${new Date().toLocaleDateString()}</div>
+</body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Day${sessionIndex + 1}-${title.replace(/[^a-z0-9]/gi, '-')}-Notes.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
   const [readProgress, setReadProgress] = useState(0);
   const contentRef = useRef(null);
@@ -144,7 +190,13 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
         </div>
 
         {/* CTA */}
-        <div className="mt-10 flex justify-center">
+        <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            onClick={() => downloadSessionNotes(session, sessionIndex, module?.title)}
+            className="px-6 py-3 rounded-2xl border border-slate-600/60 bg-slate-800/60 hover:bg-slate-700/60 text-slate-300 hover:text-white font-semibold text-sm transition-all flex items-center gap-2"
+          >
+            📥 Download Notes
+          </button>
           <button
             onClick={onStartQuiz}
             className="px-8 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-base transition-all shadow-xl shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-100"

@@ -749,7 +749,7 @@ export default function Employee() {
                                if (status === 'in_progress' || status === 'completed') {
                                  navigate(`/module/${moduleId}/learn?assignmentId=${a.id}`);
                                } else {
-                                 navigate(`/module/${moduleId}/start?assignmentId=${a.id}`);
+                                 navigate(`/module/${moduleId}/learn?assignmentId=${a.id}`);
                                }
                              }}
                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600/15 border border-indigo-500/25 text-indigo-300 hover:bg-indigo-600/25 hover:border-indigo-500/40 text-xs font-bold transition-all duration-200 hover:shadow-lg hover:shadow-indigo-500/10"
