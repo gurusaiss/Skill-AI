@@ -549,8 +549,8 @@ export default function Employee() {
           </div>
         </div>
 
-        {/* ── Recommended for You ── */}
-        {(recsLoading || recommendations.length > 0) && (
+        {/* ── Recommended for You — removed per requirements ── */}
+        {false && (recsLoading || recommendations.length > 0) && (
           <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/5 to-indigo-500/5 overflow-hidden mb-6 card-enter" style={{ animationDelay: '200ms' }}>
             <div className="border-b border-violet-500/20 px-5 py-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -767,36 +767,6 @@ export default function Employee() {
           </div>
         </div>
 
-        {loading ? (
-          <div className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-6 animate-pulse">
-            <div className="h-4 bg-slate-700/50 rounded w-40 mb-4" />
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {[0, 1, 2].map(i => (
-                <div key={i} className="p-4 rounded-xl bg-slate-700/20 space-y-2">
-                  <div className="h-3 bg-slate-700/40 rounded w-16" />
-                  <div className="h-6 bg-slate-700/50 rounded w-12" />
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : dashboardStats ? (
-          <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 backdrop-blur-sm p-6 card-enter" style={{ animationDelay: '400ms' }}>
-            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">📊 Learning Analytics</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: 'Total Sessions', value: dashboardStats.totalSessions || 0, color: '#6366f1' },
-                { label: 'Avg Score', value: `${dashboardStats.avgScore || 0}%`, color: dashboardStats.avgScore >= 75 ? '#10b981' : '#f59e0b' },
-                { label: 'Best Score', value: `${dashboardStats.bestScore || 0}%`, color: '#10b981' },
-                { label: 'Streak', value: `${dashboardStats.streak || 0}d`, color: '#f59e0b' },
-              ].map((item, i) => (
-                <div key={i} className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/30 hover:border-slate-600/50 transition-all">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{item.label}</p>
-                  <p className="text-xl font-black" style={{ color: item.color }}>{item.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );

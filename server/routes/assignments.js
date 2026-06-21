@@ -407,6 +407,64 @@ router.post('/requests/:id/reject', authenticate, requireRole('admin'), async (r
 });
 
 /**
+ * GET /api/assignments/:id — Single assignment with normalized progress fields + embedded module
+ */
+router.get('/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const all = await UserStore.getAssignments({});
+    const a = all.find(r => r.id === id);
+    if (!a) return res.status(404).json({ success: false, error: { message: 'Assignment not found' } });
+
+    // Authorization: employee can only read own assignment
+    const isOwner   = req.user.userId === a.assigned_to_user;
+    const isManager = req.user.role === 'manager';
+    const isAdmin   = req.user.role === 'admin';
+    if (!isOwner && !isManager && !isAdmin) {
+      return res.status(403).json({ success: false, error: { message: 'Forbidden' } });
+    }
+
+    // Normalize snake_case Supabase fields → camelCase for frontend
+    const normalized = {
+      ...a,
+      assignableId:    a.assignable_id    || a.assignableId,
+      assignedToUser:  a.assigned_to_user || a.assignedToUser,
+      assignedBy:      a.assigned_by      || a.assignedBy,
+      // session_progress → sessionProgress (camelCase for frontend)
+      sessionProgress: a.session_progress || a.sessionProgress || {},
+      progressData:    a.progress_data    || a.progressData    || {},
+    };
+
+    // Embed module title + sessions so frontend never needs a separate module fetch
+    const moduleId = a.assignable_id || a.assignableId;
+    if (moduleId) {
+      try {
+        const mod = await db.getModuleById(moduleId);
+        if (mod) {
+          normalized.module = {
+            id:          mod.id,
+            title:       mod.title,
+            description: mod.description,
+            difficulty:  mod.difficulty,
+            estimatedDuration: mod.estimatedDuration,
+            sessions:    mod.content?.sessions || mod.sessions || [],
+            content:     mod.content || {},
+            skills:      mod.skills || [],
+          };
+        }
+      } catch (e) {
+        console.warn('[GET assignment/:id] module embed failed:', e.message);
+      }
+    }
+
+    res.json({ success: true, data: normalized, error: null });
+  } catch (err) {
+    console.error('[GET /assignments/:id]', err.message);
+    res.status(500).json({ success: false, error: { message: 'Failed to fetch assignment' } });
+  }
+});
+
+/**
  * GET /api/assignments - Get all assignments (with filters)
  */
 router.get('/', authenticate, async (req, res) => {
@@ -534,9 +592,12 @@ router.put('/:id', authenticate, async (req, res) => {
       });
     }
 
-    // Check ownership
-    const existing = await UserStore.getAssignments({});
-    const assignment = existing.find(a => a.id === id);
+    // Fetch only this assignment (by ID) — avoids loading all assignments
+    const allById = await UserStore.getAssignments({ user_id: req.user.role === 'employee' ? req.user.userId : undefined });
+    const assignment = allById.find(a => a.id === id)
+      // Fallback: admins/managers may query any assignment
+      || (req.user.role !== 'employee' ? (await UserStore.getAssignments({})).find(a => a.id === id) : null);
+
     if (!assignment) {
       return res.status(404).json({
         success: false,
@@ -545,9 +606,9 @@ router.put('/:id', authenticate, async (req, res) => {
       });
     }
 
-    const isOwner = req.user.userId === assignment.assigned_to_user;
-    const isManager = req.user.role === 'manager' && req.user.userId === assignment.assigned_by_manager;
-    const isAdmin = req.user.role === 'admin';
+    const isOwner   = req.user.userId === (assignment.assigned_to_user || assignment.assignedToUser);
+    const isManager = req.user.role === 'manager';
+    const isAdmin   = req.user.role === 'admin';
 
     if (!isOwner && !isManager && !isAdmin) {
       return res.status(403).json({
@@ -559,7 +620,7 @@ router.put('/:id', authenticate, async (req, res) => {
 
     // Server-side safety merge: never discard existing session progress
     if (sessionProgress !== undefined) {
-      const existingProgress = assignment.sessionProgress || assignment.session_progress || {};
+      const existingProgress = assignment.session_progress || assignment.sessionProgress || {};
       updates.sessionProgress = { ...existingProgress, ...sessionProgress };
     }
 

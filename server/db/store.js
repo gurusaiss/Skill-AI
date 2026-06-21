@@ -259,12 +259,15 @@ export async function updateModule(id, updates) {
     if (updates.completionCriteria !== undefined) sbUpdates.completion_criteria = updates.completionCriteria;
     if (updates.companyId !== undefined) sbUpdates.company_id = updates.companyId;
     if (updates.company_id !== undefined) sbUpdates.company_id = updates.company_id;
-    // sessions passed top-level → merge into content
-    if (updates.sessions !== undefined) {
-      sbUpdates.content = { ...(sbUpdates.content || updates.content || {}), sessions: updates.sessions };
-    }
-    if (updates.content !== undefined) {
-      sbUpdates.content = { ...(sbUpdates.content || {}), ...updates.content };
+    // Merge sessions / content into existing DB content (never wipe metadata)
+    if (updates.sessions !== undefined || updates.content !== undefined) {
+      const { data: existing } = await supabase.from('modules').select('content').eq('id', id).maybeSingle();
+      const existingContent = existing?.content || {};
+      sbUpdates.content = {
+        ...existingContent,           // preserve all existing metadata
+        ...(updates.content || {}),   // admin-supplied fields override
+        ...(updates.sessions !== undefined ? { sessions: updates.sessions } : {}), // sessions always wins
+      };
     }
     sbUpdates.updated_at = new Date().toISOString();
     const { data, error } = await supabase.from('modules').update(sbUpdates).eq('id', id).select().single();
