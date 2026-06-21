@@ -78,7 +78,6 @@ function Navbar() {
     { to: '/admin/assignments', label: 'Assignments', icon: '📋', roles: ['admin', 'manager'] },
     { to: '/report',            label: 'Reports',     icon: '📄', roles: ['admin', 'manager'] },
     { to: '/admin/roles',          label: 'Role Library',   icon: '🗂️', roles: ['admin'] },
-    { to: '/admin/content-review', label: 'Content Review', icon: '🔍', roles: ['admin'] },
     { to: '/admin/groups',      label: 'Groups',      icon: '👥', roles: ['admin'] },
     { to: '/admin/metrics',     label: 'AI Metrics',  icon: '📈', roles: ['admin'] },
   ];
