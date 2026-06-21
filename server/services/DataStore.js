@@ -51,13 +51,19 @@ function writeFile(name, data) {
 // All Supabase tables follow: { id TEXT PK, data JSONB, created_at, updated_at }
 // The `data` column stores the full document.
 
+// Track which tables already warned about missing timestamp columns (log once per process)
+const _warnedTables = new Set();
+
 async function sbGetAll(table) {
   const sb = getSB();
   if (!sb) return null;
   try {
     const { data, error } = await sb.from(table).select('id, data, created_at, updated_at');
     if (error) {
-      console.warn(`[DataStore] ${table}.getAll full-select error (${error.code}): ${error.message}`);
+      if (!_warnedTables.has(table)) {
+        console.warn(`[DataStore] ${table}: no created_at/updated_at columns, using id+data select`);
+        _warnedTables.add(table);
+      }
       // Graceful fallback: table may not have created_at/updated_at columns
       const { data: d2, error: e2 } = await sb.from(table).select('id, data');
       if (e2) { console.error(`[DataStore] ${table}.getAll: Supabase error (${e2.code} ${e2.message}), using file fallback`); return null; }

@@ -506,11 +506,18 @@ class UserStore {
         progress:            newA.progress,
         module_name:         newA.title || null,
       };
-      const { data, error } = await sb.from('assignments')
+      let { data, error } = await sb.from('assignments')
         .upsert(sbRow, { onConflict: 'id' }).select().maybeSingle();
+      if (error && (error.code === 'PGRST204' || (error.message && error.message.includes('module_name')))) {
+        // module_name column not yet in DB schema — retry without it
+        console.warn('[UserStore] createAssignment: module_name column missing, retrying without it');
+        const { module_name: _mn, ...sbRowNoName } = sbRow;
+        const retry = await sb.from('assignments').upsert(sbRowNoName, { onConflict: 'id' }).select().maybeSingle();
+        error = retry.error;
+        data = retry.data;
+      }
       if (error) {
         console.error('[UserStore] createAssignment Supabase error:', error.message, '| code:', error.code);
-        // Surface the error so callers know persistence failed
         throw new Error(`[assignments] Supabase insert failed: ${error.message}`);
       }
       return data || newA;
