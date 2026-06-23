@@ -72,6 +72,12 @@ export default function AssessmentManagement() {
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
 
+  // Question editor modal
+  const [qEditTarget, setQEditTarget] = useState(null); // the assessment being edited
+  const [qEmpIdx, setQEmpIdx] = useState(0);            // which employeeAssignment index
+  const [qDraft, setQDraft] = useState([]);             // editable questions array
+  const [qSaving, setQSaving] = useState(false);
+
   const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
   useEffect(() => {
@@ -267,6 +273,74 @@ export default function AssessmentManagement() {
     }
   };
 
+  // ── Question editor ──────────────────────────────────────────────────────
+  const openQuestions = (a) => {
+    setQEditTarget(a);
+    const idx = (a.employeeAssignments || []).findIndex(ea => Array.isArray(ea.questions) && ea.questions.length > 0);
+    const safeIdx = idx >= 0 ? idx : 0;
+    setQEmpIdx(safeIdx);
+    const qs = a.employeeAssignments?.[safeIdx]?.questions || [];
+    setQDraft(JSON.parse(JSON.stringify(qs)));
+  };
+
+  const selectQEmployee = (idx) => {
+    setQEmpIdx(idx);
+    const qs = qEditTarget?.employeeAssignments?.[idx]?.questions || [];
+    setQDraft(JSON.parse(JSON.stringify(qs)));
+  };
+
+  const updateQuestion = (qi, field, value) => {
+    setQDraft(prev => prev.map((q, i) => i === qi ? { ...q, [field]: value } : q));
+  };
+
+  const updateQuestionOption = (qi, oi, value) => {
+    setQDraft(prev => prev.map((q, i) => {
+      if (i !== qi) return q;
+      const options = [...(q.options || [])];
+      options[oi] = value;
+      return { ...q, options };
+    }));
+  };
+
+  const addQuestion = () => {
+    setQDraft(prev => [...prev, {
+      type: 'mcq',
+      question: '',
+      difficulty: 'medium',
+      options: ['A) ', 'B) ', 'C) ', 'D) '],
+      answer: 'A',
+      explanation: '',
+      skillArea: '',
+    }]);
+  };
+
+  const removeQuestion = (qi) => {
+    setQDraft(prev => prev.filter((_, i) => i !== qi));
+  };
+
+  const saveQuestions = async () => {
+    if (!qEditTarget) return;
+    setQSaving(true);
+    try {
+      const newAssignments = (qEditTarget.employeeAssignments || []).map((ea, i) =>
+        i === qEmpIdx ? { ...ea, questions: qDraft } : ea
+      );
+      await authFetch(`/api/assessments/${qEditTarget.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ employeeAssignments: newAssignments, questionCount: qDraft.length }),
+      });
+      setAssessments(prev => prev.map(a => a.id === qEditTarget.id
+        ? { ...a, employeeAssignments: newAssignments, questionCount: qDraft.length }
+        : a));
+      showToast('Questions updated', 'success');
+      setQEditTarget(null);
+    } catch (e) {
+      showToast(e.message || 'Failed to save questions', 'error');
+    } finally {
+      setQSaving(false);
+    }
+  };
+
   const handleAutoAssignModule = async (assessment) => {
     setAssigningModuleId(assessment.id);
     try {
@@ -392,7 +466,7 @@ export default function AssessmentManagement() {
           {/* Table Header */}
           <div
             className="hidden md:grid px-5 py-3 border-b border-slate-700/40 bg-slate-800/30"
-            style={{ gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 160px' }}
+            style={{ gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 210px' }}
           >
             {['Title', 'Employees', 'Date', 'Duration', 'Status', 'Actions'].map(h => (
               <span key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</span>
@@ -428,7 +502,7 @@ export default function AssessmentManagement() {
                 <div
                   key={a.id}
                   className="group px-5 py-4 hover:bg-slate-800/30 transition-all"
-                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 160px', alignItems: 'center', gap: '12px' }}
+                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 210px', alignItems: 'center', gap: '12px' }}
                 >
                   <div className="min-w-0">
                     <button
@@ -484,9 +558,16 @@ export default function AssessmentManagement() {
                     <button
                       onClick={() => openEdit(a)}
                       className="px-2.5 py-1.5 bg-slate-700/60 hover:bg-slate-700 border border-slate-600/40 rounded-lg text-slate-300 text-xs font-semibold transition-colors"
-                      title="Edit assessment"
+                      title="Edit assessment details"
                     >
                       ✏️
+                    </button>
+                    <button
+                      onClick={() => openQuestions(a)}
+                      className="px-2.5 py-1.5 bg-slate-700/60 hover:bg-indigo-600/40 border border-slate-600/40 hover:border-indigo-500/30 rounded-lg text-slate-300 hover:text-indigo-300 text-xs font-semibold transition-colors"
+                      title="Edit questions"
+                    >
+                      📝
                     </button>
                     <button
                       onClick={() => deleteAssessment(a.id)}
@@ -977,6 +1058,163 @@ export default function AssessmentManagement() {
                   {saving ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : '✓ Save Changes'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== QUESTION EDITOR MODAL ===== */}
+      {qEditTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setQEditTarget(null)}>
+          <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-[#0F172A] z-10">
+              <div>
+                <h3 className="text-lg font-black text-white">Edit Questions</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{qEditTarget.title} · {qDraft.length} question{qDraft.length === 1 ? '' : 's'}</p>
+              </div>
+              <button onClick={() => setQEditTarget(null)} className="text-slate-500 hover:text-white text-xl transition-colors">✕</button>
+            </div>
+
+            {/* Employee selector (questions are per-employee) */}
+            {(qEditTarget.employeeAssignments?.length || 0) > 1 && (
+              <div className="px-6 pt-4">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Employee (questions are unique per employee)</label>
+                <select
+                  value={qEmpIdx}
+                  onChange={e => selectQEmployee(parseInt(e.target.value))}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                >
+                  {qEditTarget.employeeAssignments.map((ea, i) => (
+                    <option key={i} value={i}>
+                      {(ea.userName || ea.userId)}{ea.jobRole ? ` — ${ea.jobRole}` : ''}{ea.status === 'submitted' ? ' (submitted)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {qEditTarget.employeeAssignments?.[qEmpIdx]?.status === 'submitted' && (
+              <div className="mx-6 mt-4 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+                ⚠ This employee already submitted. Editing questions will not change their existing score.
+              </div>
+            )}
+
+            {/* Question list */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              {qDraft.length === 0 ? (
+                <div className="py-10 text-center text-slate-500 text-sm">No questions for this employee. Add one below.</div>
+              ) : qDraft.map((q, qi) => (
+                <div key={qi} className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-indigo-300">Q{qi + 1}</span>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={q.type || 'mcq'}
+                        onChange={e => updateQuestion(qi, 'type', e.target.value)}
+                        className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs focus:border-indigo-500 focus:outline-none"
+                      >
+                        {QUESTION_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      <select
+                        value={q.difficulty || 'medium'}
+                        onChange={e => updateQuestion(qi, 'difficulty', e.target.value)}
+                        className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="easy">Easy</option>
+                        <option value="medium">Medium</option>
+                        <option value="hard">Hard</option>
+                      </select>
+                      <button
+                        onClick={() => removeQuestion(qi)}
+                        className="px-2 py-1 rounded-lg bg-slate-700/60 hover:bg-red-900/40 border border-slate-600/40 hover:border-red-500/30 text-slate-400 hover:text-red-400 text-xs transition-colors"
+                        title="Remove question"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Question text */}
+                  <textarea
+                    value={q.question || ''}
+                    onChange={e => updateQuestion(qi, 'question', e.target.value)}
+                    placeholder="Question text"
+                    rows={2}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none resize-y"
+                  />
+
+                  {/* Options (mcq only) */}
+                  {q.type === 'mcq' && (
+                    <div className="space-y-1.5">
+                      {(q.options || []).map((opt, oi) => (
+                        <div key={oi} className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500 w-4 flex-shrink-0">{String.fromCharCode(65 + oi)}</span>
+                          <input
+                            type="text"
+                            value={opt}
+                            onChange={e => updateQuestionOption(qi, oi, e.target.value)}
+                            className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Answer + explanation */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1 block">Answer</label>
+                      <input
+                        type="text"
+                        value={q.answer || ''}
+                        onChange={e => updateQuestion(qi, 'answer', e.target.value)}
+                        placeholder={q.type === 'mcq' ? 'A / B / C / D' : 'Model answer'}
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1 block">Skill Area</label>
+                      <input
+                        type="text"
+                        value={q.skillArea || ''}
+                        onChange={e => updateQuestion(qi, 'skillArea', e.target.value)}
+                        placeholder="Skill / competency tested"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 mb-1 block">Explanation</label>
+                    <input
+                      type="text"
+                      value={q.explanation || ''}
+                      onChange={e => updateQuestion(qi, 'explanation', e.target.value)}
+                      placeholder="Why this question matters"
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              ))}
+
+              <button
+                onClick={addQuestion}
+                className="w-full py-2.5 rounded-xl border border-dashed border-slate-600 text-slate-400 hover:text-white hover:border-indigo-500/50 text-sm font-semibold transition-colors"
+              >
+                + Add Question
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 px-6 py-4 border-t border-slate-700 bg-[#0F172A]">
+              <button onClick={() => setQEditTarget(null)} className="flex-1 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white transition-all">Cancel</button>
+              <button
+                onClick={saveQuestions}
+                disabled={qSaving}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {qSaving ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : '✓ Save Questions'}
+              </button>
             </div>
           </div>
         </div>
