@@ -751,7 +751,7 @@ function buildExportRow(ea, report, assessmentTitle) {
     improvementAreas:(sc.weakAreas || []).join('; '),
     missingCompetencies: (sc.missingCompetencies || []).join('; '),
     recommendations: recsList.join('; '),
-    skillBreakdown:  (sc.skillBreakdown || []).map(s => `${s.skill}: ${s.pct}%`).join(', '),
+    skillBreakdown:  (sc.skillBreakdown || []).map(s => `${s.skill}: ${s.score ?? s.pct ?? 0}%`).join(', '),
   };
 }
 
@@ -766,23 +766,23 @@ async function generatePDFBuffer(rows, title) {
     doc.on('end', resolve);
 
     // Cover / title
-    doc.fontSize(20).font('Helvetica-Bold').text(title || 'Assessment Report', { align: 'center' });
+    doc.fontSize(20).font('Helvetica-Bold').fillColor('#111111').text(title || 'Assessment Report', { align: 'center' });
     doc.moveDown(0.4);
-    doc.fontSize(10).font('Helvetica').fillColor('#888888').text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
-    doc.fillColor('#ffffff').moveDown(1.5);
+    doc.fontSize(10).font('Helvetica').fillColor('#555555').text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
+    doc.moveDown(1.5);
 
     rows.forEach((r, i) => {
       if (i > 0) {
         doc.addPage();
       }
-      doc.fontSize(14).font('Helvetica-Bold').fillColor('#ffffff').text(r.employeeName || 'Employee');
-      doc.fontSize(9).font('Helvetica').fillColor('#aaaaaa');
+      doc.fontSize(14).font('Helvetica-Bold').fillColor('#111111').text(r.employeeName || 'Employee');
+      doc.fontSize(9).font('Helvetica').fillColor('#444444');
       if (r.employeeEmail) doc.text(`Email: ${r.employeeEmail}`);
       doc.text(`Employee ID: ${r.employeeId || 'N/A'}  |  Job Role: ${r.jobRole || 'N/A'}`);
       doc.moveDown(0.6);
 
-      doc.fontSize(11).font('Helvetica-Bold').fillColor('#ffffff').text('Performance Summary');
-      doc.fontSize(9).font('Helvetica').fillColor('#cccccc');
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('#111111').text('Performance Summary');
+      doc.fontSize(9).font('Helvetica').fillColor('#222222');
       [
         ['Assessment', r.assessmentName],
         ['Score', r.score],
@@ -796,29 +796,29 @@ async function generatePDFBuffer(rows, title) {
       doc.moveDown(0.6);
 
       if (r.skillBreakdown) {
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#ffffff').text('Skill Breakdown');
-        doc.fontSize(9).font('Helvetica').fillColor('#cccccc').text(r.skillBreakdown || 'N/A');
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#111111').text('Skill Breakdown');
+        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(r.skillBreakdown || 'N/A');
         doc.moveDown(0.4);
       }
 
       if (r.strengths) {
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#10B981').text('Strengths');
-        doc.fontSize(9).font('Helvetica').fillColor('#cccccc').text(r.strengths);
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#166534').text('Strengths');
+        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(r.strengths);
         doc.moveDown(0.4);
       }
       if (r.improvementAreas) {
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#F59E0B').text('Improvement Areas');
-        doc.fontSize(9).font('Helvetica').fillColor('#cccccc').text(r.improvementAreas);
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#92400e').text('Improvement Areas');
+        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(r.improvementAreas);
         doc.moveDown(0.4);
       }
       if (r.missingCompetencies) {
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#EF4444').text('Missing Competencies');
-        doc.fontSize(9).font('Helvetica').fillColor('#cccccc').text(r.missingCompetencies);
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#991b1b').text('Missing Competencies');
+        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(r.missingCompetencies);
         doc.moveDown(0.4);
       }
       if (r.recommendations) {
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#6366F1').text('Recommendations');
-        doc.fontSize(9).font('Helvetica').fillColor('#cccccc').text(r.recommendations);
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#3730a3').text('Recommendations');
+        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(r.recommendations);
       }
     });
     doc.end();
@@ -829,9 +829,9 @@ async function generatePDFBuffer(rows, title) {
 // ── DOCX generation helper ─────────────────────────────────────────────────────
 async function generateDOCXBuffer(rows, title) {
   const docxLib = await import('docx');
-  const { Document, Paragraph, TextRun, Table, TableRow, TableCell, Packer, WidthType, HeadingLevel, BorderStyle } = docxLib;
+  const { Document, Paragraph, TextRun, Table, TableRow, TableCell, Packer, WidthType, HeadingLevel } = docxLib;
 
-  const noBorder = { style: BorderStyle.NONE, size: 0, color: 'auto' };
+  const noBorder = { style: 'none', size: 0, color: 'auto' };
   const cellBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
 
   const makeCell = (text, bold = false, w = 2000) => new TableCell({

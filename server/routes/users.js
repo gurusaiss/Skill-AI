@@ -229,8 +229,9 @@ router.get('/', authenticate, async (req, res) => {
 
     const allUsers = await UserStore.getAllUsers(filters);
     // Company isolation: both admin and manager only see their own company's users
-    let users = ((isAdmin || isManager) && req.user.companyId && req.user.companyId !== 'default')
-      ? allUsers.filter(u => (u.companyId || 'default') === req.user.companyId)
+    const myCompany = req.user.companyId || 'default';
+    let users = (isAdmin || isManager)
+      ? allUsers.filter(u => (u.companyId || 'default') === myCompany)
       : allUsers;
 
     // Manager group filtering: restrict to employees in manager's assigned groups
