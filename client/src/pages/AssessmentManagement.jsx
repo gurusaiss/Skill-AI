@@ -24,6 +24,83 @@ const QUESTION_TYPE_OPTIONS = [
   { value: 'fill_blank', label: 'Fill in Blank' },
 ];
 
+function ExportReportsModal({ assessment, token, onClose, showToast }) {
+  const [format, setFormat] = React.useState('xlsx');
+  const [mode, setMode] = React.useState('consolidated');
+  const [exporting, setExporting] = React.useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/assessments/${assessment.id}/export-reports?format=${format}&mode=${mode}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Export failed' }));
+        throw new Error(err.error || 'Export failed');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(assessment.title || 'Assessment').replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Reports.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Export downloaded', 'success');
+      onClose();
+    } catch (e) {
+      showToast(e.message || 'Export failed', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60">
+          <div>
+            <h3 className="text-lg font-black text-white">Export Reports</h3>
+            <p className="text-xs text-slate-500 mt-0.5 truncate max-w-xs">{assessment.title}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">&times;</button>
+        </div>
+        <div className="px-6 py-5 space-y-5">
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Format</label>
+            <div className="flex gap-2">
+              {[{v:'xlsx',l:'Excel (XLSX)'},{v:'pdf',l:'PDF'},{v:'docx',l:'Word (DOCX)'}].map(({v,l}) => (
+                <button key={v} onClick={() => setFormat(v)}
+                  className={`flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors ${format===v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Mode</label>
+            <div className="flex gap-2">
+              {[{v:'consolidated',l:'Consolidated'},{v:'individual',l:'Individual Sheets'}].map(({v,l}) => (
+                <button key={v} onClick={() => setMode(v)}
+                  className={`flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors ${mode===v ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">
+            Includes: Employee Name, ID, Job Role, Score, %, Status, Completion Date, Strengths, Improvement Areas, Recommendations.
+          </p>
+          <button onClick={handleExport} disabled={exporting}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-sm font-bold text-white disabled:opacity-40 transition-all">
+            {exporting ? 'Exporting…' : `⬇ Download ${format.toUpperCase()}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const STATUS_COLORS = {
   assigned: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30',
   submitted: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
@@ -83,6 +160,9 @@ export default function AssessmentManagement() {
   const [qEmpIdx, setQEmpIdx] = useState(0);            // which employeeAssignment index
   const [qDraft, setQDraft] = useState([]);             // editable questions array
   const [qSaving, setQSaving] = useState(false);
+
+  // Export reports modal
+  const [exportTarget, setExportTarget] = useState(null);
 
   const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
@@ -170,7 +250,7 @@ export default function AssessmentManagement() {
   };
 
   const canProceedStep2 = () => {
-    return modal.assessmentDate && modal.questionCount >= 5 && modal.questionCount <= 50 && modal.title.trim();
+    return modal.assessmentDate && modal.questionCount >= 1 && modal.title.trim();
   };
 
   const handleCreate = async () => {
@@ -599,6 +679,13 @@ export default function AssessmentManagement() {
                     >
                       🗑️
                     </button>
+                    <button
+                      onClick={() => setExportTarget(a)}
+                      className="px-2.5 py-1.5 bg-teal-600/20 hover:bg-teal-600/40 border border-teal-500/30 rounded-lg text-teal-300 text-xs font-semibold transition-colors"
+                      title="Export reports"
+                    >
+                      ⬇
+                    </button>
                     {submittedCount > 0 ? (
                       <button
                         onClick={() => setViewReport(a)}
@@ -851,16 +938,16 @@ export default function AssessmentManagement() {
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
                     Question Count: <span className="text-indigo-400">{modal.questionCount}</span>
-                    <span className="text-slate-600 font-normal ml-1">(5–50)</span>
                   </label>
                   <input
                     type="number"
-                    min={5}
-                    max={50}
+                    min={1}
+                    max={500}
                     value={modal.questionCount}
-                    onChange={e => updateModal({ questionCount: Math.min(50, Math.max(5, parseInt(e.target.value) || 5)) })}
+                    onChange={e => updateModal({ questionCount: Math.max(1, parseInt(e.target.value) || 1) })}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
                   />
+                  <p className="text-xs text-slate-500 mt-1">Questions pulled from role's approved question bank. If fewer questions available, all available questions will be used.</p>
                 </div>
 
                 {/* Difficulty Distribution */}
@@ -1837,6 +1924,16 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
           )}
         </div>
       </div>
+
+      {/* Export Reports Modal */}
+      {exportTarget && (
+        <ExportReportsModal
+          assessment={exportTarget}
+          token={localStorage.getItem('auth_token')}
+          onClose={() => setExportTarget(null)}
+          showToast={showToast}
+        />
+      )}
     </div>
   );
 }

@@ -6,13 +6,16 @@
  */
 
 import express from 'express';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireRole } from '../middleware/auth.js';
+import multer from 'multer';
 import * as db from '../db/store.js';
 import UserStore from '../services/UserStore.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import { PendingModules, ModuleAssignments } from '../services/DataStore.js';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const __moduleDir = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__moduleDir, '../data');
@@ -145,6 +148,127 @@ router.get('/:id', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error fetching module:', error);
     res.status(500).json({ success: false, error: { message: 'Failed to fetch module' } });
+  }
+});
+
+/**
+ * POST /api/modules/import
+ * Import module from uploaded file or external link (admin/manager/trainer)
+ */
+router.post('/import', authenticate, requireRole('admin', 'manager', 'trainer'), upload.single('file'), async (req, res) => {
+  try {
+    const user = req.user;
+    let extractedText = '';
+    let sessionTitle = '';
+    let importedFrom = '';
+    let sectionsExtracted = 0;
+    let fileType = '';
+
+    if (req.file) {
+      // File upload mode
+      const mime = req.file.mimetype;
+      const origName = req.file.originalname || '';
+      const ext = origName.split('.').pop().toLowerCase();
+      fileType = ext;
+      importedFrom = origName;
+
+      if (mime === 'application/pdf' || ext === 'pdf') {
+        try {
+          const pdfParse = (await import('pdf-parse')).default;
+          const result = await pdfParse(req.file.buffer);
+          extractedText = result.text || '';
+        } catch (e) { return res.status(500).json({ success: false, data: null, error: `PDF parse failed: ${e.message}` }); }
+      } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === 'docx') {
+        try {
+          const mammoth = (await import('mammoth')).default;
+          const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+          extractedText = result.value || '';
+        } catch (e) { return res.status(500).json({ success: false, data: null, error: `DOCX parse failed: ${e.message}` }); }
+      } else if (mime === 'application/vnd.ms-excel' || mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || ext === 'xlsx' || ext === 'xls') {
+        try {
+          const { default: XLSX } = await import('xlsx');
+          const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+          extractedText = wb.SheetNames.map(name => {
+            const ws = wb.Sheets[name];
+            return `Sheet: ${name}\n` + XLSX.utils.sheet_to_csv(ws);
+          }).join('\n\n');
+        } catch (e) { return res.status(500).json({ success: false, data: null, error: `XLSX parse failed: ${e.message}` }); }
+      } else if (mime === 'text/plain' || mime === 'text/csv' || ext === 'txt' || ext === 'csv') {
+        extractedText = req.file.buffer.toString('utf-8');
+      } else if (ext === 'zip') {
+        try {
+          const AdmZip = (await import('adm-zip')).default;
+          const zip = new AdmZip(req.file.buffer);
+          const entries = zip.getEntries().filter(e => !e.isDirectory);
+          const texts = [];
+          for (const entry of entries) {
+            const entryExt = entry.entryName.split('.').pop().toLowerCase();
+            if (['txt','csv','md'].includes(entryExt)) {
+              texts.push(`--- ${entry.entryName} ---\n${entry.getData().toString('utf-8')}`);
+            } else if (entryExt === 'pdf') {
+              try {
+                const pdfParse = (await import('pdf-parse')).default;
+                const r = await pdfParse(entry.getData());
+                texts.push(`--- ${entry.entryName} ---\n${r.text}`);
+              } catch {}
+            } else if (entryExt === 'docx') {
+              try {
+                const mammoth = (await import('mammoth')).default;
+                const r = await mammoth.extractRawText({ buffer: entry.getData() });
+                texts.push(`--- ${entry.entryName} ---\n${r.value}`);
+              } catch {}
+            }
+          }
+          extractedText = texts.join('\n\n');
+        } catch (e) { return res.status(500).json({ success: false, data: null, error: `ZIP extraction failed: ${e.message}` }); }
+      } else if (['ppt','pptx','doc'].includes(ext)) {
+        // No parser available — store as reference only
+        extractedText = `[${origName} — content reference only, no text extraction available for ${ext.toUpperCase()} files]`;
+      } else {
+        return res.status(400).json({ success: false, data: null, error: `Unsupported file type: ${ext}` });
+      }
+
+      sessionTitle = origName.replace(/\.[^.]+$/, '');
+    } else {
+      // External link mode
+      const { externalUrl, linkTitle, linkType } = req.body;
+      if (!externalUrl) return res.status(400).json({ success: false, data: null, error: 'No file or externalUrl provided' });
+      extractedText = `[External ${linkType || 'link'}: ${externalUrl}]`;
+      sessionTitle = linkTitle || externalUrl;
+      importedFrom = externalUrl;
+      fileType = linkType || 'link';
+    }
+
+    // Split extracted text into sessions by sections/paragraphs
+    const rawSections = extractedText.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
+    const sessions = rawSections.slice(0, 50).map((content, i) => ({
+      id: randomUUID(),
+      title: `Section ${i + 1}`,
+      type: 'reading',
+      content,
+      duration: Math.max(5, Math.ceil(content.length / 500) * 5),
+    }));
+    sectionsExtracted = sessions.length;
+
+    const newModule = await db.createModule({
+      title: (req.body.title || sessionTitle || 'Imported Module').slice(0, 200),
+      description: req.body.description || `Imported from ${importedFrom}`,
+      category: req.body.category || 'General',
+      difficulty: req.body.difficulty || 'beginner',
+      estimatedDuration: sessions.reduce((s, x) => s + (x.duration || 5), 0),
+      skills: [],
+      tasks: [],
+      resources: [],
+      completionCriteria: 'Complete all sessions',
+      content: { sessions, importedFrom, importedAt: new Date().toISOString(), fileType },
+      companyId: user.companyId || null,
+      targetRoles: [],
+    }, user.userId || user.id);
+
+    res.status(201).json({ success: true, data: { module: newModule, source: importedFrom, sectionsExtracted, textLength: extractedText.length }, error: null });
+  } catch (e) {
+    console.error('[POST /api/modules/import]', e);
+    res.status(500).json({ success: false, data: null, error: e.message });
   }
 });
 

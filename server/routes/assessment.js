@@ -521,48 +521,32 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
           } catch {}
         }
 
-        // If difficulty filter is set, try to pull from the role's pre-generated question bank
+        // Bank-only priority: if role has any approved questions, use ONLY bank
         let questions = null;
-        if (difficulty && user.jobRole) {
-          try {
-            const roleForBank = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
-            const bank = (roleForBank?.questionBank || []).filter(q => q.difficulty === difficulty);
-            if (bank.length >= questionCount) {
-              // Shuffle and pick questionCount questions from the bank
-              const shuffled = [...bank].sort(() => Math.random() - 0.5);
-              questions = shuffled.slice(0, questionCount);
-            }
-          } catch {}
-        }
-        // If no difficulty filter but percentage distribution provided, pick from bank by difficulty pct
-        if (!questions && (easyPct != null || mediumPct != null || hardPct != null) && user.jobRole) {
+        if (user.jobRole) {
           try {
             const roleForBank = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
             const fullBank = roleForBank?.questionBank || [];
-            if (fullBank.length >= questionCount) {
-              const pctEasy   = easyPct   != null ? Number(easyPct)   : 33;
+            if (fullBank.length > 0) {
+              const pctEasy   = easyPct   != null ? Number(easyPct)   : 34;
               const pctMedium = mediumPct != null ? Number(mediumPct) : 33;
-              // hardPct is whatever remains to ensure total === questionCount
-              const nEasy   = Math.round(questionCount * pctEasy   / 100);
-              const nMedium = Math.round(questionCount * pctMedium / 100);
-              const nHard   = questionCount - nEasy - nMedium;
-
-              const pickN = (diff, n) => {
-                const pool = fullBank.filter(q => q.difficulty === diff);
-                return [...pool].sort(() => Math.random() - 0.5).slice(0, n);
-              };
-
-              const picked = [
-                ...pickN('easy',   nEasy),
-                ...pickN('medium', nMedium),
-                ...pickN('hard',   Math.max(0, nHard)),
-              ];
-
-              if (picked.length >= questionCount) {
-                questions = picked.slice(0, questionCount);
+              const target    = Math.min(questionCount, fullBank.length);
+              const nEasy   = Math.round(target * pctEasy   / 100);
+              const nMedium = Math.round(target * pctMedium / 100);
+              const nHard   = target - nEasy - nMedium;
+              const pickN = (diff, n) => [...fullBank.filter(q => q.difficulty === diff)].sort(() => Math.random() - 0.5).slice(0, n);
+              const picked = [...pickN('easy', nEasy), ...pickN('medium', nMedium), ...pickN('hard', Math.max(0, nHard))];
+              if (picked.length > 0) {
+                if (picked.length < target) {
+                  const usedIds = new Set(picked.map(q => q.id));
+                  const extras = fullBank.filter(q => !usedIds.has(q.id)).sort(() => Math.random() - 0.5);
+                  questions = [...picked, ...extras].slice(0, target);
+                } else {
+                  questions = picked.slice(0, target);
+                }
               }
             }
-          } catch {}
+          } catch (e) { console.warn('[assessment] Bank lookup failed:', e.message); }
         }
         if (!questions) {
           questions = await generateQuestionsFromJD({
@@ -735,6 +719,151 @@ router.post('/parse-questionnaire', authenticate, requireRole('admin', 'manager'
     res.json({ success: true, data: { questions, count: questions.length }, error: null });
   } catch (e) {
     console.error('[POST /api/assessments/parse-questionnaire]', e);
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * GET /api/assessments/:id/export-reports
+ * Export all employee reports for an assessment as XLSX, PDF, or DOCX
+ */
+router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const format  = (req.query.format  || 'xlsx').toLowerCase();
+    const mode    = (req.query.mode    || 'consolidated').toLowerCase();
+
+    const assessment = await Assessments.getById(id);
+    if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
+
+    // Collect all submissions with reports
+    const allSubmissions = await Submissions.getAll();
+    const allReports     = await Reports.getAll();
+    const assignments    = assessment.employeeAssignments || [];
+
+    const rows = assignments.map(ea => {
+      const sub    = allSubmissions.find(s => s.assessmentId === id && s.userId === ea.userId);
+      const report = allReports.find(r => r.assessmentId === id && r.userId === ea.userId);
+      const score  = sub?.score ?? report?.score ?? null;
+      const total  = sub?.totalQuestions || ea.questions?.length || assessment.questionCount || 0;
+      const pct    = score != null && total > 0 ? Math.round((score / total) * 100) : null;
+      return {
+        employeeName:      ea.userName || ea.name || ea.userId || '',
+        employeeId:        ea.userId || '',
+        jobRole:           ea.jobRole || '',
+        assessmentName:    assessment.title || '',
+        score:             score != null ? `${score}/${total}` : 'Pending',
+        percentage:        pct != null ? `${pct}%` : 'Pending',
+        status:            ea.status || 'assigned',
+        completionDate:    sub?.submittedAt || ea.submittedAt || '',
+        strengths:         (report?.strengths || []).join('; '),
+        improvementAreas:  (report?.weakAreas || report?.improvementAreas || []).join('; '),
+        recommendations:   (report?.recommendations || []).join('; '),
+      };
+    });
+
+    const filename = `${assessment.title || 'Assessment'}-Reports`.replace(/[^a-zA-Z0-9-_ ]/g, '_');
+
+    if (format === 'xlsx') {
+      const { default: XLSX } = await import('xlsx');
+      const headers = ['Employee Name','Employee ID','Job Role','Assessment Name','Score','%','Status','Completion Date','Strengths','Improvement Areas','Recommendations'];
+      const sheetData = [headers, ...rows.map(r => [r.employeeName,r.employeeId,r.jobRole,r.assessmentName,r.score,r.percentage,r.status,r.completionDate,r.strengths,r.improvementAreas,r.recommendations])];
+
+      let wb;
+      if (mode === 'individual') {
+        wb = XLSX.utils.book_new();
+        rows.forEach((r, i) => {
+          const wsData = [headers, [r.employeeName,r.employeeId,r.jobRole,r.assessmentName,r.score,r.percentage,r.status,r.completionDate,r.strengths,r.improvementAreas,r.recommendations]];
+          const ws = XLSX.utils.aoa_to_sheet(wsData);
+          XLSX.utils.book_append_sheet(wb, ws, (r.employeeName || `Employee${i+1}`).slice(0, 31));
+        });
+      } else {
+        wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(sheetData);
+        XLSX.utils.book_append_sheet(wb, ws, 'Report');
+      }
+
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
+      return res.send(buf);
+    }
+
+    if (format === 'pdf') {
+      let PDFDocument;
+      try { PDFDocument = (await import('pdfkit')).default; } catch {
+        return res.status(501).json({ success: false, data: null, error: 'PDF export not available — pdfkit not installed' });
+      }
+      const chunks = [];
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      doc.on('data', c => chunks.push(c));
+      await new Promise(resolve => {
+        doc.on('end', resolve);
+        doc.fontSize(16).font('Helvetica-Bold').text(assessment.title || 'Assessment Report', { align: 'center' });
+        doc.moveDown(0.5);
+        doc.fontSize(10).font('Helvetica').text(`Exported: ${new Date().toLocaleDateString()}`, { align: 'center' });
+        doc.moveDown(1);
+
+        const pagesToWrite = mode === 'individual' ? rows : [null];
+        pagesToWrite.forEach((row, pi) => {
+          const list = row ? [row] : rows;
+          if (pi > 0) doc.addPage();
+          list.forEach((r, i) => {
+            if (i > 0) { doc.moveDown(1); doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke('#cccccc'); doc.moveDown(0.5); }
+            doc.fontSize(11).font('Helvetica-Bold').text(r.employeeName || 'Employee');
+            doc.fontSize(9).font('Helvetica');
+            const fields = [['ID', r.employeeId],['Role', r.jobRole],['Score', r.score],['%', r.percentage],['Status', r.status],['Completed', r.completionDate || 'N/A'],['Strengths', r.strengths || 'N/A'],['Improvement Areas', r.improvementAreas || 'N/A'],['Recommendations', r.recommendations || 'N/A']];
+            fields.forEach(([k, v]) => doc.text(`${k}: ${v}`));
+          });
+        });
+        doc.end();
+      });
+      const buf = Buffer.concat(chunks);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+      return res.send(buf);
+    }
+
+    if (format === 'docx') {
+      let docxLib;
+      try { docxLib = await import('docx'); } catch {
+        return res.status(501).json({ success: false, data: null, error: 'DOCX export not available — docx not installed' });
+      }
+      const { Document, Paragraph, TextRun, Table, TableRow, TableCell, Packer, WidthType, HeadingLevel } = docxLib;
+
+      const makeRow = (cells, bold = false) => new TableRow({
+        children: cells.map(c => new TableCell({
+          children: [new Paragraph({ children: [new TextRun({ text: String(c || ''), bold, size: 18 })] })],
+          width: { size: Math.floor(9000 / cells.length), type: WidthType.DXA },
+        })),
+      });
+
+      const headers = ['Employee Name','Employee ID','Job Role','Score','%','Status','Completion Date'];
+      const docSections = [];
+
+      if (mode === 'individual') {
+        rows.forEach(r => {
+          docSections.push(new Paragraph({ text: r.employeeName, heading: HeadingLevel.HEADING_2 }));
+          docSections.push(new Table({ rows: [makeRow(headers, true), makeRow([r.employeeName,r.employeeId,r.jobRole,r.score,r.percentage,r.status,r.completionDate])] }));
+          ['Strengths','Improvement Areas','Recommendations'].forEach((label, li) => {
+            const vals = [r.strengths, r.improvementAreas, r.recommendations][li];
+            docSections.push(new Paragraph({ children: [new TextRun({ text: `${label}: `, bold: true }), new TextRun({ text: vals || 'N/A' })] }));
+          });
+        });
+      } else {
+        docSections.push(new Table({ rows: [makeRow(headers, true), ...rows.map(r => makeRow([r.employeeName,r.employeeId,r.jobRole,r.score,r.percentage,r.status,r.completionDate]))] }));
+      }
+
+      const docObj = new Document({ sections: [{ children: [new Paragraph({ text: assessment.title || 'Assessment Report', heading: HeadingLevel.HEADING_1 }), ...docSections] }] });
+      const buf = await Packer.toBuffer(docObj);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.docx"`);
+      return res.send(buf);
+    }
+
+    res.status(400).json({ success: false, data: null, error: `Unsupported format: ${format}` });
+  } catch (e) {
+    console.error('[GET /api/assessments/:id/export-reports]', e);
     res.status(500).json({ success: false, data: null, error: e.message });
   }
 });
