@@ -268,6 +268,9 @@ export default function ModuleManagement() {
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
 
+  // Import modal state
+  const [showImportModal, setShowImportModal] = useState(false);
+
   // New creation flow state
   const [showCreate, setShowCreate] = useState(false);
   const [generateInput, setGenerateInput] = useState('');
@@ -585,12 +588,22 @@ export default function ModuleManagement() {
                 : 'Create and manage AI-generated learning modules for the entire organization.'}
             </p>
           </div>
-          <button
-            onClick={() => { setShowCreate(true); setEditing(null); setShowReviewForm(false); setShowAgentUI(false); }}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all"
-          >
-            + New Module
-          </button>
+          <div className="flex gap-2">
+            {['admin','manager','trainer'].includes(user?.role) && (
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-sm font-bold transition-all"
+              >
+                ⬆ Import Module
+              </button>
+            )}
+            <button
+              onClick={() => { setShowCreate(true); setEditing(null); setShowReviewForm(false); setShowAgentUI(false); }}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all"
+            >
+              + New Module
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -1241,6 +1254,162 @@ export default function ModuleManagement() {
           </div>
         </div>
       )}
+
+      {/* Import Module Modal */}
+      {showImportModal && (
+        <ImportModuleModal
+          onClose={() => setShowImportModal(false)}
+          onSuccess={(mod) => {
+            setModules(prev => [mod, ...prev]);
+            showToast('Module imported successfully', 'success');
+            setShowImportModal(false);
+          }}
+          showToast={showToast}
+        />
+      )}
+    </div>
+  );
+}
+
+function ImportModuleModal({ onClose, onSuccess, showToast }) {
+  const [tab, setTab] = useState('file'); // 'file' | 'link'
+  const [file, setFile] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [title, setTitle] = useState('');
+  const [externalUrl, setExternalUrl] = useState('');
+  const [linkTitle, setLinkTitle] = useState('');
+  const [linkType, setLinkType] = useState('url');
+  const [importing, setImporting] = useState(false);
+  const [status, setStatus] = useState('');
+  const fileInputRef = React.useRef();
+  const ACCEPTED = '.pdf,.ppt,.pptx,.doc,.docx,.xlsx,.xls,.txt,.csv,.zip';
+
+  const handleFile = (f) => {
+    if (f && f.size > 50 * 1024 * 1024) { showToast('File exceeds 50 MB limit', 'error'); return; }
+    setFile(f);
+    if (!title) setTitle(f.name.replace(/\.[^.]+$/, ''));
+  };
+
+  const handleDrop = (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); };
+
+  const handleSubmit = async () => {
+    setImporting(true);
+    setStatus('Uploading…');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+      let res;
+      if (tab === 'file') {
+        if (!file) { showToast('Please select a file', 'error'); setImporting(false); return; }
+        const fd = new FormData();
+        fd.append('file', file);
+        if (title) fd.append('title', title);
+        setStatus('Processing file content…');
+        res = await fetch(`${BASE_URL}/api/modules/import`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+      } else {
+        if (!externalUrl) { showToast('Please enter a URL', 'error'); setImporting(false); return; }
+        res = await fetch(`${BASE_URL}/api/modules/import`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ externalUrl, linkTitle: linkTitle || externalUrl, linkType, title: linkTitle || externalUrl }),
+        });
+      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import failed');
+      setStatus(`✓ ${data.data?.sectionsExtracted || 0} sections extracted`);
+      onSuccess(data.data?.module);
+    } catch (e) {
+      showToast(e.message || 'Import failed', 'error');
+      setStatus('');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60">
+          <div>
+            <h3 className="text-lg font-black text-white">Import Module</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Upload a file or add an external link</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">&times;</button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          {/* Tabs */}
+          <div className="flex gap-1 bg-slate-800/60 p-1 rounded-xl">
+            {[{v:'file',l:'Upload File'},{v:'link',l:'External Link'}].map(({v,l}) => (
+              <button key={v} onClick={() => setTab(v)}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${tab===v ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'file' ? (
+            <>
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${dragOver ? 'border-amber-500 bg-amber-500/10' : 'border-slate-600 hover:border-amber-500/50 hover:bg-slate-800/50'}`}
+              >
+                <input ref={fileInputRef} type="file" accept={ACCEPTED} className="hidden" onChange={e => { const f = e.target.files[0]; if (f) handleFile(f); }} />
+                <div className="text-3xl mb-2">📁</div>
+                {file ? (
+                  <p className="text-sm font-semibold text-amber-300">{file.name}</p>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold text-slate-300">Click or drag file here</p>
+                    <p className="text-xs text-slate-500 mt-1">PDF, PPT, PPTX, DOC, DOCX, XLSX, TXT, CSV, ZIP · Max 50 MB</p>
+                  </>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Module Title (optional)</label>
+                <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Auto-detected from filename"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-amber-500 focus:outline-none" />
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Link Type</label>
+                <select value={linkType} onChange={e => setLinkType(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-amber-500 focus:outline-none">
+                  <option value="url">Public URL</option>
+                  <option value="google_drive">Google Drive</option>
+                  <option value="onedrive">OneDrive</option>
+                  <option value="sharepoint">SharePoint</option>
+                  <option value="dropbox">Dropbox</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">URL</label>
+                <input value={externalUrl} onChange={e => setExternalUrl(e.target.value)} placeholder="https://..."
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-amber-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Title</label>
+                <input value={linkTitle} onChange={e => setLinkTitle(e.target.value)} placeholder="Module title"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-amber-500 focus:outline-none" />
+              </div>
+            </>
+          )}
+
+          {status && <p className="text-xs text-amber-300 font-semibold">{status}</p>}
+
+          <div className="flex gap-3 pt-1">
+            <button onClick={onClose} className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white">Cancel</button>
+            <button onClick={handleSubmit} disabled={importing}
+              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-sm font-bold text-white disabled:opacity-40 transition-all">
+              {importing ? 'Importing…' : '⬆ Import Module'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
