@@ -557,28 +557,6 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
-      {/* Quick Nav */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-6">
-        {[
-          { label: 'My Team', icon: '👥', path: '/admin/users' },
-          { label: 'Assessments', icon: '📝', path: '/admin/assessments' },
-          { label: 'Modules', icon: '📚', path: '/admin/modules' },
-          { label: 'Assignments', icon: '📋', path: '/admin/assignments' },
-          { label: 'Role Library', icon: '🎯', path: '/admin/roles' },
-          { label: 'Groups', icon: '🗂️', path: '/admin/groups' },
-          { label: 'Reports', icon: '📊', path: '/admin/assessments' },
-        ].map(nav => (
-          <button
-            key={nav.label}
-            onClick={() => navigate(nav.path)}
-            className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl bg-slate-800/60 border border-slate-700/40 hover:border-indigo-500/40 hover:bg-indigo-500/5 text-slate-400 hover:text-indigo-300 transition-all text-center"
-          >
-            <span className="text-xl">{nav.icon}</span>
-            <span className="text-xs font-bold leading-tight">{nav.label}</span>
-          </button>
-        ))}
-      </div>
-
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-8">
         <StatCard label="Total Employees" value={totalEmployees} icon="👥" accent="indigo" />
         <StatCard label="Active" value={activeAssignments} icon="⚡" accent="sky" />
