@@ -601,6 +601,8 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                       <option value="admin">Admin</option>
                       <option value="manager">Manager</option>
                       <option value="employee">Employee</option>
+                      <option value="trainer">Trainer</option>
+                      <option value="leadership">Leadership</option>
                     </select>
                   </div>
                 )}
@@ -992,10 +994,12 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
 
 // ─── Bulk Import Modal ────────────────────────────────────────────────────────
 
-const IMPORT_TEMPLATE_CSV = `name,email,role,employee_id,job_role,department,job_description,company_name,password,phone,manager_email
+const IMPORT_TEMPLATE_CSV = `name,email,system_role,employee_id,job_role,department,job_description,company_name,password,phone,manager_email
 Jane Smith,jane@company.com,employee,EMP001,Frontend Developer,Engineering,Builds React UIs,Acme Corp,,+91-9876543210,
 John Doe,john@company.com,employee,EMP002,Data Analyst,Analytics,Analyzes business data,Acme Corp,,+91-9123456789,
 Sara Lee,sara@company.com,manager,MGR001,Engineering Manager,Engineering,Leads frontend team,Acme Corp,,,
+Tom Ray,tom@company.com,trainer,TRN001,Senior Trainer,L&D,Delivers training programs,Acme Corp,,,
+Priya Kumar,priya@company.com,leadership,LDR001,VP Engineering,Engineering,Leads engineering division,Acme Corp,,,
 `;
 
 function ImportModal({ onClose, onImported, setToast }) {

@@ -369,7 +369,7 @@ export default function GroupManagement() {
   }, []);
 
   useEffect(() => {
-    if (!user || user.role !== 'admin') { navigate('/dashboard'); return; }
+    if (!user || (user.role !== 'admin' && user.role !== 'manager')) { navigate('/dashboard'); return; }
     fetchAll();
   }, [user, navigate, fetchAll]);
 
@@ -401,7 +401,8 @@ export default function GroupManagement() {
   const activeCount = groups.filter(g => g.status !== 'inactive').length;
   const totalMembers = groups.reduce((sum, g) => sum + (g.employeeIds?.length || g.employeeCount || 0), 0);
 
-  if (!user || user.role !== 'admin') return null;
+  if (!user || (user.role !== 'admin' && user.role !== 'manager')) return null;
+  const isAdmin = user.role === 'admin';
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
@@ -444,12 +445,14 @@ export default function GroupManagement() {
               <p className="text-teal-400 text-sm font-semibold">Admin Panel · Company-Scoped</p>
             </div>
           </div>
-          <button
-            onClick={() => setModal({ mode: 'create' })}
-            className="flex items-center gap-2 px-5 py-2.5 bg-teal-600 hover:bg-teal-500 rounded-xl text-white font-bold text-sm transition-all shadow-lg"
-          >
-            ➕ Create Group
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setModal({ mode: 'create' })}
+              className="flex items-center gap-2 px-5 py-2.5 bg-teal-600 hover:bg-teal-500 rounded-xl text-white font-bold text-sm transition-all shadow-lg"
+            >
+              ➕ Create Group
+            </button>
+          )}
         </div>
 
         {/* Summary Cards */}
@@ -494,7 +497,7 @@ export default function GroupManagement() {
           <div className="text-center py-16 text-slate-500">
             <div className="text-5xl mb-3">👥</div>
             <p className="text-sm font-semibold mb-2">{search ? 'No groups match your search.' : 'No groups yet.'}</p>
-            {!search && (
+            {!search && isAdmin && (
               <button onClick={() => setModal({ mode: 'create' })} className="mt-2 text-teal-400 hover:text-teal-300 text-sm font-bold underline">
                 Create your first group →
               </button>
@@ -547,6 +550,7 @@ export default function GroupManagement() {
                           className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-400 hover:text-white transition-colors text-sm"
                           title="View"
                         >👁️</button>
+                        {isAdmin && (<>
                         <button
                           onClick={() => setModal({ mode: 'edit', group: g })}
                           className="p-2 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 hover:text-indigo-300 border border-indigo-500/20 transition-colors text-sm"
@@ -557,6 +561,7 @@ export default function GroupManagement() {
                           className="p-2 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 border border-red-500/20 transition-colors text-sm"
                           title="Delete"
                         >🗑️</button>
+                        </>)}
                       </div>
                     </td>
                   </tr>
