@@ -618,4 +618,79 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
   }
 });
 
+// ── POST /api/roles/:id/approve-assessment — create & auto-assign assessment ──
+router.post('/:id/approve-assessment', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+    if (!(role.questionBank || []).length) {
+      return res.status(400).json({ success: false, error: 'This role has no question bank. Generate questions first.' });
+    }
+
+    const companyId = req.user.companyId || 'default';
+    const { questionCount = 10, assessmentDate, duration = 30 } = req.body;
+    const qCount = Math.min(Math.max(parseInt(questionCount) || 10, 5), role.questionBank.length);
+
+    // Find all employees with this job role in this company
+    const allUsers = await UserStore.getAllUsers({});
+    const targets = allUsers.filter(u =>
+      (u.role === 'employee' || u.userRole === 'employee') &&
+      u.jobRole?.toLowerCase().trim() === role.roleName.toLowerCase().trim() &&
+      (u.companyId || 'default') === companyId
+    );
+
+    if (targets.length === 0) {
+      return res.status(400).json({ success: false, error: `No employees found with job role "${role.roleName}". Assign this role to employees first.` });
+    }
+
+    // Build per-employee assignments from the question bank
+    const assignedAt = new Date().toISOString();
+    const bank = role.questionBank;
+    const employeeAssignments = targets.map(user => {
+      const shuffled = [...bank].sort(() => Math.random() - 0.5);
+      const questions = shuffled.slice(0, qCount);
+      return {
+        userId: user.userId || user.id,
+        userName: user.name,
+        userEmail: user.email,
+        jobRole: user.jobRole || '',
+        questions,
+        status: 'assigned',
+        assignedAt,
+        startedAt: null,
+        submittedAt: null,
+        score: null,
+        report: null,
+      };
+    });
+
+    const newAssessment = {
+      id: randomUUID(),
+      title: `${role.roleName} Assessment`,
+      targetUsers: targets.map(u => u.userId || u.id),
+      employeeAssignments,
+      questionCount: qCount,
+      questionTypes: ['mcq'],
+      difficulty: null,
+      assessmentDate: assessmentDate || null,
+      deadline: null,
+      duration,
+      createdBy: req.user.userId,
+      companyId,
+      createdAt: assignedAt,
+      updatedAt: assignedAt,
+      isActive: true,
+      fromRoleId: role.id,
+    };
+
+    const { Assessments: AssessmentsStore } = await import('../services/DataStore.js');
+    const saved = await AssessmentsStore.create(newAssessment);
+    console.log(`[approve-assessment] Created assessment for role "${role.roleName}" → ${targets.length} employees`);
+    res.status(201).json({ success: true, data: saved || newAssessment, employeeCount: targets.length });
+  } catch (e) {
+    console.error('[POST /api/roles/:id/approve-assessment]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 export default router;
