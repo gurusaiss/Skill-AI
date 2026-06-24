@@ -24,6 +24,8 @@ const QUESTION_TYPE_OPTIONS = [
   { value: 'fill_blank', label: 'Fill in Blank' },
 ];
 
+const EXPORT_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+
 function ExportReportsModal({ assessment, token, onClose, showToast }) {
   const [format, setFormat] = React.useState('xlsx');
   const [mode, setMode] = React.useState('consolidated');
@@ -32,7 +34,9 @@ function ExportReportsModal({ assessment, token, onClose, showToast }) {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const res = await fetch(`/api/assessments/${assessment.id}/export-reports?format=${format}&mode=${mode}`, {
+      const params = new URLSearchParams({ format, mode });
+      if (format === 'zip') params.set('subformat', 'pdf');
+      const res = await fetch(`${EXPORT_BASE_URL}/api/assessments/${assessment.id}/export-reports?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -43,10 +47,11 @@ function ExportReportsModal({ assessment, token, onClose, showToast }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${(assessment.title || 'Assessment').replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Reports.${format}`;
+      const ext = format === 'zip' ? 'zip' : format;
+      a.download = `${(assessment.title || 'Assessment').replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Reports.${ext}`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast('Export downloaded', 'success');
+      showToast('Export downloaded successfully', 'success');
       onClose();
     } catch (e) {
       showToast(e.message || 'Export failed', 'error');
@@ -54,6 +59,13 @@ function ExportReportsModal({ assessment, token, onClose, showToast }) {
       setExporting(false);
     }
   };
+
+  const formatOptions = [
+    { v: 'xlsx', l: 'Excel' },
+    { v: 'pdf', l: 'PDF' },
+    { v: 'docx', l: 'Word' },
+    { v: 'zip', l: 'ZIP Bundle' },
+  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -68,28 +80,35 @@ function ExportReportsModal({ assessment, token, onClose, showToast }) {
         <div className="px-6 py-5 space-y-5">
           <div>
             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Format</label>
-            <div className="flex gap-2">
-              {[{v:'xlsx',l:'Excel (XLSX)'},{v:'pdf',l:'PDF'},{v:'docx',l:'Word (DOCX)'}].map(({v,l}) => (
+            <div className="grid grid-cols-4 gap-2">
+              {formatOptions.map(({v,l}) => (
                 <button key={v} onClick={() => setFormat(v)}
-                  className={`flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors ${format===v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>
+                  className={`py-2 rounded-xl border text-xs font-semibold transition-colors ${format===v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>
                   {l}
                 </button>
               ))}
             </div>
           </div>
-          <div>
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Mode</label>
-            <div className="flex gap-2">
-              {[{v:'consolidated',l:'Consolidated'},{v:'individual',l:'Individual Sheets'}].map(({v,l}) => (
-                <button key={v} onClick={() => setMode(v)}
-                  className={`flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors ${mode===v ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>
-                  {l}
-                </button>
-              ))}
+          {format !== 'zip' && (
+            <div>
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Mode</label>
+              <div className="flex gap-2">
+                {[{v:'consolidated',l:'Consolidated'},{v:'individual',l:'Individual Sheets'}].map(({v,l}) => (
+                  <button key={v} onClick={() => setMode(v)}
+                    className={`flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors ${mode===v ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+          {format === 'zip' && (
+            <p className="text-xs text-slate-400 bg-slate-800/60 rounded-xl px-3 py-2">
+              ZIP bundle: one PDF per employee, all in a single download.
+            </p>
+          )}
           <p className="text-xs text-slate-500">
-            Includes: Employee Name, ID, Job Role, Score, %, Status, Completion Date, Strengths, Improvement Areas, Recommendations.
+            Includes: Name, Email, ID, Job Role, Score, %, Grade, Classification, Status, Completion Date, Strengths, Improvement Areas, Recommendations.
           </p>
           <button onClick={handleExport} disabled={exporting}
             className="w-full py-3 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-sm font-bold text-white disabled:opacity-40 transition-all">
@@ -1415,10 +1434,27 @@ export default function AssessmentManagement() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => window.print()}
+                  onClick={async () => {
+                    const tok = localStorage.getItem('auth_token');
+                    try {
+                      const res = await fetch(`${EXPORT_BASE_URL}/api/assessments/${viewReport.id}/export-reports?format=pdf&mode=consolidated`, {
+                        headers: { Authorization: `Bearer ${tok}` },
+                      });
+                      if (!res.ok) throw new Error('Export failed');
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${(viewReport.title || 'Assessment').replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Reports.pdf`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    } catch (e) {
+                      alert('PDF download failed: ' + e.message);
+                    }
+                  }}
                   className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/40 text-xs font-bold transition-colors"
                 >
-                  🖨 Download PDF
+                  ⬇ Download PDF
                 </button>
                 <button onClick={() => setViewReport(null)} className="text-slate-500 hover:text-white text-xl transition-colors">✕</button>
               </div>
