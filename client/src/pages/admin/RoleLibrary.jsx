@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { authFetch } from '../../utils/authFetch.js';
 
 // ── tiny helpers ──────────────────────────────────────────────────────────────
@@ -32,7 +32,28 @@ function RoleModal({ role, onClose, onSaved }) {
   const [newItem, setNewItem] = useState({ title: '', description: '', dueDay: '' });
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState('details'); // 'details' | 'checklist'
+  const [jdUploading, setJdUploading] = useState(false);
+  const jdFileRef = useRef();
   const isEdit = !!role;
+
+  const handleJdFileUpload = async (file) => {
+    if (!file) return;
+    setJdUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await authFetch('/api/roles/parse-jd', { method: 'POST', body: fd });
+      const extracted = res?.data?.text ?? res?.text ?? '';
+      if (!extracted) throw new Error('No text extracted from file');
+      setForm(p => ({ ...p, jobDescription: extracted }));
+      toast(`Extracted ${extracted.length.toLocaleString()} chars from ${file.name}`);
+    } catch (e) {
+      toast(e.message || 'Failed to extract text', 'error');
+    } finally {
+      setJdUploading(false);
+      if (jdFileRef.current) jdFileRef.current.value = '';
+    }
+  };
 
   const f = key => e => setForm(p => ({ ...p, [key]: e.target.value }));
 
@@ -106,9 +127,29 @@ function RoleModal({ role, onClose, onSaved }) {
             </select>
           </div>
           <div>
-            <label className={labelCls}>Job Description</label>
-            <textarea className={inputCls} rows={7} value={form.jobDescription} onChange={f('jobDescription')} placeholder="Paste the full job description here..." />
-            <p className="text-xs text-slate-500 mt-1">{form.jobDescription.length.toLocaleString()} chars</p>
+            <div className="flex items-center justify-between mb-1">
+              <label className={labelCls} style={{marginBottom:0}}>Job Description</label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">{form.jobDescription.length.toLocaleString()} chars</span>
+                <button
+                  type="button"
+                  onClick={() => jdFileRef.current?.click()}
+                  disabled={jdUploading}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40 disabled:opacity-50 transition-colors"
+                >
+                  {jdUploading ? '⏳ Extracting…' : '📎 Upload JD File'}
+                </button>
+                <input
+                  ref={jdFileRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt,.rtf"
+                  className="hidden"
+                  onChange={e => handleJdFileUpload(e.target.files[0])}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mb-1">Upload PDF, DOC, DOCX, TXT or paste text directly below</p>
+            <textarea className={inputCls} rows={7} value={form.jobDescription} onChange={f('jobDescription')} placeholder="Paste the full job description here, or upload a file above..." />
           </div>
           </>)}
 
@@ -244,6 +285,228 @@ function ImportModal({ onClose, onImported }) {
   );
 }
 
+// ── Question Bank Modal ───────────────────────────────────────────────────────
+const DIFF_COLORS = { easy: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', medium: 'bg-amber-500/20 text-amber-300 border-amber-500/30', hard: 'bg-red-500/20 text-red-300 border-red-500/30' };
+const EMPTY_Q = { type: 'mcq', question: '', difficulty: 'medium', options: ['A) ', 'B) ', 'C) ', 'D) '], answer: 'A', explanation: '', skillArea: '' };
+
+function QuestionBankModal({ role, onClose }) {
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [regen, setRegen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editIdx, setEditIdx] = useState(null);
+  const [editQ, setEditQ] = useState(null);
+  const [addMode, setAddMode] = useState(false);
+  const [newQ, setNewQ] = useState({ ...EMPTY_Q });
+  const [diffFilter, setDiffFilter] = useState('all');
+
+  useEffect(() => { loadBank(); }, []);
+
+  const loadBank = async () => {
+    setLoading(true);
+    try {
+      const res = await authFetch(`/api/roles/${role.id}/questions`);
+      setQuestions(Array.isArray(res) ? res : (res?.data ?? []));
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setLoading(false); }
+  };
+
+  const handleRegen = async () => {
+    if (!window.confirm(`Re-generate all questions for "${role.roleName}"? This replaces the current bank.`)) return;
+    setRegen(true);
+    try {
+      const res = await authFetch(`/api/roles/${role.id}/regenerate-questions`, { method: 'POST', body: JSON.stringify({ questionCount: 40 }) });
+      setQuestions(res?.data?.questions ?? res?.questions ?? []);
+      toast(`Regenerated ${(res?.data?.questions ?? res?.questions ?? []).length} questions`);
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setRegen(false); }
+  };
+
+  const startEdit = (i) => { setEditIdx(i); setEditQ({ ...questions[i] }); };
+  const cancelEdit = () => { setEditIdx(null); setEditQ(null); };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      const updated = questions.map((q, i) => i === editIdx ? { ...editQ } : q);
+      await authFetch(`/api/roles/${role.id}/questions`, { method: 'PUT', body: JSON.stringify({ questions: updated }) });
+      setQuestions(updated);
+      cancelEdit();
+      toast('Question updated');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const deleteQ = async (i) => {
+    if (!window.confirm('Delete this question?')) return;
+    try {
+      const q = questions[i];
+      if (q.id) await authFetch(`/api/roles/${role.id}/questions/${q.id}`, { method: 'DELETE' });
+      setQuestions(p => p.filter((_, j) => j !== i));
+      toast('Question deleted');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  const saveNewQ = async () => {
+    if (!newQ.question.trim()) return toast('Question text required', 'error');
+    setSaving(true);
+    try {
+      const res = await authFetch(`/api/roles/${role.id}/questions`, { method: 'POST', body: JSON.stringify(newQ) });
+      setQuestions(p => [...p, res?.data ?? res]);
+      setNewQ({ ...EMPTY_Q });
+      setAddMode(false);
+      toast('Question added');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const filtered = diffFilter === 'all' ? questions : questions.filter(q => q.difficulty === diffFilter);
+  const counts = useMemo(() => ({ easy: questions.filter(q => q.difficulty === 'easy').length, medium: questions.filter(q => q.difficulty === 'medium').length, hard: questions.filter(q => q.difficulty === 'hard').length }), [questions]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-slate-700 flex-shrink-0">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Question Bank — {role.roleName}</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{questions.length} questions · Easy: {counts.easy} · Medium: {counts.medium} · Hard: {counts.hard}</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleRegen} disabled={regen || !role.jobDescription} className="text-xs px-3 py-1.5 rounded-lg bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/40 disabled:opacity-40 transition-colors">
+              {regen ? '⏳ Generating…' : '✨ Regenerate All'}
+            </button>
+            <button onClick={onClose} className="text-slate-400 hover:text-white text-xl px-2">✕</button>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex gap-2 px-5 py-3 border-b border-slate-700 flex-shrink-0">
+          {['all', 'easy', 'medium', 'hard'].map(d => (
+            <button key={d} onClick={() => setDiffFilter(d)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-colors ${diffFilter === d ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+              {d === 'all' ? `All (${questions.length})` : `${d} (${counts[d] ?? 0})`}
+            </button>
+          ))}
+          <button onClick={() => { setAddMode(true); setEditIdx(null); }} className="ml-auto text-xs px-3 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 transition-colors">
+            + Add Question
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 p-4 space-y-3">
+          {loading && <p className="text-slate-400 text-sm text-center py-8">Loading question bank…</p>}
+          {!loading && filtered.length === 0 && (
+            <div className="text-center py-10">
+              <p className="text-slate-400 text-sm">{questions.length === 0 ? 'No questions yet. Click "Regenerate All" to auto-generate from the JD.' : `No ${diffFilter} questions.`}</p>
+            </div>
+          )}
+
+          {/* Add new question form */}
+          {addMode && (
+            <div className="bg-[#0F172A] border border-indigo-500/40 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-semibold text-indigo-300">New Question</p>
+              <textarea rows={3} className={inputCls} value={newQ.question} onChange={e => setNewQ(p => ({ ...p, question: e.target.value }))} placeholder="Question text…" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Difficulty</label>
+                  <select className={inputCls} value={newQ.difficulty} onChange={e => setNewQ(p => ({ ...p, difficulty: e.target.value }))}>
+                    <option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Skill Area</label>
+                  <input className={inputCls} value={newQ.skillArea} onChange={e => setNewQ(p => ({ ...p, skillArea: e.target.value }))} placeholder="e.g. Recruitment" />
+                </div>
+              </div>
+              {newQ.options.map((opt, oi) => (
+                <input key={oi} className={inputCls} value={opt} onChange={e => { const o = [...newQ.options]; o[oi] = e.target.value; setNewQ(p => ({ ...p, options: o })); }} placeholder={`Option ${['A','B','C','D'][oi]}`} />
+              ))}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Correct Answer</label>
+                  <select className={inputCls} value={newQ.answer} onChange={e => setNewQ(p => ({ ...p, answer: e.target.value }))}>
+                    {['A','B','C','D'].map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+              <textarea rows={2} className={inputCls} value={newQ.explanation} onChange={e => setNewQ(p => ({ ...p, explanation: e.target.value }))} placeholder="Explanation (optional)" />
+              <div className="flex gap-2">
+                <button onClick={() => setAddMode(false)} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs">Cancel</button>
+                <button onClick={saveNewQ} disabled={saving} className="px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold disabled:opacity-50">Save</button>
+              </div>
+            </div>
+          )}
+
+          {filtered.map((q, i) => {
+            const realIdx = questions.indexOf(q);
+            const isEditing = editIdx === realIdx;
+            return (
+              <div key={q.id || i} className="bg-[#0F172A] border border-slate-700 rounded-xl p-4">
+                {isEditing ? (
+                  <div className="space-y-3">
+                    <textarea rows={3} className={inputCls} value={editQ.question} onChange={e => setEditQ(p => ({ ...p, question: e.target.value }))} />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={labelCls}>Difficulty</label>
+                        <select className={inputCls} value={editQ.difficulty} onChange={e => setEditQ(p => ({ ...p, difficulty: e.target.value }))}>
+                          <option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelCls}>Skill Area</label>
+                        <input className={inputCls} value={editQ.skillArea || ''} onChange={e => setEditQ(p => ({ ...p, skillArea: e.target.value }))} />
+                      </div>
+                    </div>
+                    {(editQ.options || []).map((opt, oi) => (
+                      <input key={oi} className={inputCls} value={opt} onChange={e => { const o = [...(editQ.options || [])]; o[oi] = e.target.value; setEditQ(p => ({ ...p, options: o })); }} placeholder={`Option ${['A','B','C','D'][oi]}`} />
+                    ))}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={labelCls}>Correct Answer</label>
+                        <select className={inputCls} value={editQ.answer || 'A'} onChange={e => setEditQ(p => ({ ...p, answer: e.target.value }))}>
+                          {['A','B','C','D'].map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <textarea rows={2} className={inputCls} value={editQ.explanation || ''} onChange={e => setEditQ(p => ({ ...p, explanation: e.target.value }))} placeholder="Explanation" />
+                    <div className="flex gap-2">
+                      <button onClick={cancelEdit} className="px-3 py-1.5 rounded border border-slate-600 text-slate-300 text-xs">Cancel</button>
+                      <button onClick={saveEdit} disabled={saving} className="px-4 py-1.5 rounded bg-indigo-600 text-white text-xs font-semibold disabled:opacity-50">Save</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm text-white font-medium flex-1">{i + 1}. {q.question}</p>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <span className={`px-2 py-0.5 rounded-full text-xs border capitalize ${DIFF_COLORS[q.difficulty] || DIFF_COLORS.medium}`}>{q.difficulty || 'medium'}</span>
+                        <button onClick={() => startEdit(realIdx)} className="text-xs px-2 py-1 rounded bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40">Edit</button>
+                        <button onClick={() => deleteQ(realIdx)} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40">Del</button>
+                      </div>
+                    </div>
+                    {q.skillArea && <p className="text-xs text-slate-500 mt-1">Skill: {q.skillArea}</p>}
+                    <div className="mt-2 grid grid-cols-2 gap-1">
+                      {(q.options || []).map((opt, oi) => (
+                        <p key={oi} className={`text-xs px-2 py-1 rounded ${opt.startsWith(q.answer) ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400'}`}>{opt}</p>
+                      ))}
+                    </div>
+                    {q.explanation && <p className="text-xs text-slate-500 mt-2 italic">{q.explanation}</p>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="p-4 border-t border-slate-700 flex-shrink-0">
+          <button onClick={onClose} className="w-full px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-slate-400">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function RoleLibrary() {
   const [roles, setRoles]         = useState([]);
@@ -252,6 +515,7 @@ export default function RoleLibrary() {
   const [deptFilter, setDeptFilter] = useState('');
   const [modal, setModal]         = useState(null); // null | {type:'add'|'edit'|'view'|'import', role?}
   const [delId, setDelId]         = useState(null);
+  const [qBankRole, setQBankRole] = useState(null); // role to view question bank for
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -386,14 +650,8 @@ export default function RoleLibrary() {
                     <div className="flex gap-1.5 flex-wrap">
                       <button onClick={() => setModal({ type: 'view', role })} className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">View</button>
                       <button onClick={() => setModal({ type: 'edit', role })} className="text-xs px-2 py-1 rounded bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50">Edit</button>
-                      <button onClick={async () => {
-                        try {
-                          await authFetch(`/api/roles/${role.id}/generate-assessment`, { method: 'POST', body: JSON.stringify({ questionCount: 10 }) });
-                          toast(`Assessment template generated for ${role.roleName}`);
-                          load();
-                        } catch (e) { toast(e.message, 'error'); }
-                      }} className="text-xs px-2 py-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 whitespace-nowrap">
-                        {role.assessmentTemplateId ? '↻ Regen' : '⚡ Gen Assessment'}
+                      <button onClick={() => setQBankRole(role)} className="text-xs px-2 py-1 rounded bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 whitespace-nowrap">
+                        📚 Questions{role.questionBankCount ? ` (${role.questionBankCount})` : ''}
                       </button>
                       <button onClick={() => setDelId(role.id)} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40">Delete</button>
                     </div>
@@ -428,6 +686,11 @@ export default function RoleLibrary() {
       )}
       {modal?.type === 'import' && (
         <ImportModal onClose={() => setModal(null)} onImported={() => { setModal(null); load(); }} />
+      )}
+
+      {/* Question Bank Modal */}
+      {qBankRole && (
+        <QuestionBankModal role={qBankRole} onClose={() => setQBankRole(null)} />
       )}
 
       {/* Delete confirmation */}

@@ -37,6 +37,7 @@ const EMPTY_MODAL = {
   selectedGroup: '',
   questionCount: 10,
   questionTypes: ['mcq'],
+  difficulty: '',
   assessmentDate: '',
   duration: 30,
   deadline: '',
@@ -176,6 +177,7 @@ export default function AssessmentManagement() {
         targetUsers,
         questionCount: modal.questionCount,
         questionTypes: modal.questionTypes,
+        difficulty: modal.difficulty || undefined,
         assessmentDate: modal.assessmentDate,
         duration: modal.duration,
         deadline: modal.deadline,
@@ -844,6 +846,23 @@ export default function AssessmentManagement() {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Difficulty Filter */}
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                    Difficulty Filter <span className="text-slate-600 font-normal normal-case">(pulls from role's question bank)</span>
+                  </label>
+                  <select
+                    value={modal.difficulty || ''}
+                    onChange={e => updateModal({ difficulty: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="">No filter — AI generates fresh questions</option>
+                    <option value="easy">Easy — pulls easy questions from role bank</option>
+                    <option value="medium">Medium — pulls medium questions from role bank</option>
+                    <option value="hard">Hard — pulls hard questions from role bank</option>
+                  </select>
                 </div>
 
                 {/* Duration */}
