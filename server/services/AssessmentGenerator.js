@@ -49,7 +49,7 @@ Identify before generating any question:
 
 STEP 2 — GENERATE QUESTIONS GROUNDED IN THE EXTRACTED PROFILE:
 • Use exactly this question type mix (cycle through): ${types.join(', ')}
-• Difficulty distribution: 30% easy, 50% medium, 20% hard
+• Difficulty distribution: EXACTLY one-third each — assign difficulty in a strict rotating cycle (easy → medium → hard → easy → medium → hard …). Every third question must be hard. Do NOT cluster all hard questions at the end.
 • Each question must test something from the profile extracted in Step 1
 • Prefer scenario-based questions: "In your role as ${jobRole || 'a professional'}, when [situation], what do you do?"
 • For non-technical roles: test processes, decisions, communication, and domain knowledge — NOT coding or engineering
@@ -72,7 +72,7 @@ If the answer is NO — replace the question with one that passes this test.
       "difficulty": "easy|medium|hard",
       "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
       "answer": "A (or B/C/D for mcq) | exact phrase for fill_blank | detailed model answer for subjective",
-      "explanation": "one sentence — which JD requirement this question tests and why it matters for this role",
+      "explanation": "brief phrase — which JD requirement this tests",
       "skillArea": "the specific responsibility, skill, or competency from the JD being tested"
     }
   ]
@@ -89,7 +89,7 @@ If the answer is NO — replace the question with one that passes this test.
           model: 'llama-3.3-70b-versatile',
           messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
           temperature: 0.8,
-          max_tokens: 5000,
+          max_tokens: 8000,
           response_format: { type: 'json_object' },
         }),
         signal: AbortSignal.timeout(30000),
@@ -114,7 +114,7 @@ If the answer is NO — replace the question with one that passes this test.
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: system + '\n\n' + prompt }] }],
-            generationConfig: { temperature: 0.8, maxOutputTokens: 5000, responseMimeType: 'application/json' },
+            generationConfig: { temperature: 0.8, maxOutputTokens: 8192, responseMimeType: 'application/json' },
           }),
           signal: AbortSignal.timeout(30000),
         }

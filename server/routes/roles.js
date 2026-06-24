@@ -171,7 +171,7 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
             jobRole: doc.roleName,
             jobDescription: doc.jobDescription,
             jdSkills: doc.skills,
-            questionCount: 40,
+            questionCount: 50,
             questionTypes: ['mcq'],
             employeeSeed: `qbank-${doc.id}-${Date.now()}`,
           });
@@ -225,7 +225,7 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
             jobRole: effectiveRole,
             jobDescription: effectiveJD,
             jdSkills: effectiveSkills,
-            questionCount: 40,
+            questionCount: 50,
             questionTypes: ['mcq'],
             employeeSeed: `qbank-${req.params.id}-upd-${Date.now()}`,
           });
@@ -307,7 +307,7 @@ router.post('/import', authenticate, requireRole('admin'), upload.single('file')
               jobRole: doc.roleName,
               jobDescription: doc.jobDescription,
               jdSkills: doc.skills,
-              questionCount: 40,
+              questionCount: 50,
               questionTypes: ['mcq'],
               employeeSeed: `qbank-${doc.id}`,
             });
@@ -595,7 +595,7 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
     const role = await RoleLibrary.getById(req.params.id);
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
     if (!role.jobDescription) return res.status(400).json({ success: false, error: 'Role has no job description — add a JD first' });
-    const { questionCount = 40 } = req.body;
+    const { questionCount = 50 } = req.body;
     const questions = await generateQuestionsFromJD({
       jobRole: role.roleName,
       jobDescription: role.jobDescription,
