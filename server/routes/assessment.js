@@ -723,64 +723,225 @@ router.post('/parse-questionnaire', authenticate, requireRole('admin', 'manager'
   }
 });
 
+// ── Shared helper: build export row from assessment employee assignment + DB report ──
+function buildExportRow(ea, report, assessmentTitle) {
+  // scoring lives in both ea.scoring (immediate) and the Reports collection
+  const sc = report || ea.scoring || {};
+  const correct  = sc.correct  ?? null;
+  const totalQs  = sc.total    ?? ea.questions?.length ?? 0;
+  const scorePct = sc.score    ?? null;   // already 0-100 percentage from scoreSubmission
+
+  const recsList = (report?.improvementRecommendations || sc.recommendedLearningAreas || [])
+    .map(r => (typeof r === 'string' ? r : r?.area || String(r)));
+
+  return {
+    employeeName:    ea.userName  || ea.name  || ea.userId || '',
+    employeeEmail:   ea.userEmail || report?.userEmail || '',
+    employeeId:      ea.userId    || '',
+    jobRole:         ea.jobRole   || report?.jobRole || '',
+    assessmentName:  assessmentTitle || '',
+    assessmentDate:  ea.assignedAt || '',
+    score:           correct != null ? `${correct}/${totalQs}` : 'Pending',
+    percentage:      scorePct != null ? `${scorePct}%` : 'Pending',
+    grade:           sc.grade || '',
+    classification:  sc.performanceClassification?.label || '',
+    status:          ea.status || 'assigned',
+    completionDate:  ea.submittedAt || report?.submittedAt || '',
+    strengths:       (sc.strengths || []).join('; '),
+    improvementAreas:(sc.weakAreas || []).join('; '),
+    missingCompetencies: (sc.missingCompetencies || []).join('; '),
+    recommendations: recsList.join('; '),
+    skillBreakdown:  (sc.skillBreakdown || []).map(s => `${s.skill}: ${s.pct}%`).join(', '),
+  };
+}
+
+// ── PDF generation helper (single or multi-employee) ──────────────────────────
+async function generatePDFBuffer(rows, title) {
+  const PDFDocument = (await import('pdfkit')).default;
+  const chunks = [];
+  const doc = new PDFDocument({ margin: 50, size: 'A4' });
+  doc.on('data', c => chunks.push(c));
+
+  await new Promise(resolve => {
+    doc.on('end', resolve);
+
+    // Cover / title
+    doc.fontSize(20).font('Helvetica-Bold').text(title || 'Assessment Report', { align: 'center' });
+    doc.moveDown(0.4);
+    doc.fontSize(10).font('Helvetica').fillColor('#888888').text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
+    doc.fillColor('#ffffff').moveDown(1.5);
+
+    rows.forEach((r, i) => {
+      if (i > 0) {
+        doc.addPage();
+      }
+      doc.fontSize(14).font('Helvetica-Bold').fillColor('#ffffff').text(r.employeeName || 'Employee');
+      doc.fontSize(9).font('Helvetica').fillColor('#aaaaaa');
+      if (r.employeeEmail) doc.text(`Email: ${r.employeeEmail}`);
+      doc.text(`Employee ID: ${r.employeeId || 'N/A'}  |  Job Role: ${r.jobRole || 'N/A'}`);
+      doc.moveDown(0.6);
+
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('#ffffff').text('Performance Summary');
+      doc.fontSize(9).font('Helvetica').fillColor('#cccccc');
+      [
+        ['Assessment', r.assessmentName],
+        ['Score', r.score],
+        ['Percentage', r.percentage],
+        ['Grade', r.grade || 'N/A'],
+        ['Classification', r.classification || 'N/A'],
+        ['Status', r.status],
+        ['Completed', r.completionDate || 'N/A'],
+      ].forEach(([k, v]) => doc.text(`${k}: ${v}`));
+
+      doc.moveDown(0.6);
+
+      if (r.skillBreakdown) {
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#ffffff').text('Skill Breakdown');
+        doc.fontSize(9).font('Helvetica').fillColor('#cccccc').text(r.skillBreakdown || 'N/A');
+        doc.moveDown(0.4);
+      }
+
+      if (r.strengths) {
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#10B981').text('Strengths');
+        doc.fontSize(9).font('Helvetica').fillColor('#cccccc').text(r.strengths);
+        doc.moveDown(0.4);
+      }
+      if (r.improvementAreas) {
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#F59E0B').text('Improvement Areas');
+        doc.fontSize(9).font('Helvetica').fillColor('#cccccc').text(r.improvementAreas);
+        doc.moveDown(0.4);
+      }
+      if (r.missingCompetencies) {
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#EF4444').text('Missing Competencies');
+        doc.fontSize(9).font('Helvetica').fillColor('#cccccc').text(r.missingCompetencies);
+        doc.moveDown(0.4);
+      }
+      if (r.recommendations) {
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#6366F1').text('Recommendations');
+        doc.fontSize(9).font('Helvetica').fillColor('#cccccc').text(r.recommendations);
+      }
+    });
+    doc.end();
+  });
+  return Buffer.concat(chunks);
+}
+
+// ── DOCX generation helper ─────────────────────────────────────────────────────
+async function generateDOCXBuffer(rows, title) {
+  const docxLib = await import('docx');
+  const { Document, Paragraph, TextRun, Table, TableRow, TableCell, Packer, WidthType, HeadingLevel, BorderStyle } = docxLib;
+
+  const noBorder = { style: BorderStyle.NONE, size: 0, color: 'auto' };
+  const cellBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
+
+  const makeCell = (text, bold = false, w = 2000) => new TableCell({
+    children: [new Paragraph({ children: [new TextRun({ text: String(text ?? ''), bold, size: 18 })] })],
+    width: { size: w, type: WidthType.DXA },
+    borders: cellBorders,
+  });
+
+  const infoRow = (k, v) => new TableRow({ children: [makeCell(k, true, 2200), makeCell(v, false, 6800)] });
+
+  const docChildren = [
+    new Paragraph({ text: title || 'Assessment Report', heading: HeadingLevel.HEADING_1 }),
+    new Paragraph({ children: [new TextRun({ text: `Generated: ${new Date().toLocaleString()}`, size: 18, color: '888888' })] }),
+    new Paragraph({ text: '' }),
+  ];
+
+  rows.forEach((r, i) => {
+    if (i > 0) docChildren.push(new Paragraph({ pageBreakBefore: true }));
+    docChildren.push(new Paragraph({ text: r.employeeName || 'Employee', heading: HeadingLevel.HEADING_2 }));
+    docChildren.push(new Table({ rows: [
+      infoRow('Employee Email',  r.employeeEmail  || 'N/A'),
+      infoRow('Employee ID',     r.employeeId     || 'N/A'),
+      infoRow('Job Role',        r.jobRole        || 'N/A'),
+      infoRow('Assessment',      r.assessmentName || 'N/A'),
+      infoRow('Score',           r.score),
+      infoRow('Percentage',      r.percentage),
+      infoRow('Grade',           r.grade          || 'N/A'),
+      infoRow('Classification',  r.classification || 'N/A'),
+      infoRow('Status',          r.status),
+      infoRow('Completed',       r.completionDate || 'N/A'),
+    ] }));
+    docChildren.push(new Paragraph({ text: '' }));
+
+    [
+      ['Skill Breakdown',       r.skillBreakdown],
+      ['Strengths',             r.strengths],
+      ['Improvement Areas',     r.improvementAreas],
+      ['Missing Competencies',  r.missingCompetencies],
+      ['Recommendations',       r.recommendations],
+    ].forEach(([label, val]) => {
+      if (val) {
+        docChildren.push(new Paragraph({ children: [new TextRun({ text: `${label}: `, bold: true, size: 20 }), new TextRun({ text: val, size: 20 })] }));
+      }
+    });
+  });
+
+  const docObj = new Document({ sections: [{ children: docChildren }] });
+  return Packer.toBuffer(docObj);
+}
+
 /**
  * GET /api/assessments/:id/export-reports
- * Export all employee reports for an assessment as XLSX, PDF, or DOCX
+ * Export all employee reports — XLSX / PDF / DOCX / ZIP
+ * Manager sees only their group employees; admin sees all.
  */
 router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const { id } = req.params;
-    const format  = (req.query.format  || 'xlsx').toLowerCase();
-    const mode    = (req.query.mode    || 'consolidated').toLowerCase();
+    const format  = (req.query.format || 'xlsx').toLowerCase();
+    const mode    = (req.query.mode   || 'consolidated').toLowerCase();
 
     const assessment = await Assessments.getById(id);
     if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
 
-    // Collect all submissions with reports
-    const allSubmissions = await Submissions.getAll();
-    const allReports     = await Reports.getAll();
-    const assignments    = assessment.employeeAssignments || [];
+    const allReports  = await Reports.getAll();
+    let assignments   = assessment.employeeAssignments || [];
+
+    // Manager: restrict to their group employees
+    if (req.user.role === 'manager') {
+      try {
+        const { getGroups, getGroupMemberships } = await import('../db/store.js');
+        const allGroups = await getGroups();
+        const myGroups  = allGroups.filter(g => g.managerId === req.user.userId);
+        if (myGroups.length > 0) {
+          const memberships = await Promise.all(myGroups.map(g => getGroupMemberships(g.id)));
+          const memberIds   = new Set(memberships.flat().map(m => m.userId || m.user_id).filter(Boolean));
+          assignments       = assignments.filter(ea => memberIds.has(ea.userId));
+        }
+      } catch {}
+    }
 
     const rows = assignments.map(ea => {
-      const sub    = allSubmissions.find(s => s.assessmentId === id && s.userId === ea.userId);
       const report = allReports.find(r => r.assessmentId === id && r.userId === ea.userId);
-      const score  = sub?.score ?? report?.score ?? null;
-      const total  = sub?.totalQuestions || ea.questions?.length || assessment.questionCount || 0;
-      const pct    = score != null && total > 0 ? Math.round((score / total) * 100) : null;
-      return {
-        employeeName:      ea.userName || ea.name || ea.userId || '',
-        employeeId:        ea.userId || '',
-        jobRole:           ea.jobRole || '',
-        assessmentName:    assessment.title || '',
-        score:             score != null ? `${score}/${total}` : 'Pending',
-        percentage:        pct != null ? `${pct}%` : 'Pending',
-        status:            ea.status || 'assigned',
-        completionDate:    sub?.submittedAt || ea.submittedAt || '',
-        strengths:         (report?.strengths || []).join('; '),
-        improvementAreas:  (report?.weakAreas || report?.improvementAreas || []).join('; '),
-        recommendations:   (report?.recommendations || []).join('; '),
-      };
+      return buildExportRow(ea, report, assessment.title);
     });
 
-    const filename = `${assessment.title || 'Assessment'}-Reports`.replace(/[^a-zA-Z0-9-_ ]/g, '_');
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, data: null, error: 'No employee assignments found for this assessment' });
+    }
 
+    const safeTitle = (assessment.title || 'Assessment').replace(/[^a-zA-Z0-9-_ ]/g, '_');
+    const filename  = `${safeTitle}-Reports`;
+
+    // ── XLSX ──────────────────────────────────────────────────────────────────
     if (format === 'xlsx') {
       const { default: XLSX } = await import('xlsx');
-      const headers = ['Employee Name','Employee ID','Job Role','Assessment Name','Score','%','Status','Completion Date','Strengths','Improvement Areas','Recommendations'];
-      const sheetData = [headers, ...rows.map(r => [r.employeeName,r.employeeId,r.jobRole,r.assessmentName,r.score,r.percentage,r.status,r.completionDate,r.strengths,r.improvementAreas,r.recommendations])];
+      const headers = ['Employee Name','Email','Employee ID','Job Role','Assessment','Assessment Date','Score','%','Grade','Classification','Status','Completion Date','Skill Breakdown','Strengths','Improvement Areas','Missing Competencies','Recommendations'];
+      const toRow = r => [r.employeeName,r.employeeEmail,r.employeeId,r.jobRole,r.assessmentName,r.assessmentDate,r.score,r.percentage,r.grade,r.classification,r.status,r.completionDate,r.skillBreakdown,r.strengths,r.improvementAreas,r.missingCompetencies,r.recommendations];
 
-      let wb;
+      const wb = XLSX.utils.book_new();
       if (mode === 'individual') {
-        wb = XLSX.utils.book_new();
         rows.forEach((r, i) => {
-          const wsData = [headers, [r.employeeName,r.employeeId,r.jobRole,r.assessmentName,r.score,r.percentage,r.status,r.completionDate,r.strengths,r.improvementAreas,r.recommendations]];
-          const ws = XLSX.utils.aoa_to_sheet(wsData);
+          const ws = XLSX.utils.aoa_to_sheet([headers, toRow(r)]);
+          ws['!cols'] = headers.map((_, ci) => ({ wch: ci < 4 ? 20 : 30 }));
           XLSX.utils.book_append_sheet(wb, ws, (r.employeeName || `Employee${i+1}`).slice(0, 31));
         });
       } else {
-        wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.aoa_to_sheet(sheetData);
-        XLSX.utils.book_append_sheet(wb, ws, 'Report');
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows.map(toRow)]);
+        ws['!cols'] = headers.map((_, ci) => ({ wch: ci < 4 ? 20 : 30 }));
+        XLSX.utils.book_append_sheet(wb, ws, 'Reports');
       }
 
       const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -789,81 +950,135 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
       return res.send(buf);
     }
 
+    // ── PDF ───────────────────────────────────────────────────────────────────
     if (format === 'pdf') {
-      let PDFDocument;
-      try { PDFDocument = (await import('pdfkit')).default; } catch {
-        return res.status(501).json({ success: false, data: null, error: 'PDF export not available — pdfkit not installed' });
+      try {
+        const buf = await generatePDFBuffer(rows, assessment.title || 'Assessment Report');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+        return res.send(buf);
+      } catch (e) {
+        console.error('[export-reports PDF]', e);
+        return res.status(501).json({ success: false, data: null, error: 'PDF export failed: ' + e.message });
       }
-      const chunks = [];
-      const doc = new PDFDocument({ margin: 40, size: 'A4' });
-      doc.on('data', c => chunks.push(c));
-      await new Promise(resolve => {
-        doc.on('end', resolve);
-        doc.fontSize(16).font('Helvetica-Bold').text(assessment.title || 'Assessment Report', { align: 'center' });
-        doc.moveDown(0.5);
-        doc.fontSize(10).font('Helvetica').text(`Exported: ${new Date().toLocaleDateString()}`, { align: 'center' });
-        doc.moveDown(1);
+    }
 
-        const pagesToWrite = mode === 'individual' ? rows : [null];
-        pagesToWrite.forEach((row, pi) => {
-          const list = row ? [row] : rows;
-          if (pi > 0) doc.addPage();
-          list.forEach((r, i) => {
-            if (i > 0) { doc.moveDown(1); doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke('#cccccc'); doc.moveDown(0.5); }
-            doc.fontSize(11).font('Helvetica-Bold').text(r.employeeName || 'Employee');
-            doc.fontSize(9).font('Helvetica');
-            const fields = [['ID', r.employeeId],['Role', r.jobRole],['Score', r.score],['%', r.percentage],['Status', r.status],['Completed', r.completionDate || 'N/A'],['Strengths', r.strengths || 'N/A'],['Improvement Areas', r.improvementAreas || 'N/A'],['Recommendations', r.recommendations || 'N/A']];
-            fields.forEach(([k, v]) => doc.text(`${k}: ${v}`));
-          });
-        });
-        doc.end();
-      });
-      const buf = Buffer.concat(chunks);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
-      return res.send(buf);
+    // ── DOCX ──────────────────────────────────────────────────────────────────
+    if (format === 'docx') {
+      try {
+        const buf = await generateDOCXBuffer(rows, assessment.title || 'Assessment Report');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}.docx"`);
+        return res.send(buf);
+      } catch (e) {
+        console.error('[export-reports DOCX]', e);
+        return res.status(501).json({ success: false, data: null, error: 'DOCX export failed: ' + e.message });
+      }
+    }
+
+    // ── ZIP (individual PDFs bundled) ─────────────────────────────────────────
+    if (format === 'zip') {
+      try {
+        const AdmZip = (await import('adm-zip')).default;
+        const zip = new AdmZip();
+
+        const subFormat = (req.query.subformat || 'pdf').toLowerCase();
+        await Promise.all(rows.map(async (r) => {
+          try {
+            let fileBuffer, ext;
+            if (subFormat === 'docx') {
+              fileBuffer = await generateDOCXBuffer([r], `${r.employeeName} — ${assessment.title}`);
+              ext = 'docx';
+            } else {
+              fileBuffer = await generatePDFBuffer([r], `${r.employeeName} — ${assessment.title}`);
+              ext = 'pdf';
+            }
+            const safeName = (r.employeeName || `employee-${r.employeeId}`).replace(/[^a-zA-Z0-9-_ ]/g, '_');
+            zip.addFile(`${safeName}.${ext}`, fileBuffer);
+          } catch {}
+        }));
+
+        const zipBuf = zip.toBuffer();
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}.zip"`);
+        return res.send(zipBuf);
+      } catch (e) {
+        console.error('[export-reports ZIP]', e);
+        return res.status(500).json({ success: false, data: null, error: 'ZIP export failed: ' + e.message });
+      }
+    }
+
+    res.status(400).json({ success: false, data: null, error: `Unsupported format: ${format}. Use xlsx, pdf, docx, or zip.` });
+  } catch (e) {
+    console.error('[GET /api/assessments/:id/export-reports]', e);
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * GET /api/assessments/:id/reports/:userId/download
+ * Download a single employee's report (admin/manager/the employee themselves)
+ */
+router.get('/:id/reports/:userId/download', authenticate, async (req, res) => {
+  try {
+    const { id, userId } = req.params;
+    const format = (req.query.format || 'pdf').toLowerCase();
+    const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
+    const isSelf = req.user.userId === userId;
+
+    if (!isPrivileged && !isSelf) {
+      return res.status(403).json({ success: false, data: null, error: 'Access denied' });
+    }
+
+    const assessment = await Assessments.getById(id);
+    if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
+
+    const ea = assessment.employeeAssignments?.find(a => a.userId === userId);
+    if (!ea) return res.status(404).json({ success: false, data: null, error: 'Employee not assigned to this assessment' });
+
+    if (ea.status !== 'submitted') {
+      return res.status(404).json({ success: false, data: null, error: 'Assessment not completed yet' });
+    }
+
+    const allReports = await Reports.getAll();
+    const report = allReports.find(r => r.assessmentId === id && r.userId === userId);
+    const row = buildExportRow(ea, report, assessment.title);
+    const safeTitle = (row.employeeName + '-' + (assessment.title || 'Report')).replace(/[^a-zA-Z0-9-_ ]/g, '_');
+
+    if (format === 'pdf') {
+      try {
+        const buf = await generatePDFBuffer([row], `${row.employeeName} — ${assessment.title}`);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.pdf"`);
+        return res.send(buf);
+      } catch (e) {
+        return res.status(500).json({ success: false, data: null, error: 'PDF generation failed: ' + e.message });
+      }
     }
 
     if (format === 'docx') {
-      let docxLib;
-      try { docxLib = await import('docx'); } catch {
-        return res.status(501).json({ success: false, data: null, error: 'DOCX export not available — docx not installed' });
+      try {
+        const buf = await generateDOCXBuffer([row], `${row.employeeName} — ${assessment.title}`);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.docx"`);
+        return res.send(buf);
+      } catch (e) {
+        return res.status(500).json({ success: false, data: null, error: 'DOCX generation failed: ' + e.message });
       }
-      const { Document, Paragraph, TextRun, Table, TableRow, TableCell, Packer, WidthType, HeadingLevel } = docxLib;
-
-      const makeRow = (cells, bold = false) => new TableRow({
-        children: cells.map(c => new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: String(c || ''), bold, size: 18 })] })],
-          width: { size: Math.floor(9000 / cells.length), type: WidthType.DXA },
-        })),
-      });
-
-      const headers = ['Employee Name','Employee ID','Job Role','Score','%','Status','Completion Date'];
-      const docSections = [];
-
-      if (mode === 'individual') {
-        rows.forEach(r => {
-          docSections.push(new Paragraph({ text: r.employeeName, heading: HeadingLevel.HEADING_2 }));
-          docSections.push(new Table({ rows: [makeRow(headers, true), makeRow([r.employeeName,r.employeeId,r.jobRole,r.score,r.percentage,r.status,r.completionDate])] }));
-          ['Strengths','Improvement Areas','Recommendations'].forEach((label, li) => {
-            const vals = [r.strengths, r.improvementAreas, r.recommendations][li];
-            docSections.push(new Paragraph({ children: [new TextRun({ text: `${label}: `, bold: true }), new TextRun({ text: vals || 'N/A' })] }));
-          });
-        });
-      } else {
-        docSections.push(new Table({ rows: [makeRow(headers, true), ...rows.map(r => makeRow([r.employeeName,r.employeeId,r.jobRole,r.score,r.percentage,r.status,r.completionDate]))] }));
-      }
-
-      const docObj = new Document({ sections: [{ children: [new Paragraph({ text: assessment.title || 'Assessment Report', heading: HeadingLevel.HEADING_1 }), ...docSections] }] });
-      const buf = await Packer.toBuffer(docObj);
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}.docx"`);
-      return res.send(buf);
     }
 
-    res.status(400).json({ success: false, data: null, error: `Unsupported format: ${format}` });
+    // XLSX single-employee
+    const { default: XLSX } = await import('xlsx');
+    const headers = ['Employee Name','Email','Employee ID','Job Role','Assessment','Score','%','Grade','Classification','Status','Completion Date','Strengths','Improvement Areas','Recommendations'];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, [row.employeeName,row.employeeEmail,row.employeeId,row.jobRole,row.assessmentName,row.score,row.percentage,row.grade,row.classification,row.status,row.completionDate,row.strengths,row.improvementAreas,row.recommendations]]);
+    XLSX.utils.book_append_sheet(wb, ws, 'Report');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.xlsx"`);
+    return res.send(buf);
   } catch (e) {
-    console.error('[GET /api/assessments/:id/export-reports]', e);
+    console.error('[GET /api/assessments/:id/reports/:userId/download]', e);
     res.status(500).json({ success: false, data: null, error: e.message });
   }
 });
