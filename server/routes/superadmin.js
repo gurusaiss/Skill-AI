@@ -24,14 +24,18 @@ async function generateAccessCodes(initials, companyId, createdBy) {
   const all = await AccessCodes.getAll();
   const usedCodes = new Set((all || []).map(c => c.code));
 
-  let mgrCode, empCode;
+  let mgrCode, empCode, trainerCode, leadershipCode;
   do { mgrCode = `${pfx}-MGR-${randSuffix()}`; } while (usedCodes.has(mgrCode));
   do { empCode = `${pfx}-EMP-${randSuffix()}`; } while (usedCodes.has(empCode) || empCode === mgrCode);
+  do { trainerCode = `${pfx}-TRN-${randSuffix()}`; } while (usedCodes.has(trainerCode));
+  do { leadershipCode = `${pfx}-LDR-${randSuffix()}`; } while (usedCodes.has(leadershipCode));
 
   const now = new Date().toISOString();
   const mgr = await AccessCodes.create({ id: randomUUID(), companyId, code: mgrCode, role: 'manager', isActive: true, usageCount: 0, maxUsage: null, expiresAt: null, label: 'Default Manager Code', createdBy, createdAt: now, updatedAt: now });
   const emp = await AccessCodes.create({ id: randomUUID(), companyId, code: empCode, role: 'employee', isActive: true, usageCount: 0, maxUsage: null, expiresAt: null, label: 'Default Employee Code', createdBy, createdAt: now, updatedAt: now });
-  return { mgrCode, empCode, mgrId: mgr.id, empId: emp.id };
+  const trn = await AccessCodes.create({ id: randomUUID(), companyId, code: trainerCode, role: 'trainer', isActive: true, usageCount: 0, maxUsage: null, expiresAt: null, label: 'Default Trainer Code', createdBy, createdAt: now, updatedAt: now });
+  const ldr = await AccessCodes.create({ id: randomUUID(), companyId, code: leadershipCode, role: 'leadership', isActive: true, usageCount: 0, maxUsage: null, expiresAt: null, label: 'Default Leadership Code', createdBy, createdAt: now, updatedAt: now });
+  return { mgrCode, empCode, trainerCode, leadershipCode, mgrId: mgr.id, empId: emp.id, trnId: trn.id, ldrId: ldr.id };
 }
 
 /**
@@ -169,6 +173,8 @@ router.post('/companies', async (req, res) => {
         accessCodes: {
           managerCode: codes.mgrCode,
           employeeCode: codes.empCode,
+          trainerCode: codes.trainerCode,
+          leadershipCode: codes.leadershipCode,
         },
       },
       error: null,

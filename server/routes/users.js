@@ -11,6 +11,7 @@ import { randomUUID } from 'crypto';
 import EmailService from '../services/EmailService.js';
 import { ActivationTokens, Assessments, RoleLibrary, GeneratedContent } from '../services/DataStore.js';
 import { randomBytes } from 'crypto';
+import { getGroups, getGroupMemberships } from '../db/store.js';
 
 function generatePassword() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -185,6 +186,30 @@ function sanitizeUser(user) {
 }
 
 /**
+ * GET /api/users/role-counts
+ * Returns count per unique jobRole for employees in the same company (admin/manager)
+ */
+router.get('/role-counts', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const companyId = req.user.companyId || 'default';
+    const allUsers = await UserStore.getAllUsers({ role: 'employee' });
+    const companyEmployees = allUsers.filter(u => (u.companyId || 'default') === companyId);
+
+    const counts = {};
+    for (const u of companyEmployees) {
+      const jobRole = (u.jobRole || '').trim();
+      if (!jobRole) continue;
+      counts[jobRole] = (counts[jobRole] || 0) + 1;
+    }
+
+    res.json({ success: true, data: counts, error: null });
+  } catch (error) {
+    console.error('[User Routes] Role counts error:', error.message);
+    res.status(500).json({ success: false, data: null, error: { code: 'USER_ERROR', message: 'Failed to get role counts' } });
+  }
+});
+
+/**
  * GET /api/users
  * Get all users (admin/manager)
  */
@@ -204,9 +229,26 @@ router.get('/', authenticate, async (req, res) => {
 
     const allUsers = await UserStore.getAllUsers(filters);
     // Company isolation: admin only sees their own company's users
-    const users = (isAdmin && req.user.companyId && req.user.companyId !== 'default')
+    let users = (isAdmin && req.user.companyId && req.user.companyId !== 'default')
       ? allUsers.filter(u => (u.companyId || 'default') === req.user.companyId)
       : allUsers;
+
+    // Manager group filtering: restrict to employees in manager's groups (if any)
+    if (isManager) {
+      try {
+        const allGroups = await getGroups();
+        const managerGroups = allGroups.filter(g => g.managerId === req.user.userId);
+        if (managerGroups.length > 0) {
+          const membershipSets = await Promise.all(managerGroups.map(g => getGroupMemberships(g.id)));
+          const memberUserIds = new Set(membershipSets.flat().map(m => m.userId || m.user_id || m.memberId).filter(Boolean));
+          users = users.filter(u => memberUserIds.has(u.userId));
+        }
+        // If manager has no groups, fall through with all company employees (unchanged)
+      } catch (groupErr) {
+        console.warn('[User Routes] Group filtering failed, returning all employees:', groupErr.message);
+      }
+    }
+
     const sanitizedUsers = users.map(sanitizeUser);
 
     res.json({ success: true, data: { users: sanitizedUsers, count: sanitizedUsers.length }, error: null });

@@ -293,6 +293,8 @@ function QuestionBankModal({ role, onClose }) {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [regen, setRegen] = useState(false);
+  const [regenConfirm, setRegenConfirm] = useState(false);
+  const [regenCount, setRegenCount] = useState(50);
   const [saving, setSaving] = useState(false);
   const [editIdx, setEditIdx] = useState(null);
   const [editQ, setEditQ] = useState(null);
@@ -312,12 +314,12 @@ function QuestionBankModal({ role, onClose }) {
   };
 
   const handleRegen = async () => {
-    if (!window.confirm(`Re-generate all questions for "${role.roleName}"? This replaces the current bank.`)) return;
     setRegen(true);
     try {
-      const res = await authFetch(`/api/roles/${role.id}/regenerate-questions`, { method: 'POST', body: JSON.stringify({ questionCount: 40 }) });
+      const res = await authFetch(`/api/roles/${role.id}/regenerate-questions`, { method: 'POST', body: JSON.stringify({ questionCount: regenCount }) });
       setQuestions(res?.data?.questions ?? res?.questions ?? []);
       toast(`Regenerated ${(res?.data?.questions ?? res?.questions ?? []).length} questions`);
+      setRegenConfirm(false);
     } catch (e) { toast(e.message, 'error'); }
     finally { setRegen(false); }
   };
@@ -367,17 +369,59 @@ function QuestionBankModal({ role, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
       <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-700 flex-shrink-0">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Question Bank — {role.roleName}</h2>
-            <p className="text-xs text-slate-400 mt-0.5">{questions.length} questions · Easy: {counts.easy} · Medium: {counts.medium} · Hard: {counts.hard}</p>
+        <div className="flex-shrink-0">
+          <div className="flex items-center justify-between p-5 border-b border-slate-700">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Question Bank — {role.roleName}</h2>
+              <p className="text-xs text-slate-400 mt-0.5">{questions.length} questions · Easy: {counts.easy} · Medium: {counts.medium} · Hard: {counts.hard}</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRegenConfirm(true)}
+                disabled={regen || !role.jobDescription || regenConfirm}
+                className="text-xs px-3 py-1.5 rounded-lg bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/40 disabled:opacity-40 transition-colors"
+              >
+                {regen ? '⏳ Generating…' : '✨ Regenerate All'}
+              </button>
+              <button onClick={onClose} className="text-slate-400 hover:text-white text-xl px-2">✕</button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={handleRegen} disabled={regen || !role.jobDescription} className="text-xs px-3 py-1.5 rounded-lg bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/40 disabled:opacity-40 transition-colors">
-              {regen ? '⏳ Generating…' : '✨ Regenerate All'}
-            </button>
-            <button onClick={onClose} className="text-slate-400 hover:text-white text-xl px-2">✕</button>
-          </div>
+
+          {/* Inline regenerate confirmation panel */}
+          {regenConfirm && (
+            <div className="mx-5 my-3 p-4 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-3">
+              <p className="text-sm text-amber-300 font-medium">
+                This will replace all {questions.length} existing questions. This cannot be undone.
+              </p>
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-slate-400 whitespace-nowrap">Question count:</label>
+                <input
+                  type="number"
+                  min={20}
+                  max={100}
+                  value={regenCount}
+                  onChange={e => setRegenCount(Math.min(100, Math.max(20, parseInt(e.target.value) || 50)))}
+                  className="w-24 bg-[#0F172A] border border-slate-600 text-slate-100 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500"
+                />
+                <span className="text-xs text-slate-500">(20–100)</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setRegenConfirm(false)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs hover:border-slate-400 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRegen}
+                  disabled={regen}
+                  className="px-4 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-semibold hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                >
+                  {regen ? '⏳ Generating…' : 'Confirm Regenerate'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Filters */}

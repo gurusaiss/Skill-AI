@@ -16,11 +16,14 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
+import multer from 'multer';
 import UserStore from '../services/UserStore.js';
 import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds } from '../services/DataStore.js';
 import LLMQueue from '../services/LLMQueue.js';
 import * as db from '../db/store.js';
 import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -432,6 +435,11 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       deadline,
       duration = 30,
       difficulty, // 'easy' | 'medium' | 'hard' | undefined — filter from role question bank if set
+      easyPct,    // percentage of easy questions when pulling from bank (default 33)
+      mediumPct,  // percentage of medium questions when pulling from bank (default 33)
+      hardPct,    // percentage of hard questions when pulling from bank (default 34)
+      targetType, // 'all' | 'department' | undefined
+      department, // used when targetType === 'department'
     } = req.body;
 
     // Accept both targetGroup (correct) and groupId (legacy client bug)
@@ -442,6 +450,34 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
     }
 
     let userIds = [...(Array.isArray(targetUsers) ? targetUsers : [])];
+
+    // If targetType === 'all', fetch ALL employees in the company
+    if (targetType === 'all') {
+      try {
+        const allUsersForCompany = await UserStore.getAllUsers({});
+        const companyId = req.user.companyId || 'default';
+        const employeeIds = allUsersForCompany
+          .filter(u => u.role === 'employee' && (u.companyId || 'default') === companyId)
+          .map(u => u.userId || u.id);
+        userIds = [...new Set([...userIds, ...employeeIds])];
+      } catch (e) { console.warn('[assessment] targetType=all resolution failed:', e.message); }
+    }
+
+    // If targetType === 'department', fetch employees matching the department
+    if (targetType === 'department' && department) {
+      try {
+        const allUsersForCompany = await UserStore.getAllUsers({});
+        const companyId = req.user.companyId || 'default';
+        const deptEmployeeIds = allUsersForCompany
+          .filter(u =>
+            u.role === 'employee' &&
+            (u.companyId || 'default') === companyId &&
+            u.department === department
+          )
+          .map(u => u.userId || u.id);
+        userIds = [...new Set([...userIds, ...deptEmployeeIds])];
+      } catch (e) { console.warn('[assessment] targetType=department resolution failed:', e.message); }
+    }
 
     // If group provided, fetch all members from Supabase groups
     if (targetGroup) {
@@ -498,6 +534,36 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
             }
           } catch {}
         }
+        // If no difficulty filter but percentage distribution provided, pick from bank by difficulty pct
+        if (!questions && (easyPct != null || mediumPct != null || hardPct != null) && user.jobRole) {
+          try {
+            const roleForBank = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
+            const fullBank = roleForBank?.questionBank || [];
+            if (fullBank.length >= questionCount) {
+              const pctEasy   = easyPct   != null ? Number(easyPct)   : 33;
+              const pctMedium = mediumPct != null ? Number(mediumPct) : 33;
+              // hardPct is whatever remains to ensure total === questionCount
+              const nEasy   = Math.round(questionCount * pctEasy   / 100);
+              const nMedium = Math.round(questionCount * pctMedium / 100);
+              const nHard   = questionCount - nEasy - nMedium;
+
+              const pickN = (diff, n) => {
+                const pool = fullBank.filter(q => q.difficulty === diff);
+                return [...pool].sort(() => Math.random() - 0.5).slice(0, n);
+              };
+
+              const picked = [
+                ...pickN('easy',   nEasy),
+                ...pickN('medium', nMedium),
+                ...pickN('hard',   Math.max(0, nHard)),
+              ];
+
+              if (picked.length >= questionCount) {
+                questions = picked.slice(0, questionCount);
+              }
+            }
+          } catch {}
+        }
         if (!questions) {
           questions = await generateQuestionsFromJD({
             jobRole: user.jobRole || 'Employee',
@@ -546,6 +612,129 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
     res.status(201).json({ success: true, data: saved || newAssessment, error: null });
   } catch (e) {
     console.error('[POST /api/assessments]', e);
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * POST /api/assessments/manual
+ * Create assessment with pre-built questions — no LLM generation.
+ * Body: { title, targetUsers, questionCount, assessmentDate, duration, deadline, questions }
+ *   questions: flat array (same for all users) OR array of arrays (per-user, index-aligned with targetUsers)
+ */
+router.post('/manual', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const {
+      title,
+      targetUsers = [],
+      questionCount,
+      assessmentDate,
+      deadline,
+      duration = 30,
+      questions: rawQuestions = [],
+    } = req.body;
+
+    if (!title) {
+      return res.status(400).json({ success: false, data: null, error: 'Title is required' });
+    }
+
+    if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
+      return res.status(400).json({ success: false, data: null, error: 'questions array is required and must not be empty' });
+    }
+
+    const userIds = [...new Set(Array.isArray(targetUsers) ? targetUsers : [])];
+
+    // Determine if questions is an array-of-arrays (per-user) or flat (shared)
+    const isPerUser = Array.isArray(rawQuestions[0]);
+
+    // Batch-fetch all target users
+    const allUsers = await UserStore.getAllUsers({});
+    const userMap = new Map(allUsers.map(u => [u.userId || u.id, u]));
+    const validUsers = userIds.map(id => userMap.get(id)).filter(Boolean);
+
+    const assignedAt = new Date().toISOString();
+    const employeeAssignments = validUsers.map((user, idx) => {
+      const userId = user.userId || user.id;
+      const questions = isPerUser
+        ? (Array.isArray(rawQuestions[idx]) ? rawQuestions[idx] : rawQuestions[0])
+        : rawQuestions;
+
+      return {
+        userId,
+        userName: user.name,
+        userEmail: user.email,
+        jobRole: user.jobRole || '',
+        questions,
+        status: 'assigned',
+        assignedAt,
+        startedAt: null,
+        submittedAt: null,
+      };
+    });
+
+    const resolvedQuestionCount = questionCount || (isPerUser ? (rawQuestions[0]?.length || 0) : rawQuestions.length);
+
+    const newAssessment = {
+      id: randomUUID(),
+      title,
+      targetGroup: null,
+      targetUsers: userIds,
+      employeeAssignments,
+      questionCount: resolvedQuestionCount,
+      questionTypes: [...new Set((isPerUser ? rawQuestions[0] : rawQuestions).map(q => q.type).filter(Boolean))],
+      difficulty: null,
+      assessmentDate: assessmentDate || null,
+      deadline: deadline || null,
+      duration,
+      createdBy: req.user.userId,
+      companyId: req.user.companyId || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isActive: true,
+      isManual: true,
+    };
+
+    const saved = await Assessments.create(newAssessment);
+    res.status(201).json({ success: true, data: saved || newAssessment, error: null });
+  } catch (e) {
+    console.error('[POST /api/assessments/manual]', e);
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * POST /api/assessments/parse-questionnaire
+ * Parse an uploaded XLSX questionnaire file into questions array
+ */
+router.post('/parse-questionnaire', authenticate, requireRole('admin', 'manager'), upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, data: null, error: 'No file uploaded' });
+    const { default: XLSX } = await import('xlsx');
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    const questions = rows.map(row => {
+      const get = (...keys) => keys.map(k => row[k] || row[k.toLowerCase()] || row[k.toUpperCase()] || '').find(Boolean) || '';
+      const ans = (get('Correct Answer', 'Answer', 'Correct') || 'A').replace(/[^A-D]/gi, '').toUpperCase() || 'A';
+      const diff = get('Difficulty', 'difficulty').toLowerCase();
+      return {
+        type: 'mcq',
+        question: get('Question', 'question') || '',
+        options: [
+          'A) ' + get('Option A', 'OptionA', 'A'),
+          'B) ' + get('Option B', 'OptionB', 'B'),
+          'C) ' + get('Option C', 'OptionC', 'C'),
+          'D) ' + get('Option D', 'OptionD', 'D'),
+        ],
+        answer: ans,
+        difficulty: ['easy', 'medium', 'hard'].includes(diff) ? diff : 'medium',
+        skillArea: get('Category', 'Skill Area', 'SkillArea', 'category') || '',
+        explanation: get('Explanation', 'explanation') || '',
+      };
+    }).filter(q => q.question);
+    res.json({ success: true, data: { questions, count: questions.length }, error: null });
+  } catch (e) {
+    console.error('[POST /api/assessments/parse-questionnaire]', e);
     res.status(500).json({ success: false, data: null, error: e.message });
   }
 });
