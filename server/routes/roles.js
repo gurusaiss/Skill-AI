@@ -271,6 +271,7 @@ router.post('/import', authenticate, requireRole('admin'), upload.single('file')
     const results = { created: 0, skipped: 0, errors: [] };
     const existing = await RoleLibrary.getByCompany(companyId);
     const existingNames = new Set(existing.map(r => r.roleName?.toLowerCase().trim()));
+    const qbankQueue = [];
 
     for (const raw of rows) {
       const { roleName, department, jobDescription, skills, status } = normalise(raw);
@@ -292,9 +293,40 @@ router.post('/import', authenticate, requireRole('admin'), upload.single('file')
       await RoleLibrary.create(doc);
       existingNames.add(roleName.toLowerCase());
       results.created++;
+      if (doc.jobDescription) qbankQueue.push(doc);
     }
 
     res.json({ success: true, data: results });
+
+    // Auto-generate question banks sequentially (rate-limit safe)
+    if (qbankQueue.length > 0) {
+      setImmediate(async () => {
+        for (const doc of qbankQueue) {
+          try {
+            const questions = await generateQuestionsFromJD({
+              jobRole: doc.roleName,
+              jobDescription: doc.jobDescription,
+              jdSkills: doc.skills,
+              questionCount: 40,
+              questionTypes: ['mcq'],
+              employeeSeed: `qbank-${doc.id}`,
+            });
+            if (questions?.length) {
+              const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
+              await RoleLibrary.update(doc.id, {
+                questionBank: bank,
+                questionBankGeneratedAt: new Date().toISOString(),
+                questionBankCount: bank.length,
+                updatedAt: new Date().toISOString(),
+              });
+              console.log(`[auto-qbank] Generated ${bank.length} questions for imported role "${doc.roleName}"`);
+            }
+          } catch (err) {
+            console.error(`[auto-qbank] Failed for imported role "${doc.roleName}":`, err.message);
+          }
+        }
+      });
+    }
   } catch (e) {
     console.error('[POST /api/roles/import]', e);
     res.status(500).json({ success: false, error: e.message });
