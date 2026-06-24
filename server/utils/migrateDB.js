@@ -269,6 +269,12 @@ const ASSIGNMENTS_COLS_SQL = `
   ALTER TABLE assignments ADD COLUMN IF NOT EXISTS module_name      TEXT;
 `;
 
+// Modules table column backfill — tables created before content/sessions columns were added
+const MODULES_COLS_SQL = `
+  ALTER TABLE modules ADD COLUMN IF NOT EXISTS content  JSONB DEFAULT '{}'::jsonb;
+  ALTER TABLE modules ADD COLUMN IF NOT EXISTS sessions JSONB DEFAULT '[]'::jsonb;
+`;
+
 const USER_COLS_SQL = `
   ALTER TABLE users ADD COLUMN IF NOT EXISTS job_role              TEXT;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS department            TEXT;
@@ -334,13 +340,15 @@ export async function migrateDB() {
   }
 
   // Always attempt to add new columns to existing tables (idempotent)
-  try {
-    await fetch(`${url}/rest/v1/rpc/exec_sql`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': key, 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({ sql: ASSIGNMENTS_COLS_SQL }),
-    });
-  } catch (_) { /* silent — RPC may not exist */ }
+  for (const sql of [ASSIGNMENTS_COLS_SQL, MODULES_COLS_SQL]) {
+    try {
+      await fetch(`${url}/rest/v1/rpc/exec_sql`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': key, 'Authorization': `Bearer ${key}` },
+        body: JSON.stringify({ sql }),
+      });
+    } catch (_) { /* silent — RPC may not exist */ }
+  }
 
   if (missing.length === 0) {
     console.log('[migrate] ✅ All Supabase tables exist');

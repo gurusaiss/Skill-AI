@@ -544,9 +544,16 @@ class UserStore {
       if (updates.sessionProgress !== undefined)  sbUpdates.session_progress = updates.sessionProgress;
       if (updates.session_progress !== undefined) sbUpdates.session_progress = updates.session_progress;
       if (updates.progress_data !== undefined)    sbUpdates.progress_data = updates.progress_data;
-      const { data, error } = await sb.from('assignments')
+      let { data, error } = await sb.from('assignments')
         .update(sbUpdates)
         .eq('id', assignmentId).select().maybeSingle();
+      // If session_progress/progress_data columns don't exist yet, retry without them
+      if (error && (error.code === '42703' || error.message?.includes('session_progress') || error.message?.includes('progress_data'))) {
+        const { session_progress: _sp, progress_data: _pd, ...sbUpdatesNoProgress } = sbUpdates;
+        const retry = await sb.from('assignments').update(sbUpdatesNoProgress).eq('id', assignmentId).select().maybeSingle();
+        error = retry.error;
+        data  = retry.data;
+      }
       if (error) throw new Error(error.message);
       return data;
     }
