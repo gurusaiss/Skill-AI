@@ -673,11 +673,16 @@ export default function ModuleSession() {
       // Merge session completion — never overwrite previous sessions
       const mergedProgress = { ...existingProgress, [sessionIndex]: 'completed' };
 
-      // Calculate overall progress
-      const totalSessions = module?.sessions?.length || 1;
+      // Calculate overall progress from ACTUAL session count — never default to 1 (causes instant 100%)
+      const allSessions = module?.sessions || module?.content?.sessions || current?.module?.sessions || [];
+      const totalSessions = allSessions.length > 0
+        ? allSessions.length
+        : Math.max(Object.keys(mergedProgress).length, sessionIndex + 1);
       const completedCount = Object.values(mergedProgress).filter(s => s === 'completed').length;
-      const newProgress = Math.min(100, Math.round((completedCount / totalSessions) * 100));
-      const newStatus = newProgress >= 100 ? 'completed' : 'in_progress';
+      const newProgress = totalSessions > 0 ? Math.min(100, Math.round((completedCount / totalSessions) * 100)) : 0;
+      // Only mark completed when ALL sessions are truly done
+      const allDone = allSessions.length > 0 && completedCount >= allSessions.length;
+      const newStatus = allDone ? 'completed' : 'in_progress';
 
       // Build per-session report for analytics/reports
       const sessionReport = {

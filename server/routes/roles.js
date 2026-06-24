@@ -62,6 +62,38 @@ async function parseFile(buffer, mimetype, originalname) {
   return utils.sheet_to_json(ws, { defval: '' });
 }
 
+// ── POST /api/roles/parse-jd — extract text from uploaded JD file ─────────────
+// File is processed in-memory and immediately discarded — only extracted text is returned
+router.post('/parse-jd', authenticate, requireRole('admin', 'manager'), upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
+    const ext = (req.file.originalname?.split('.').pop() || '').toLowerCase();
+    let text = '';
+
+    if (ext === 'pdf') {
+      const pdfParse = (await import('pdf-parse')).default;
+      const result = await pdfParse(req.file.buffer);
+      text = result.text || '';
+    } else if (ext === 'docx' || ext === 'doc') {
+      const mammoth = (await import('mammoth')).default;
+      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      text = result.value || '';
+    } else {
+      // txt, rtf, csv and any other text-based format
+      text = req.file.buffer.toString('utf-8');
+    }
+
+    // Preserve structure: collapse excessive blank lines but keep headings/bullets
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (!text) return res.status(400).json({ success: false, error: 'Could not extract text from file' });
+
+    res.json({ success: true, data: { text, length: text.length, ext } });
+  } catch (e) {
+    console.error('[POST /api/roles/parse-jd]', e);
+    res.status(500).json({ success: false, error: `Failed to parse file: ${e.message}` });
+  }
+});
+
 // ── GET /api/roles — list ─────────────────────────────────────────────────────
 router.get('/', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
@@ -130,6 +162,34 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
     };
     const saved = await RoleLibrary.create(doc);
     res.status(201).json({ success: true, data: saved });
+
+    // Auto-generate question bank in background (30–50 questions with difficulty)
+    if (doc.jobDescription) {
+      setImmediate(async () => {
+        try {
+          const questions = await generateQuestionsFromJD({
+            jobRole: doc.roleName,
+            jobDescription: doc.jobDescription,
+            jdSkills: doc.skills,
+            questionCount: 40,
+            questionTypes: ['mcq'],
+            employeeSeed: `qbank-${doc.id}-${Date.now()}`,
+          });
+          if (questions?.length) {
+            const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
+            await RoleLibrary.update(doc.id, {
+              questionBank: bank,
+              questionBankGeneratedAt: new Date().toISOString(),
+              questionBankCount: bank.length,
+              updatedAt: new Date().toISOString(),
+            });
+            console.log(`[auto-qbank] Generated ${bank.length} questions for role "${doc.roleName}"`);
+          }
+        } catch (e) {
+          console.error(`[auto-qbank] Failed for role "${doc.roleName}":`, e.message);
+        }
+      });
+    }
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -152,6 +212,38 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
     };
     const updated = await RoleLibrary.update(req.params.id, updates);
     res.json({ success: true, data: updated });
+
+    // Regenerate question bank in background if JD changed
+    const jdChanged = jobDescription !== undefined && jobDescription !== existing.jobDescription;
+    if (jdChanged && (updates.jobDescription || existing.jobDescription)) {
+      const effectiveJD = updates.jobDescription || existing.jobDescription;
+      const effectiveRole = updates.roleName || existing.roleName;
+      const effectiveSkills = updates.skills || existing.skills || [];
+      setImmediate(async () => {
+        try {
+          const questions = await generateQuestionsFromJD({
+            jobRole: effectiveRole,
+            jobDescription: effectiveJD,
+            jdSkills: effectiveSkills,
+            questionCount: 40,
+            questionTypes: ['mcq'],
+            employeeSeed: `qbank-${req.params.id}-upd-${Date.now()}`,
+          });
+          if (questions?.length) {
+            const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
+            await RoleLibrary.update(req.params.id, {
+              questionBank: bank,
+              questionBankGeneratedAt: new Date().toISOString(),
+              questionBankCount: bank.length,
+              updatedAt: new Date().toISOString(),
+            });
+            console.log(`[auto-qbank] Regenerated ${bank.length} questions for role "${effectiveRole}" (JD updated)`);
+          }
+        } catch (e) {
+          console.error(`[auto-qbank] Failed regen for role "${effectiveRole}":`, e.message);
+        }
+      });
+    }
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -398,6 +490,98 @@ router.post('/bulk-generate-assessments', authenticate, requireRole('admin'), as
       console.log(`[bulk-generate] Complete: ${done}/${activeRoles.length} templates created`);
     });
   } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── GET /api/roles/:id/questions — get full question bank ─────────────────────
+router.get('/:id/questions', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+    res.json({ success: true, data: role.questionBank || [], meta: { count: (role.questionBank || []).length, generatedAt: role.questionBankGeneratedAt } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── PUT /api/roles/:id/questions — replace entire question bank ───────────────
+router.put('/:id/questions', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+    const { questions } = req.body;
+    if (!Array.isArray(questions)) return res.status(400).json({ success: false, error: 'questions must be an array' });
+    await RoleLibrary.update(req.params.id, { questionBank: questions, questionBankCount: questions.length, updatedAt: new Date().toISOString() });
+    res.json({ success: true, data: questions });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── POST /api/roles/:id/questions — add single question ──────────────────────
+router.post('/:id/questions', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+    const qbank = [...(role.questionBank || [])];
+    const newQ = {
+      id: randomUUID(),
+      type: req.body.type || 'mcq',
+      question: req.body.question || '',
+      difficulty: req.body.difficulty || 'medium',
+      options: req.body.options || ['A) ', 'B) ', 'C) ', 'D) '],
+      answer: req.body.answer || '',
+      explanation: req.body.explanation || '',
+      skillArea: req.body.skillArea || 'General',
+      createdAt: new Date().toISOString(),
+    };
+    qbank.push(newQ);
+    await RoleLibrary.update(req.params.id, { questionBank: qbank, questionBankCount: qbank.length, updatedAt: new Date().toISOString() });
+    res.status(201).json({ success: true, data: newQ });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── DELETE /api/roles/:id/questions/:qid — remove one question ───────────────
+router.delete('/:id/questions/:qid', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+    const qbank = (role.questionBank || []).filter(q => q.id !== req.params.qid);
+    await RoleLibrary.update(req.params.id, { questionBank: qbank, questionBankCount: qbank.length, updatedAt: new Date().toISOString() });
+    res.json({ success: true, data: { id: req.params.qid } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── POST /api/roles/:id/regenerate-questions — re-generate question bank ──────
+router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+    if (!role.jobDescription) return res.status(400).json({ success: false, error: 'Role has no job description — add a JD first' });
+    const { questionCount = 40 } = req.body;
+    const questions = await generateQuestionsFromJD({
+      jobRole: role.roleName,
+      jobDescription: role.jobDescription,
+      jdSkills: role.skills || [],
+      questionCount: Math.min(questionCount, 50),
+      questionTypes: ['mcq'],
+      employeeSeed: `qbank-${role.id}-regen-${Date.now()}`,
+    });
+    const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
+    await RoleLibrary.update(req.params.id, {
+      questionBank: bank,
+      questionBankGeneratedAt: new Date().toISOString(),
+      questionBankCount: bank.length,
+      updatedAt: new Date().toISOString(),
+    });
+    res.json({ success: true, data: { count: bank.length, questions: bank } });
+  } catch (e) {
+    console.error('[POST /api/roles/:id/regenerate-questions]', e);
     res.status(500).json({ success: false, error: e.message });
   }
 });

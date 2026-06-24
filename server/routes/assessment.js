@@ -431,6 +431,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       assessmentDate,
       deadline,
       duration = 30,
+      difficulty, // 'easy' | 'medium' | 'hard' | undefined — filter from role question bank if set
     } = req.body;
 
     // Accept both targetGroup (correct) and groupId (legacy client bug)
@@ -484,14 +485,29 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
           } catch {}
         }
 
-        const questions = await generateQuestionsFromJD({
-          jobRole: user.jobRole || 'Employee',
-          jobDescription: resolvedJD,
-          jdSkills: resolvedSkills,
-          questionCount,
-          questionTypes,
-          employeeSeed: `${userId}-${Date.now()}`,
-        });
+        // If difficulty filter is set, try to pull from the role's pre-generated question bank
+        let questions = null;
+        if (difficulty && user.jobRole) {
+          try {
+            const roleForBank = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
+            const bank = (roleForBank?.questionBank || []).filter(q => q.difficulty === difficulty);
+            if (bank.length >= questionCount) {
+              // Shuffle and pick questionCount questions from the bank
+              const shuffled = [...bank].sort(() => Math.random() - 0.5);
+              questions = shuffled.slice(0, questionCount);
+            }
+          } catch {}
+        }
+        if (!questions) {
+          questions = await generateQuestionsFromJD({
+            jobRole: user.jobRole || 'Employee',
+            jobDescription: resolvedJD,
+            jdSkills: resolvedSkills,
+            questionCount,
+            questionTypes,
+            employeeSeed: `${userId}-${Date.now()}`,
+          });
+        }
 
         return {
           userId,
@@ -515,6 +531,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       employeeAssignments,
       questionCount,
       questionTypes,
+      difficulty: difficulty || null,
       assessmentDate: assessmentDate || null,
       deadline: deadline || null,
       duration,
