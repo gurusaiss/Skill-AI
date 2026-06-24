@@ -962,6 +962,33 @@ Return ONLY valid JSON matching exactly this structure:
         }
         console.log(`[auto-assign] Module created: id=${moduleId}`);
 
+        // Verify sessions were persisted — re-fetch and patch if content is empty
+        try {
+          const saved = await db.getModuleById(moduleId);
+          const savedSessions = saved?.content?.sessions || saved?.sessions || [];
+          if (savedSessions.length === 0 && sessions.length > 0) {
+            console.warn(`[auto-assign] Sessions missing from saved module ${moduleId} — patching content`);
+            await db.updateModule(moduleId, {
+              content: {
+                isMandatory: true,
+                sessions,
+                objectives: moduleContent?.objectives || skills.map(s => `Master ${s} skills`),
+                assessmentSource: report.id,
+                jobRole,
+                assessmentGaps: skills,
+                classification,
+                score,
+                startDate: startDate.toISOString(),
+                endDate: endDate.toISOString(),
+                contentGeneratedAt: new Date().toISOString(),
+              },
+            });
+            console.log(`[auto-assign] Sessions patched for module ${moduleId}`);
+          }
+        } catch (verifyErr) {
+          console.warn(`[auto-assign] Session verify failed for ${moduleId}:`, verifyErr.message);
+        }
+
         // Create assignment — assigned_by MUST be null (not 'system') due to FK constraint
         await UserStore.createAssignment({
           type: 'module',

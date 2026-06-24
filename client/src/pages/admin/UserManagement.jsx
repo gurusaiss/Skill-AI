@@ -1054,6 +1054,19 @@ function ImportModal({ onClose, onImported, setToast }) {
       setResult(res);
       setStep('result');
       onImported();
+      // Auto-download credential Excel if returned
+      if (res?.credentialExcel) {
+        try {
+          const bin = atob(res.credentialExcel);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = `employee-credentials-${Date.now()}.xlsx`; a.click();
+          URL.revokeObjectURL(url);
+        } catch (_) {}
+      }
     } catch (e) {
       setToast({ message: e.message || 'Import failed', type: 'error' });
     } finally { setImporting(false); }
@@ -1222,8 +1235,24 @@ function ImportModal({ onClose, onImported, setToast }) {
                     </div>
                   ))}
                 </div>
-                {result.results?.created?.some(u => u.tempPassword) && (
-                  <p className="text-xs text-slate-500 mt-2">⚠️ Save these temp passwords — they won't be shown again.</p>
+                {result.credentialExcel && (
+                  <button
+                    onClick={() => {
+                      try {
+                        const bin = atob(result.credentialExcel);
+                        const bytes = new Uint8Array(bin.length);
+                        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                        const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url; a.download = 'employee-credentials.xlsx'; a.click();
+                        URL.revokeObjectURL(url);
+                      } catch (_) {}
+                    }}
+                    className="mt-3 w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                  >
+                    ⬇ Download Credentials Excel (Name / Email / Password)
+                  </button>
                 )}
               </div>
             )}

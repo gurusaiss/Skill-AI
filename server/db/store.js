@@ -236,7 +236,7 @@ export async function createModule(module, createdBy) {
     const { data, error } = await supabase.from('modules').upsert([payload], { onConflict: 'id' }).select().single();
     if (error) {
       console.error('[createModule] Supabase error:', JSON.stringify(error));
-      // If content column doesn't exist yet, retry without it
+      // content column might not exist on older tables — retry without it, then patch
       if (error.code === '42703' || (error.message && error.message.includes('content'))) {
         const { content: _c, ...payloadNoContent } = payload;
         const retry = await supabase.from('modules').upsert([payloadNoContent], { onConflict: 'id' }).select().single();
@@ -244,6 +244,10 @@ export async function createModule(module, createdBy) {
           console.error('[createModule] Retry error:', JSON.stringify(retry.error));
           throw retry.error;
         }
+        // Immediately try to patch content back in — attempt ADD COLUMN + UPDATE
+        try {
+          await supabase.from('modules').update({ content: module.content || {} }).eq('id', id);
+        } catch (_) { /* column still missing — sessions stored in file fallback below */ }
         return normalizeModule({ ...retry.data, content: module.content || {} });
       }
       throw error;
