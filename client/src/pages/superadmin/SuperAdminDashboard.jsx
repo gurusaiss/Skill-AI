@@ -151,6 +151,30 @@ function CompanyCreatedModal({ company, onClose }) {
                   <CopyBtn text={company.employeeCode} small />
                 </div>
               </div>
+              {company.trainerCode && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Trainer Code</span>
+                    <span className="text-xs text-slate-500">Role auto-assigned on signup</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-slate-900 rounded-xl px-4 py-2.5 border border-amber-400/30">
+                    <span className="font-mono text-amber-400 text-sm flex-1 tracking-widest">{company.trainerCode}</span>
+                    <CopyBtn text={company.trainerCode} small />
+                  </div>
+                </div>
+              )}
+              {company.leadershipCode && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-cyan-300 uppercase tracking-wider">Leadership Code</span>
+                    <span className="text-xs text-slate-500">Role auto-assigned on signup</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-slate-900 rounded-xl px-4 py-2.5 border border-cyan-500/30">
+                    <span className="font-mono text-cyan-300 text-sm flex-1 tracking-widest">{company.leadershipCode}</span>
+                    <CopyBtn text={company.leadershipCode} small />
+                  </div>
+                </div>
+              )}
             </div>
             <p className="text-slate-500 text-xs mt-3">Codes are also visible in the Company Codes panel at any time.</p>
           </div>
@@ -437,6 +461,12 @@ function CreateCompanyModal({ onClose, onCreated, setToast }) {
             </div>
           </div>
 
+          <div className="bg-slate-900/40 border border-slate-700/40 rounded-xl px-4 py-3">
+            <p className="text-xs text-slate-400">
+              After creation, you'll receive access codes for: <span className="text-amber-300 font-semibold">Employee</span>, <span className="text-amber-300 font-semibold">Manager</span>, <span className="text-amber-400 font-semibold">Trainer</span>, and <span className="text-cyan-300 font-semibold">Leadership</span> roles.
+            </p>
+          </div>
+
           <div className="flex gap-3 pt-2">
             <button
               type="button"
@@ -697,6 +727,8 @@ export default function SuperAdminDashboard() {
       tempPassword: result?.tempPassword || null,
       managerCode: result?.accessCodes?.managerCode || null,
       employeeCode: result?.accessCodes?.employeeCode || null,
+      trainerCode: result?.accessCodes?.trainerCode || null,
+      leadershipCode: result?.accessCodes?.leadershipCode || null,
     });
   };
 

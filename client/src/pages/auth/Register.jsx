@@ -7,6 +7,8 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 const ROLE_BADGE = {
   manager: { label: 'Manager', bg: 'bg-amber-500/15 border-amber-500/40 text-amber-300' },
   employee: { label: 'Employee', bg: 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300' },
+  trainer: { label: 'Trainer', bg: 'bg-teal-500/15 border-teal-500/40 text-teal-300' },
+  leadership: { label: 'Leadership', bg: 'bg-purple-500/15 border-purple-500/40 text-purple-300' },
 };
 
 // Fuzzy match a typed role against the server-side role list (client preview only)

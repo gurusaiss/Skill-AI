@@ -278,6 +278,7 @@ export default function ModuleManagement() {
   const [agentStep, setAgentStep] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [extResources, setExtResources] = useState([]);
 
   const [form, setForm] = useState({
     title: '', description: '', category: 'Web Development', difficulty: 'beginner',
@@ -403,11 +404,15 @@ export default function ModuleManagement() {
     setSelectedFileName('');
     setAgentStep(0);
     setGenerating(false);
+    setExtResources([]);
     resetForm();
   };
 
   const openEdit = (mod) => {
     setEditing(mod);
+    // Load structured external resources (objects with title/url/type)
+    const existingExtResources = (mod.resources || []).filter(r => typeof r === 'object' && r !== null);
+    setExtResources(existingExtResources);
     setForm({
       title: mod.title || '',
       description: mod.description || '',
@@ -449,7 +454,8 @@ export default function ModuleManagement() {
     // Strip empty strings from list fields before sending
     const cleanSkills    = (form.skills    || []).map(s => (typeof s === 'string' ? s.trim() : s?.name || '')).filter(Boolean);
     const cleanTasks     = (form.tasks     || []).map(s => (typeof s === 'string' ? s.trim() : s)).filter(Boolean);
-    const cleanResources = (form.resources || []).map(s => (typeof s === 'string' ? s.trim() : s)).filter(Boolean);
+    // External resources: only include entries with at least a URL
+    const cleanExtResources = extResources.filter(r => r.url && r.url.trim());
 
     const modulePayload = {
       title: cleanTitle,
@@ -459,7 +465,7 @@ export default function ModuleManagement() {
       estimatedDuration: form.estimatedDuration || '7 days',
       skills: cleanSkills.length ? cleanSkills : [cleanTitle],
       tasks: cleanTasks,
-      resources: cleanResources,
+      resources: cleanExtResources,
       completionCriteria: form.completionCriteria || 'Complete all tasks',
       targetRoles: (form.targetRoles || '').split(/[,;|]/).map(r => r.trim()).filter(Boolean),
       progressTracking: true,
@@ -832,6 +838,21 @@ export default function ModuleManagement() {
                           {skills.length > 2 && <span className="text-xs text-slate-600">+{skills.length - 2}</span>}
                         </div>
                       )}
+                      {(mod.resources || []).filter(r => typeof r === 'object' && r !== null).length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-slate-700/40">
+                          <div className="flex flex-wrap gap-1.5">
+                            {(mod.resources || []).filter(r => typeof r === 'object' && r !== null).slice(0, 3).map((r, i) => (
+                              <a key={i} href={r.url} target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 transition-colors">
+                                🔗 {r.title || 'Resource ' + (i+1)}
+                              </a>
+                            ))}
+                            {(mod.resources || []).filter(r => typeof r === 'object' && r !== null).length > 3 && (
+                              <span className="text-xs text-slate-500">+{(mod.resources || []).filter(r => typeof r === 'object' && r !== null).length - 3} more</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     {/* Target / Role */}
                     <div className="min-w-0">
@@ -1171,6 +1192,30 @@ export default function ModuleManagement() {
                   className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
                 />
                 <p className="text-xs text-slate-500 mt-1">Employees assigned these roles will automatically receive this module.</p>
+              </div>
+
+              {/* External Resources */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    External Resources <span className="text-slate-600 font-normal normal-case">(optional)</span>
+                  </label>
+                  <button type="button" onClick={() => setExtResources(p => [...p, { title: '', url: '', type: 'link' }])}
+                    className="text-xs px-2.5 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40">
+                    + Add Link
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 mb-2">Add Google Drive, OneDrive, SharePoint, or any other external links</p>
+                {extResources.map((r, i) => (
+                  <div key={i} className="flex gap-2 mb-2">
+                    <input value={r.title} onChange={e => { const n=[...extResources]; n[i]={...n[i],title:e.target.value}; setExtResources(n); }}
+                      placeholder="Resource name (e.g. Training Slides)" className="flex-1 bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                    <input value={r.url} onChange={e => { const n=[...extResources]; n[i]={...n[i],url:e.target.value}; setExtResources(n); }}
+                      placeholder="https://drive.google.com/..." className="flex-[2] bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                    <button type="button" onClick={() => setExtResources(p => p.filter((_,j)=>j!==i))} className="text-red-400 hover:text-red-300 px-2">✕</button>
+                  </div>
+                ))}
+                {extResources.length === 0 && <p className="text-xs text-slate-600 py-1">No external resources added.</p>}
               </div>
 
               {/* Sessions + Quiz editor */}

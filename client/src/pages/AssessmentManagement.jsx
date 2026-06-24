@@ -35,9 +35,13 @@ const EMPTY_MODAL = {
   targetType: 'individual',
   selectedUsers: [],
   selectedGroup: '',
+  department: '',
   questionCount: 10,
   questionTypes: ['mcq'],
   difficulty: '',
+  easyPct: 34,
+  mediumPct: 33,
+  hardPct: 33,
   assessmentDate: '',
   duration: 30,
   deadline: '',
@@ -61,6 +65,7 @@ export default function AssessmentManagement() {
   // Modal state
   const [showModal, setShowModal] = useState(false);
   const [modal, setModal] = useState(EMPTY_MODAL);
+  const [showManualModal, setShowManualModal] = useState(false);
   const [creating, setCreating] = useState(false);
 
   // Detail view
@@ -158,11 +163,14 @@ export default function AssessmentManagement() {
 
   const canProceedStep1 = () => {
     if (modal.targetType === 'individual') return modal.selectedUsers.length > 0;
-    return !!modal.selectedGroup;
+    if (modal.targetType === 'group') return !!modal.selectedGroup;
+    if (modal.targetType === 'all') return true;
+    if (modal.targetType === 'department') return !!modal.department.trim();
+    return false;
   };
 
   const canProceedStep2 = () => {
-    return modal.assessmentDate && modal.questionCount >= 5 && modal.questionCount <= 30 && modal.title.trim();
+    return modal.assessmentDate && modal.questionCount >= 5 && modal.questionCount <= 50 && modal.title.trim();
   };
 
   const handleCreate = async () => {
@@ -175,13 +183,18 @@ export default function AssessmentManagement() {
       const payload = {
         title: modal.title.trim(),
         targetUsers,
+        targetType: modal.targetType,
         questionCount: modal.questionCount,
         questionTypes: modal.questionTypes,
         difficulty: modal.difficulty || undefined,
+        easyPct: modal.easyPct,
+        mediumPct: modal.mediumPct,
+        hardPct: modal.hardPct,
         assessmentDate: modal.assessmentDate,
         duration: modal.duration,
         deadline: modal.deadline,
         ...(modal.targetType === 'group' && modal.selectedGroup ? { targetGroup: modal.selectedGroup } : {}),
+        ...(modal.targetType === 'department' ? { department: modal.department } : {}),
       };
 
       const saved = await authFetch('/api/assessments', {
@@ -388,12 +401,20 @@ export default function AssessmentManagement() {
             <h1 className="text-3xl font-black text-white">Assessment Management</h1>
             <p className="text-slate-400 text-sm mt-0.5">Create employee-specific assessments based on job roles and JDs</p>
           </div>
-          <button
-            onClick={openModal}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all shadow-lg shadow-indigo-500/20"
-          >
-            + Create Assessment
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowManualModal(true)}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm font-bold transition-all shadow-lg shadow-emerald-500/20"
+            >
+              ✏ Manual Assessment
+            </button>
+            <button
+              onClick={openModal}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all shadow-lg shadow-indigo-500/20"
+            >
+              + AI Assessment
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -651,25 +672,32 @@ export default function AssessmentManagement() {
                 {/* Target type radio */}
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Target</label>
-                  <div className="flex gap-3">
+                  <div className="grid grid-cols-2 gap-2">
                     {[
-                      { value: 'individual', label: 'Individual Employees' },
-                      { value: 'group', label: 'Group' },
+                      { value: 'individual', label: 'Individual Employees', icon: '👤' },
+                      { value: 'group', label: 'By Group', icon: '👥' },
+                      { value: 'department', label: 'By Department', icon: '🏢' },
+                      { value: 'all', label: 'All Employees', icon: '🌐' },
                     ].map(opt => (
                       <button
                         key={opt.value}
                         type="button"
-                        onClick={() => updateModal({ targetType: opt.value, selectedUsers: [], selectedGroup: '' })}
-                        className={`flex-1 py-2.5 px-4 rounded-xl border text-sm font-semibold transition-all ${
+                        onClick={() => updateModal({ targetType: opt.value, selectedUsers: [], selectedGroup: '', department: '' })}
+                        className={`py-2.5 px-3 rounded-xl border text-xs font-semibold transition-all flex items-center gap-2 ${
                           modal.targetType === opt.value
                             ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-300'
                             : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
                         }`}
                       >
-                        {opt.label}
+                        <span>{opt.icon}</span>{opt.label}
                       </button>
                     ))}
                   </div>
+                  {modal.targetType === 'all' && (
+                    <div className="mt-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300">
+                      Assessment will be assigned to <strong>all active employees</strong> in your company.
+                    </div>
+                  )}
                 </div>
 
                 {/* Individual: employee list */}
@@ -735,6 +763,21 @@ export default function AssessmentManagement() {
                         })}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Department: text input */}
+                {modal.targetType === 'department' && (
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Department Name</label>
+                    <input
+                      type="text"
+                      value={modal.department}
+                      onChange={e => updateModal({ department: e.target.value })}
+                      placeholder="e.g. Engineering, Marketing, HR"
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">All employees with this department will be assigned</p>
                   </div>
                 )}
 
@@ -808,16 +851,45 @@ export default function AssessmentManagement() {
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
                     Question Count: <span className="text-indigo-400">{modal.questionCount}</span>
-                    <span className="text-slate-600 font-normal ml-1">(5–30)</span>
+                    <span className="text-slate-600 font-normal ml-1">(5–50)</span>
                   </label>
                   <input
                     type="number"
                     min={5}
-                    max={30}
+                    max={50}
                     value={modal.questionCount}
-                    onChange={e => updateModal({ questionCount: Math.min(30, Math.max(5, parseInt(e.target.value) || 5)) })}
+                    onChange={e => updateModal({ questionCount: Math.min(50, Math.max(5, parseInt(e.target.value) || 5)) })}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
                   />
+                </div>
+
+                {/* Difficulty Distribution */}
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                    Difficulty Distribution <span className="text-slate-600 font-normal normal-case">(% each — used when pulling from question bank)</span>
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { key: 'easyPct', label: 'Easy %', color: 'text-emerald-400' },
+                      { key: 'mediumPct', label: 'Medium %', color: 'text-amber-400' },
+                      { key: 'hardPct', label: 'Hard %', color: 'text-red-400' },
+                    ].map(({ key, label, color }) => (
+                      <div key={key}>
+                        <label className={`text-xs font-semibold ${color} mb-1 block`}>{label}</label>
+                        <input
+                          type="number" min={0} max={100}
+                          value={modal[key]}
+                          onChange={e => updateModal({ [key]: Math.min(100, Math.max(0, parseInt(e.target.value) || 0)) })}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1.5">
+                    With {modal.questionCount} questions: ~{Math.round(modal.questionCount * modal.easyPct / 100)} easy,
+                    ~{Math.round(modal.questionCount * modal.mediumPct / 100)} medium,
+                    ~{modal.questionCount - Math.round(modal.questionCount * modal.easyPct / 100) - Math.round(modal.questionCount * modal.mediumPct / 100)} hard
+                  </p>
                 </div>
 
                 {/* Question Types */}
@@ -1459,6 +1531,312 @@ export default function AssessmentManagement() {
           </div>
         </div>
       )}
+
+      {showManualModal && (
+        <ManualAssessmentModal
+          employees={employees}
+          onClose={() => setShowManualModal(false)}
+          onCreated={() => { setShowManualModal(false); loadAll(); showToast('Manual assessment created', 'success'); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── CSV questionnaire parser ───────────────────────────────────────────────────
+function parseQuestionnaireCSV(text) {
+  const lines = text.trim().split('\n').filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.replace(/[\r\n"]/g, '').trim().toLowerCase());
+  return lines.slice(1).map(line => {
+    const cols = line.split(',').map(c => c.replace(/[\r\n"]/g, '').trim());
+    const row = {};
+    headers.forEach((h, i) => { row[h] = cols[i] || ''; });
+    return {
+      type: 'mcq',
+      question: row['question'] || '',
+      options: [
+        'A) ' + (row['option a'] || row['optiona'] || row['a'] || ''),
+        'B) ' + (row['option b'] || row['optionb'] || row['b'] || ''),
+        'C) ' + (row['option c'] || row['optionc'] || row['c'] || ''),
+        'D) ' + (row['option d'] || row['optiond'] || row['d'] || ''),
+      ],
+      answer: (row['correct answer'] || row['answer'] || row['correct'] || 'A').replace(/[^A-D]/gi, '').toUpperCase() || 'A',
+      difficulty: (['easy', 'medium', 'hard'].includes(row['difficulty']?.toLowerCase()) ? row['difficulty'].toLowerCase() : 'medium'),
+      skillArea: row['category'] || row['skill area'] || row['skillarea'] || '',
+      explanation: row['explanation'] || '',
+    };
+  }).filter(q => q.question.trim());
+}
+
+const EMPTY_Q_MANUAL = { type: 'mcq', question: '', difficulty: 'medium', options: ['A) ', 'B) ', 'C) ', 'D) '], answer: 'A', explanation: '', skillArea: '' };
+
+function ManualAssessmentModal({ employees, onClose, onCreated }) {
+  const [step, setStep] = useState(1);
+  const [selectedUsers, setSelectedUsers] = useState([]);
+  const [qSource, setQSource] = useState('manual'); // 'manual' | 'upload'
+  const [questions, setQuestions] = useState([]);
+  const [newQ, setNewQ] = useState({ ...EMPTY_Q_MANUAL });
+  const [addMode, setAddMode] = useState(true);
+  const [title, setTitle] = useState('');
+  const [assessmentDate, setAssessmentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [duration, setDuration] = useState(30);
+  const [deadline, setDeadline] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const fileRef = React.useRef();
+
+  const toggleEmp = (id) => setSelectedUsers(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+
+  const addQuestion = () => {
+    if (!newQ.question.trim()) return;
+    setQuestions(p => [...p, { ...newQ, id: Math.random().toString(36).slice(2) }]);
+    setNewQ({ ...EMPTY_Q_MANUAL });
+  };
+
+  const handleFileUpload = async (file) => {
+    if (!file) return;
+    setUploadStatus('Parsing...');
+    try {
+      if (file.name.endsWith('.csv')) {
+        const text = await file.text();
+        const parsed = parseQuestionnaireCSV(text);
+        setQuestions(parsed);
+        setUploadStatus(`Parsed ${parsed.length} questions from CSV`);
+      } else {
+        // XLSX: send to backend
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await authFetch('/api/assessments/parse-questionnaire', { method: 'POST', body: fd });
+        const qs = res?.data?.questions || res?.questions || [];
+        setQuestions(qs);
+        setUploadStatus(`Parsed ${qs.length} questions from file`);
+      }
+    } catch (e) {
+      setUploadStatus('Parse error: ' + (e.message || 'unknown error'));
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedUsers.length) return;
+    if (!questions.length) return;
+    setCreating(true);
+    try {
+      await authFetch('/api/assessments/manual', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: title || `Manual Assessment - ${assessmentDate}`,
+          targetUsers: selectedUsers,
+          questions,
+          questionCount: questions.length,
+          assessmentDate,
+          duration,
+          deadline,
+        }),
+      });
+      onCreated();
+    } catch (e) {
+      alert(e.message || 'Failed to create assessment');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const diffCounts = { easy: questions.filter(q => q.difficulty === 'easy').length, medium: questions.filter(q => q.difficulty === 'medium').length, hard: questions.filter(q => q.difficulty === 'hard').length };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
+          <div>
+            <h2 className="text-xl font-black text-white">Create Manual Assessment</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Step {step} of 3 — {['Select Employees', 'Add Questions', 'Review & Create'][step-1]}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">✕</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* Step 1: Select Employees */}
+          {step === 1 && (
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Select Employees</label>
+                <span className="text-xs text-indigo-400 font-semibold">{selectedUsers.length} selected</span>
+              </div>
+              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                {employees.map(emp => {
+                  const id = emp.userId || emp.id;
+                  const checked = selectedUsers.includes(id);
+                  return (
+                    <div key={id} onClick={() => toggleEmp(id)}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all ${checked ? 'bg-emerald-600/10 border-emerald-500/40' : 'bg-slate-800/40 border-slate-700/50 hover:border-slate-600'}`}>
+                      <input type="checkbox" checked={checked} onChange={() => {}} className="pointer-events-none accent-emerald-500" />
+                      <div className="w-8 h-8 rounded-full bg-emerald-600/30 border border-emerald-500/30 flex items-center justify-center text-xs font-black text-emerald-300 flex-shrink-0">
+                        {(emp.name || '?')[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">{emp.name || '—'}</p>
+                        <p className="text-xs text-slate-500 truncate">{emp.email}</p>
+                      </div>
+                      {emp.jobRole && <span className="text-xs px-2 py-0.5 rounded-md bg-slate-700 text-slate-300">{emp.jobRole}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex justify-end pt-2">
+                <button onClick={() => setStep(2)} disabled={!selectedUsers.length}
+                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-bold text-white transition-all disabled:opacity-40">
+                  Next: Add Questions →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Questions */}
+          {step === 2 && (
+            <div className="p-6 space-y-4">
+              {/* Source tabs */}
+              <div className="flex gap-2 border-b border-slate-700/60 pb-3">
+                {[{ v: 'manual', l: '✏ Manual Entry' }, { v: 'upload', l: '📤 Upload File' }].map(t => (
+                  <button key={t.v} onClick={() => setQSource(t.v)}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${qSource === t.v ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+                    {t.l}
+                  </button>
+                ))}
+                <span className="ml-auto text-xs text-slate-500 my-auto">{questions.length} questions added</span>
+              </div>
+
+              {qSource === 'upload' && (
+                <div className="space-y-3">
+                  <div className="bg-slate-800/40 border border-slate-700/60 rounded-xl p-4 text-xs text-slate-400 space-y-1">
+                    <p className="font-semibold text-slate-300">Required CSV columns:</p>
+                    <p>Question, Option A, Option B, Option C, Option D, Correct Answer, Difficulty, Category</p>
+                    <p className="text-slate-500">Correct Answer should be A, B, C, or D. Difficulty: easy/medium/hard</p>
+                  </div>
+                  <div onClick={() => fileRef.current?.click()}
+                    className="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-emerald-500 transition-colors">
+                    <p className="text-slate-400 text-sm">Click to upload CSV or XLSX questionnaire</p>
+                    <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={e => handleFileUpload(e.target.files[0])} />
+                  </div>
+                  {uploadStatus && <p className={`text-xs font-semibold ${uploadStatus.includes('error') ? 'text-red-400' : 'text-emerald-400'}`}>{uploadStatus}</p>}
+                </div>
+              )}
+
+              {qSource === 'manual' && (
+                <div className="space-y-3">
+                  {/* Add question form */}
+                  <div className="bg-[#1E293B] border border-emerald-500/30 rounded-xl p-4 space-y-3">
+                    <p className="text-xs font-semibold text-emerald-300">New Question</p>
+                    <textarea rows={2} value={newQ.question} onChange={e => setNewQ(p => ({ ...p, question: e.target.value }))}
+                      placeholder="Question text…"
+                      className="w-full bg-[#0F172A] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-slate-400 mb-1 block">Difficulty</label>
+                        <select value={newQ.difficulty} onChange={e => setNewQ(p => ({ ...p, difficulty: e.target.value }))}
+                          className="w-full bg-[#0F172A] border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none">
+                          <option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-400 mb-1 block">Category</label>
+                        <input value={newQ.skillArea} onChange={e => setNewQ(p => ({ ...p, skillArea: e.target.value }))} placeholder="e.g. Leadership"
+                          className="w-full bg-[#0F172A] border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      </div>
+                    </div>
+                    {['A','B','C','D'].map((l, oi) => (
+                      <input key={l} value={newQ.options[oi]} onChange={e => { const o = [...newQ.options]; o[oi] = e.target.value; setNewQ(p => ({ ...p, options: o })); }}
+                        placeholder={`Option ${l}`}
+                        className="w-full bg-[#0F172A] border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                    ))}
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <label className="text-xs text-slate-400 mb-1 block">Correct Answer</label>
+                        <select value={newQ.answer} onChange={e => setNewQ(p => ({ ...p, answer: e.target.value }))}
+                          className="w-full bg-[#0F172A] border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none">
+                          {['A','B','C','D'].map(l => <option key={l}>{l}</option>)}
+                        </select>
+                      </div>
+                      <button onClick={addQuestion} disabled={!newQ.question.trim()}
+                        className="mt-4 px-5 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-500 disabled:opacity-40">
+                        + Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Questions list */}
+                  {questions.length > 0 && (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {questions.map((q, i) => (
+                        <div key={i} className="flex items-start gap-3 px-3 py-2 rounded-lg bg-slate-800/40 border border-slate-700/40">
+                          <span className="text-xs font-bold text-slate-500 mt-0.5 w-5 flex-shrink-0">{i+1}.</span>
+                          <p className="text-sm text-slate-300 flex-1 line-clamp-2">{q.question}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${q.difficulty === 'easy' ? 'bg-emerald-500/20 text-emerald-300' : q.difficulty === 'hard' ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'}`}>{q.difficulty}</span>
+                          <button onClick={() => setQuestions(p => p.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-300 text-xs flex-shrink-0">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setStep(1)} className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white">← Back</button>
+                <button onClick={() => setStep(3)} disabled={!questions.length}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-bold text-white disabled:opacity-40">
+                  Next: Review →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Review */}
+          {step === 3 && (
+            <div className="p-6 space-y-4">
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
+                <h4 className="text-sm font-black text-white">Assessment Summary</h4>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex justify-between"><span className="text-slate-500">Employees</span><span className="text-white font-bold">{selectedUsers.length}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Total Questions</span><span className="text-white font-bold">{questions.length}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Easy</span><span className="text-emerald-300 font-bold">{diffCounts.easy}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Medium</span><span className="text-amber-300 font-bold">{diffCounts.medium}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Hard</span><span className="text-red-300 font-bold">{diffCounts.hard}</span></div>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Title</label>
+                <input value={title} onChange={e => setTitle(e.target.value)} placeholder={`Manual Assessment - ${assessmentDate}`}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Date</label>
+                  <input type="date" value={assessmentDate} onChange={e => setAssessmentDate(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Duration (min)</label>
+                  <input type="number" min={5} max={180} value={duration} onChange={e => setDuration(parseInt(e.target.value) || 30)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Deadline (optional)</label>
+                <input type="datetime-local" value={deadline} onChange={e => setDeadline(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none" />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setStep(2)} className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white">← Back</button>
+                <button onClick={handleSubmit} disabled={creating}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm font-bold text-white disabled:opacity-40">
+                  {creating ? 'Creating…' : 'Create Manual Assessment'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

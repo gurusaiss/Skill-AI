@@ -1397,6 +1397,17 @@ export default function UserManagement() {
   const staffUsers = useMemo(() => users.filter(u => u.role === 'admin' || u.role === 'manager'), [users]);
   const employeeUsers = useMemo(() => users.filter(u => u.role === 'employee'), [users]);
 
+  const roleCounts = useMemo(() => {
+    const counts = {};
+    employeeUsers.forEach(u => {
+      if (u.jobRole && u.jobRole.trim()) {
+        const key = u.jobRole.trim();
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [employeeUsers]);
+
   const getUserAssignments = (userId) => assignments.filter(a => a.employeeId === userId || a.userId === userId);
 
   const displayedUsers = useMemo(() => {
@@ -1502,8 +1513,8 @@ export default function UserManagement() {
               </div>
               {/* Import button */}
               <button onClick={() => setShowImport(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-xl text-white font-bold text-sm transition-colors">
-                📥 Import
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 border border-emerald-600 rounded-xl text-white font-bold text-sm transition-colors shadow-lg shadow-emerald-900/30">
+                📥 Bulk Import
               </button>
               {/* Create button */}
               <button onClick={() => setShowCreate(true)}
@@ -1513,6 +1524,21 @@ export default function UserManagement() {
             </div>
           </div>
         </div>
+
+        {/* Job Role Distribution */}
+        {roleCounts.length > 0 && (
+          <div className="mb-5 p-3 bg-slate-800/50 border border-slate-700/50 rounded-xl">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Job Role Distribution</p>
+            <div className="flex flex-wrap gap-2">
+              {roleCounts.map(([role, count]) => (
+                <span key={role} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
+                  {role}
+                  <span className="bg-indigo-500/30 text-indigo-200 rounded-full px-1.5 py-0.5 text-xs font-bold leading-none">{count}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Controls */}
         <div className="flex flex-col sm:flex-row gap-3 mb-5">
