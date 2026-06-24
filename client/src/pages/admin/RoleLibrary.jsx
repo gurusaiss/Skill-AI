@@ -507,6 +507,81 @@ function QuestionBankModal({ role, onClose }) {
   );
 }
 
+// ── Approve Assessment Modal ──────────────────────────────────────────────────
+function ApproveModal({ role, onClose }) {
+  const [questionCount, setQuestionCount] = useState(10);
+  const [assessmentDate, setAssessmentDate] = useState('');
+  const [approving, setApproving] = useState(false);
+
+  const handleApprove = async () => {
+    setApproving(true);
+    try {
+      const payload = { questionCount: parseInt(questionCount) || 10 };
+      if (assessmentDate) payload.assessmentDate = new Date(assessmentDate).toISOString();
+      const res = await authFetch(`/api/roles/${role.id}/approve-assessment`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      const count = res?.employeeCount ?? res?.data?.employeeAssignments?.length ?? 0;
+      toast(`Assessment approved & assigned to ${count} employee${count !== 1 ? 's' : ''}`);
+      onClose(true);
+    } catch (e) {
+      toast(e.message || 'Failed to approve assessment', 'error');
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const maxQ = role.questionBankCount || 50;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between p-5 border-b border-slate-700">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Approve & Auto-Assign</h2>
+            <p className="text-sm text-slate-400 mt-0.5">{role.roleName}</p>
+          </div>
+          <button onClick={() => onClose(false)} className="text-slate-400 hover:text-white text-xl">✕</button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3">
+            <p className="text-xs text-emerald-300">
+              This will create an assessment from the <strong>{maxQ}-question bank</strong> and auto-assign it to all employees with the role <strong>"{role.roleName}"</strong>.
+            </p>
+          </div>
+          <div>
+            <label className={labelCls}>Questions per employee <span className="text-slate-500">(max {maxQ})</span></label>
+            <input
+              type="number" min={5} max={maxQ}
+              className={inputCls}
+              value={questionCount}
+              onChange={e => setQuestionCount(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Assessment date <span className="text-slate-500">(optional)</span></label>
+            <input
+              type="datetime-local"
+              className={inputCls}
+              value={assessmentDate}
+              onChange={e => setAssessmentDate(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button onClick={() => onClose(false)} className="flex-1 px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-slate-400">
+              Cancel
+            </button>
+            <button onClick={handleApprove} disabled={approving} className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
+              {approving ? 'Assigning…' : '✓ Approve & Assign'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function RoleLibrary() {
   const [roles, setRoles]         = useState([]);
@@ -516,6 +591,7 @@ export default function RoleLibrary() {
   const [modal, setModal]         = useState(null); // null | {type:'add'|'edit'|'view'|'import', role?}
   const [delId, setDelId]         = useState(null);
   const [qBankRole, setQBankRole] = useState(null); // role to view question bank for
+  const [approveRole, setApproveRole] = useState(null); // role to approve assessment for
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -653,6 +729,11 @@ export default function RoleLibrary() {
                       <button onClick={() => setQBankRole(role)} className="text-xs px-2 py-1 rounded bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 whitespace-nowrap">
                         📚 Questions{role.questionBankCount ? ` (${role.questionBankCount})` : ''}
                       </button>
+                      {role.questionBankCount > 0 && (
+                        <button onClick={() => setApproveRole(role)} className="text-xs px-2 py-1 rounded bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 whitespace-nowrap border border-emerald-500/30">
+                          ✓ Approve
+                        </button>
+                      )}
                       <button onClick={() => setDelId(role.id)} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40">Delete</button>
                     </div>
                   </td>
@@ -691,6 +772,14 @@ export default function RoleLibrary() {
       {/* Question Bank Modal */}
       {qBankRole && (
         <QuestionBankModal role={qBankRole} onClose={() => setQBankRole(null)} />
+      )}
+
+      {/* Approve Assessment Modal */}
+      {approveRole && (
+        <ApproveModal
+          role={approveRole}
+          onClose={() => setApproveRole(null)}
+        />
       )}
 
       {/* Delete confirmation */}
