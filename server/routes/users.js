@@ -228,24 +228,27 @@ router.get('/', authenticate, async (req, res) => {
     if (isManager && !filters.role) filters.role = 'employee';
 
     const allUsers = await UserStore.getAllUsers(filters);
-    // Company isolation: admin only sees their own company's users
-    let users = (isAdmin && req.user.companyId && req.user.companyId !== 'default')
+    // Company isolation: both admin and manager only see their own company's users
+    let users = ((isAdmin || isManager) && req.user.companyId && req.user.companyId !== 'default')
       ? allUsers.filter(u => (u.companyId || 'default') === req.user.companyId)
       : allUsers;
 
-    // Manager group filtering: restrict to employees in manager's groups (if any)
+    // Manager group filtering: restrict to employees in manager's assigned groups
     if (isManager) {
       try {
         const allGroups = await getGroups();
-        const managerGroups = allGroups.filter(g => g.managerId === req.user.userId);
+        const managerGroups = allGroups.filter(g =>
+          g.managerId === req.user.userId &&
+          (g.companyId || 'default') === (req.user.companyId || 'default')
+        );
         if (managerGroups.length > 0) {
           const membershipSets = await Promise.all(managerGroups.map(g => getGroupMemberships(g.id)));
           const memberUserIds = new Set(membershipSets.flat().map(m => m.userId || m.user_id || m.memberId).filter(Boolean));
           users = users.filter(u => memberUserIds.has(u.userId));
         }
-        // If manager has no groups, fall through with all company employees (unchanged)
+        // If manager has no groups, show all company employees
       } catch (groupErr) {
-        console.warn('[User Routes] Group filtering failed, returning all employees:', groupErr.message);
+        console.warn('[User Routes] Group filtering failed, returning company employees:', groupErr.message);
       }
     }
 
