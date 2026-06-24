@@ -170,7 +170,7 @@ const App = () => {
                 </ProtectedRoute>
               } />
               <Route path="/admin/users"          element={
-                <ProtectedRoute requiredRole="admin">
+                <ProtectedRoute requiredRole={['admin', 'manager']}>
                   <UserManagement />
                 </ProtectedRoute>
               } />
@@ -191,12 +191,12 @@ const App = () => {
                } />
               <Route path="/admin/approvals" element={<Navigate to="/admin/dashboard" replace />} />
               <Route path="/admin/groups" element={
-                <ProtectedRoute requiredRole="admin">
+                <ProtectedRoute requiredRole={['admin', 'manager']}>
                   <GroupManagement />
                 </ProtectedRoute>
               } />
               <Route path="/admin/roles" element={
-                <ProtectedRoute requiredRole="admin">
+                <ProtectedRoute requiredRole={['admin', 'manager']}>
                   <RoleLibrary />
                 </ProtectedRoute>
               } />

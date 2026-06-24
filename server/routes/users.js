@@ -117,7 +117,7 @@ async function parseImportFile(filePath) {
 const COL_MAP = {
   name: 'name', full_name: 'name', fullname: 'name', 'full name': 'name',
   email: 'email', email_address: 'email', 'email address': 'email',
-  role: 'role', user_role: 'role',
+  role: 'role', user_role: 'role', system_role: 'role', 'system role': 'role', 'system_role': 'role',
   employee_id: 'employeeId', 'employee id': 'employeeId', employeeid: 'employeeId', emp_id: 'employeeId',
   job_role: 'jobRole', jobrole: 'jobRole', 'job role': 'jobRole', position: 'jobRole', title: 'jobRole',
   department: 'department', dept: 'department',
@@ -798,7 +798,7 @@ router.put('/:userId/role', authenticate, requireRole('admin'), async (req, res)
   try {
     const { userId } = req.params;
     const { role } = req.body;
-    const validRoles = ['admin', 'manager', 'employee'];
+    const validRoles = ['admin', 'manager', 'employee', 'trainer', 'leadership'];
 
     if (!role || !validRoles.includes(role)) {
       return res.status(400).json({ success: false, data: null, error: { code: 'USER_INVALID_ROLE', message: `Role must be one of: ${validRoles.join(', ')}` } });
@@ -962,7 +962,11 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
       if (existingEmails.has(row.email.toLowerCase())) { skipped.push({ row, reason: 'Email already registered' }); continue; }
 
       try {
-        const assignedRole = req.user.role === 'manager' ? 'employee' : (row.role || 'employee');
+        const ALLOWED_IMPORT_ROLES = ['employee', 'manager', 'trainer', 'leadership'];
+        const requestedRole = (row.role || 'employee').toLowerCase();
+        const assignedRole = req.user.role === 'manager'
+          ? (['employee', 'trainer'].includes(requestedRole) ? requestedRole : 'employee')
+          : (ALLOWED_IMPORT_ROLES.includes(requestedRole) ? requestedRole : 'employee');
         // Generate a real unique password — admin gets it in the credential Excel
         const tempPassword = generatePassword();
         const passwordHash = await AuthService.hashPassword(tempPassword);

@@ -16,9 +16,11 @@ const router = express.Router();
 router.get('/', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const companyId = req.user.companyId || 'default';
+    const isManager = req.user.role === 'manager';
     const all = await Groups.getAll();
     const groups = all.filter(g =>
-      (g.companyId || 'default') === companyId
+      (g.companyId || 'default') === companyId &&
+      (!isManager || g.managerId === req.user.userId)
     );
 
     // Enrich with current member count
@@ -46,6 +48,9 @@ router.get('/:id', authenticate, requireRole('admin', 'manager'), async (req, re
     if (!group) return res.status(404).json({ success: false, data: null, error: 'Group not found' });
     if ((group.companyId || 'default') !== (req.user.companyId || 'default')) {
       return res.status(403).json({ success: false, data: null, error: 'Access denied' });
+    }
+    if (req.user.role === 'manager' && group.managerId !== req.user.userId) {
+      return res.status(403).json({ success: false, data: null, error: 'Access denied — not your group' });
     }
 
     const allUsers = await UserStore.getAllUsers({});
