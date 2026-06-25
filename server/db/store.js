@@ -125,6 +125,8 @@ function normalizeModule(m) {
     tasks: m.tasks || [],
     resources: content.resources || m.resources || [],
     completionCriteria: m.completion_criteria || m.completionCriteria || 'Complete all tasks',
+    targetRoles: content.targetRoles || m.targetRoles || [],
+    progressTracking: content.progressTracking !== undefined ? content.progressTracking : (m.progressTracking !== undefined ? m.progressTracking : true),
     // Spread generated content fields to top level for easy access
     sessions: content.sessions || m.sessions || [],
     roadmap: content.roadmap || m.roadmap || [],
@@ -152,7 +154,11 @@ function toSupabaseModule(module, createdBy, id) {
     tasks: module.tasks || [],
     resources: module.resources || [],
     completion_criteria: module.completionCriteria || module.completion_criteria || 'Complete all tasks',
-    content: module.content || {},
+    content: {
+      ...(module.content || {}),
+      ...(module.targetRoles !== undefined ? { targetRoles: Array.isArray(module.targetRoles) ? module.targetRoles : [] } : {}),
+      ...(module.progressTracking !== undefined ? { progressTracking: module.progressTracking } : {}),
+    },
     created_by: createdBy,
     company_id: module.companyId || module.company_id || null,
   };
@@ -323,14 +329,16 @@ export async function updateModule(id, updates) {
     if (updates.completionCriteria !== undefined) sbUpdates.completion_criteria = updates.completionCriteria;
     if (updates.companyId !== undefined) sbUpdates.company_id = updates.companyId;
     if (updates.company_id !== undefined) sbUpdates.company_id = updates.company_id;
-    // Merge sessions / content into existing DB content (never wipe metadata)
-    if (updates.sessions !== undefined || updates.content !== undefined) {
+    // Merge sessions / content / targetRoles / progressTracking into existing DB content
+    if (updates.sessions !== undefined || updates.content !== undefined || updates.targetRoles !== undefined || updates.progressTracking !== undefined) {
       const { data: existing } = await supabase.from('modules').select('content').eq('id', id).maybeSingle();
       const existingContent = existing?.content || {};
       sbUpdates.content = {
-        ...existingContent,           // preserve all existing metadata
-        ...(updates.content || {}),   // admin-supplied fields override
-        ...(updates.sessions !== undefined ? { sessions: updates.sessions } : {}), // sessions always wins
+        ...existingContent,
+        ...(updates.content || {}),
+        ...(updates.sessions !== undefined ? { sessions: updates.sessions } : {}),
+        ...(updates.targetRoles !== undefined ? { targetRoles: Array.isArray(updates.targetRoles) ? updates.targetRoles : [] } : {}),
+        ...(updates.progressTracking !== undefined ? { progressTracking: updates.progressTracking } : {}),
       };
     }
     sbUpdates.updated_at = new Date().toISOString();
