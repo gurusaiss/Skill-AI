@@ -2,6 +2,7 @@ import express from 'express';
 import SmartAgent from '../agent/SmartAgent.js';
 import { authenticate } from '../middleware/auth.js';
 import UserStore from '../services/UserStore.js';
+import { Groups } from '../services/DataStore.js';
 
 const router = express.Router();
 const agent = new SmartAgent();
@@ -87,16 +88,21 @@ router.get('/all', authenticate, async (req, res) => {
         (adminCompanyId === 'default' || (u.companyId || 'default') === adminCompanyId)
       );
     } else {
-      // Manager: only show their assigned employees — and only within their company
-      const UserStoreImport = (await import('../services/UserStore.js')).default;
-      const managerEmployees = await UserStoreImport.getManagerEmployees(req.user.userId);
-      const managerEmpIds = new Set(managerEmployees.map(e => e.userId || e.id));
+      // Manager: only show employees in their groups
       const managerCompanyId = req.user.companyId || 'default';
-      targetUsers = allUsers.filter(u =>
-        u.role === 'employee' &&
-        managerEmpIds.has(u.userId || u.id) &&
-        (managerCompanyId === 'default' || (u.companyId || 'default') === managerCompanyId)
+      const allGroups = await Groups.getAll();
+      const myGroups = allGroups.filter(g =>
+        g.managerId === req.user.userId &&
+        (g.companyId || 'default') === managerCompanyId
       );
+      const managerEmpIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
+      targetUsers = managerEmpIds.size === 0
+        ? []
+        : allUsers.filter(u =>
+            u.role === 'employee' &&
+            managerEmpIds.has(u.userId || u.id) &&
+            (managerCompanyId === 'default' || (u.companyId || 'default') === managerCompanyId)
+          );
     }
 
     const reports = targetUsers.map(u => {
