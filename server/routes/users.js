@@ -11,7 +11,7 @@ import { randomUUID } from 'crypto';
 import EmailService from '../services/EmailService.js';
 import { ActivationTokens, Assessments, RoleLibrary, GeneratedContent } from '../services/DataStore.js';
 import { randomBytes } from 'crypto';
-import { getGroups, getGroupMemberships } from '../db/store.js';
+import { getGroups } from '../db/store.js';
 
 function generatePassword() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -243,9 +243,12 @@ router.get('/', authenticate, async (req, res) => {
           (g.companyId || 'default') === (req.user.companyId || 'default')
         );
         if (managerGroups.length > 0) {
-          const membershipSets = await Promise.all(managerGroups.map(g => getGroupMemberships(g.id)));
-          const memberUserIds = new Set(membershipSets.flat().map(m => m.userId || m.user_id || m.memberId).filter(Boolean));
-          users = users.filter(u => memberUserIds.has(u.userId));
+          // employeeIds is stored directly on the group object (not in group_memberships table)
+          const memberUserIds = new Set(managerGroups.flatMap(g => g.employeeIds || []));
+          if (memberUserIds.size > 0) {
+            users = users.filter(u => memberUserIds.has(u.userId));
+          }
+          // If groups exist but have no members yet, return empty list (not all employees)
         }
         // If manager has no groups, show all company employees
       } catch (groupErr) {

@@ -479,18 +479,14 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       } catch (e) { console.warn('[assessment] targetType=department resolution failed:', e.message); }
     }
 
-    // If group provided, fetch all members from Supabase groups
+    // If group provided, fetch members directly from group.employeeIds
     if (targetGroup) {
       try {
-        const { default: db } = await import('../db/store.js');
-        const groups = await db.getGroups?.() || [];
-        const memberships = await db.getGroupMemberships?.() || [];
-        const groupObj = (Array.isArray(groups) ? groups : groups.groups || []).find(g => g.id === targetGroup);
+        const { getGroups } = await import('../db/store.js');
+        const allGroups = await getGroups();
+        const groupObj = allGroups.find(g => g.id === targetGroup);
         if (groupObj) {
-          const memberIds = (Array.isArray(memberships) ? memberships : memberships.memberships || [])
-            .filter(m => m.group_id === targetGroup || m.groupId === targetGroup)
-            .map(m => m.user_id || m.userId);
-          userIds = [...new Set([...userIds, ...memberIds])];
+          userIds = [...new Set([...userIds, ...(groupObj.employeeIds || [])])];
         }
       } catch (e) { console.warn('[assessment] Group resolution failed:', e.message); }
     }
@@ -899,16 +895,18 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
     const allReports  = await Reports.getAll();
     let assignments   = assessment.employeeAssignments || [];
 
-    // Manager: restrict to their group employees
+    // Manager: restrict to their group employees (employeeIds stored on group object)
     if (req.user.role === 'manager') {
       try {
-        const { getGroups, getGroupMemberships } = await import('../db/store.js');
+        const { getGroups } = await import('../db/store.js');
         const allGroups = await getGroups();
-        const myGroups  = allGroups.filter(g => g.managerId === req.user.userId);
+        const myGroups  = allGroups.filter(g =>
+          g.managerId === req.user.userId &&
+          (g.companyId || 'default') === (req.user.companyId || 'default')
+        );
         if (myGroups.length > 0) {
-          const memberships = await Promise.all(myGroups.map(g => getGroupMemberships(g.id)));
-          const memberIds   = new Set(memberships.flat().map(m => m.userId || m.user_id).filter(Boolean));
-          assignments       = assignments.filter(ea => memberIds.has(ea.userId));
+          const memberIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
+          if (memberIds.size > 0) assignments = assignments.filter(ea => memberIds.has(ea.userId));
         }
       } catch {}
     }

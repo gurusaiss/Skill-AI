@@ -1398,7 +1398,7 @@ export default function UserManagement() {
     return () => clearInterval(interval);
   }, []);
 
-  const staffUsers = useMemo(() => users.filter(u => u.role === 'admin' || u.role === 'manager'), [users]);
+  const staffUsers = useMemo(() => users.filter(u => ['admin', 'manager', 'trainer', 'leadership'].includes(u.role)), [users]);
   const employeeUsers = useMemo(() => users.filter(u => u.role === 'employee'), [users]);
 
   const roleCounts = useMemo(() => {
