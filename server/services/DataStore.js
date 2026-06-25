@@ -602,7 +602,7 @@ export const Groups = {
     if (sb) {
       const { id: _id, _created, _updated, ...rest } = doc;
       const { data, error } = await sb.from('groups')
-        .upsert({ id: doc.id, data: rest }, { onConflict: 'id' })
+        .upsert({ id: doc.id, name: doc.name, data: rest }, { onConflict: 'id' })
         .select('id, data')
         .maybeSingle();
       if (error) throw new Error(`Failed to save group: ${error.message} (code: ${error.code})`);
