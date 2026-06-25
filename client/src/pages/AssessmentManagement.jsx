@@ -136,6 +136,18 @@ const ASSESSMENT_TYPES = [
   'Custom Assessment',
 ];
 
+const DEFAULT_SETTINGS = {
+  questionOrder: 'same',
+  markingScheme: { easy: { correct: 1, wrong: 0 }, medium: { correct: 2, wrong: 0 }, hard: { correct: 3, wrong: 0 } },
+  passPercentage: 80,
+  reattempts: 0,
+  allowReattemptToBeatScore: false,
+  timing: { type: 'timed', totalMinutes: 30 },
+  navigation: { forwardOnly: false },
+  results: { hideFromParticipants: false, revealOnSubmission: false, revealAfterEachQuestion: false, revealCorrectOption: false },
+  completion: { mandatory: false, markCompleteOnlyIfPassed: false, allowSubmitWithoutAnsweringAll: false },
+};
+
 const EMPTY_MODAL = {
   step: 1,
   targetType: 'individual',
@@ -153,6 +165,7 @@ const EMPTY_MODAL = {
   deadline: '',
   title: '',
   assessmentType: 'Skill Assessment',
+  settings: { ...DEFAULT_SETTINGS },
 };
 
 export default function AssessmentManagement() {
@@ -177,6 +190,7 @@ export default function AssessmentManagement() {
 
   // Detail view
   const [viewDetail, setViewDetail] = useState(null);
+  const [detailTab, setDetailTab] = useState('overview');
   const [viewReport, setViewReport] = useState(null);
   const [assigningModuleId, setAssigningModuleId] = useState(null);
 
@@ -304,6 +318,7 @@ export default function AssessmentManagement() {
         duration: modal.duration,
         deadline: modal.deadline,
         assessmentType: modal.assessmentType || 'Skill Assessment',
+        settings: modal.settings || DEFAULT_SETTINGS,
         ...(modal.targetType === 'group' && modal.selectedGroup ? { targetGroup: modal.selectedGroup } : {}),
         ...(modal.targetType === 'department' ? { department: modal.department } : {}),
       };
@@ -1101,6 +1116,12 @@ export default function AssessmentManagement() {
                   <p className="text-slate-600 text-xs mt-1">Employee cannot submit after this time</p>
                 </div>
 
+                {/* Advanced Settings (collapsible) */}
+                <AssessmentSettingsPanel
+                  settings={modal.settings || DEFAULT_SETTINGS}
+                  onChange={s => updateModal({ settings: s })}
+                />
+
                 <div className="flex gap-3 pt-2">
                   <button
                     onClick={() => updateModal({ step: 1 })}
@@ -1595,94 +1616,205 @@ export default function AssessmentManagement() {
         </div>
       )}
 
-      {/* ===== DETAIL MODAL ===== */}
-      {viewDetail && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-          onClick={() => setViewDetail(null)}
-        >
-          <div
-            className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-[#0F172A]">
-              <div>
-                <h3 className="text-lg font-black text-white">{viewDetail.title}</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {viewDetail.targetUsers?.length || 0} employees ·{' '}
-                  {viewDetail.questionCount || viewDetail.questions?.length || 0} questions ·{' '}
-                  {viewDetail.duration ? `${viewDetail.duration} min` : ''}
-                </p>
+      {/* ===== DETAIL MODAL (tabbed) ===== */}
+      {viewDetail && (() => {
+        const empAssignments = viewDetail.employeeAssignments || [];
+        const submitted = empAssignments.filter(ea => ea.status === 'submitted');
+        const passThreshold = viewDetail.settings?.passPercentage ?? 80;
+        const scores = submitted.map(ea => ea.score ?? ea.percentage ?? 0).filter(s => s > 0);
+        const passRate = submitted.length ? Math.round(submitted.filter(ea => (ea.score ?? ea.percentage ?? 0) >= passThreshold).length / submitted.length * 100) : 0;
+        const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+        const highScore = scores.length ? Math.max(...scores) : 0;
+        const lowScore = scores.length ? Math.min(...scores) : 0;
+        const TABS = ['Overview', 'Employees', 'Analytics', 'Reports'];
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setViewDetail(null)}>
+            <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[88vh] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 flex-shrink-0">
+                <div>
+                  <h3 className="text-lg font-black text-white">{viewDetail.title}</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{empAssignments.length} employees · {viewDetail.questionCount || 0} questions · {viewDetail.duration ? `${viewDetail.duration} min` : ''}</p>
+                </div>
+                <button onClick={() => setViewDetail(null)} className="text-slate-500 hover:text-white text-xl">✕</button>
               </div>
-              <button onClick={() => setViewDetail(null)} className="text-slate-500 hover:text-white text-xl transition-colors">✕</button>
-            </div>
-
-            <div className="p-6">
-              {/* Assessment details */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                {[
-                  { label: 'Assessment Date', value: viewDetail.assessmentDate ? new Date(viewDetail.assessmentDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '—' },
-                  { label: 'Duration', value: viewDetail.duration ? `${viewDetail.duration} minutes` : '—' },
-                  { label: 'Questions per Employee', value: viewDetail.questionCount || viewDetail.questions?.length || '—' },
-                  { label: 'Question Types', value: viewDetail.questionTypes?.join(', ') || '—' },
-                ].map((item, i) => (
-                  <div key={i} className="rounded-xl bg-slate-800/40 border border-slate-700/40 px-4 py-3">
-                    <p className="text-xs text-slate-500 mb-0.5">{item.label}</p>
-                    <p className="text-sm font-bold text-white">{item.value}</p>
-                  </div>
+              {/* Tabs */}
+              <div className="flex border-b border-slate-700/50 px-6 flex-shrink-0">
+                {TABS.map(t => (
+                  <button key={t} onClick={() => setDetailTab(t.toLowerCase())}
+                    className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors ${detailTab===t.toLowerCase() ? 'border-indigo-500 text-indigo-300' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
+                    {t}
+                  </button>
                 ))}
               </div>
-
-              {/* Per-employee assignment status */}
-              {viewDetail.targetUsers && viewDetail.targetUsers.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                    Employee Assignments ({viewDetail.targetUsers.length})
-                  </h4>
-                  <div className="space-y-2">
-                    {viewDetail.targetUsers.map((uid, i) => {
-                      const emp = employees.find(e => (e.id || e._id) === uid);
-                      const assignment = viewDetail.assignments?.find(a => a.userId === uid) || {};
-                      return (
-                        <div
-                          key={uid}
-                          className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-800/30 border border-slate-700/40"
-                        >
-                          <div className="w-7 h-7 rounded-full bg-indigo-600/30 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0">
-                            {emp ? (emp.name || emp.email || '?')[0].toUpperCase() : (i + 1)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-white truncate">{emp?.name || uid}</p>
-                            {emp?.jobRole && <p className="text-xs text-slate-500">{emp.jobRole}</p>}
-                          </div>
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            {assignment.score !== undefined && (
-                              <span className="text-xs font-bold text-emerald-300">
-                                Score: {assignment.score}%
-                              </span>
-                            )}
-                            <span className={`px-2 py-0.5 rounded-md text-xs font-semibold border capitalize ${
-                              STATUS_COLORS[assignment.status || 'assigned']
-                            }`}>
-                              {assignment.status || 'assigned'}
-                            </span>
-                          </div>
+              {/* Tab content */}
+              <div className="flex-1 overflow-y-auto p-6">
+                {/* Overview tab */}
+                {detailTab === 'overview' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { label: 'Assessment Date', value: viewDetail.assessmentDate ? new Date(viewDetail.assessmentDate).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '—' },
+                        { label: 'Duration', value: viewDetail.duration ? `${viewDetail.duration} minutes` : '—' },
+                        { label: 'Questions per Employee', value: viewDetail.questionCount || '—' },
+                        { label: 'Question Types', value: viewDetail.questionTypes?.join(', ') || '—' },
+                        { label: 'Assessment Type', value: viewDetail.assessmentType || '—' },
+                        { label: 'Pass Threshold', value: `${passThreshold}%` },
+                      ].map((item, i) => (
+                        <div key={i} className="rounded-xl bg-slate-800/40 border border-slate-700/40 px-4 py-3">
+                          <p className="text-xs text-slate-500 mb-0.5">{item.label}</p>
+                          <p className="text-sm font-bold text-white">{item.value}</p>
                         </div>
-                      );
-                    })}
+                      ))}
+                    </div>
+                    {viewDetail.settings && (
+                      <div className="rounded-xl bg-slate-800/30 border border-slate-700/40 p-4">
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Assessment Settings</p>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                          <div className="flex justify-between"><span className="text-slate-500">Question Order</span><span className="text-white font-semibold capitalize">{viewDetail.settings.questionOrder || 'Same'}</span></div>
+                          <div className="flex justify-between"><span className="text-slate-500">Timing</span><span className="text-white font-semibold capitalize">{viewDetail.settings.timing?.type === 'timed' ? `${viewDetail.settings.timing.totalMinutes} min` : 'Untimed'}</span></div>
+                          <div className="flex justify-between"><span className="text-slate-500">Reattempts</span><span className="text-white font-semibold">{viewDetail.settings.reattempts === -1 ? 'Unlimited' : viewDetail.settings.reattempts === 0 ? 'None' : viewDetail.settings.reattempts}</span></div>
+                          <div className="flex justify-between"><span className="text-slate-500">Mandatory</span><span className="text-white font-semibold">{viewDetail.settings.completion?.mandatory ? 'Yes' : 'No'}</span></div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
-
-              {(!viewDetail.targetUsers || viewDetail.targetUsers.length === 0) && (
-                <div className="py-10 text-center text-slate-500 text-sm">
-                  No employee assignments found for this assessment.
-                </div>
-              )}
+                )}
+                {/* Employees tab */}
+                {detailTab === 'employees' && (
+                  <div>
+                    {empAssignments.length === 0 ? (
+                      <div className="py-10 text-center text-slate-500 text-sm">No employee assignments found.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {empAssignments.map((ea, i) => {
+                          const emp = employees.find(e => (e.userId || e.id || e._id) === ea.userId);
+                          return (
+                            <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-800/30 border border-slate-700/40">
+                              <div className="w-7 h-7 rounded-full bg-indigo-600/30 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0">
+                                {(ea.userName || emp?.name || '?')[0]?.toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-white truncate">{ea.userName || emp?.name || ea.userId}</p>
+                                {ea.userEmail && <p className="text-xs text-slate-500 truncate">{ea.userEmail}</p>}
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {ea.score !== undefined && <span className="text-xs font-bold text-emerald-300">{ea.score}%</span>}
+                                <span className={`px-2 py-0.5 rounded-md text-xs font-semibold border capitalize ${STATUS_COLORS[ea.status || 'assigned']}`}>{ea.status || 'assigned'}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* Analytics tab */}
+                {detailTab === 'analytics' && (
+                  <div className="space-y-5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { label: 'Assigned', value: empAssignments.length, color: 'text-indigo-300' },
+                        { label: 'Completed', value: submitted.length, color: 'text-emerald-300' },
+                        { label: 'Pending', value: empAssignments.length - submitted.length, color: 'text-amber-300' },
+                        { label: 'Pass Rate', value: `${passRate}%`, color: 'text-teal-300' },
+                      ].map((m, i) => (
+                        <div key={i} className="rounded-xl bg-slate-800/40 border border-slate-700/40 px-4 py-4 text-center">
+                          <p className={`text-2xl font-black ${m.color}`}>{m.value}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{m.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {scores.length > 0 && (
+                      <div className="grid grid-cols-3 gap-3">
+                        {[['Avg Score', `${avgScore}%`, 'text-indigo-300'], ['Highest', `${highScore}%`, 'text-emerald-300'], ['Lowest', `${lowScore}%`, 'text-red-300']].map(([l,v,c], i) => (
+                          <div key={i} className="rounded-xl bg-slate-800/40 border border-slate-700/40 px-4 py-4 text-center">
+                            <p className={`text-2xl font-black ${c}`}>{v}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{l}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {submitted.length > 0 && (
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Per-Employee Results</p>
+                        <div className="space-y-2">
+                          {submitted.map((ea, i) => (
+                            <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-800/30 border border-slate-700/40">
+                              <div className="w-6 h-6 rounded-full bg-emerald-600/30 border border-emerald-500/30 flex items-center justify-center text-xs font-black text-emerald-300 flex-shrink-0">
+                                {(ea.userName || '?')[0]?.toUpperCase()}
+                              </div>
+                              <span className="flex-1 text-sm text-white truncate">{ea.userName || ea.userId}</span>
+                              <span className="text-xs text-slate-400 w-16 text-right">{ea.userEmail?.split('@')[0]}</span>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <div className="w-24 h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                                  <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${Math.min(100, ea.score ?? ea.percentage ?? 0)}%` }} />
+                                </div>
+                                <span className={`text-xs font-bold w-10 text-right ${(ea.score ?? ea.percentage ?? 0) >= passThreshold ? 'text-emerald-300' : 'text-red-300'}`}>{ea.score ?? ea.percentage ?? 0}%</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {submitted.length === 0 && <div className="py-10 text-center text-slate-500 text-sm">No submissions yet.</div>}
+                  </div>
+                )}
+                {/* Reports tab */}
+                {detailTab === 'reports' && (
+                  <div className="space-y-4">
+                    <div className="rounded-xl bg-slate-800/30 border border-slate-700/40 p-4">
+                      <p className="text-sm font-bold text-white mb-3">Export Options</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[['xlsx','Excel','teal'],['pdf','PDF','rose'],['docx','Word','blue'],['zip','ZIP Bundle','purple']].map(([fmt,label,color]) => (
+                          <button key={fmt} onClick={() => {
+                            const EXPORT_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+                            const params = new URLSearchParams({ format: fmt, mode: 'consolidated' });
+                            if (fmt === 'zip') params.set('subformat', 'pdf');
+                            const token = localStorage.getItem('auth_token');
+                            fetch(`${EXPORT_BASE}/api/assessments/${viewDetail.id}/export-reports?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+                              .then(r => r.blob()).then(blob => {
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `${(viewDetail.title || 'Assessment').replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Reports.${fmt === 'zip' ? 'zip' : fmt}`;
+                                a.click(); URL.revokeObjectURL(url);
+                              }).catch(e => showToast(e.message || 'Export failed', 'error'));
+                          }}
+                            className={`py-3 rounded-xl border bg-slate-800 border-slate-700 text-sm font-bold text-slate-300 hover:text-white hover:border-${color}-500/50 transition-colors`}>
+                            ⬇ {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {submitted.length > 0 && (
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Individual Reports</p>
+                        <div className="space-y-2">
+                          {submitted.map((ea, i) => (
+                            <div key={i} className="flex items-center justify-between px-4 py-3 rounded-xl bg-slate-800/30 border border-slate-700/40">
+                              <span className="text-sm text-white">{ea.userName || ea.userId}</span>
+                              <button onClick={() => {
+                                const EXPORT_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+                                const token = localStorage.getItem('auth_token');
+                                fetch(`${EXPORT_BASE}/api/assessments/${viewDetail.id}/export-reports?format=pdf&mode=individual&userId=${ea.userId}`, { headers: { Authorization: `Bearer ${token}` } })
+                                  .then(r => r.blob()).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${ea.userName || ea.userId}-Report.pdf`; a.click(); URL.revokeObjectURL(url); })
+                                  .catch(e => showToast(e.message || 'Export failed', 'error'));
+                              }} className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-bold text-slate-300 hover:text-white transition-colors">
+                                ⬇ PDF
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {showManualModal && (
         <ManualAssessmentModal
@@ -1690,6 +1822,130 @@ export default function AssessmentManagement() {
           onClose={() => setShowManualModal(false)}
           onCreated={() => { setShowManualModal(false); loadAll(); showToast('Manual assessment created', 'success'); }}
         />
+      )}
+    </div>
+  );
+}
+
+// ── Assessment Settings Panel ──────────────────────────────────────────────────
+function AssessmentSettingsPanel({ settings, onChange }) {
+  const [open, setOpen] = useState(false);
+  const s = settings;
+  const upd = (path, value) => {
+    const parts = path.split('.');
+    const next = JSON.parse(JSON.stringify(s));
+    let cur = next;
+    for (let i = 0; i < parts.length - 1; i++) cur = cur[parts[i]];
+    cur[parts[parts.length - 1]] = value;
+    onChange(next);
+  };
+  const chk = (path, val) => <input type="checkbox" checked={!!val} onChange={e => upd(path, e.target.checked)} className="w-4 h-4 accent-indigo-500 cursor-pointer" />;
+  const lbl = (text) => <span className="text-sm text-slate-300">{text}</span>;
+  return (
+    <div className="border border-slate-700/50 rounded-xl overflow-hidden">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-800/40 hover:bg-slate-800/70 transition-colors">
+        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">⚙ Advanced Settings</span>
+        <span className="text-slate-500 text-sm">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="p-4 space-y-5 bg-slate-900/40">
+          {/* Question Order */}
+          <div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Question Display</p>
+            {[['same','All users see same questions in same order'],['shuffled','All users see same questions in different order']].map(([v,l]) => (
+              <label key={v} className="flex items-center gap-2 mb-1.5 cursor-pointer">
+                <input type="radio" checked={s.questionOrder===v} onChange={() => upd('questionOrder',v)} className="accent-indigo-500" />
+                <span className="text-sm text-slate-300">{l}</span>
+              </label>
+            ))}
+          </div>
+          {/* Marking Scheme */}
+          <div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Marking Scheme</p>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              {[['easy','Easy','text-emerald-400'],['medium','Medium','text-amber-400'],['hard','Hard','text-red-400']].map(([diff,label,cls]) => (
+                <div key={diff} className="bg-slate-800/60 rounded-xl p-3 space-y-1.5">
+                  <p className={`font-bold ${cls}`}>{label}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500 w-14">Correct:</span>
+                    <input type="number" min={0} max={10} value={s.markingScheme[diff].correct}
+                      onChange={e => upd(`markingScheme.${diff}.correct`, parseInt(e.target.value)||0)}
+                      className="w-12 px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-white text-center focus:outline-none focus:border-indigo-500" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500 w-14">Wrong:</span>
+                    <input type="number" min={-5} max={0} value={s.markingScheme[diff].wrong}
+                      onChange={e => upd(`markingScheme.${diff}.wrong`, parseInt(e.target.value)||0)}
+                      className="w-12 px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-white text-center focus:outline-none focus:border-indigo-500" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Pass % */}
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pass Percentage</p>
+              <div className="flex items-center gap-2">
+                <input type="number" min={1} max={100} value={s.passPercentage}
+                  onChange={e => upd('passPercentage', Math.min(100, Math.max(1, parseInt(e.target.value)||80)))}
+                  className="w-20 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm text-center focus:outline-none focus:border-indigo-500" />
+                <span className="text-slate-400 text-sm">%</span>
+              </div>
+            </div>
+            <div className="flex-1">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Reattempts</p>
+              <div className="flex items-center gap-2">
+                <input type="number" min={-1} value={s.reattempts}
+                  onChange={e => upd('reattempts', parseInt(e.target.value))}
+                  className="w-20 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm text-center focus:outline-none focus:border-indigo-500" />
+                <span className="text-slate-500 text-xs">{s.reattempts===-1?'Unlimited':s.reattempts===0?'None':`Attempts`}</span>
+              </div>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">{chk('allowReattemptToBeatScore',s.allowReattemptToBeatScore)}{lbl('Allow reattempts to beat previous score')}</label>
+          {/* Timing */}
+          <div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Quiz Timing</p>
+            <div className="flex gap-3 mb-2">
+              {[['untimed','Untimed'],['timed','Overall Time Limit']].map(([v,l]) => (
+                <label key={v} className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" checked={s.timing.type===v} onChange={() => upd('timing.type',v)} className="accent-indigo-500" />
+                  <span className="text-sm text-slate-300">{l}</span>
+                </label>
+              ))}
+            </div>
+            {s.timing.type==='timed' && (
+              <div className="flex items-center gap-2">
+                <input type="number" min={1} max={300} value={s.timing.totalMinutes}
+                  onChange={e => upd('timing.totalMinutes', parseInt(e.target.value)||30)}
+                  className="w-20 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm text-center focus:outline-none focus:border-indigo-500" />
+                <span className="text-slate-400 text-sm">Minutes</span>
+              </div>
+            )}
+          </div>
+          {/* Navigation */}
+          <label className="flex items-center gap-2 cursor-pointer">{chk('navigation.forwardOnly',s.navigation.forwardOnly)}{lbl('Allow only forward navigation')}</label>
+          {/* Results */}
+          <div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Result Visibility</p>
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-2 cursor-pointer">{chk('results.hideFromParticipants',s.results.hideFromParticipants)}{lbl('Hide results from participants')}</label>
+              <label className="flex items-center gap-2 cursor-pointer">{chk('results.revealOnSubmission',s.results.revealOnSubmission)}{lbl('Reveal answers on submission')}</label>
+              <label className="flex items-center gap-2 cursor-pointer">{chk('results.revealAfterEachQuestion',s.results.revealAfterEachQuestion)}{lbl('Reveal answers after each question')}</label>
+              <label className="flex items-center gap-2 cursor-pointer">{chk('results.revealCorrectOption',s.results.revealCorrectOption)}{lbl('Reveal correct option')}</label>
+            </div>
+          </div>
+          {/* Completion */}
+          <div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Completion Rules</p>
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-2 cursor-pointer">{chk('completion.mandatory',s.completion.mandatory)}{lbl('Assessment mandatory')}</label>
+              <label className="flex items-center gap-2 cursor-pointer">{chk('completion.markCompleteOnlyIfPassed',s.completion.markCompleteOnlyIfPassed)}{lbl('Mark complete only if passed')}</label>
+              <label className="flex items-center gap-2 cursor-pointer">{chk('completion.allowSubmitWithoutAnsweringAll',s.completion.allowSubmitWithoutAnsweringAll)}{lbl('Allow submission without answering all questions')}</label>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1735,6 +1991,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
   const [assessmentType, setAssessmentType] = useState('Skill Assessment');
   const [duration, setDuration] = useState(30);
   const [deadline, setDeadline] = useState('');
+  const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS });
   const [creating, setCreating] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
   const fileRef = React.useRef();
@@ -1786,6 +2043,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
           assessmentType,
           duration,
           deadline,
+          settings,
         }),
       });
       onCreated();
@@ -1987,6 +2245,10 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
                 <input type="datetime-local" value={deadline} onChange={e => setDeadline(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none" />
               </div>
+              <AssessmentSettingsPanel
+                settings={settings}
+                onChange={s => setSettings(s)}
+              />
               <div className="flex gap-3 pt-2">
                 <button onClick={() => setStep(2)} className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white">← Back</button>
                 <button onClick={handleSubmit} disabled={creating}

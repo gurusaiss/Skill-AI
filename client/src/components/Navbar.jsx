@@ -100,7 +100,6 @@ function Navbar() {
     ],
     employee: [
       { to: '/dashboard',           label: 'My Learning', icon: '📚' },
-      { to: '/employee/analytics',  label: 'Analytics',   icon: '📊' },
     ],
   };
 

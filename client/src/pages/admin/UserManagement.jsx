@@ -1281,6 +1281,213 @@ function ImportModal({ onClose, onImported, setToast }) {
   );
 }
 
+// ─── Manager Mapping Modal ────────────────────────────────────────────────────
+
+const MANAGER_MAPPING_TEMPLATE = `Employee Email,Manager Email\njane@company.com,manager@company.com\n`;
+
+function ManagerMappingModal({ onClose, onDone, setToast }) {
+  const [step, setStep] = useState('upload');
+  const [rows, setRows] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState(null);
+  const fileRef = useRef(null);
+
+  const downloadTemplate = () => {
+    const blob = new Blob([MANAGER_MAPPING_TEMPLATE], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'manager-mapping-template.csv'; a.click(); URL.revokeObjectURL(url);
+  };
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    const text = await file.text();
+    const lines = text.trim().split('\n').filter(Boolean);
+    if (lines.length < 2) { setToast({ message: 'File empty or no data rows', type: 'error' }); return; }
+    const headers = lines[0].split(',').map(h => h.replace(/"/g,'').trim().toLowerCase().replace(/\s+/g,'_'));
+    const parsed = lines.slice(1).map(line => {
+      const cols = line.split(',').map(c => c.replace(/"/g,'').trim());
+      const row = {};
+      headers.forEach((h, i) => { row[h] = cols[i] || ''; });
+      return { employeeEmail: row.employee_email || row.employeeemail || row.employee || '', managerEmail: row.manager_email || row.manageremail || row.manager || '' };
+    }).filter(r => r.employeeEmail || r.managerEmail);
+    setRows(parsed);
+    setStep('preview');
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      const data = await authFetch('/api/users/bulk-manager-mapping', { method: 'POST', body: JSON.stringify({ rows }) });
+      setResult(data);
+      setStep('result');
+      onDone();
+    } catch (e) {
+      setToast({ message: e.message || 'Mapping failed', type: 'error' });
+    } finally { setSubmitting(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 flex-shrink-0">
+          <h2 className="text-lg font-bold text-white">🔗 Import Manager Mapping</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {step === 'upload' && (
+            <>
+              <p className="text-sm text-slate-400">Upload a CSV with Employee Email and Manager Email columns. The system will update manager assignments and add employees to the manager's group.</p>
+              <button onClick={downloadTemplate} className="w-full py-2.5 rounded-xl border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-sm font-bold hover:bg-indigo-500/20 transition-colors">⬇ Download Template</button>
+              <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-500 transition-colors">
+                <p className="text-slate-400 text-sm">Click to upload CSV</p>
+                <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
+              </div>
+            </>
+          )}
+          {step === 'preview' && (
+            <>
+              <p className="text-sm text-slate-400">{rows.length} mapping rows found. Review and confirm.</p>
+              <div className="rounded-xl border border-slate-700/50 overflow-hidden max-h-64 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead><tr className="bg-slate-800"><th className="px-3 py-2 text-left text-slate-400">#</th><th className="px-3 py-2 text-left text-slate-400">Employee Email</th><th className="px-3 py-2 text-left text-slate-400">Manager Email</th></tr></thead>
+                  <tbody>{rows.map((r, i) => <tr key={i} className="border-t border-slate-700/40"><td className="px-3 py-2 text-slate-500">{i+1}</td><td className="px-3 py-2 text-white">{r.employeeEmail}</td><td className="px-3 py-2 text-indigo-300">{r.managerEmail}</td></tr>)}</tbody>
+                </table>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setStep('upload')} className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300">← Back</button>
+                <button onClick={handleSubmit} disabled={submitting || !rows.length} className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white disabled:opacity-40">
+                  {submitting ? 'Mapping…' : `Map ${rows.length} Employees →`}
+                </button>
+              </div>
+            </>
+          )}
+          {step === 'result' && result && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-4"><p className="text-2xl font-black text-emerald-300">{result.mapped}</p><p className="text-xs text-emerald-400 mt-0.5">Mapped</p></div>
+                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4"><p className="text-2xl font-black text-amber-300">{result.skipped}</p><p className="text-xs text-amber-400 mt-0.5">Skipped</p></div>
+                <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4"><p className="text-2xl font-black text-red-300">{result.errors}</p><p className="text-xs text-red-400 mt-0.5">Errors</p></div>
+              </div>
+              {result.results?.errors?.length > 0 && (
+                <div className="rounded-xl bg-red-500/5 border border-red-500/20 p-4 max-h-48 overflow-y-auto">
+                  <p className="text-xs font-bold text-red-400 mb-2">Errors</p>
+                  {result.results.errors.map((e, i) => <p key={i} className="text-xs text-red-300 mb-1">{e.row?.employeeEmail}: {e.reason}</p>)}
+                </div>
+              )}
+              <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-bold text-white">Done</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Bulk Update Modal ────────────────────────────────────────────────────────
+
+const BULK_UPDATE_TEMPLATE = `Email,Job Role,Department,Manager Email,Group,Access Rights\njane@company.com,Senior Developer,Engineering,manager@company.com,Dev Team,\n`;
+
+function BulkUpdateModal({ onClose, onDone, setToast }) {
+  const [step, setStep] = useState('upload');
+  const [rows, setRows] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState(null);
+  const fileRef = useRef(null);
+
+  const downloadTemplate = () => {
+    const blob = new Blob([BULK_UPDATE_TEMPLATE], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'bulk-update-template.csv'; a.click(); URL.revokeObjectURL(url);
+  };
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    const text = await file.text();
+    const lines = text.trim().split('\n').filter(Boolean);
+    if (lines.length < 2) { setToast({ message: 'File empty or no data rows', type: 'error' }); return; }
+    const headers = lines[0].split(',').map(h => h.replace(/"/g,'').trim().toLowerCase().replace(/\s+/g,'_'));
+    const parsed = lines.slice(1).map(line => {
+      const cols = line.split(',').map(c => c.replace(/"/g,'').trim());
+      const row = {};
+      headers.forEach((h, i) => { row[h] = cols[i] || ''; });
+      return { email: row.email || '', jobRole: row.job_role || '', department: row.department || '', managerEmail: row.manager_email || '', group: row.group || '', accessRights: row.access_rights || '' };
+    }).filter(r => r.email);
+    setRows(parsed);
+    setStep('preview');
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      const data = await authFetch('/api/users/bulk-update', { method: 'POST', body: JSON.stringify({ rows }) });
+      setResult(data);
+      setStep('result');
+      onDone();
+    } catch (e) {
+      setToast({ message: e.message || 'Update failed', type: 'error' });
+    } finally { setSubmitting(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 flex-shrink-0">
+          <h2 className="text-lg font-bold text-white">✏️ Bulk Update Users</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {step === 'upload' && (
+            <>
+              <p className="text-sm text-slate-400">Upload a CSV to update user fields. Only non-empty columns are updated — existing values are preserved.</p>
+              <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-3 text-xs text-slate-400">
+                <span className="font-bold text-slate-300">Updatable fields: </span>Job Role, Department, Manager Email, Group, Access Rights (admin/manager/trainer)
+              </div>
+              <button onClick={downloadTemplate} className="w-full py-2.5 rounded-xl border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-sm font-bold hover:bg-indigo-500/20 transition-colors">⬇ Download Template</button>
+              <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-500 transition-colors">
+                <p className="text-slate-400 text-sm">Click to upload CSV</p>
+                <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
+              </div>
+            </>
+          )}
+          {step === 'preview' && (
+            <>
+              <p className="text-sm text-slate-400">{rows.length} rows found. Only non-empty fields will be updated.</p>
+              <div className="rounded-xl border border-slate-700/50 overflow-hidden max-h-64 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead><tr className="bg-slate-800"><th className="px-3 py-2 text-left text-slate-400">#</th><th className="px-3 py-2 text-left text-slate-400">Email</th><th className="px-3 py-2 text-left text-slate-400">Job Role</th><th className="px-3 py-2 text-left text-slate-400">Dept</th></tr></thead>
+                  <tbody>{rows.map((r, i) => <tr key={i} className="border-t border-slate-700/40"><td className="px-3 py-2 text-slate-500">{i+1}</td><td className="px-3 py-2 text-white">{r.email}</td><td className="px-3 py-2 text-indigo-300">{r.jobRole || '—'}</td><td className="px-3 py-2 text-slate-400">{r.department || '—'}</td></tr>)}</tbody>
+                </table>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setStep('upload')} className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300">← Back</button>
+                <button onClick={handleSubmit} disabled={submitting || !rows.length} className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white disabled:opacity-40">
+                  {submitting ? 'Updating…' : `Update ${rows.length} Users →`}
+                </button>
+              </div>
+            </>
+          )}
+          {step === 'result' && result && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-4"><p className="text-2xl font-black text-emerald-300">{result.updated}</p><p className="text-xs text-emerald-400 mt-0.5">Updated</p></div>
+                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4"><p className="text-2xl font-black text-amber-300">{result.skipped}</p><p className="text-xs text-amber-400 mt-0.5">Skipped</p></div>
+                <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-4"><p className="text-2xl font-black text-red-300">{result.errors}</p><p className="text-xs text-red-400 mt-0.5">Errors</p></div>
+              </div>
+              {result.results?.errors?.length > 0 && (
+                <div className="rounded-xl bg-red-500/5 border border-red-500/20 p-4 max-h-48 overflow-y-auto">
+                  <p className="text-xs font-bold text-red-400 mb-2">Errors</p>
+                  {result.results.errors.map((e, i) => <p key={i} className="text-xs text-red-300 mb-1">{e.row?.email}: {e.reason}</p>)}
+                </div>
+              )}
+              <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-bold text-white">Done</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Invite Result Modal ──────────────────────────────────────────────────────
 
 function InviteResultModal({ user, onClose }) {
@@ -1431,6 +1638,8 @@ export default function UserManagement() {
   const [editUser, setEditUser] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showManagerMapping, setShowManagerMapping] = useState(false);
+  const [showBulkUpdate, setShowBulkUpdate] = useState(false);
   const [inviteResultUser, setInviteResultUser] = useState(null);
   const [manageAccessUser, setManageAccessUser] = useState(null);
 
@@ -1565,6 +1774,12 @@ export default function UserManagement() {
       {showImport && (
         <ImportModal onClose={() => setShowImport(false)} onImported={fetchData} setToast={setToast} />
       )}
+      {showManagerMapping && (
+        <ManagerMappingModal onClose={() => setShowManagerMapping(false)} onDone={fetchData} setToast={setToast} />
+      )}
+      {showBulkUpdate && (
+        <BulkUpdateModal onClose={() => setShowBulkUpdate(false)} onDone={fetchData} setToast={setToast} />
+      )}
       {inviteResultUser && (
         <InviteResultModal user={inviteResultUser} onClose={() => setInviteResultUser(null)} />
       )}
@@ -1607,6 +1822,14 @@ export default function UserManagement() {
               <button onClick={() => setShowImport(true)}
                 className="flex items-center gap-2 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 border border-emerald-600 rounded-xl text-white font-bold text-sm transition-colors shadow-lg shadow-emerald-900/30">
                 📥 Bulk Import
+              </button>
+              <button onClick={() => setShowManagerMapping(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-800 hover:bg-indigo-700 border border-indigo-700 rounded-xl text-white font-bold text-sm transition-colors">
+                🔗 Manager Mapping
+              </button>
+              <button onClick={() => setShowBulkUpdate(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-xl text-white font-bold text-sm transition-colors">
+                ✏️ Bulk Update
               </button>
               {/* Create button */}
               <button onClick={() => setShowCreate(true)}
