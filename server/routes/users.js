@@ -9,7 +9,7 @@ import AuthService from '../services/AuthService.js';
 import { v4 as uuidv4 } from 'uuid';
 import { randomUUID } from 'crypto';
 import EmailService from '../services/EmailService.js';
-import { ActivationTokens, Assessments, RoleLibrary, GeneratedContent } from '../services/DataStore.js';
+import { ActivationTokens, Assessments, RoleLibrary, GeneratedContent, Groups } from '../services/DataStore.js';
 import { randomBytes } from 'crypto';
 import { getGroups } from '../db/store.js';
 
@@ -1146,6 +1146,146 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
     });
   } catch (e) {
     console.error('[bulk-import]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/users/bulk-manager-mapping
+ * CSV/JSON array of { employeeEmail, managerEmail } — updates managerId and group membership.
+ */
+router.post('/bulk-manager-mapping', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || !rows.length) {
+      return res.status(400).json({ success: false, error: 'rows array required. Each row: { employeeEmail, managerEmail }' });
+    }
+    const allUsers = await UserStore.getAllUsers({});
+    const byEmail = Object.fromEntries(allUsers.map(u => [u.email?.toLowerCase(), u]));
+    const allGroups = await Groups.getAll();
+    const companyId = req.user.companyId || 'default';
+
+    const mapped = [], skipped = [], errors = [];
+
+    for (const row of rows) {
+      const empEmail = (row.employeeEmail || row.employee_email || '').toLowerCase().trim();
+      const mgrEmail = (row.managerEmail || row.manager_email || '').toLowerCase().trim();
+      if (!empEmail || !mgrEmail) { skipped.push({ row, reason: 'Missing email' }); continue; }
+
+      const employee = byEmail[empEmail];
+      const manager  = byEmail[mgrEmail];
+      if (!employee) { errors.push({ row, reason: `Employee "${empEmail}" not found` }); continue; }
+      if (!manager)  { errors.push({ row, reason: `Manager "${mgrEmail}" not found` }); continue; }
+      if (!['manager','admin'].includes(manager.role)) { errors.push({ row, reason: `"${mgrEmail}" is not a manager/admin role` }); continue; }
+
+      try {
+        await UserStore.updateUser(employee.userId, { managerId: manager.userId });
+
+        // Add employee to manager's group
+        let managerGroup = allGroups.find(g =>
+          g.managerId === manager.userId &&
+          (g.companyId || 'default') === (manager.companyId || 'default')
+        );
+        if (managerGroup) {
+          const ids = new Set(managerGroup.employeeIds || []);
+          ids.add(employee.userId);
+          await Groups.update(managerGroup.id, { employeeIds: [...ids] });
+          managerGroup.employeeIds = [...ids];
+        } else {
+          const newGroup = {
+            id: `group_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+            name: `${manager.name || mgrEmail} Team`,
+            managerId: manager.userId,
+            employeeIds: [employee.userId],
+            companyId: manager.companyId || companyId,
+            createdBy: req.user.userId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            status: 'active',
+          };
+          await Groups.create(newGroup);
+          allGroups.push(newGroup);
+        }
+        mapped.push({ employee: empEmail, manager: mgrEmail });
+      } catch (e) {
+        errors.push({ row, reason: e.message });
+      }
+    }
+
+    res.json({ success: true, data: { mapped: mapped.length, skipped: skipped.length, errors: errors.length, results: { mapped, skipped, errors } } });
+  } catch (e) {
+    console.error('[bulk-manager-mapping]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/users/bulk-update
+ * CSV/JSON array of { email, jobRole?, department?, managerEmail?, group?, accessRights? }
+ */
+router.post('/bulk-update', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || !rows.length) {
+      return res.status(400).json({ success: false, error: 'rows array required' });
+    }
+    const allUsers = await UserStore.getAllUsers({});
+    const byEmail  = Object.fromEntries(allUsers.map(u => [u.email?.toLowerCase(), u]));
+    const allGroups = await Groups.getAll();
+    const companyId = req.user.companyId || 'default';
+    const VALID_ACCESSES = ['admin', 'manager', 'trainer'];
+
+    const updated = [], skipped = [], errors = [];
+
+    for (const row of rows) {
+      const email = (row.email || '').toLowerCase().trim();
+      if (!email) { skipped.push({ row, reason: 'No email' }); continue; }
+
+      const user = byEmail[email];
+      if (!user) { errors.push({ row, reason: `User "${email}" not found` }); continue; }
+
+      try {
+        const patch = {};
+        if (row.jobRole || row.job_role)     patch.jobRole    = (row.jobRole || row.job_role).trim();
+        if (row.department)                   patch.department = row.department.trim();
+        if (row.accessRights || row.access_rights) {
+          const incoming = (row.accessRights || row.access_rights).split(/[,;|\s]+/).map(s => s.trim().toLowerCase()).filter(s => VALID_ACCESSES.includes(s));
+          if (incoming.length) patch.accesses = incoming;
+        }
+
+        if (row.managerEmail || row.manager_email) {
+          const mgrEmail = (row.managerEmail || row.manager_email).toLowerCase().trim();
+          const mgr = byEmail[mgrEmail];
+          if (mgr && ['manager','admin'].includes(mgr.role)) patch.managerId = mgr.userId;
+        }
+
+        if (Object.keys(patch).length) await UserStore.updateUser(user.userId, patch);
+
+        // Group assignment
+        if (row.group) {
+          const groupName = row.group.trim();
+          let grp = allGroups.find(g =>
+            (g.name || '').toLowerCase() === groupName.toLowerCase() &&
+            (g.companyId || 'default') === (user.companyId || 'default')
+          );
+          if (grp) {
+            const ids = new Set(grp.employeeIds || []);
+            ids.add(user.userId);
+            await Groups.update(grp.id, { employeeIds: [...ids] });
+            grp.employeeIds = [...ids];
+          }
+        }
+
+        updated.push({ email });
+        byEmail[email] = { ...user, ...patch };
+      } catch (e) {
+        errors.push({ row, reason: e.message });
+      }
+    }
+
+    res.json({ success: true, data: { updated: updated.length, skipped: skipped.length, errors: errors.length, results: { updated, skipped, errors } } });
+  } catch (e) {
+    console.error('[bulk-update]', e);
     res.status(500).json({ success: false, error: e.message });
   }
 });

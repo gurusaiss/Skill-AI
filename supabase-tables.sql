@@ -218,3 +218,28 @@ ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 -- assignment_requests, notifications,
 -- approval_requests, groups, group_memberships, audit_logs
 -- ============================================================
+
+-- ─── Assessment Settings (stored in assessment.data JSONB, no new table needed) ───
+-- Settings fields are stored inside the assessment JSONB data object.
+-- No schema changes required.
+
+-- ─── Manager Mapping tracking ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS manager_mappings (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL,
+  manager_id TEXT NOT NULL,
+  company_id TEXT,
+  mapped_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE manager_mappings DISABLE ROW LEVEL SECURITY;
+
+-- ─── Bulk Import Logs ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS bulk_import_logs (
+  id TEXT PRIMARY KEY,
+  import_type TEXT NOT NULL,  -- 'users' | 'manager_mapping' | 'user_update'
+  imported_by TEXT NOT NULL,
+  company_id TEXT,
+  summary JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE bulk_import_logs DISABLE ROW LEVEL SECURITY;
