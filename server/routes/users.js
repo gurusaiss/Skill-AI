@@ -250,8 +250,10 @@ router.get('/', authenticate, async (req, res) => {
             users = users.filter(u => memberUserIds.has(u.userId));
           }
           // If groups exist but have no members yet, return empty list (not all employees)
+        } else {
+          // Manager has no groups assigned — show nothing
+          users = [];
         }
-        // If manager has no groups, show all company employees
       } catch (groupErr) {
         console.warn('[User Routes] Group filtering failed, returning company employees:', groupErr.message);
       }
