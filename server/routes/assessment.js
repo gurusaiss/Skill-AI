@@ -1226,6 +1226,76 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
 });
 
 /**
+ * GET /api/assessments/export-all-reports
+ * Download ALL assessment reports for this company/manager as XLSX
+ */
+router.get('/export-all-reports', authenticate, async (req, res) => {
+  try {
+    const companyId = req.user?.companyId || 'default';
+    const role = req.user.role;
+    const allReports = await Reports.getAll();
+
+    let reports;
+    if (role === 'employee') {
+      // Employee sees only their own reports
+      reports = allReports.filter(r => (r.userId || r.user_id) === req.user.userId);
+    } else if (role === 'manager') {
+      const allGroups = await Groups.getAll();
+      const myGroups = allGroups.filter(g =>
+        g.managerId === req.user.userId &&
+        (g.companyId || 'default') === companyId
+      );
+      const allowedIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
+      reports = allReports.filter(r => allowedIds.has(r.userId || r.user_id || r.submittedBy));
+    } else {
+      // admin / superadmin: filter by company
+      if (companyId !== 'default') {
+        const allUsers = await UserStore.getAllUsers({});
+        const companyUserIds = new Set(
+          allUsers.filter(u => (u.companyId || 'default') === companyId).map(u => u.userId || u.id)
+        );
+        reports = allReports.filter(r => companyUserIds.has(r.userId || r.user_id || r.submittedBy));
+      } else {
+        reports = allReports;
+      }
+    }
+
+    const XLSX = await import('xlsx');
+    const headers = ['Name','Email','Job Role','Assessment','Date','Score %','Grade','Classification','Status','Strengths','Improvement Areas','Recommendations'];
+    const rows = reports.map(r => {
+      const sc = r.scoring || {};
+      return [
+        r.userName || r.name || '',
+        r.userEmail || r.email || '',
+        r.jobRole || '',
+        r.assessmentTitle || r.title || '',
+        r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : '',
+        sc.score != null ? `${sc.score}%` : '',
+        sc.grade || '',
+        sc.performanceClassification?.label || '',
+        r.status || 'submitted',
+        (sc.strengths || []).join('; '),
+        (sc.weakAreas || []).join('; '),
+        (r.improvementRecommendations || sc.recommendedLearningAreas || []).join('; '),
+      ];
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!cols'] = [25,30,20,30,15,10,10,18,12,40,40,40].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, 'All Reports');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="All-Assessment-Reports.xlsx"');
+    res.end(Buffer.isBuffer(buf) ? buf : Buffer.from(buf));
+  } catch (e) {
+    console.error('[export-all-reports]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * POST /api/assessments/generate (legacy compat — module-based)
  */
 router.post('/generate', authenticate, async (req, res) => {
