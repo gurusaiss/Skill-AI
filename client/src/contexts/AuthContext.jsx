@@ -220,6 +220,7 @@ export const AuthProvider = ({ children }) => {
     // Remove auth state from localStorage
     localStorage.removeItem('auth_token');
     localStorage.removeItem('skillforge:userId');
+    localStorage.removeItem('active_role');
     setToken(null);
     setUser(null);
     
@@ -341,19 +342,42 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Check if user has a specific role
+  // Active role — persisted in localStorage so it survives refresh
+  const [activeRole, setActiveRoleState] = useState(() => {
+    return localStorage.getItem('active_role') || null;
+  });
+
+  // Compute the effective active role: stored preference if valid, else user.role
+  const getEffectiveRole = () => {
+    if (!user) return null;
+    const all = [user.role, ...(user.accesses || [])];
+    if (activeRole && all.includes(activeRole)) return activeRole;
+    return user.role;
+  };
+
+  const switchRole = (role) => {
+    if (!user) return;
+    const all = [user.role, ...(user.accesses || [])];
+    if (!all.includes(role)) return;
+    localStorage.setItem('active_role', role);
+    setActiveRoleState(role);
+  };
+
+  // Check if user has a specific role (checks primary role AND granted accesses AND active role)
   const hasRole = (role) => {
     if (!user) return false;
 
     // superadmin has access to all roles
-    if (user.role === 'superadmin' && (role === 'admin' || role === 'manager')) return true;
+    if (user.role === 'superadmin') return true;
+
+    const all = [user.role, ...(user.accesses || [])];
 
     // Support multiple role checks (array or single role)
     if (Array.isArray(role)) {
-      return role.includes(user.role);
+      return role.some(r => all.includes(r));
     }
 
-    return user.role === role;
+    return all.includes(role);
   };
 
   // Check if user has a specific permission
@@ -417,21 +441,15 @@ export const AuthProvider = ({ children }) => {
     return userPermissions.includes(permission);
   };
 
-  // Get dashboard route based on user role
+  // Get dashboard route based on effective role
   const getDashboardRoute = () => {
     if (!user) return '/';
-
-    switch (user.role) {
-      case 'superadmin':
-        return '/superadmin/dashboard';
-      case 'admin':
-        return '/admin/dashboard';
-      case 'manager':
-        return '/manager/dashboard';
-      case 'employee':
-        return '/employee/dashboard';
-      default:
-        return '/';
+    const role = getEffectiveRole();
+    switch (role) {
+      case 'superadmin': return '/superadmin/dashboard';
+      case 'admin':      return '/admin/dashboard';
+      case 'manager':    return '/manager/dashboard';
+      default:           return '/employee/dashboard';
     }
   };
 
@@ -459,6 +477,10 @@ export const AuthProvider = ({ children }) => {
     getDashboardRoute,
     redirectToDashboard,
     setAuthFromToken,
+    activeRole: getEffectiveRole(),
+    switchRole,
+    accesses: user?.accesses || [],
+    allRoles: user ? [user.role, ...(user.accesses || [])] : [],
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

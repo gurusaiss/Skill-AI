@@ -1332,6 +1332,85 @@ function InviteResultModal({ user, onClose }) {
   );
 }
 
+// ─── Manage Access Modal ──────────────────────────────────────────────────────
+
+const ACCESS_OPTIONS = [
+  { value: 'admin',   label: 'Admin',   desc: 'Full platform management', color: 'purple' },
+  { value: 'manager', label: 'Manager', desc: 'Team & group management',  color: 'indigo' },
+  { value: 'trainer', label: 'Trainer', desc: 'Content & module creation', color: 'cyan' },
+];
+
+function ManageAccessModal({ user: targetUser, onClose, onSaved, setToast }) {
+  const [selected, setSelected] = useState(targetUser.accesses || []);
+  const [saving, setSaving] = useState(false);
+
+  const toggle = (val) => setSelected(p => p.includes(val) ? p.filter(x => x !== val) : [...p, val]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const updated = await authFetch(`/api/users/${targetUser.userId}/accesses`, {
+        method: 'PUT',
+        body: JSON.stringify({ accesses: selected }),
+      });
+      onSaved(updated);
+      setToast({ message: `Access updated for ${targetUser.name}`, type: 'success' });
+      onClose();
+    } catch (e) {
+      setToast({ message: e.message || 'Failed to update access', type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const colorMap = { purple: { bg: 'bg-purple-500/10', border: 'border-purple-500/40', text: 'text-purple-300', check: 'bg-purple-500/20 border-purple-500/50' }, indigo: { bg: 'bg-indigo-500/10', border: 'border-indigo-500/40', text: 'text-indigo-300', check: 'bg-indigo-500/20 border-indigo-500/50' }, cyan: { bg: 'bg-cyan-500/10', border: 'border-cyan-500/40', text: 'text-cyan-300', check: 'bg-cyan-500/20 border-cyan-500/50' } };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="p-5 border-b border-slate-700/60 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-white">Manage Access</h3>
+            <p className="text-slate-400 text-sm mt-0.5">{targetUser.name} · <span className="capitalize">{targetUser.role}</span></p>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-white p-1 rounded-lg hover:bg-slate-700 transition-colors">✕</button>
+        </div>
+
+        <div className="p-5 space-y-3">
+          <p className="text-xs text-slate-500">Grant additional platform access. The user can switch between views without logging out.</p>
+          {ACCESS_OPTIONS.map(opt => {
+            const active = selected.includes(opt.value);
+            const c = colorMap[opt.color];
+            return (
+              <label key={opt.value} className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${active ? `${c.bg} ${c.border}` : 'bg-slate-900/40 border-slate-700/50 hover:border-slate-600'}`}>
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${active ? `${c.check} border-current` : 'border-slate-600 bg-slate-800'}`}>
+                  {active && <span className="text-xs text-white font-bold">✓</span>}
+                </div>
+                <input type="checkbox" className="hidden" checked={active} onChange={() => toggle(opt.value)} />
+                <div>
+                  <p className={`text-sm font-bold ${active ? c.text : 'text-slate-300'}`}>{opt.label}</p>
+                  <p className="text-xs text-slate-500">{opt.desc}</p>
+                </div>
+              </label>
+            );
+          })}
+          <div className="pt-1 p-3 bg-slate-900/40 rounded-xl border border-slate-700/40 text-xs text-slate-500">
+            <span className="text-slate-400 font-semibold">Current base role:</span> <span className="capitalize text-slate-300">{targetUser.role}</span> (unchanged)
+          </div>
+        </div>
+
+        <div className="px-5 pb-5 flex gap-3">
+          <button onClick={handleSave} disabled={saving}
+            className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-white font-bold text-sm transition-colors flex items-center justify-center gap-2">
+            {saving ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving…</> : '✓ Save Access'}
+          </button>
+          <button onClick={onClose} className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-slate-300 text-sm transition-colors">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function UserManagement() {
@@ -1353,6 +1432,7 @@ export default function UserManagement() {
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [inviteResultUser, setInviteResultUser] = useState(null);
+  const [manageAccessUser, setManageAccessUser] = useState(null);
 
   const isAdmin = hasRole('admin');
   const isManager = user?.role === 'manager';
@@ -1488,6 +1568,14 @@ export default function UserManagement() {
       {inviteResultUser && (
         <InviteResultModal user={inviteResultUser} onClose={() => setInviteResultUser(null)} />
       )}
+      {manageAccessUser && isAdmin && (
+        <ManageAccessModal
+          user={manageAccessUser}
+          onClose={() => setManageAccessUser(null)}
+          onSaved={updatedUser => setUsers(prev => prev.map(u => u.userId === updatedUser.userId ? { ...u, ...updatedUser } : u))}
+          setToast={setToast}
+        />
+      )}
 
       <div className="max-w-7xl mx-auto p-6 lg:p-8">
 
@@ -1602,6 +1690,7 @@ export default function UserManagement() {
                         <th className={thClass}><button onClick={() => handleSort('status')} className={thBtn}>Status <SortIcon column="status" sortBy={sortBy} sortDir={sortDir} /></button></th>
                       </>
                     )}
+                    <th className={thClass}><span className={thBtn}>Access</span></th>
                     <th className={`${thClass} text-right pr-5`}><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</span></th>
                   </tr>
                 </thead>
@@ -1656,8 +1745,22 @@ export default function UserManagement() {
                           </>
                         )}
 
+                        {/* Access column */}
+                        <td className="py-3 px-4">
+                          <div className="flex flex-wrap gap-1">
+                            {(u.accesses || []).length === 0
+                              ? <span className="text-slate-600 text-xs">—</span>
+                              : (u.accesses || []).map(a => (
+                                  <span key={a} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/25 capitalize">{a}</span>
+                                ))}
+                          </div>
+                        </td>
+
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                            {isAdmin && (
+                              <button onClick={() => setManageAccessUser(u)} title="Manage Access" className="w-8 h-8 flex items-center justify-center rounded-lg bg-cyan-600/10 hover:bg-cyan-600/30 text-cyan-400 border border-cyan-600/20 hover:border-cyan-500/40 transition-all text-sm">🔑</button>
+                            )}
                             <button onClick={() => setEditUser(u)} title="Edit" className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-600/10 hover:bg-blue-600/30 text-blue-400 border border-blue-600/20 hover:border-blue-500/40 transition-all text-sm">✏️</button>
                             {!isSelf && (
                               <button onClick={async () => {

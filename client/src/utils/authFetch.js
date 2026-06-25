@@ -14,9 +14,11 @@ export const authFetch = async (path, options = {}) => {
   const token = localStorage.getItem('auth_token');
   // Don't set Content-Type for FormData — the browser must set it automatically
   // so it includes the multipart boundary. Overriding it breaks file uploads.
+  const activeRole = localStorage.getItem('active_role');
   const headers = {
     ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(activeRole ? { 'X-Active-Role': activeRole } : {}),
     ...(options.headers || {}),
   };
 

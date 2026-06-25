@@ -182,6 +182,7 @@ function sanitizeUser(user) {
     jdSkills: user.jdSkills || [],
     jdSourceUrl: user.jdSourceUrl || '',
     jdSourceType: user.jdSourceType || 'text',
+    accesses: user.accesses || [],
   };
 }
 
@@ -824,6 +825,41 @@ router.put('/:userId/role', authenticate, requireRole('admin'), async (req, res)
   } catch (error) {
     console.error('[User Routes] Update role error:', error.message);
     res.status(500).json({ success: false, data: null, error: { code: 'USER_ERROR', message: 'Failed to update role' } });
+  }
+});
+
+/**
+ * PUT /api/users/:userId/accesses
+ * Grant/revoke additional platform accesses (admin only).
+ * Body: { accesses: ['manager', 'trainer'] }
+ */
+router.put('/:userId/accesses', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { accesses } = req.body;
+    const validAccesses = ['admin', 'manager', 'trainer'];
+
+    if (!Array.isArray(accesses)) {
+      return res.status(400).json({ success: false, data: null, error: 'accesses must be an array' });
+    }
+    const filtered = accesses.filter(a => validAccesses.includes(a));
+
+    const user = await UserStore.getUserById(userId);
+    if (!user) return res.status(404).json({ success: false, data: null, error: 'User not found' });
+
+    // Admins in the same company only
+    const myCompany = req.user.companyId || 'default';
+    if ((user.companyId || 'default') !== myCompany) {
+      return res.status(403).json({ success: false, data: null, error: 'Cannot manage users from another company' });
+    }
+
+    const updatedUser = await UserStore.updateUser(userId, { accesses: filtered });
+    await UserStore.logAuthEvent('accesses_changed', userId, { changedBy: req.user.userId, accesses: filtered, ipAddress: req.ip });
+
+    res.json({ success: true, data: sanitizeUser(updatedUser), error: null });
+  } catch (e) {
+    console.error('[User Routes] Update accesses error:', e.message);
+    res.status(500).json({ success: false, data: null, error: e.message });
   }
 });
 
