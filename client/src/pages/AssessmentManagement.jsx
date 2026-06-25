@@ -765,13 +765,6 @@ export default function AssessmentManagement() {
                     >
                       🗑️
                     </button>
-                    <button
-                      onClick={() => setExportTarget(a)}
-                      className="px-2.5 py-1.5 bg-teal-600/20 hover:bg-teal-600/40 border border-teal-500/30 rounded-lg text-teal-300 text-xs font-semibold transition-colors"
-                      title="Export reports"
-                    >
-                      Export
-                    </button>
                     {submittedCount > 0 ? (
                       <button
                         onClick={() => setViewReport(a)}
