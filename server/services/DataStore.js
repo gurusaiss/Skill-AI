@@ -602,8 +602,11 @@ export const Groups = {
     if (sb) {
       const result = await sbInsert('groups', doc.id, doc);
       if (result) return result;
-      console.warn('[DataStore] groups.create: Supabase insert failed, using file fallback');
+      // Supabase is configured but write failed — do NOT silently use ephemeral file
+      // because Render restarts wipe all local files (data would be permanently lost).
+      throw new Error('Failed to save group to database. Please check Supabase connection or ensure the groups table exists.');
     }
+    // No Supabase configured — file fallback is acceptable for local dev
     const all = readFileRecords('groups.json');
     all.push(doc);
     writeFile('groups.json', all);
