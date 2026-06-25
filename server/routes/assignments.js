@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import UserStore from '../services/UserStore.js';
 import * as db from '../db/store.js';
+import { Groups } from '../services/DataStore.js';
 
 const router = express.Router();
 
@@ -112,7 +113,21 @@ router.get('/manager/:managerId/employees', authenticate, async (req, res) => {
       });
     }
 
-    const employees = await UserStore.getManagerEmployees(managerId);
+    // Pull employees from groups (primary system) then fall back to old assignments.json
+    const myCompany = req.user.companyId || 'default';
+    const allGroups = await Groups.getAll();
+    const managerGroups = allGroups.filter(g =>
+      g.managerId === managerId &&
+      (g.companyId || 'default') === myCompany
+    );
+    let employees = [];
+    if (managerGroups.length > 0) {
+      const memberIds = [...new Set(managerGroups.flatMap(g => g.employeeIds || []))];
+      const fetched = await Promise.all(memberIds.map(id => UserStore.getUserById(id)));
+      employees = fetched.filter(Boolean);
+    } else {
+      employees = await UserStore.getManagerEmployees(managerId);
+    }
 
     const sanitizedEmployees = employees.map(emp => ({
       userId: emp.userId || emp.id,
