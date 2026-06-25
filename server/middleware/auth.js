@@ -53,11 +53,21 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
+    // Determine effective role: X-Active-Role header if user has that access, else primary role
+    const requestedRole = req.headers['x-active-role'];
+    const userAccesses = user.accesses || [];
+    const allRoles = [user.role, ...userAccesses];
+    const effectiveRole = (requestedRole && allRoles.includes(requestedRole))
+      ? requestedRole
+      : user.role;
+
     // Attach user data to request
     req.user = {
       userId: user.userId,
       email: user.email,
-      role: user.role,
+      role: effectiveRole,
+      primaryRole: user.role,
+      accesses: userAccesses,
       name: user.name,
       learningUUID: user.learningUUID,
       companyId: user.companyId || 'default',
@@ -96,9 +106,11 @@ export const requireRole = (...roles) => {
     }
 
     // superadmin has access to everything
-    if (req.user.role === 'superadmin') return next();
+    if (req.user.primaryRole === 'superadmin' || req.user.role === 'superadmin') return next();
 
-    if (!roles.includes(req.user.role)) {
+    // Check effective role OR primary role OR any granted access
+    const allUserRoles = [req.user.role, req.user.primaryRole, ...(req.user.accesses || [])].filter(Boolean);
+    if (!roles.some(r => allUserRoles.includes(r))) {
       return res.status(403).json({
         success: false,
         data: null,

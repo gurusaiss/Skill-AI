@@ -148,6 +148,10 @@ CREATE TABLE IF NOT EXISTS groups (
   updated_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── 14a. User Accesses column (multi-access system) ─────────
+-- Adds accesses TEXT[] to users table for multi-role support (safe to re-run)
+ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS accesses TEXT[] DEFAULT '{}';
+
 -- ── 14. Group Memberships ────────────────────────────────────
 CREATE TABLE IF NOT EXISTS group_memberships (
   id            TEXT PRIMARY KEY,

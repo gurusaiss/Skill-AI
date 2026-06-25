@@ -51,7 +51,7 @@ function useNotifications(isAuthenticated) {
 function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, isAuthenticated, getDashboardRoute, hasRole, logout } = useAuth();
+  const { user, isAuthenticated, getDashboardRoute, hasRole, logout, activeRole, switchRole, allRoles } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -104,11 +104,17 @@ function Navbar() {
     ],
   };
 
-  const roleLinks = user?.role === 'superadmin'
+  // Nav links based on activeRole (what the user is currently acting as)
+  const effectiveNavRole = activeRole || user?.role;
+  const roleLinks = effectiveNavRole === 'superadmin'
     ? ROLE_LINKS.superadmin
-    : user?.role === 'admin'
+    : effectiveNavRole === 'admin'
       ? NAV_LINKS.filter(l => l.roles?.includes('admin'))
-      : (ROLE_LINKS[user?.role] || []);
+      : (ROLE_LINKS[effectiveNavRole] || []);
+
+  // Build "Switch To" options: all roles user can be except current
+  const ROLE_LABELS = { admin: 'Administrator', manager: 'Manager', trainer: 'Trainer', employee: 'Employee' };
+  const switchableRoles = (allRoles || []).filter(r => r !== effectiveNavRole && r !== 'superadmin');
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#1E293B] bg-[#0F172A]/95 backdrop-blur">
@@ -218,8 +224,17 @@ function Navbar() {
                 </button>
 
                 {profileMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50">
+                  <div className="absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50">
                     <div className="p-2">
+                      {/* User info */}
+                      <div className="px-3 py-2 mb-1 border-b border-slate-700/60">
+                        <p className="text-xs font-bold text-white truncate">{user?.name}</p>
+                        <p className="text-[10px] text-slate-500 truncate">{user?.email}</p>
+                        <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 capitalize">
+                          {effectiveNavRole}
+                        </span>
+                      </div>
+
                       <Link
                         to="/profile"
                         onClick={() => setProfileMenuOpen(false)}
@@ -236,6 +251,30 @@ function Navbar() {
                           ⚙️ Settings
                         </Link>
                       )}
+
+                      {/* Role switcher */}
+                      {switchableRoles.length > 0 && (
+                        <>
+                          <div className="border-t border-slate-700 my-1" />
+                          {switchableRoles.map(r => (
+                            <button
+                              key={r}
+                              onClick={() => {
+                                switchRole(r);
+                                setProfileMenuOpen(false);
+                                // Navigate to the role's dashboard
+                                const dashMap = { admin: '/admin/dashboard', manager: '/manager/dashboard', trainer: '/dashboard', employee: '/dashboard' };
+                                navigate(dashMap[r] || '/dashboard');
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg flex items-center gap-2"
+                            >
+                              <span className="text-xs opacity-60">⇄</span>
+                              Switch to {ROLE_LABELS[r] || r} View
+                            </button>
+                          ))}
+                        </>
+                      )}
+
                       <div className="border-t border-slate-700 my-1" />
                       <button
                         onClick={() => { setProfileMenuOpen(false); logout(); }}

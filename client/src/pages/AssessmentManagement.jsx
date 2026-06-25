@@ -126,6 +126,16 @@ const STATUS_COLORS = {
   pending: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
 };
 
+const ASSESSMENT_TYPES = [
+  'Pre Assessment',
+  'Skill Assessment',
+  'Technical Assessment',
+  'Functional Assessment',
+  'Compliance Assessment',
+  'Training Assessment',
+  'Custom Assessment',
+];
+
 const EMPTY_MODAL = {
   step: 1,
   targetType: 'individual',
@@ -142,11 +152,12 @@ const EMPTY_MODAL = {
   duration: 30,
   deadline: '',
   title: '',
+  assessmentType: 'Skill Assessment',
 };
 
 export default function AssessmentManagement() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
 
   const [assessments, setAssessments] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -186,7 +197,7 @@ export default function AssessmentManagement() {
   const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
   useEffect(() => {
-    if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
+    if (!user || !hasRole(['admin', 'manager'])) {
       navigate('/dashboard');
       return;
     }
@@ -292,6 +303,7 @@ export default function AssessmentManagement() {
         assessmentDate: modal.assessmentDate,
         duration: modal.duration,
         deadline: modal.deadline,
+        assessmentType: modal.assessmentType || 'Skill Assessment',
         ...(modal.targetType === 'group' && modal.selectedGroup ? { targetGroup: modal.selectedGroup } : {}),
         ...(modal.targetType === 'department' ? { department: modal.department } : {}),
       };
@@ -627,12 +639,17 @@ export default function AssessmentManagement() {
                   style={{ display: 'grid', gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 210px', alignItems: 'center', gap: '12px' }}
                 >
                   <div className="min-w-0">
-                    <button
-                      onClick={() => setViewDetail(a)}
-                      className="text-sm font-bold text-white hover:text-indigo-300 truncate transition-colors text-left"
-                    >
-                      {a.title}
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => setViewDetail(a)}
+                        className="text-sm font-bold text-white hover:text-indigo-300 truncate transition-colors text-left"
+                      >
+                        {a.title}
+                      </button>
+                      {a.assessmentType && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-500/15 text-violet-300 border border-violet-500/25 whitespace-nowrap">{a.assessmentType}</span>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-500 mt-0.5">
                       {a.targetGroup ? `Group: ${a.targetGroup}` : `${totalAssigned} ${totalAssigned === 1 ? 'employee' : 'employees'}`}
                       {a.questionCount ? ` · ${a.questionCount} Qs` : ''}
@@ -925,6 +942,18 @@ export default function AssessmentManagement() {
             {/* ── STEP 2: Assessment Settings ── */}
             {modal.step === 2 && (
               <div className="p-6 space-y-5 flex-1">
+                {/* Assessment Type */}
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Assessment Type</label>
+                  <select
+                    value={modal.assessmentType}
+                    onChange={e => updateModal({ assessmentType: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                  >
+                    {ASSESSMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+
                 {/* Assessment Date */}
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
@@ -1703,6 +1732,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
   const [addMode, setAddMode] = useState(true);
   const [title, setTitle] = useState('');
   const [assessmentDate, setAssessmentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [assessmentType, setAssessmentType] = useState('Skill Assessment');
   const [duration, setDuration] = useState(30);
   const [deadline, setDeadline] = useState('');
   const [creating, setCreating] = useState(false);
@@ -1753,6 +1783,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
           questions,
           questionCount: questions.length,
           assessmentDate,
+          assessmentType,
           duration,
           deadline,
         }),
@@ -1931,6 +1962,13 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Title</label>
                 <input value={title} onChange={e => setTitle(e.target.value)} placeholder={`Manual Assessment - ${assessmentDate}`}
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Assessment Type</label>
+                <select value={assessmentType} onChange={e => setAssessmentType(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none">
+                  {ASSESSMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
