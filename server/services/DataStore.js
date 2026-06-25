@@ -600,11 +600,13 @@ export const Groups = {
   async create(doc) {
     const sb = getSB();
     if (sb) {
-      const result = await sbInsert('groups', doc.id, doc);
-      if (result) return result;
-      // Supabase is configured but write failed — do NOT silently use ephemeral file
-      // because Render restarts wipe all local files (data would be permanently lost).
-      throw new Error('Failed to save group to database. Please check Supabase connection or ensure the groups table exists.');
+      const { id: _id, _created, _updated, ...rest } = doc;
+      const { data, error } = await sb.from('groups')
+        .upsert({ id: doc.id, data: rest }, { onConflict: 'id' })
+        .select('id, data')
+        .maybeSingle();
+      if (error) throw new Error(`Failed to save group: ${error.message} (code: ${error.code})`);
+      return data ? { id: data.id, ...data.data } : doc;
     }
     // No Supabase configured — file fallback is acceptable for local dev
     const all = readFileRecords('groups.json');
