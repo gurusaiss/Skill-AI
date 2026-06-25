@@ -111,9 +111,18 @@ function Navbar() {
       ? NAV_LINKS.filter(l => l.roles?.includes('admin'))
       : (ROLE_LINKS[effectiveNavRole] || []);
 
-  // Build "Switch To" options: all roles user can be except current
-  const ROLE_LABELS = { admin: 'Administrator', manager: 'Manager', trainer: 'Trainer', employee: 'Employee' };
-  const switchableRoles = (allRoles || []).filter(r => r !== effectiveNavRole && r !== 'superadmin');
+  // Build "Switch To" options: all roles user can be except current (no trainer)
+  const ROLE_LABELS = { admin: 'Admin', manager: 'Manager', employee: 'Employee' };
+  const ROLE_ICONS  = { admin: '🛡️', manager: '📊', employee: '📚' };
+  const DASH_MAP    = { admin: '/admin/dashboard', manager: '/manager/dashboard', employee: '/dashboard' };
+  const switchableRoles = (allRoles || []).filter(r => r !== effectiveNavRole && r !== 'superadmin' && r !== 'trainer');
+
+  // Avatar initials helper
+  const initials = (name) => {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    return parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
+  };
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#1E293B] bg-[#0F172A]/95 backdrop-blur">
@@ -216,70 +225,67 @@ function Navbar() {
               <div className="relative">
                 <button
                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all whitespace-nowrap"
+                  className="flex items-center gap-1.5 px-1.5 py-1 rounded-lg hover:bg-slate-800 transition-all"
                 >
-                  <span className="text-sm leading-none">👤</span>
-                  <span className="text-[11px] font-medium hidden sm:inline truncate max-w-[100px]">{user.name}</span>
+                  {/* Avatar circle with initials */}
+                  <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
+                    {initials(user.name)}
+                  </div>
+                  <span className="text-[11px] font-medium text-slate-300 hidden sm:inline truncate max-w-[80px]">{user.name?.split(' ')[0]}</span>
                 </button>
 
                 {profileMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50">
-                    <div className="p-2">
-                      {/* User info */}
-                      <div className="px-3 py-2 mb-1 border-b border-slate-700/60">
-                        <p className="text-xs font-bold text-white truncate">{user?.name}</p>
-                        <p className="text-[10px] text-slate-500 truncate">{user?.email}</p>
-                        <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 capitalize">
-                          {effectiveNavRole}
+                  <div className="absolute right-0 mt-2 w-64 bg-[#1E293B] border border-slate-700/60 rounded-xl shadow-2xl z-50 overflow-hidden">
+                    {/* Header with avatar */}
+                    <div className="px-4 py-3 flex items-center gap-3 bg-slate-800/60">
+                      <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+                        {initials(user.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-white truncate">{user?.name}</p>
+                        <p className="text-[11px] text-slate-400 truncate">{user?.email}</p>
+                        <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 capitalize">
+                          {ROLE_LABELS[effectiveNavRole] || effectiveNavRole}
                         </span>
                       </div>
+                    </div>
 
+                    <div className="p-1.5">
                       <Link
                         to="/profile"
                         onClick={() => setProfileMenuOpen(false)}
-                        className="block px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg"
+                        className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700/60 rounded-lg transition-colors"
                       >
-                        👤 Profile Settings
+                        <span className="text-base">👤</span> Profile
                       </Link>
-                      {hasRole('admin') && (
-                        <Link
-                          to="/settings"
-                          onClick={() => setProfileMenuOpen(false)}
-                          className="block px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg"
-                        >
-                          ⚙️ Settings
-                        </Link>
-                      )}
 
                       {/* Role switcher */}
                       {switchableRoles.length > 0 && (
                         <>
-                          <div className="border-t border-slate-700 my-1" />
+                          <div className="border-t border-slate-700/60 my-1" />
                           {switchableRoles.map(r => (
                             <button
                               key={r}
                               onClick={() => {
                                 switchRole(r);
                                 setProfileMenuOpen(false);
-                                // Navigate to the role's dashboard
-                                const dashMap = { admin: '/admin/dashboard', manager: '/manager/dashboard', trainer: '/dashboard', employee: '/dashboard' };
-                                navigate(dashMap[r] || '/dashboard');
+                                navigate(DASH_MAP[r] || '/dashboard');
                               }}
-                              className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg flex items-center gap-2"
+                              className="w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700/60 rounded-lg transition-colors"
                             >
-                              <span className="text-xs opacity-60">⇄</span>
+                              <span className="text-base">{ROLE_ICONS[r] || '⇄'}</span>
                               Switch to {ROLE_LABELS[r] || r} View
                             </button>
                           ))}
                         </>
                       )}
 
-                      <div className="border-t border-slate-700 my-1" />
+                      <div className="border-t border-slate-700/60 my-1" />
                       <button
                         onClick={() => { setProfileMenuOpen(false); logout(); }}
-                        className="w-full text-left block px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-slate-700 rounded-lg"
+                        className="w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded-lg transition-colors"
                       >
-                        🚪 Logout
+                        <span className="text-base">🚪</span> Logout
                       </button>
                     </div>
                   </div>

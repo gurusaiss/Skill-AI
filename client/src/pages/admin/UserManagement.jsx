@@ -601,8 +601,6 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                       <option value="admin">Admin</option>
                       <option value="manager">Manager</option>
                       <option value="employee">Employee</option>
-                      <option value="trainer">Trainer</option>
-                      <option value="leadership">Leadership</option>
                     </select>
                   </div>
                 )}
@@ -1542,9 +1540,9 @@ function InviteResultModal({ user, onClose }) {
 // ─── Manage Access Modal ──────────────────────────────────────────────────────
 
 const ACCESS_OPTIONS = [
-  { value: 'admin',   label: 'Admin',   desc: 'Full platform management', color: 'purple' },
-  { value: 'manager', label: 'Manager', desc: 'Team & group management',  color: 'indigo' },
-  { value: 'trainer', label: 'Trainer', desc: 'Content & module creation', color: 'cyan' },
+  { value: 'admin',    label: 'Admin',    desc: 'Full platform management', color: 'purple' },
+  { value: 'manager',  label: 'Manager',  desc: 'Team & group management',  color: 'indigo' },
+  { value: 'employee', label: 'Employee', desc: 'Learner access',           color: 'emerald' },
 ];
 
 function ManageAccessModal({ user: targetUser, onClose, onSaved, setToast }) {
@@ -1570,7 +1568,7 @@ function ManageAccessModal({ user: targetUser, onClose, onSaved, setToast }) {
     }
   };
 
-  const colorMap = { purple: { bg: 'bg-purple-500/10', border: 'border-purple-500/40', text: 'text-purple-300', check: 'bg-purple-500/20 border-purple-500/50' }, indigo: { bg: 'bg-indigo-500/10', border: 'border-indigo-500/40', text: 'text-indigo-300', check: 'bg-indigo-500/20 border-indigo-500/50' }, cyan: { bg: 'bg-cyan-500/10', border: 'border-cyan-500/40', text: 'text-cyan-300', check: 'bg-cyan-500/20 border-cyan-500/50' } };
+  const colorMap = { purple: { bg: 'bg-purple-500/10', border: 'border-purple-500/40', text: 'text-purple-300', check: 'bg-purple-500/20 border-purple-500/50' }, indigo: { bg: 'bg-indigo-500/10', border: 'border-indigo-500/40', text: 'text-indigo-300', check: 'bg-indigo-500/20 border-indigo-500/50' }, emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/40', text: 'text-emerald-300', check: 'bg-emerald-500/20 border-emerald-500/50' } };
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -1585,7 +1583,7 @@ function ManageAccessModal({ user: targetUser, onClose, onSaved, setToast }) {
 
         <div className="p-5 space-y-3">
           <p className="text-xs text-slate-500">Grant additional platform access. The user can switch between views without logging out.</p>
-          {ACCESS_OPTIONS.map(opt => {
+          {ACCESS_OPTIONS.filter(opt => opt.value !== targetUser.role).map(opt => {
             const active = selected.includes(opt.value);
             const c = colorMap[opt.color];
             return (
@@ -1687,7 +1685,7 @@ export default function UserManagement() {
     return () => clearInterval(interval);
   }, []);
 
-  const staffUsers = useMemo(() => users.filter(u => ['admin', 'manager', 'trainer', 'leadership'].includes(u.role)), [users]);
+  const staffUsers = useMemo(() => users.filter(u => ['admin', 'manager'].includes(u.role)), [users]);
   const employeeUsers = useMemo(() => users.filter(u => u.role === 'employee'), [users]);
 
   const roleCounts = useMemo(() => {
