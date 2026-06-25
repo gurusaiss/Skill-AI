@@ -13,7 +13,7 @@ import UserStore from '../services/UserStore.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
-import { PendingModules, ModuleAssignments } from '../services/DataStore.js';
+import { PendingModules, ModuleAssignments, Groups } from '../services/DataStore.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -116,15 +116,26 @@ router.get('/assignments/all', authenticate, async (req, res) => {
       return res.json({ success: true, data: assignments, error: null });
     }
 
-    // Filter by company user membership
-    const UserStore = (await import('../services/UserStore.js')).default;
     const allUsers = await UserStore.getAllUsers({});
     const companyUserIds = new Set(
       allUsers
         .filter(u => (u.companyId || 'default') === companyId)
         .map(u => u.userId || u.id)
     );
-    const filtered = assignments.filter(a => companyUserIds.has(a.userId || a.assigned_to_user));
+
+    let allowedIds = companyUserIds;
+
+    // Manager: restrict further to group employees only
+    if (req.user.role === 'manager') {
+      const allGroups = await Groups.getAll();
+      const myGroups = allGroups.filter(g =>
+        g.managerId === req.user.userId &&
+        (g.companyId || 'default') === companyId
+      );
+      allowedIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
+    }
+
+    const filtered = assignments.filter(a => allowedIds.has(a.userId || a.assigned_to_user));
     res.json({ success: true, data: filtered, error: null });
   } catch (e) {
     res.status(500).json({ success: false, error: { message: 'Failed to fetch' } });

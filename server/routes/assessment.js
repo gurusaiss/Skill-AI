@@ -18,7 +18,7 @@ import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import multer from 'multer';
 import UserStore from '../services/UserStore.js';
-import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds } from '../services/DataStore.js';
+import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds, Groups } from '../services/DataStore.js';
 import LLMQueue from '../services/LLMQueue.js';
 import * as db from '../db/store.js';
 import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
@@ -393,19 +393,37 @@ function scoreSubmission(questions, responses) {
 
 /**
  * GET /api/assessments
- * All assessments — admin/manager sees all, employees see their own
+ * All assessments — admin sees all company assessments, manager sees only assessments for their group employees
  */
 router.get('/', authenticate, async (req, res) => {
   try {
     const assessments = await Assessments.getAll() || [];
-    const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
+    const companyId = req.user?.companyId || 'default';
 
-    // Company isolation: admin/manager only see their company's assessments
-    const companyId = req.user?.companyId;
+    // Company isolation first
     const companyFiltered = (companyId && companyId !== 'default')
       ? assessments.filter(a => !a.companyId || a.companyId === companyId)
       : assessments;
-    const result = isPrivileged
+
+    if (req.user.role === 'manager') {
+      // Manager: only assessments that include at least one of their group employees
+      const allGroups = await Groups.getAll();
+      const myGroups = allGroups.filter(g =>
+        g.managerId === req.user.userId &&
+        (g.companyId || 'default') === companyId
+      );
+      const myEmpIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
+      const result = myEmpIds.size === 0
+        ? []
+        : companyFiltered.filter(a =>
+            a.createdBy === req.user.userId ||
+            a.employeeAssignments?.some(ea => myEmpIds.has(ea.userId)) ||
+            a.targetUsers?.some(uid => myEmpIds.has(uid))
+          );
+      return res.json({ success: true, data: result, error: null });
+    }
+
+    const result = ['admin', 'superadmin'].includes(req.user.role)
       ? companyFiltered
       : companyFiltered.filter(a =>
           a.employeeAssignments?.some(ea => ea.userId === req.user.userId) ||
@@ -1176,7 +1194,6 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
     const reports = await Reports.getAll();
     const companyId = req.user?.companyId || 'default';
 
-    // Filter by company user membership (not by r.companyId, since legacy reports have none)
     const UserStore = (await import('../services/UserStore.js')).default;
     const allUsers = await UserStore.getAllUsers({});
     const companyUserIds = new Set(
@@ -1185,9 +1202,22 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
         .map(u => u.userId || u.id)
     );
 
-    const filteredReports = companyId === 'default'
+    let allowedIds = companyId === 'default' ? null : companyUserIds;
+
+    // Manager: further restrict to group employees only
+    if (req.user.role === 'manager') {
+      const allGroups = await Groups.getAll();
+      const myGroups = allGroups.filter(g =>
+        g.managerId === req.user.userId &&
+        (g.companyId || 'default') === companyId
+      );
+      const myEmpIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
+      allowedIds = myEmpIds;
+    }
+
+    const filteredReports = allowedIds === null
       ? reports
-      : reports.filter(r => companyUserIds.has(r.userId || r.user_id || r.submittedBy));
+      : reports.filter(r => allowedIds.has(r.userId || r.user_id || r.submittedBy));
 
     res.json({ success: true, data: filteredReports, error: null });
   } catch (e) {
