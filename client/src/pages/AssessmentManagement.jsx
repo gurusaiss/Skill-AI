@@ -207,6 +207,34 @@ export default function AssessmentManagement() {
 
   // Export reports modal
   const [exportTarget, setExportTarget] = useState(null);
+  const [downloadingAll, setDownloadingAll] = useState(false);
+
+  const downloadAllReports = async () => {
+    setDownloadingAll(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+      const res = await fetch(`${BASE}/api/assessments/export-all-reports`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Export failed' }));
+        throw new Error(err.error || 'Export failed');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'All-Assessment-Reports.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('All reports downloaded', 'success');
+    } catch (e) {
+      showToast(e.message || 'Export failed', 'error');
+    } finally {
+      setDownloadingAll(false);
+    }
+  };
 
   const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
@@ -529,6 +557,13 @@ export default function AssessmentManagement() {
           </div>
           <div className="flex gap-3">
             <button
+              onClick={downloadAllReports}
+              disabled={downloadingAll}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-sm font-bold transition-all shadow-lg shadow-teal-500/20 disabled:opacity-40"
+            >
+              {downloadingAll ? 'Downloading…' : 'Download All Reports'}
+            </button>
+            <button
               onClick={() => setShowManualModal(true)}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm font-bold transition-all shadow-lg shadow-emerald-500/20"
             >
@@ -735,7 +770,7 @@ export default function AssessmentManagement() {
                       className="px-2.5 py-1.5 bg-teal-600/20 hover:bg-teal-600/40 border border-teal-500/30 rounded-lg text-teal-300 text-xs font-semibold transition-colors"
                       title="Export reports"
                     >
-                      ⬇
+                      Export
                     </button>
                     {submittedCount > 0 ? (
                       <button
