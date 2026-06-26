@@ -425,7 +425,7 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
 // ── Main AdminDashboard ────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
-  const { user } = useAuth();
+  const { user, hasRole, activeRole } = useAuth();
   const navigate = useNavigate();
 
   // Core
@@ -463,7 +463,7 @@ export default function AdminDashboard() {
   const showToast = useCallback((msg, type = 'info') => setToast({ message: msg, type }), []);
 
   useEffect(() => {
-    if (!user || user.role !== 'admin') { navigate('/dashboard'); return; }
+    if (!user || !hasRole('admin')) { navigate('/dashboard'); return; }
     loadAll();
     loadCodes();
   }, [user, navigate]);
@@ -645,7 +645,7 @@ export default function AdminDashboard() {
     return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
   });
 
-  if (!user || user.role !== 'admin') return null;
+  if (!user || !hasRole('admin')) return null;
 
   const managerCodes = codes.filter(c => c.role === 'manager');
   const employeeCodes = codes.filter(c => c.role === 'employee');

@@ -330,7 +330,7 @@ function ViewGroupModal({ groupId, onClose }) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function GroupManagement() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const navigate = useNavigate();
 
   const [groups, setGroups] = useState([]);
@@ -369,7 +369,7 @@ export default function GroupManagement() {
   }, []);
 
   useEffect(() => {
-    if (!user || (user.role !== 'admin' && user.role !== 'manager')) { navigate('/dashboard'); return; }
+    if (!user || !hasRole(['admin', 'manager'])) { navigate('/dashboard'); return; }
     fetchAll();
   }, [user, navigate, fetchAll]);
 
@@ -401,8 +401,8 @@ export default function GroupManagement() {
   const activeCount = groups.filter(g => g.status !== 'inactive').length;
   const totalMembers = groups.reduce((sum, g) => sum + (g.employeeIds?.length || g.employeeCount || 0), 0);
 
-  if (!user || (user.role !== 'admin' && user.role !== 'manager')) return null;
-  const isAdmin = user.role === 'admin';
+  if (!user || !hasRole(['admin', 'manager'])) return null;
+  const isAdmin = hasRole('admin');
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
