@@ -209,6 +209,8 @@ export default function AssessmentManagement() {
   const [exportTarget, setExportTarget] = useState(null);
   const [downloadingAll, setDownloadingAll] = useState(false);
 
+  const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
+
   const downloadAllReports = async () => {
     setDownloadingAll(true);
     try {
@@ -235,8 +237,6 @@ export default function AssessmentManagement() {
       setDownloadingAll(false);
     }
   };
-
-  const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
   useEffect(() => {
     if (!user || !hasRole(['admin', 'manager'])) {
