@@ -240,9 +240,9 @@ router.get('/', authenticate, async (req, res) => {
       try {
         const visibleIds = new Set();
 
-        // Source 1: employees in manager's Groups (DataStore)
+        // Source 1: employees in manager's Groups (DataStore/Supabase)
         try {
-          const allGroups = await getGroups();
+          const allGroups = await Groups.getAll();
           const managerGroups = allGroups.filter(g =>
             g.managerId === req.user.userId &&
             (g.companyId || 'default') === (req.user.companyId || 'default')
