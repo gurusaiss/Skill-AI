@@ -191,7 +191,7 @@ const isOverdue = (dueDate, status) => {
 };
 
 export default function ManagerDashboard() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -221,7 +221,7 @@ export default function ManagerDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    if (user.role !== 'manager') {
+    if (!hasRole('manager')) {
       navigate('/dashboard');
       return;
     }

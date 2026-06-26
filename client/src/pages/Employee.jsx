@@ -151,7 +151,7 @@ const StatBox = ({ label, value, icon, gradient, delay }) => (
 );
 
 export default function Employee() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const navigate = useNavigate();
 
   const [assignments, setAssignments] = useState([]);
@@ -192,7 +192,7 @@ export default function Employee() {
 
   useEffect(() => {
     if (!user) return;
-    if (user.role !== 'employee') {
+    if (!hasRole('employee')) {
       navigate('/dashboard');
       return;
     }
