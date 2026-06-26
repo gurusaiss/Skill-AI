@@ -639,7 +639,21 @@ export default function ModuleSession() {
     setPhase('content');
     setQuizScore(null);
     try {
-      const mod = await authFetch(`/api/modules/${moduleId}`);
+      const [modRes, assignRes] = await Promise.allSettled([
+        authFetch(`/api/modules/${moduleId}`),
+        assignmentId ? authFetch(`/api/assignments/${assignmentId}`) : Promise.resolve(null),
+      ]);
+
+      let mod = null;
+      if (modRes.status === 'fulfilled' && modRes.value?.id) {
+        mod = modRes.value;
+      } else if (assignRes.status === 'fulfilled' && assignRes.value?.module?.id) {
+        mod = assignRes.value.module;
+      } else if (assignRes.status === 'fulfilled' && assignRes.value) {
+        const a = assignRes.value;
+        mod = { id: moduleId, title: a.module_name || a.title || 'Your Module', sessions: [], content: {} };
+      }
+
       if (!mod) throw new Error('Module not found');
       setModule(mod);
 

@@ -149,7 +149,30 @@ router.get('/assignments/all', authenticate, async (req, res) => {
 router.get('/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const module = await db.getModuleById(id);
+    let module = await db.getModuleById(id).catch(() => null);
+
+    // Fallback: check pending_modules (auto-generated, awaiting approval)
+    if (!module) {
+      try {
+        const allPending = await PendingModules.getAll();
+        const pending = allPending.find(p => p.id === id || p.moduleId === id);
+        if (pending?.module) {
+          module = {
+            id,
+            title: pending.module.title,
+            description: pending.module.description || '',
+            category: pending.module.category || 'Training',
+            difficulty: pending.module.difficulty || 'intermediate',
+            estimatedDuration: pending.module.estimatedDuration || '5 days',
+            skills: pending.module.skills || [],
+            sessions: pending.module.sessions || [],
+            content: { sessions: pending.module.sessions || [], objectives: pending.module.objectives || [] },
+            companyId: pending.companyId || null,
+            _isPending: true,
+          };
+        }
+      } catch { /* non-fatal */ }
+    }
 
     if (!module) {
       return res.status(404).json({ success: false, error: { message: 'Module not found' } });
@@ -917,11 +940,23 @@ router.post('/assign', authenticate, async (req, res) => {
     const existingAssignments = await ModuleAssignments.getAll();
     const created = [];
 
+    // Pre-fetch module metadata for embedding into assignments
+    const moduleMetaMap = {};
+    for (const moduleId of moduleIds) {
+      try {
+        const mod = await db.getModuleById(moduleId);
+        if (mod) moduleMetaMap[moduleId] = mod;
+      } catch { /* non-fatal */ }
+    }
+
     for (const userId of allUserIds) {
       for (const moduleId of moduleIds) {
         // Skip duplicates
         const exists = existingAssignments.some(a => a.moduleId === moduleId && a.userId === userId);
         if (exists) continue;
+
+        const mod = moduleMetaMap[moduleId];
+        const moduleTitle = mod?.title || `Module ${moduleId}`;
 
         const assignment = {
           id: randomUUID(),
@@ -933,6 +968,37 @@ router.post('/assign', authenticate, async (req, res) => {
           status: 'assigned',
         };
         await ModuleAssignments.create(assignment);
+
+        // Also write to main assignments table (Supabase) so it appears in employee dashboard
+        try {
+          const dueDate = new Date();
+          dueDate.setDate(dueDate.getDate() + 30);
+          await UserStore.createAssignment({
+            type: 'module',
+            assignable_id: moduleId,
+            assignable_type: 'module',
+            assigned_by: req.user.userId,
+            assigned_to_user: userId,
+            priority: isMandatory ? 'high' : 'medium',
+            due_date: dueDate.toISOString(),
+            status: 'assigned',
+            progress: 0,
+            isMandatory: !!isMandatory,
+            title: moduleTitle,
+            name: moduleTitle,
+            module_name: moduleTitle,
+            description: mod?.description || '',
+            moduleRef: {
+              id: moduleId,
+              title: moduleTitle,
+              skills: mod?.skills || [],
+              estimatedDuration: mod?.estimatedDuration || '30 days',
+            },
+          });
+        } catch (e) {
+          console.warn('[POST /modules/assign] Could not write to main assignments:', e.message);
+        }
+
         created.push(assignment);
       }
     }

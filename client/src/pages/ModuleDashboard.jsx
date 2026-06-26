@@ -561,6 +561,20 @@ export default function ModuleDashboard() {
         };
       }
 
+      // Last-resort fallback: fetch from my-assignments list
+      if (!mod) {
+        try {
+          const myAssignments = await authFetch('/api/modules/my-assignments');
+          const found = (Array.isArray(myAssignments) ? myAssignments : [])
+            .find(a => a.moduleId === moduleId || a.module?.id === moduleId);
+          if (found?.module?.id) {
+            mod = found.module;
+          } else if (found) {
+            mod = { id: moduleId, title: found.module?.title || 'Your Module', sessions: [], content: {} };
+          }
+        } catch { /* non-fatal */ }
+      }
+
       if (!mod) {
         setError('Module not found. Please contact your admin.');
         return;
