@@ -57,11 +57,13 @@ function Navbar() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
+  const profileRef = useRef(null);
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications(isAuthenticated);
 
   useEffect(() => {
     function handleClick(e) {
       if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
+      if (profileRef.current && !profileRef.current.contains(e.target)) setProfileMenuOpen(false);
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -222,7 +224,7 @@ function Navbar() {
 
             {/* Profile Menu */}
             {user && (
-              <div className="relative">
+              <div className="relative" ref={profileRef}>
                 <button
                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
                   className="flex items-center gap-1.5 px-1.5 py-1 rounded-lg hover:bg-slate-800 transition-all"
