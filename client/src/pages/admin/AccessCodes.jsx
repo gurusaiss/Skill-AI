@@ -36,6 +36,7 @@ const ROLE_STYLE = {
 
 export default function AccessCodes() {
   const { user } = useAuth();
+  const companyId = user?.companyId || '';
   const [codes, setCodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);

@@ -26,7 +26,7 @@ export default class ErrorBoundary extends React.Component {
             </p>
             <div className="flex gap-3 justify-center">
               <button
-                onClick={() => this.setState({ hasError: false, error: null })}
+                onClick={() => window.location.reload()}
                 className="px-5 py-2.5 rounded-xl font-bold text-sm bg-indigo-600 hover:bg-indigo-500 text-white transition-all"
               >
                 Try Again
