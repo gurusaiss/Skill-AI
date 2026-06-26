@@ -615,7 +615,36 @@ export const Groups = {
     return doc;
   },
   async update(id, updates) {
-    return updateHealed('groups', 'groups.json', id, updates);
+    const sb = getSB();
+    if (sb) {
+      try {
+        const existing = await sbGetById('groups', id);
+        const { _created, _updated, id: _id, ...cleanUpdates } = updates;
+        const merged = { ...(existing || {}), ...cleanUpdates };
+        const { id: __id, name: mergedName, _created: _c, _updated: _u, ...rest } = merged;
+        const upsertPayload = { id, data: rest };
+        if (mergedName) upsertPayload.name = mergedName;
+
+        let { data, error } = await sb.from('groups')
+          .upsert(upsertPayload, { onConflict: 'id' })
+          .select('id, data')
+          .maybeSingle();
+        if (error?.code === '42703') {
+          ({ data, error } = await sb.from('groups')
+            .upsert({ id, data: rest }, { onConflict: 'id' })
+            .select('id, data')
+            .maybeSingle());
+        }
+        if (!error && data) return { id: data.id, ...data.data, name: mergedName || data.data?.name };
+        if (error) console.error('[DataStore] groups update:', error.message);
+      } catch (e) {
+        console.error('[DataStore] groups update exception:', e.message);
+      }
+    }
+    const all = readFileRecords('groups.json');
+    const idx = all.findIndex(r => r?.id === id);
+    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile('groups.json', all); return all[idx]; }
+    return null;
   },
   async delete(id) {
     return deleteHealed('groups', 'groups.json', id);
