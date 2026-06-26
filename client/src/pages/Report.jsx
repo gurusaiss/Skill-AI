@@ -682,7 +682,7 @@ ${asn.dueDate ? `<p>Due Date: ${new Date(asn.dueDate).toLocaleDateString()}</p>`
 
 // ─── Main Export ──────────────────────────────────────────────────────────────
 export default function Report() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
@@ -695,7 +695,7 @@ export default function Report() {
 
   if (!user) return null;
 
-  const isAdminOrManager = user.role === 'admin' || user.role === 'manager';
+  const isAdminOrManager = hasRole(['admin', 'manager']);
 
   // Employee accessing report from inside a module (via URL params)
   if (!isAdminOrManager && assignmentId) {

@@ -89,7 +89,7 @@ function RequestDetails({ request, users, modules }) {
 }
 
 export default function ApprovalCenter() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -141,7 +141,7 @@ export default function ApprovalCenter() {
   }, []);
 
   useEffect(() => {
-    if (!user || user.role !== 'admin') { navigate('/dashboard'); return; }
+    if (!user || !hasRole('admin')) { navigate('/dashboard'); return; }
     fetchAll();
   }, [user, navigate, fetchAll]);
 
@@ -202,7 +202,7 @@ export default function ApprovalCenter() {
     }
   };
 
-  if (!user || user.role !== 'admin') return null;
+  if (!user || !hasRole('admin')) return null;
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">

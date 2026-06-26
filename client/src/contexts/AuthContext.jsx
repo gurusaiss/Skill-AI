@@ -363,14 +363,15 @@ export const AuthProvider = ({ children }) => {
     setActiveRoleState(role);
   };
 
-  // Check if user has a specific role (checks primary role AND granted accesses AND active role)
+  // Check if user has a specific role (checks primary role AND granted accesses AND active/switched role)
   const hasRole = (role) => {
     if (!user) return false;
 
     // superadmin has access to all roles
     if (user.role === 'superadmin') return true;
 
-    const all = [user.role, ...(user.accesses || [])];
+    const effectiveRole = getEffectiveRole(); // includes switched role
+    const all = [...new Set([user.role, effectiveRole, ...(user.accesses || [])].filter(Boolean))];
 
     // Support multiple role checks (array or single role)
     if (Array.isArray(role)) {

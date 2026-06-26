@@ -62,7 +62,7 @@ const customTooltipStyle = {
 };
 
 export default function MetricsDashboard() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -73,7 +73,7 @@ export default function MetricsDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    if (user.role !== 'admin' && user.role !== 'superadmin') {
+    if (!hasRole('admin') && user.role !== 'superadmin') {
       navigate('/dashboard');
       return;
     }
