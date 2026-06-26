@@ -248,20 +248,29 @@ export async function createModule(module, createdBy) {
         const retry = await supabase.from('modules').upsert([payloadNoContent], { onConflict: 'id' }).select().single();
         if (retry.error) {
           console.error('[createModule] Retry error:', JSON.stringify(retry.error));
-          throw retry.error;
+          // Fall through to file fallback rather than throwing — prevents data loss
+        } else {
+          try {
+            await supabase.from('modules').update({ content: module.content || {} }).eq('id', id);
+          } catch (_) {}
+          return normalizeModule({ ...retry.data, content: module.content || {} });
         }
-        // Immediately try to patch content back in — attempt ADD COLUMN + UPDATE
-        try {
-          await supabase.from('modules').update({ content: module.content || {} }).eq('id', id);
-        } catch (_) { /* column still missing — sessions stored in file fallback below */ }
-        return normalizeModule({ ...retry.data, content: module.content || {} });
       }
-      throw error;
+      // FK / NULL violation on created_by — retry without it (let column use DB default)
+      if (error.code === '23502' || error.code === '23503' || (error.message && (error.message.includes('created_by') || error.message.includes('foreign key') || error.message.includes('null value')))) {
+        const { created_by: _cb, ...payloadNoCreator } = payload;
+        const retry2 = await supabase.from('modules').upsert([payloadNoCreator], { onConflict: 'id' }).select().single();
+        if (!retry2.error && retry2.data) {
+          return normalizeModule(retry2.data);
+        }
+        console.error('[createModule] Retry without created_by also failed:', JSON.stringify(retry2.error));
+      }
+      // Fall through to ephemeral file fallback — better than losing data entirely
+      console.warn('[createModule] Falling back to ephemeral file storage after Supabase error:', error.message);
+    } else {
+      return normalizeModule(data);
     }
-    return normalizeModule(data);
-  }
-
-  // Supabase is not available — writing to ephemeral file (data will be lost on Render restart!)
+  // Supabase is not available or errored — writing to ephemeral file (data will be lost on Render restart!)
   console.error('[createModule] ⚠️ Supabase is OFF — module will be written to ephemeral JSON file and will not survive a server restart. Check SUPABASE_URL and SUPABASESERVICE_ROLE_KEY env vars.');
   const path = join(DATA_DIR, 'modules.json');
   const f = await readJsonFile(path) || { modules: [], nextModuleId: 1 };
