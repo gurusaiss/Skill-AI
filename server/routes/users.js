@@ -235,27 +235,41 @@ router.get('/', authenticate, async (req, res) => {
       ? allUsers.filter(u => (u.companyId || 'default') === myCompany)
       : allUsers;
 
-    // Manager group filtering: restrict to employees in manager's assigned groups
+    // Manager visibility: show employees from ALL sources — groups, direct assignment, or managerId field
     if (isManager) {
       try {
-        const allGroups = await getGroups();
-        const managerGroups = allGroups.filter(g =>
-          g.managerId === req.user.userId &&
-          (g.companyId || 'default') === (req.user.companyId || 'default')
-        );
-        if (managerGroups.length > 0) {
-          // employeeIds is stored directly on the group object (not in group_memberships table)
-          const memberUserIds = new Set(managerGroups.flatMap(g => g.employeeIds || []));
-          if (memberUserIds.size > 0) {
-            users = users.filter(u => memberUserIds.has(u.userId));
-          }
-          // If groups exist but have no members yet, return empty list (not all employees)
+        const visibleIds = new Set();
+
+        // Source 1: employees in manager's Groups (DataStore)
+        try {
+          const allGroups = await getGroups();
+          const managerGroups = allGroups.filter(g =>
+            g.managerId === req.user.userId &&
+            (g.companyId || 'default') === (req.user.companyId || 'default')
+          );
+          managerGroups.flatMap(g => g.employeeIds || []).forEach(id => visibleIds.add(id));
+        } catch (_) {}
+
+        // Source 2: employees assigned via UserStore manager-employee assignments
+        try {
+          const assigned = await UserStore.getManagerEmployees(req.user.userId);
+          (assigned || []).forEach(emp => visibleIds.add(emp.userId || emp.id));
+        } catch (_) {}
+
+        // Source 3: employees whose managerId field points directly to this manager
+        users
+          .filter(u => u.managerId === req.user.userId || u.manager_id === req.user.userId)
+          .forEach(u => visibleIds.add(u.userId));
+
+        if (visibleIds.size > 0) {
+          users = users.filter(u => visibleIds.has(u.userId));
         } else {
-          // Manager has no groups assigned — show nothing
+          // No employees found via any source — return empty (not all company employees)
           users = [];
         }
       } catch (groupErr) {
-        console.warn('[User Routes] Group filtering failed, returning company employees:', groupErr.message);
+        console.warn('[User Routes] Manager employee filtering failed:', groupErr.message);
+        users = [];
       }
     }
 
