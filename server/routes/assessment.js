@@ -742,7 +742,7 @@ router.post('/parse-questionnaire', authenticate, requireRole('admin', 'manager'
 });
 
 // ── Shared helper: build export row from assessment employee assignment + DB report ──
-function buildExportRow(ea, report, assessmentTitle) {
+function buildExportRow(ea, report, assessmentTitle, extraMeta = {}) {
   // scoring lives in both ea.scoring (immediate) and the Reports collection
   const sc = report || ea.scoring || {};
   const correct  = sc.correct  ?? null;
@@ -752,24 +752,36 @@ function buildExportRow(ea, report, assessmentTitle) {
   const recsList = (report?.improvementRecommendations || sc.recommendedLearningAreas || [])
     .map(r => (typeof r === 'string' ? r : r?.area || String(r)));
 
+  // Duration: calculated from start→submit if available, else assessment duration
+  const durationMs = ea.startedAt && ea.submittedAt ? new Date(ea.submittedAt) - new Date(ea.startedAt) : null;
+  const durationStr = durationMs ? `${Math.round(durationMs / 60000)} min` : (extraMeta.durationMinutes ? `${extraMeta.durationMinutes} min` : '');
+
   return {
     employeeName:    ea.userName  || ea.name  || ea.userId || '',
+    employeeId:      extraMeta.employeeId || ea.userId || '',
     employeeEmail:   ea.userEmail || report?.userEmail || '',
-    employeeId:      ea.userId    || '',
     jobRole:         ea.jobRole   || report?.jobRole || '',
+    group:           extraMeta.groupName  || '',
+    manager:         extraMeta.managerName || '',
     assessmentName:  assessmentTitle || '',
+    assessmentType:  extraMeta.assessmentType || '',
     assessmentDate:  ea.assignedAt || '',
+    deadline:        extraMeta.deadline || '',
     score:           correct != null ? `${correct}/${totalQs}` : 'Pending',
     percentage:      scorePct != null ? `${scorePct}%` : 'Pending',
     grade:           sc.grade || '',
+    passFail:        scorePct != null ? (scorePct >= (extraMeta.passThreshold ?? 80) ? 'Pass' : 'Fail') : '',
     classification:  sc.performanceClassification?.label || '',
     status:          ea.status || 'assigned',
     completionDate:  ea.submittedAt || report?.submittedAt || '',
+    duration:        durationStr,
     strengths:       (sc.strengths || []).join('; '),
     improvementAreas:(sc.weakAreas || []).join('; '),
     missingCompetencies: (sc.missingCompetencies || []).join('; '),
     recommendations: recsList.join('; '),
     skillBreakdown:  (sc.skillBreakdown || []).map(s => `${s.skill}: ${s.score ?? s.pct ?? 0}%`).join(', '),
+    aiSummary:       report?.aiSummary || sc.readinessLevel || '',
+    topicScores:     (sc.skillBreakdown || []).map(s => `${s.skill}: ${s.pct ?? s.score ?? 0}%`).join('; '),
   };
 }
 
@@ -939,9 +951,29 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
       ? assignments.filter(ea => ea.userId === targetUserId)
       : assignments;
 
+    // Fetch groups + users for group/manager enrichment
+    let allGroups = [], allUsers = [];
+    try {
+      const { getGroups } = await import('../db/store.js');
+      allGroups = await getGroups();
+      const usersResult = await UserStore.getAllUsers({ companyId: req.user.companyId });
+      allUsers = Array.isArray(usersResult) ? usersResult : (usersResult?.users || []);
+    } catch {}
+
     const rows = filteredAssignments.map(ea => {
       const report = allReports.find(r => r.assessmentId === id && r.userId === ea.userId);
-      return buildExportRow(ea, report, assessment.title);
+      const group = allGroups.find(g => (g.employeeIds || []).includes(ea.userId));
+      const managerUser = group ? allUsers.find(u => u.userId === group.managerId) : null;
+      const empUser = allUsers.find(u => u.userId === ea.userId);
+      return buildExportRow(ea, report, assessment.title, {
+        groupName: group?.name || '',
+        managerName: managerUser?.name || '',
+        employeeId: empUser?.employeeId || ea.userId,
+        assessmentType: assessment.assessmentType || '',
+        deadline: assessment.deadline || '',
+        durationMinutes: assessment.duration,
+        passThreshold: assessment.settings?.passPercentage ?? 80,
+      });
     });
 
     if (rows.length === 0) {
@@ -954,8 +986,8 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
     // ── XLSX ──────────────────────────────────────────────────────────────────
     if (format === 'xlsx') {
       const { default: XLSX } = await import('xlsx');
-      const headers = ['Employee Name','Email','Employee ID','Job Role','Assessment','Assessment Date','Score','%','Grade','Classification','Status','Completion Date','Skill Breakdown','Strengths','Improvement Areas','Missing Competencies','Recommendations'];
-      const toRow = r => [r.employeeName,r.employeeEmail,r.employeeId,r.jobRole,r.assessmentName,r.assessmentDate,r.score,r.percentage,r.grade,r.classification,r.status,r.completionDate,r.skillBreakdown,r.strengths,r.improvementAreas,r.missingCompetencies,r.recommendations];
+      const headers = ['Employee Name','Employee ID','Email','Job Role','Group','Manager','Assessment','Assessment Type','Assessment Date','Deadline','Score','%','Pass/Fail','Grade','Classification','Duration','Status','Completion Date','Skill Breakdown','Topic Scores','Strengths','Improvement Areas','Missing Competencies','Recommendations','AI Summary'];
+      const toRow = r => [r.employeeName,r.employeeId,r.employeeEmail,r.jobRole,r.group,r.manager,r.assessmentName,r.assessmentType,r.assessmentDate,r.deadline,r.score,r.percentage,r.passFail,r.grade,r.classification,r.duration,r.status,r.completionDate,r.skillBreakdown,r.topicScores,r.strengths,r.improvementAreas,r.missingCompetencies,r.recommendations,r.aiSummary];
 
       const wb = XLSX.utils.book_new();
       if (mode === 'individual') {
