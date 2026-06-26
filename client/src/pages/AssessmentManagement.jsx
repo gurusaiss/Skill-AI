@@ -1825,15 +1825,19 @@ export default function AssessmentManagement() {
                           {submitted.map((ea, i) => (
                             <div key={i} className="flex items-center justify-between px-4 py-3 rounded-xl bg-slate-800/30 border border-slate-700/40">
                               <span className="text-sm text-white">{ea.userName || ea.userId}</span>
-                              <button onClick={() => {
-                                const EXPORT_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
-                                const token = localStorage.getItem('auth_token');
-                                fetch(`${EXPORT_BASE}/api/assessments/${viewDetail.id}/export-reports?format=pdf&mode=individual&userId=${ea.userId}`, { headers: { Authorization: `Bearer ${token}` } })
-                                  .then(r => r.blob()).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${ea.userName || ea.userId}-Report.pdf`; a.click(); URL.revokeObjectURL(url); })
-                                  .catch(e => showToast(e.message || 'Export failed', 'error'));
-                              }} className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-bold text-slate-300 hover:text-white transition-colors">
-                                ⬇ PDF
-                              </button>
+                              <div className="flex gap-1.5">
+                                {[['pdf','PDF'],['xlsx','Excel'],['docx','Word']].map(([fmt,lbl]) => (
+                                  <button key={fmt} onClick={() => {
+                                    const EXPORT_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+                                    const token = localStorage.getItem('auth_token');
+                                    fetch(`${EXPORT_BASE}/api/assessments/${viewDetail.id}/export-reports?format=${fmt}&mode=individual&userId=${ea.userId}`, { headers: { Authorization: `Bearer ${token}` } })
+                                      .then(r => r.blob()).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${(ea.userName || ea.userId).replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Report.${fmt}`; a.click(); URL.revokeObjectURL(url); })
+                                      .catch(e => showToast(e.message || 'Export failed', 'error'));
+                                  }} className="px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-bold text-slate-300 hover:text-white transition-colors">
+                                    ⬇ {lbl}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
                           ))}
                         </div>

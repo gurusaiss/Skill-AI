@@ -910,6 +910,7 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
     const { id } = req.params;
     const format  = (req.query.format || 'xlsx').toLowerCase();
     const mode    = (req.query.mode   || 'consolidated').toLowerCase();
+    const targetUserId = req.query.userId || null;
 
     const assessment = await Assessments.getById(id);
     if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
@@ -933,7 +934,12 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
       } catch {}
     }
 
-    const rows = assignments.map(ea => {
+    // Filter by specific userId if provided (for per-employee download)
+    const filteredAssignments = targetUserId
+      ? assignments.filter(ea => ea.userId === targetUserId)
+      : assignments;
+
+    const rows = filteredAssignments.map(ea => {
       const report = allReports.find(r => r.assessmentId === id && r.userId === ea.userId);
       return buildExportRow(ea, report, assessment.title);
     });
