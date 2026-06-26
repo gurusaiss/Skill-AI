@@ -131,11 +131,6 @@ const App = () => {
               } />
               
               {/* Frontier Pages - Protected */}
-              <Route path="/simulation"   element={
-                <ProtectedRoute>
-                  <SimulationLab />
-                </ProtectedRoute>
-              } />
               <Route path="/career-twin"  element={
                 <ProtectedRoute>
                   <CareerTwin />
@@ -147,11 +142,6 @@ const App = () => {
                 </ProtectedRoute>
               } />
               <Route path="/demo"         element={<DemoMode />} />
-              <Route path="/interview"    element={
-                <ProtectedRoute>
-                  <InterviewSimulator />
-                </ProtectedRoute>
-              } />
               
               {/* Auth Pages - Public */}
               <Route path="/auth/login"           element={<Login />} />
