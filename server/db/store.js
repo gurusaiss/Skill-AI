@@ -270,6 +270,7 @@ export async function createModule(module, createdBy) {
     } else {
       return normalizeModule(data);
     }
+  } // end if (isOn())
   // Supabase is not available or errored — writing to ephemeral file (data will be lost on Render restart!)
   console.error('[createModule] ⚠️ Supabase is OFF — module will be written to ephemeral JSON file and will not survive a server restart. Check SUPABASE_URL and SUPABASESERVICE_ROLE_KEY env vars.');
   const path = join(DATA_DIR, 'modules.json');
