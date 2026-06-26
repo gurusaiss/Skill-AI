@@ -730,30 +730,15 @@ export default function RoleLibrary() {
               <tr>
                 <th className={thCls}>Role Name</th>
                 <th className={thCls}>Department</th>
-                <th className={thCls}>Skills</th>
-                <th className={thCls}>JD</th>
                 <th className={thCls}>Status</th>
                 <th className={thCls}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((role, i) => (
-                <tr key={role.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 ${i % 2 === 0 ? '' : 'bg-slate-800/20'}`}>
+                <tr key={role.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${role.assessmentTemplateId ? 'bg-emerald-900/10 border-l-2 border-l-emerald-500/50' : (i % 2 === 0 ? '' : 'bg-slate-800/20')}`}>
                   <td className="px-4 py-3 font-medium text-white">{role.roleName}</td>
                   <td className="px-4 py-3 text-slate-400">{role.department || '—'}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {(role.skills || []).slice(0, 3).map(s => (
-                        <span key={s} className="px-1.5 py-0.5 rounded text-xs bg-slate-700 text-slate-300">{s}</span>
-                      ))}
-                      {(role.skills || []).length > 3 && <span className="text-xs text-slate-500">+{role.skills.length - 3}</span>}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {role.jobDescription
-                      ? <span className="text-emerald-400 text-xs">✓ {role.jobDescription.length.toLocaleString()} chars</span>
-                      : <span className="text-slate-600 text-xs">—</span>}
-                  </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-semibold w-fit ${role.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-600'}`}>
@@ -822,7 +807,12 @@ export default function RoleLibrary() {
       {approveRole && (
         <ApproveModal
           role={approveRole}
-          onClose={() => setApproveRole(null)}
+          onClose={(approved) => {
+            if (approved) {
+              setRoles(prev => prev.map(r => r.id === approveRole.id ? { ...r, assessmentTemplateId: 'approved' } : r));
+            }
+            setApproveRole(null);
+          }}
         />
       )}
 

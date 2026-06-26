@@ -208,15 +208,17 @@ export default function AssessmentManagement() {
   // Export reports modal
   const [exportTarget, setExportTarget] = useState(null);
   const [downloadingAll, setDownloadingAll] = useState(false);
+  const [showExportFormatModal, setShowExportFormatModal] = useState(false);
 
   const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
-  const downloadAllReports = async () => {
+  const downloadAllReports = async (format = 'xlsx') => {
     setDownloadingAll(true);
+    setShowExportFormatModal(false);
     try {
       const token = localStorage.getItem('auth_token');
       const BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
-      const res = await fetch(`${BASE}/api/assessments/export-all-reports`, {
+      const res = await fetch(`${BASE}/api/assessments/export-all-reports?format=${format}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -227,7 +229,8 @@ export default function AssessmentManagement() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'All-Assessment-Reports.xlsx';
+      const ext = format === 'pdf' ? 'pdf' : format === 'doc' ? 'docx' : 'xlsx';
+      a.download = `All-Assessment-Reports.${ext}`;
       a.click();
       URL.revokeObjectURL(url);
       showToast('All reports downloaded', 'success');
@@ -557,7 +560,7 @@ export default function AssessmentManagement() {
           </div>
           <div className="flex gap-3">
             <button
-              onClick={downloadAllReports}
+              onClick={() => setShowExportFormatModal(true)}
               disabled={downloadingAll}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-sm font-bold transition-all shadow-lg shadow-teal-500/20 disabled:opacity-40"
             >
@@ -1850,6 +1853,32 @@ export default function AssessmentManagement() {
           onClose={() => setShowManualModal(false)}
           onCreated={() => { setShowManualModal(false); loadAll(); showToast('Manual assessment created', 'success'); }}
         />
+      )}
+
+      {showExportFormatModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={e => e.target === e.currentTarget && setShowExportFormatModal(false)}>
+          <div className="bg-[#1E293B] border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl p-6">
+            <h3 className="text-lg font-bold text-white mb-1">Download All Reports</h3>
+            <p className="text-slate-400 text-sm mb-5">Choose export format</p>
+            <div className="space-y-3">
+              {[
+                { fmt: 'xlsx', label: 'Excel (.xlsx)', icon: '📊', desc: 'Spreadsheet with all data columns' },
+                { fmt: 'pdf',  label: 'PDF (.pdf)',   icon: '📄', desc: 'Formatted printable report' },
+                { fmt: 'doc',  label: 'Word (.docx)', icon: '📝', desc: 'Editable document format' },
+              ].map(({ fmt, label, icon, desc }) => (
+                <button key={fmt} onClick={() => downloadAllReports(fmt)}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-indigo-500/50 hover:bg-slate-800 transition-all text-left">
+                  <span className="text-2xl">{icon}</span>
+                  <div>
+                    <p className="text-sm font-bold text-white">{label}</p>
+                    <p className="text-xs text-slate-400">{desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowExportFormatModal(false)} className="mt-4 w-full py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancel</button>
+          </div>
+        </div>
       )}
     </div>
   );

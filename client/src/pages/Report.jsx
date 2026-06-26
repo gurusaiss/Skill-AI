@@ -77,6 +77,8 @@ function AdminReportView({ user, navigate }) {
   const [filterType, setFilterType] = useState('all'); // 'all' | 'assessment' | 'module'
   const [filterJobRole, setFilterJobRole] = useState('all');
   const [filterDateRange, setFilterDateRange] = useState({ from: '', to: '' });
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   const loadReports = useCallback(async () => {
     setLoading(true);
@@ -96,6 +98,31 @@ function AdminReportView({ user, navigate }) {
   }, []);
 
   useEffect(() => { loadReports(); }, [loadReports]);
+
+  const downloadAllReports = async (format = 'xlsx') => {
+    setDownloadingAll(true);
+    setShowDownloadModal(false);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+      const res = await fetch(`${BASE}/api/assessments/export-all-reports?format=${format}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ext = format === 'pdf' ? 'pdf' : format === 'doc' ? 'docx' : 'xlsx';
+      a.download = `Training-Reports.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e.message || 'Export failed');
+    } finally {
+      setDownloadingAll(false);
+    }
+  };
 
   const jobRoles = useMemo(() => {
     const roles = new Set();
@@ -136,7 +163,13 @@ function AdminReportView({ user, navigate }) {
               : 'Platform-wide employee training completion overview'}
           </p>
         </div>
-        <button onClick={loadReports} className="px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white text-sm font-medium transition-all">↻ Refresh</button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowDownloadModal(true)} disabled={downloadingAll}
+            className="px-4 py-2 rounded-lg bg-teal-600/20 border border-teal-500/30 text-teal-300 hover:bg-teal-600/40 text-sm font-medium transition-all disabled:opacity-40">
+            {downloadingAll ? 'Downloading…' : '⬇ Download All Reports'}
+          </button>
+          <button onClick={loadReports} className="px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white text-sm font-medium transition-all">↻ Refresh</button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -288,6 +321,32 @@ function AdminReportView({ user, navigate }) {
           </div>
         )}
       </div>
+
+      {showDownloadModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={e => e.target === e.currentTarget && setShowDownloadModal(false)}>
+          <div className="bg-[#1E293B] border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl p-6">
+            <h3 className="text-lg font-bold text-white mb-1">Download All Reports</h3>
+            <p className="text-slate-400 text-sm mb-5">Choose export format</p>
+            <div className="space-y-3">
+              {[
+                { fmt: 'xlsx', label: 'Excel (.xlsx)', icon: '📊', desc: 'Spreadsheet with all data' },
+                { fmt: 'pdf',  label: 'PDF (.pdf)',   icon: '📄', desc: 'Formatted printable report' },
+                { fmt: 'doc',  label: 'Word (.docx)', icon: '📝', desc: 'Editable document' },
+              ].map(({ fmt, label, icon, desc }) => (
+                <button key={fmt} onClick={() => downloadAllReports(fmt)}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-indigo-500/50 hover:bg-slate-800 transition-all text-left">
+                  <span className="text-2xl">{icon}</span>
+                  <div>
+                    <p className="text-sm font-bold text-white">{label}</p>
+                    <p className="text-xs text-slate-400">{desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowDownloadModal(false)} className="mt-4 w-full py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
