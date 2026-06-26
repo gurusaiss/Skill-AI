@@ -523,6 +523,13 @@ router.post('/login', rateLimitLogin, async (req, res) => {
       userAgent: req.headers['user-agent']
     });
 
+    const loginStoredAccesses = user.accesses || [];
+    let loginEffectiveAccesses = loginStoredAccesses;
+    if (loginStoredAccesses.length === 0) {
+      if (user.role === 'manager') loginEffectiveAccesses = ['employee'];
+      else if (user.role === 'admin') loginEffectiveAccesses = ['manager', 'employee'];
+    }
+
     res.json({
       success: true,
       data: {
@@ -532,7 +539,7 @@ router.post('/login', rateLimitLogin, async (req, res) => {
           email: user.email,
           name: user.name,
           role: user.role,
-          accesses: user.accesses || [],
+          accesses: loginEffectiveAccesses,
           companyId: user.companyId || null,
           jobRole: user.jobRole || null,
           department: user.department || null,
@@ -605,6 +612,15 @@ router.get('/me', authenticate, async (req, res) => {
       });
     }
 
+    // Compute effective accesses: use stored accesses if non-empty,
+    // otherwise derive sensible defaults so switch buttons appear without manual admin grant
+    const storedAccesses = user.accesses || [];
+    let effectiveAccesses = storedAccesses;
+    if (storedAccesses.length === 0) {
+      if (user.role === 'manager') effectiveAccesses = ['employee'];
+      else if (user.role === 'admin') effectiveAccesses = ['manager', 'employee'];
+    }
+
     res.json({
       success: true,
       data: {
@@ -612,7 +628,7 @@ router.get('/me', authenticate, async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
-        accesses: user.accesses || [],
+        accesses: effectiveAccesses,
         companyId: user.companyId || null,
         jobRole: user.jobRole || null,
         department: user.department || null,
