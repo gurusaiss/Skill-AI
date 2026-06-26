@@ -944,7 +944,8 @@ router.post('/bulk-import/preview', authenticate, requireRole('admin', 'manager'
     }
 
     const allUsers = await UserStore.getAllUsers({});
-    const existingEmails = new Set(allUsers.map(u => u.email?.toLowerCase()));
+    const existingEmailMap = Object.fromEntries(allUsers.map(u => [u.email?.toLowerCase(), u]));
+    const existingEmails = new Set(Object.keys(existingEmailMap));
     const existingEmpIds = new Set(allUsers.map(u => u.employeeId).filter(Boolean));
     const seenInBatch = new Set();
 
@@ -953,14 +954,15 @@ router.post('/bulk-import/preview', authenticate, requireRole('admin', 'manager'
       const row = normaliseRow(raw);
       const errors = [];
 
+      const isExisting = row.email && existingEmails.has(row.email.toLowerCase());
+
       if (!row.name) errors.push('name required');
       if (!row.email) errors.push('email required');
       else if (!EMAIL_RE.test(row.email)) errors.push('invalid email format');
-      else if (existingEmails.has(row.email.toLowerCase())) errors.push('email already exists');
       else if (seenInBatch.has(row.email.toLowerCase())) errors.push('duplicate email in file');
       else seenInBatch.add(row.email.toLowerCase());
 
-      if (row.employeeId && existingEmpIds.has(row.employeeId)) errors.push('employee ID already exists');
+      if (row.employeeId && existingEmpIds.has(row.employeeId) && !isExisting) errors.push('employee ID already exists');
       if (row.role && !['employee', 'manager', 'admin'].includes(row.role.toLowerCase())) {
         errors.push(`invalid role "${row.role}" — use employee/manager/admin`);
       }
@@ -969,14 +971,17 @@ router.post('/bulk-import/preview', authenticate, requireRole('admin', 'manager'
         rowNum: idx + 2, // +2 because row 1 = header
         ...row,
         role: row.role?.toLowerCase() || 'employee',
-        status: errors.length ? 'error' : 'valid',
+        status: errors.length ? 'error' : (isExisting ? 'update' : 'valid'),
         errors,
+        _isUpdate: isExisting,
+        _existingUserId: isExisting ? existingEmailMap[row.email.toLowerCase()]?.userId : undefined,
       };
     });
 
     const valid   = preview.filter(r => r.status === 'valid').length;
+    const updates = preview.filter(r => r.status === 'update').length;
     const invalid = preview.filter(r => r.status === 'error').length;
-    res.json({ success: true, data: { preview, summary: { total: preview.length, valid, invalid } } });
+    res.json({ success: true, data: { preview, summary: { total: preview.length, valid, updates, invalid } } });
   } catch (e) {
     console.error('[bulk-import/preview]', e);
     res.status(500).json({ success: false, error: e.message });
@@ -1000,11 +1005,39 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
     const allUsers   = await UserStore.getAllUsers({});
     const existingEmails = new Set(allUsers.map(u => u.email?.toLowerCase()));
 
-    const created = [], skipped = [], failed = [];
+    const created = [], updated = [], skipped = [], failed = [];
 
     for (const row of rows) {
       if (!row.email || !row.name) { skipped.push({ row, reason: 'Missing name or email' }); continue; }
-      if (existingEmails.has(row.email.toLowerCase())) { skipped.push({ row, reason: 'Email already registered' }); continue; }
+
+      const existingUser = allUsers.find(u => u.email?.toLowerCase() === row.email.toLowerCase());
+
+      if (existingUser) {
+        // UPDATE path - only update non-empty fields
+        try {
+          const updateFields = {};
+          if (row.name) updateFields.name = row.name.trim();
+          if (row.jobRole) updateFields.jobRole = row.jobRole;
+          if (row.department) updateFields.department = row.department;
+          if (row.jobDescription) updateFields.jobDescription = row.jobDescription;
+          if (row.phone) updateFields.phone = row.phone;
+          if (row.employeeId) updateFields.employeeId = row.employeeId;
+          if (row.status && ['active','inactive','blocked'].includes(row.status)) updateFields.status = row.status;
+          // role update only if admin
+          if (row.role && req.user.role === 'admin') {
+            const r = row.role.toLowerCase();
+            if (['employee','manager','admin'].includes(r)) updateFields.role = r;
+          }
+          if (Object.keys(updateFields).length > 0) {
+            await UserStore.updateUser(existingUser.userId || existingUser.id, updateFields);
+          }
+          updated.push({ userId: existingUser.userId || existingUser.id, email: existingUser.email, name: existingUser.name, updated: Object.keys(updateFields) });
+          continue;
+        } catch (e) {
+          failed.push({ row, reason: e.message });
+          continue;
+        }
+      }
 
       try {
         const ALLOWED_IMPORT_ROLES = ['employee', 'manager', 'trainer', 'leadership'];
@@ -1131,12 +1164,14 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
       success: true,
       data: {
         created: created.length,
+        updated: updated.length,
         skipped: skipped.length,
         failed:  failed.length,
         managerLinked: managerLinked.length,
         credentialExcel: credentialExcelB64,   // base64 xlsx — frontend triggers download
         results: {
           created: created.map(({ managerEmail: _m, _emailPayload: _ep, _userObj: _u, ...u }) => u),
+          updated,
           skipped,
           failed,
           managerLinked,

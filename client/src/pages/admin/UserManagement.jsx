@@ -993,11 +993,14 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
 // ─── Bulk Import Modal ────────────────────────────────────────────────────────
 
 const IMPORT_TEMPLATE_CSV = `name,email,system_role,employee_id,job_role,department,job_description,company_name,password,phone,manager_email
+# MANDATORY: name, email
+# OPTIONAL: system_role (admin/manager/employee - default: employee), employee_id, job_role, department, job_description, company_name, password, phone, manager_email
+# IMMUTABLE (never changes after creation): email
+# If email already exists -> existing user will be UPDATED with the provided fields
+# If email is new -> a new user will be CREATED
 Jane Smith,jane@company.com,employee,EMP001,Frontend Developer,Engineering,Builds React UIs,Acme Corp,,+91-9876543210,
 John Doe,john@company.com,employee,EMP002,Data Analyst,Analytics,Analyzes business data,Acme Corp,,+91-9123456789,
 Sara Lee,sara@company.com,manager,MGR001,Engineering Manager,Engineering,Leads frontend team,Acme Corp,,,
-Tom Ray,tom@company.com,trainer,TRN001,Senior Trainer,L&D,Delivers training programs,Acme Corp,,,
-Priya Kumar,priya@company.com,leadership,LDR001,VP Engineering,Engineering,Leads engineering division,Acme Corp,,,
 `;
 
 function ImportModal({ onClose, onImported, setToast }) {
@@ -1045,7 +1048,7 @@ function ImportModal({ onClose, onImported, setToast }) {
   };
 
   const handleImport = async () => {
-    const validRows = preview.preview.filter(r => r.status === 'valid');
+    const validRows = preview.preview.filter(r => r.status === 'valid' || r.status === 'update');
     if (!validRows.length) return;
     setImporting(true);
     try {
@@ -1074,7 +1077,7 @@ function ImportModal({ onClose, onImported, setToast }) {
     } finally { setImporting(false); }
   };
 
-  const validCount   = preview?.preview.filter(r => r.status === 'valid').length || 0;
+  const validCount   = preview?.preview.filter(r => r.status === 'valid' || r.status === 'update').length || 0;
   const invalidCount = preview?.preview.filter(r => r.status === 'error').length || 0;
 
   return (
@@ -1085,7 +1088,7 @@ function ImportModal({ onClose, onImported, setToast }) {
         <div className="p-5 border-b border-slate-700/60 flex items-center justify-between shrink-0">
           <div>
             <h2 className="text-lg font-bold text-white">📥 Bulk Import Users</h2>
-            <p className="text-slate-500 text-xs mt-0.5">Upload CSV, XLS, or XLSX file to create multiple users at once</p>
+            <p className="text-slate-500 text-xs mt-0.5">Upload CSV, XLS, or XLSX. New emails create users; existing emails update users automatically.</p>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white p-1 rounded-lg hover:bg-slate-700 transition-colors">✕</button>
         </div>
@@ -1165,7 +1168,7 @@ function ImportModal({ onClose, onImported, setToast }) {
                 </thead>
                 <tbody className="divide-y divide-slate-700/30">
                   {preview.preview.map(row => (
-                    <tr key={row.rowNum} className={row.status === 'error' ? 'bg-red-500/5' : 'hover:bg-slate-700/20'}>
+                    <tr key={row.rowNum} className={row.status === 'error' ? 'bg-red-500/5' : row.status === 'update' ? 'bg-amber-500/5 hover:bg-amber-500/10' : 'hover:bg-slate-700/20'}>
                       <td className="py-2 px-3 text-slate-500">{row.rowNum}</td>
                       <td className="py-2 px-3 text-white font-medium">{row.name || '—'}</td>
                       <td className="py-2 px-3 text-slate-300">{row.email || '—'}</td>
@@ -1181,7 +1184,9 @@ function ImportModal({ onClose, onImported, setToast }) {
                       <td className="py-2 px-3">
                         {row.status === 'valid'
                           ? <span className="text-emerald-400 font-bold">✓ Ready</span>
-                          : <span className="text-red-400 font-bold" title={row.errors.join(', ')}>✕ {row.errors[0]}</span>
+                          : row.status === 'update'
+                          ? <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold">UPDATE</span>
+                          : <span className="text-red-400 font-bold" title={row.errors?.join(', ')}>✕ {row.errors?.[0]}</span>
                         }
                       </td>
                     </tr>
@@ -1636,8 +1641,6 @@ export default function UserManagement() {
   const [editUser, setEditUser] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [showManagerMapping, setShowManagerMapping] = useState(false);
-  const [showBulkUpdate, setShowBulkUpdate] = useState(false);
   const [inviteResultUser, setInviteResultUser] = useState(null);
   const [manageAccessUser, setManageAccessUser] = useState(null);
 
@@ -1772,12 +1775,7 @@ export default function UserManagement() {
       {showImport && (
         <ImportModal onClose={() => setShowImport(false)} onImported={fetchData} setToast={setToast} />
       )}
-      {showManagerMapping && (
-        <ManagerMappingModal onClose={() => setShowManagerMapping(false)} onDone={fetchData} setToast={setToast} />
-      )}
-      {showBulkUpdate && (
-        <BulkUpdateModal onClose={() => setShowBulkUpdate(false)} onDone={fetchData} setToast={setToast} />
-      )}
+
       {inviteResultUser && (
         <InviteResultModal user={inviteResultUser} onClose={() => setInviteResultUser(null)} />
       )}
@@ -1820,14 +1818,6 @@ export default function UserManagement() {
               <button onClick={() => setShowImport(true)}
                 className="flex items-center gap-2 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 border border-emerald-600 rounded-xl text-white font-bold text-sm transition-colors shadow-lg shadow-emerald-900/30">
                 📥 Bulk Import
-              </button>
-              <button onClick={() => setShowManagerMapping(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-800 hover:bg-indigo-700 border border-indigo-700 rounded-xl text-white font-bold text-sm transition-colors">
-                🔗 Manager Mapping
-              </button>
-              <button onClick={() => setShowBulkUpdate(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-xl text-white font-bold text-sm transition-colors">
-                ✏️ Bulk Update
               </button>
               {/* Create button */}
               <button onClick={() => setShowCreate(true)}

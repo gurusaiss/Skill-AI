@@ -1260,7 +1260,7 @@ router.get('/export-all-reports', authenticate, async (req, res) => {
       }
     }
 
-    const XLSX = await import('xlsx');
+    const format = (req.query.format || 'xlsx').toLowerCase();
     const headers = ['Name','Email','Job Role','Assessment','Date','Score %','Grade','Classification','Status','Strengths','Improvement Areas','Recommendations'];
     const rows = reports.map(r => {
       const sc = r.scoring || {};
@@ -1280,15 +1280,60 @@ router.get('/export-all-reports', authenticate, async (req, res) => {
       ];
     });
 
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws['!cols'] = [25,30,20,30,15,10,10,18,12,40,40,40].map(w => ({ wch: w }));
-    XLSX.utils.book_append_sheet(wb, ws, 'All Reports');
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="All-Assessment-Reports.xlsx"');
-    res.end(Buffer.isBuffer(buf) ? buf : Buffer.from(buf));
+    if (format === 'pdf') {
+      // Generate HTML and convert to PDF-like downloadable HTML (print-ready)
+      const htmlRows = rows.map(row => `<tr>${row.map(cell => `<td>${String(cell).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>`).join('')}</tr>`).join('');
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Assessment Reports</title>
+<style>
+body{font-family:Arial,sans-serif;padding:20px;font-size:11px;}
+h1{color:#4f46e5;font-size:18px;margin-bottom:16px;}
+table{width:100%;border-collapse:collapse;font-size:10px;}
+th{background:#1e293b;color:#fff;padding:8px 6px;text-align:left;font-size:9px;text-transform:uppercase;}
+td{padding:7px 6px;border-bottom:1px solid #e2e8f0;vertical-align:top;}
+tr:nth-child(even){background:#f8fafc;}
+.footer{margin-top:20px;text-align:center;color:#94a3b8;font-size:9px;}
+@media print{body{padding:10px;}}
+</style></head><body>
+<h1>All Assessment Reports</h1>
+<p style="color:#64748b;font-size:11px;margin-bottom:12px;">Generated: ${new Date().toLocaleString()} · Total Records: ${rows.length}</p>
+<table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+<tbody>${htmlRows}</tbody></table>
+<div class="footer">SkillForge AI · Assessment Reports · Confidential</div>
+</body></html>`;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="All-Assessment-Reports.html"');
+      res.end(html);
+    } else if (format === 'doc') {
+      // Generate DOCX-compatible HTML wrapped in Word XML
+      const tableRows = rows.map(row =>
+        `<w:tr>${row.map(cell => `<w:tc><w:p><w:r><w:t>${String(cell).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</w:t></w:r></w:p></w:tc>`).join('')}</w:tr>`
+      ).join('');
+      const headerRow = `<w:tr>${headers.map(h => `<w:tc><w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>${h}</w:t></w:r></w:p></w:tc>`).join('')}</w:tr>`;
+      const docx = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<?mso-application progid="Word.Document"?>
+<w:wordDocument xmlns:w="http://schemas.microsoft.com/office/word/2003/wordml">
+<w:body>
+<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="36"/></w:rPr><w:t>All Assessment Reports</w:t></w:r></w:p>
+<w:p><w:r><w:t>Generated: ${new Date().toLocaleString()} | Total: ${rows.length}</w:t></w:r></w:p>
+<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/><w:tblBorders><w:top w:val="single"/><w:left w:val="single"/><w:bottom w:val="single"/><w:right w:val="single"/><w:insideH w:val="single"/><w:insideV w:val="single"/></w:tblBorders></w:tblPr>
+${headerRow}${tableRows}
+</w:tbl>
+</w:body></w:wordDocument>`;
+      res.setHeader('Content-Type', 'application/msword');
+      res.setHeader('Content-Disposition', 'attachment; filename="All-Assessment-Reports.doc"');
+      res.end(docx);
+    } else {
+      // Default: XLSX
+      const XLSX = await import('xlsx');
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws['!cols'] = [25,30,20,30,15,10,10,18,12,40,40,40].map(w => ({ wch: w }));
+      XLSX.utils.book_append_sheet(wb, ws, 'All Reports');
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename="All-Assessment-Reports.xlsx"');
+      res.end(Buffer.isBuffer(buf) ? buf : Buffer.from(buf));
+    }
   } catch (e) {
     console.error('[export-all-reports]', e);
     res.status(500).json({ success: false, error: e.message });
