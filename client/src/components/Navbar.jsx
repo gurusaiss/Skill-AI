@@ -117,7 +117,11 @@ function Navbar() {
   const ROLE_LABELS = { admin: 'Admin', manager: 'Manager', employee: 'Employee' };
   const ROLE_ICONS  = { admin: '🛡️', manager: '📊', employee: '📚' };
   const DASH_MAP    = { admin: '/admin/dashboard', manager: '/manager/dashboard', employee: '/dashboard' };
-  const switchableRoles = (allRoles || []).filter(r => r !== effectiveNavRole && r !== 'superadmin' && r !== 'trainer');
+  // Build deduplicated switch options: exclude current effective role, trainer, superadmin.
+  // Primary role always listed first; no duplicates.
+  const primaryRoleSwitch = user?.role && user.role !== effectiveNavRole ? [user.role] : [];
+  const extraRoles = (allRoles || []).filter(r => r !== effectiveNavRole && r !== 'superadmin' && r !== 'trainer' && r !== user?.role);
+  const deduplicatedSwitchRoles = [...new Set([...primaryRoleSwitch, ...extraRoles])];
 
   // Avatar initials helper
   const initials = (name) => {
@@ -262,10 +266,10 @@ function Navbar() {
                       </Link>
 
                       {/* Role switcher */}
-                      {switchableRoles.length > 0 && (
+                      {deduplicatedSwitchRoles.length > 0 && (
                         <>
                           <div className="border-t border-slate-700/60 my-1" />
-                          {switchableRoles.map(r => (
+                          {deduplicatedSwitchRoles.map(r => (
                             <button
                               key={r}
                               onClick={() => {
