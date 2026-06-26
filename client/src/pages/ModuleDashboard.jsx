@@ -111,9 +111,21 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
   );
 }
 
-function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onRegenerate }) {
+function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, assignment, onRegenerate }) {
   const navigate = useNavigate();
   const sessions = module?.sessions || module?.content?.sessions || [];
+
+  // Day-lock: one session per calendar day starting from assignment date.
+  // assignedAt = Day 1 start. Today = Day (daysSince+1). Only today's session is accessible.
+  const assignedAt = assignment?.assignedAt || assignment?.assigned_at || assignment?.createdAt || assignment?.created_at || null;
+  const todaySessionIndex = (() => {
+    if (!assignedAt) return 0; // fallback: allow day 1 only
+    const start = new Date(assignedAt);
+    start.setHours(0, 0, 0, 0);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return Math.floor((now - start) / 86400000); // 0-indexed: Day 1 = 0, Day 2 = 1, ...
+  })();
 
   if (sessions.length === 0) {
     return (
@@ -138,35 +150,45 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onRegene
       </p>
       {sessions.map((session, index) => {
         const status = sessionStatuses[index] || 'locked';
-        const isUnlocked = index === 0 || (() => {
-          if (session.unlockDate) return new Date() >= new Date(session.unlockDate);
-          return sessionStatuses[index - 1] === 'completed';
-        })();
         const isCompleted = status === 'completed';
         const isInProgress = status === 'in_progress';
-        const unlockDateLabel = !isUnlocked && session.unlockDate
-          ? new Date(session.unlockDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          : null;
+        // Day-lock: only today's session index is accessible; past = completed/view; future = locked
+        const isToday = index === todaySessionIndex;
+        const isPast  = index < todaySessionIndex;
+        const isUnlocked = isToday || isPast || isCompleted;
+        // Unlock date label for future sessions
+        const unlockDateLabel = (() => {
+          if (isUnlocked) return null;
+          if (!assignedAt) return `Day ${index + 1}`;
+          const unlockDay = new Date(assignedAt);
+          unlockDay.setDate(unlockDay.getDate() + index);
+          return unlockDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        })();
 
         return (
           <button
             key={index}
-            disabled={!isUnlocked && !isCompleted}
+            disabled={!isUnlocked}
             onClick={() => {
-              if (!isUnlocked && !isCompleted) return;
+              if (!isUnlocked) return;
               navigate(`/module/${moduleId}/session/${index}${assignmentId ? `?assignmentId=${assignmentId}` : ''}`);
             }}
             className={`w-full text-left rounded-xl border p-4 transition-all group ${
               isCompleted
                 ? 'border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 cursor-pointer'
-                : isUnlocked
-                ? 'border-indigo-500/30 bg-indigo-500/5 hover:bg-indigo-500/10 cursor-pointer hover:border-indigo-500/50'
-                : 'border-slate-700/40 bg-slate-800/20 opacity-50 cursor-not-allowed'
+                : isToday && !isCompleted
+                ? 'border-indigo-500/50 bg-indigo-500/8 hover:bg-indigo-500/12 cursor-pointer ring-1 ring-indigo-500/30'
+                : !isUnlocked
+                ? 'border-slate-700/40 bg-slate-800/20 opacity-50 cursor-not-allowed'
+                : 'border-slate-600/30 bg-slate-800/10 hover:bg-slate-800/20 cursor-pointer'
             }`}
           >
             <div className="flex items-center gap-4">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 ${
-                isCompleted ? 'bg-emerald-500/20 text-emerald-400' : isUnlocked ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-700/40 text-slate-600'
+                isCompleted ? 'bg-emerald-500/20 text-emerald-400'
+                : isToday ? 'bg-indigo-500/20 text-indigo-400'
+                : !isUnlocked ? 'bg-slate-700/40 text-slate-600'
+                : 'bg-slate-700/30 text-slate-400'
               }`}>
                 {isCompleted ? '✓' : index + 1}
               </div>
@@ -175,6 +197,9 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onRegene
                   <p className="text-sm font-bold text-white truncate">
                     {session.title || session.topic || `Day ${index + 1}`}
                   </p>
+                  {isToday && !isCompleted && (
+                    <span className="text-[10px] font-black bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 px-1.5 py-0.5 rounded-full whitespace-nowrap">TODAY</span>
+                  )}
                   {isInProgress && (
                     <span className="text-xs font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 px-1.5 py-0.5 rounded-full">In Progress</span>
                   )}
@@ -187,7 +212,7 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, onRegene
                 {session.duration && (
                   <span className="text-xs text-slate-600 hidden sm:block">⏱ {session.duration}</span>
                 )}
-                {!isUnlocked && !isCompleted ? (
+                {!isUnlocked ? (
                   <div className="flex flex-col items-end gap-0.5">
                     <span className="text-slate-600">🔒</span>
                     {unlockDateLabel && <span className="text-[10px] text-slate-600 whitespace-nowrap">Unlocks {unlockDateLabel}</span>}
@@ -446,8 +471,6 @@ function ModuleNavbar({ moduleId, assignmentId, activeTab, onTabChange }) {
 
   const toolLinks = [
     { label: 'Digital Twin', icon: '🧬', path: `/career-twin${qs}` },
-    { label: 'Simulator', icon: '🔮', path: `/simulation${qs}` },
-    { label: 'AI Interview', icon: '🎙️', path: `/interview${qs}` },
     { label: 'Report', icon: '📄', path: `/report${qs}` },
   ];
 
@@ -721,6 +744,7 @@ export default function ModuleDashboard() {
             moduleId={moduleId}
             assignmentId={assignmentId}
             sessionStatuses={sessionStatuses}
+            assignment={assignment}
             onRegenerate={() => generateContent(module)}
           />
         )}
