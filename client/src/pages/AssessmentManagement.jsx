@@ -653,9 +653,9 @@ export default function AssessmentManagement() {
           {/* Table Header */}
           <div
             className="hidden md:grid px-5 py-3 border-b border-slate-700/40 bg-slate-800/30"
-            style={{ gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 210px' }}
+            style={{ gridTemplateColumns: '3fr 1.5fr 0.8fr 0.8fr 0.8fr 0.9fr 160px' }}
           >
-            {['Title', 'Employees', 'Date', 'Duration', 'Status', 'Actions'].map(h => (
+            {['Assessment Title', 'Type / Role', 'Assigned', 'Completed', 'Pending', 'Avg Score', 'Actions'].map(h => (
               <span key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</span>
             ))}
           </div>
@@ -682,100 +682,71 @@ export default function AssessmentManagement() {
           ) : (
             <div className="divide-y divide-slate-700/20">
               {filtered.map(a => {
-                const submittedCount = a.employeeAssignments?.filter(ea => ea.status === 'submitted').length || 0;
-                const totalAssigned = a.employeeAssignments?.length || a.targetUsers?.length || 0;
-                const employeeNames = a.employeeAssignments?.map(ea => ea.userName || ea.name || ea.userId) || [];
+                const empAssignments = a.employeeAssignments || [];
+                const submittedCount = empAssignments.filter(ea => ea.status === 'submitted').length;
+                const totalAssigned = empAssignments.length || a.targetUsers?.length || 0;
+                const pendingCount = totalAssigned - submittedCount;
+                const passThreshold = a.settings?.passPercentage ?? 80;
+                const scores = empAssignments.filter(ea => ea.status === 'submitted').map(ea => ea.score ?? ea.percentage ?? 0).filter(s => s > 0);
+                const avgScore = scores.length ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length) : null;
+                // Determine primary job role for this assessment
+                const jobRoles = [...new Set(empAssignments.map(ea => ea.jobRole).filter(Boolean))];
                 return (
                 <div
                   key={a.id}
                   className="group px-5 py-4 hover:bg-slate-800/30 transition-all"
-                  style={{ display: 'grid', gridTemplateColumns: '2.5fr 2fr 1fr 1fr 1fr 210px', alignItems: 'center', gap: '12px' }}
+                  style={{ display: 'grid', gridTemplateColumns: '3fr 1.5fr 0.8fr 0.8fr 0.8fr 0.9fr 160px', alignItems: 'center', gap: '12px' }}
                 >
+                  {/* Title */}
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        onClick={() => setViewDetail(a)}
-                        className="text-sm font-bold text-white hover:text-indigo-300 truncate transition-colors text-left"
-                      >
-                        {a.title}
-                      </button>
-                      {a.assessmentType && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-500/15 text-violet-300 border border-violet-500/25 whitespace-nowrap">{a.assessmentType}</span>
-                      )}
-                    </div>
+                    <button
+                      onClick={() => { setViewDetail(a); setDetailTab('overview'); }}
+                      className="text-sm font-bold text-white hover:text-indigo-300 transition-colors text-left block truncate max-w-full"
+                    >
+                      {a.title}
+                    </button>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      {a.targetGroup ? `Group: ${a.targetGroup}` : `${totalAssigned} ${totalAssigned === 1 ? 'employee' : 'employees'}`}
-                      {a.questionCount ? ` · ${a.questionCount} Qs` : ''}
+                      {a.questionCount ? `${a.questionCount} Qs` : ''}
+                      {a.duration ? ` · ${a.duration} min` : ''}
+                      {a.assessmentDate ? ` · ${new Date(a.assessmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}` : ''}
                     </p>
                   </div>
+                  {/* Type / Role */}
                   <div className="min-w-0">
-                    {employeeNames.length > 0 ? (
-                      <div className="flex flex-col gap-0.5">
-                        {employeeNames.slice(0, 2).map((n, i) => (
-                          <span key={i} className="text-xs text-slate-300 truncate">{n}</span>
-                        ))}
-                        {employeeNames.length > 2 && (
-                          <span className="text-xs text-slate-500">+{employeeNames.length - 2} more</span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-slate-600">—</span>
-                    )}
+                    {a.assessmentType && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-500/15 text-violet-300 border border-violet-500/25 whitespace-nowrap block w-fit mb-0.5">{a.assessmentType}</span>}
+                    {jobRoles.length > 0 && <span className="text-[10px] text-slate-500 truncate block">{jobRoles.slice(0,2).join(', ')}{jobRoles.length>2?` +${jobRoles.length-2}`:''}</span>}
                   </div>
+                  {/* Assigned */}
+                  <div><span className="text-sm font-black text-indigo-300">{totalAssigned}</span></div>
+                  {/* Completed */}
+                  <div><span className="text-sm font-black text-emerald-300">{submittedCount}</span></div>
+                  {/* Pending */}
+                  <div><span className={`text-sm font-black ${pendingCount > 0 ? 'text-amber-300' : 'text-slate-500'}`}>{pendingCount}</span></div>
+                  {/* Avg Score */}
                   <div>
-                    <span className="text-xs text-slate-400">
-                      {a.assessmentDate
-                        ? new Date(a.assessmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
-                        : a.createdAt
-                        ? new Date(a.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
-                        : '—'}
-                    </span>
+                    {avgScore !== null
+                      ? <span className={`text-sm font-black ${avgScore >= passThreshold ? 'text-emerald-300' : 'text-red-300'}`}>{avgScore}%</span>
+                      : <span className="text-xs text-slate-600">—</span>}
                   </div>
-                  <div>
-                    <span className="text-xs text-slate-400">
-                      {a.duration ? `${a.duration} min` : '—'}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-semibold border capitalize w-fit ${STATUS_COLORS[a.status] || STATUS_COLORS.pending}`}>
-                        {a.status || 'assigned'}
-                      </span>
-                      {totalAssigned > 0 && (
-                        <span className="text-xs text-slate-500">{submittedCount}/{totalAssigned} submitted</span>
-                      )}
-                    </div>
-                  </div>
+                  {/* Actions */}
                   <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => { setViewDetail(a); setDetailTab('overview'); }}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-indigo-300 text-xs font-semibold transition-colors"
+                      title="View Assessment Details"
+                    >
+                      View
+                    </button>
                     <button
                       onClick={() => openEdit(a)}
                       className="px-2.5 py-1.5 bg-slate-700/60 hover:bg-slate-700 border border-slate-600/40 rounded-lg text-slate-300 text-xs font-semibold transition-colors"
-                      title="Edit assessment details"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      onClick={() => openQuestions(a)}
-                      className="px-2.5 py-1.5 bg-slate-700/60 hover:bg-indigo-600/40 border border-slate-600/40 hover:border-indigo-500/30 rounded-lg text-slate-300 hover:text-indigo-300 text-xs font-semibold transition-colors"
-                      title="Edit questions"
-                    >
-                      📝
-                    </button>
+                      title="Edit"
+                    >✏️</button>
                     <button
                       onClick={() => deleteAssessment(a.id)}
                       className="px-2.5 py-1.5 bg-slate-700/60 hover:bg-red-900/40 border border-slate-600/40 hover:border-red-500/30 rounded-lg text-slate-400 hover:text-red-400 text-xs font-semibold transition-colors"
-                      title="Delete assessment"
-                    >
-                      🗑️
-                    </button>
-                    {submittedCount > 0 ? (
-                      <button
-                        onClick={() => setViewReport(a)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-indigo-300 text-xs font-semibold transition-colors"
-                      >
-                        Report
-                      </button>
-                    ) : null}
+                      title="Delete"
+                    >🗑️</button>
                   </div>
                 </div>
                 );
@@ -1647,205 +1618,213 @@ export default function AssessmentManagement() {
         </div>
       )}
 
-      {/* ===== DETAIL MODAL (tabbed) ===== */}
+      {/* ===== ASSESSMENT DETAIL FULL-SCREEN PAGE ===== */}
       {viewDetail && (() => {
         const empAssignments = viewDetail.employeeAssignments || [];
         const submitted = empAssignments.filter(ea => ea.status === 'submitted');
         const passThreshold = viewDetail.settings?.passPercentage ?? 80;
         const scores = submitted.map(ea => ea.score ?? ea.percentage ?? 0).filter(s => s > 0);
-        const passRate = submitted.length ? Math.round(submitted.filter(ea => (ea.score ?? ea.percentage ?? 0) >= passThreshold).length / submitted.length * 100) : 0;
+        const passCount = submitted.filter(ea => (ea.score ?? ea.percentage ?? 0) >= passThreshold).length;
+        const failCount = submitted.length - passCount;
+        const passRate = submitted.length ? Math.round(passCount / submitted.length * 100) : 0;
+        const failRate = submitted.length ? Math.round(failCount / submitted.length * 100) : 0;
         const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
         const highScore = scores.length ? Math.max(...scores) : 0;
         const lowScore = scores.length ? Math.min(...scores) : 0;
-        const TABS = ['Overview', 'Employees', 'Analytics', 'Reports'];
+        const jobRoles = [...new Set(empAssignments.map(ea => ea.jobRole).filter(Boolean))];
+
+        const doDetailExport = (fmt) => {
+          const EXPORT_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+          const params = new URLSearchParams({ format: fmt, mode: 'consolidated' });
+          if (fmt === 'zip') params.set('subformat', 'pdf');
+          const token = localStorage.getItem('auth_token');
+          fetch(`${EXPORT_BASE}/api/assessments/${viewDetail.id}/export-reports?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+            .then(r => { if (!r.ok) throw new Error('Export failed'); return r.blob(); })
+            .then(blob => {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `${(viewDetail.title || 'Assessment').replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Reports.${fmt === 'zip' ? 'zip' : fmt}`;
+              a.click(); URL.revokeObjectURL(url);
+              showToast('Report downloaded', 'success');
+            }).catch(e => showToast(e.message || 'Export failed', 'error'));
+        };
+
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setViewDetail(null)}>
-            <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[88vh] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-              {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 flex-shrink-0">
-                <div>
-                  <h3 className="text-lg font-black text-white">{viewDetail.title}</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">{empAssignments.length} employees · {viewDetail.questionCount || 0} questions · {viewDetail.duration ? `${viewDetail.duration} min` : ''}</p>
-                </div>
-                <button onClick={() => setViewDetail(null)} className="text-slate-500 hover:text-white text-xl">✕</button>
-              </div>
-              {/* Tabs */}
-              <div className="flex border-b border-slate-700/50 px-6 flex-shrink-0">
-                {TABS.map(t => (
-                  <button key={t} onClick={() => setDetailTab(t.toLowerCase())}
-                    className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors ${detailTab===t.toLowerCase() ? 'border-indigo-500 text-indigo-300' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
-                    {t}
+          <div className="fixed inset-0 z-50 bg-[#0F172A] overflow-y-auto">
+            {/* Top bar */}
+            <div className="sticky top-0 z-10 bg-[#0F172A]/95 backdrop-blur border-b border-slate-700/60 px-6 py-3 flex items-center justify-between">
+              <button onClick={() => setViewDetail(null)} className="flex items-center gap-2 text-slate-400 hover:text-white text-sm font-semibold transition-colors">
+                ← Back to Assessments
+              </button>
+              <div className="flex items-center gap-2">
+                {[['xlsx','📊 Excel'],['pdf','📄 PDF'],['docx','📝 Word']].map(([fmt,lbl]) => (
+                  <button key={fmt} onClick={() => doDetailExport(fmt)}
+                    className="px-3 py-1.5 rounded-lg bg-teal-600/20 hover:bg-teal-600/40 border border-teal-500/30 text-teal-300 text-xs font-bold transition-colors">
+                    ⬇ {lbl}
                   </button>
                 ))}
+                <button onClick={() => doDetailExport('zip')}
+                  className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 text-purple-300 text-xs font-bold transition-colors">
+                  ⬇ ZIP Bundle
+                </button>
               </div>
-              {/* Tab content */}
-              <div className="flex-1 overflow-y-auto p-6">
-                {/* Overview tab */}
-                {detailTab === 'overview' && (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { label: 'Assessment Date', value: viewDetail.assessmentDate ? new Date(viewDetail.assessmentDate).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '—' },
-                        { label: 'Duration', value: viewDetail.duration ? `${viewDetail.duration} minutes` : '—' },
-                        { label: 'Questions per Employee', value: viewDetail.questionCount || '—' },
-                        { label: 'Question Types', value: viewDetail.questionTypes?.join(', ') || '—' },
-                        { label: 'Assessment Type', value: viewDetail.assessmentType || '—' },
-                        { label: 'Pass Threshold', value: `${passThreshold}%` },
-                      ].map((item, i) => (
-                        <div key={i} className="rounded-xl bg-slate-800/40 border border-slate-700/40 px-4 py-3">
-                          <p className="text-xs text-slate-500 mb-0.5">{item.label}</p>
-                          <p className="text-sm font-bold text-white">{item.value}</p>
-                        </div>
-                      ))}
-                    </div>
-                    {viewDetail.settings && (
-                      <div className="rounded-xl bg-slate-800/30 border border-slate-700/40 p-4">
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Assessment Settings</p>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                          <div className="flex justify-between"><span className="text-slate-500">Question Order</span><span className="text-white font-semibold capitalize">{viewDetail.settings.questionOrder || 'Same'}</span></div>
-                          <div className="flex justify-between"><span className="text-slate-500">Timing</span><span className="text-white font-semibold capitalize">{viewDetail.settings.timing?.type === 'timed' ? `${viewDetail.settings.timing.totalMinutes} min` : 'Untimed'}</span></div>
-                          <div className="flex justify-between"><span className="text-slate-500">Reattempts</span><span className="text-white font-semibold">{viewDetail.settings.reattempts === -1 ? 'Unlimited' : viewDetail.settings.reattempts === 0 ? 'None' : viewDetail.settings.reattempts}</span></div>
-                          <div className="flex justify-between"><span className="text-slate-500">Mandatory</span><span className="text-white font-semibold">{viewDetail.settings.completion?.mandatory ? 'Yes' : 'No'}</span></div>
-                        </div>
-                      </div>
-                    )}
+            </div>
+
+            <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+              {/* Header */}
+              <div>
+                <div className="flex items-start gap-3 flex-wrap">
+                  <h2 className="text-2xl font-black text-white">{viewDetail.title}</h2>
+                  {viewDetail.assessmentType && (
+                    <span className="px-2 py-1 rounded-lg text-xs font-bold bg-violet-500/15 text-violet-300 border border-violet-500/25 mt-0.5">{viewDetail.assessmentType}</span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-4 mt-2 text-xs text-slate-400">
+                  {jobRoles.length > 0 && <span>Job Role: <span className="text-white font-semibold">{jobRoles.join(', ')}</span></span>}
+                  {viewDetail.createdAt && <span>Created: <span className="text-white font-semibold">{new Date(viewDetail.createdAt).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })}</span></span>}
+                  {viewDetail.assessmentDate && <span>Assessment Date: <span className="text-white font-semibold">{new Date(viewDetail.assessmentDate).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })}</span></span>}
+                  {viewDetail.deadline && <span>Deadline: <span className="text-amber-300 font-semibold">{new Date(viewDetail.deadline).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })}</span></span>}
+                  {viewDetail.questionCount && <span>Questions: <span className="text-white font-semibold">{viewDetail.questionCount} per employee</span></span>}
+                  {viewDetail.duration && <span>Duration: <span className="text-white font-semibold">{viewDetail.duration} min</span></span>}
+                </div>
+              </div>
+
+              {/* Stats cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                {[
+                  { label: 'Total Assigned', value: empAssignments.length, color: 'text-indigo-300', bg: 'bg-indigo-500/5 border-indigo-500/25' },
+                  { label: 'Completed', value: submitted.length, color: 'text-emerald-300', bg: 'bg-emerald-500/5 border-emerald-500/25' },
+                  { label: 'Pending', value: empAssignments.length - submitted.length, color: 'text-amber-300', bg: 'bg-amber-500/5 border-amber-500/25' },
+                  { label: 'Avg Score', value: scores.length ? `${avgScore}%` : '—', color: 'text-cyan-300', bg: 'bg-cyan-500/5 border-cyan-500/25' },
+                  { label: 'Pass %', value: submitted.length ? `${passRate}%` : '—', color: 'text-teal-300', bg: 'bg-teal-500/5 border-teal-500/25' },
+                  { label: 'Fail %', value: submitted.length ? `${failRate}%` : '—', color: 'text-red-300', bg: 'bg-red-500/5 border-red-500/25' },
+                  { label: 'Pass Threshold', value: `${passThreshold}%`, color: 'text-slate-300', bg: 'bg-slate-500/5 border-slate-500/25' },
+                ].map((m, i) => (
+                  <div key={i} className={`rounded-xl border ${m.bg} px-4 py-3 text-center`}>
+                    <p className={`text-xl font-black ${m.color}`}>{m.value}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{m.label}</p>
                   </div>
-                )}
-                {/* Employees tab */}
-                {detailTab === 'employees' && (
-                  <div>
-                    {empAssignments.length === 0 ? (
-                      <div className="py-10 text-center text-slate-500 text-sm">No employee assignments found.</div>
-                    ) : (
-                      <div className="space-y-2">
-                        {empAssignments.map((ea, i) => {
-                          const emp = employees.find(e => (e.userId || e.id || e._id) === ea.userId);
-                          return (
-                            <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-800/30 border border-slate-700/40">
-                              <div className="w-7 h-7 rounded-full bg-indigo-600/30 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0">
-                                {(ea.userName || emp?.name || '?')[0]?.toUpperCase()}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-white truncate">{ea.userName || emp?.name || ea.userId}</p>
-                                {ea.userEmail && <p className="text-xs text-slate-500 truncate">{ea.userEmail}</p>}
-                              </div>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                {ea.score !== undefined && <span className="text-xs font-bold text-emerald-300">{ea.score}%</span>}
-                                <span className={`px-2 py-0.5 rounded-md text-xs font-semibold border capitalize ${STATUS_COLORS[ea.status || 'assigned']}`}>{ea.status || 'assigned'}</span>
-                              </div>
+                ))}
+              </div>
+
+              {/* Analytics row */}
+              {scores.length > 0 && (
+                <div className="grid grid-cols-3 gap-3">
+                  {[['Highest Score', `${highScore}%`, 'text-emerald-300'],['Average Score', `${avgScore}%`, 'text-indigo-300'],['Lowest Score', `${lowScore}%`, 'text-red-300']].map(([l,v,c], i) => (
+                    <div key={i} className="rounded-xl bg-slate-800/40 border border-slate-700/40 px-4 py-4 text-center">
+                      <p className={`text-2xl font-black ${c}`}>{v}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{l}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Employee Table */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                    Employees Assigned to this Assessment
+                    <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 text-xs font-bold">{empAssignments.length}</span>
+                  </h3>
+                </div>
+                <div className="rounded-2xl border border-slate-700/40 overflow-hidden">
+                  {/* Table header */}
+                  <div className="hidden lg:grid px-4 py-3 bg-slate-800/50 border-b border-slate-700/40 text-xs font-bold text-slate-500 uppercase tracking-wider"
+                    style={{ gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 0.8fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr' }}>
+                    {['Name','Emp ID','Email','Group','Manager','Status','Score','%','Grade','Duration','Download'].map(h => (
+                      <span key={h}>{h}</span>
+                    ))}
+                  </div>
+                  {empAssignments.length === 0 ? (
+                    <div className="py-12 text-center text-slate-500">No employees assigned to this assessment.</div>
+                  ) : (
+                    <div className="divide-y divide-slate-700/20">
+                      {empAssignments.map((ea, i) => {
+                        const emp = employees.find(e => e.userId === ea.userId);
+                        const group = groups.find(g => (g.employeeIds || []).includes(ea.userId));
+                        const managerEmp = group ? employees.find(e => e.userId === group.managerId) : (emp?.managerId ? employees.find(e => e.userId === emp.managerId) : null);
+                        const sc = ea.scoring || {};
+                        const scorePct = ea.score ?? ea.percentage ?? sc.score ?? null;
+                        const grade = ea.grade ?? sc.grade ?? null;
+                        const completionMs = ea.startedAt && ea.submittedAt ? new Date(ea.submittedAt) - new Date(ea.startedAt) : null;
+                        const durationStr = completionMs ? `${Math.round(completionMs / 60000)} min` : (viewDetail.duration ? `${viewDetail.duration} min` : '—');
+                        return (
+                          <div key={i} className="px-4 py-3 hover:bg-slate-800/20 transition-colors"
+                            style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 0.8fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr', alignItems: 'center', gap: '8px' }}>
+                            {/* Name */}
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-white truncate">{ea.userName || emp?.name || ea.userId}</p>
+                              {ea.jobRole && <p className="text-xs text-slate-500 truncate">{ea.jobRole}</p>}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {/* Analytics tab */}
-                {detailTab === 'analytics' && (
-                  <div className="space-y-5">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {[
-                        { label: 'Assigned', value: empAssignments.length, color: 'text-indigo-300' },
-                        { label: 'Completed', value: submitted.length, color: 'text-emerald-300' },
-                        { label: 'Pending', value: empAssignments.length - submitted.length, color: 'text-amber-300' },
-                        { label: 'Pass Rate', value: `${passRate}%`, color: 'text-teal-300' },
-                      ].map((m, i) => (
-                        <div key={i} className="rounded-xl bg-slate-800/40 border border-slate-700/40 px-4 py-4 text-center">
-                          <p className={`text-2xl font-black ${m.color}`}>{m.value}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{m.label}</p>
-                        </div>
-                      ))}
-                    </div>
-                    {scores.length > 0 && (
-                      <div className="grid grid-cols-3 gap-3">
-                        {[['Avg Score', `${avgScore}%`, 'text-indigo-300'], ['Highest', `${highScore}%`, 'text-emerald-300'], ['Lowest', `${lowScore}%`, 'text-red-300']].map(([l,v,c], i) => (
-                          <div key={i} className="rounded-xl bg-slate-800/40 border border-slate-700/40 px-4 py-4 text-center">
-                            <p className={`text-2xl font-black ${c}`}>{v}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">{l}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {submitted.length > 0 && (
-                      <div>
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Per-Employee Results</p>
-                        <div className="space-y-2">
-                          {submitted.map((ea, i) => (
-                            <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-800/30 border border-slate-700/40">
-                              <div className="w-6 h-6 rounded-full bg-emerald-600/30 border border-emerald-500/30 flex items-center justify-center text-xs font-black text-emerald-300 flex-shrink-0">
-                                {(ea.userName || '?')[0]?.toUpperCase()}
-                              </div>
-                              <span className="flex-1 text-sm text-white truncate">{ea.userName || ea.userId}</span>
-                              <span className="text-xs text-slate-400 w-16 text-right">{ea.userEmail?.split('@')[0]}</span>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                <div className="w-24 h-1.5 rounded-full bg-slate-700 overflow-hidden">
-                                  <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${Math.min(100, ea.score ?? ea.percentage ?? 0)}%` }} />
-                                </div>
-                                <span className={`text-xs font-bold w-10 text-right ${(ea.score ?? ea.percentage ?? 0) >= passThreshold ? 'text-emerald-300' : 'text-red-300'}`}>{ea.score ?? ea.percentage ?? 0}%</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {submitted.length === 0 && <div className="py-10 text-center text-slate-500 text-sm">No submissions yet.</div>}
-                  </div>
-                )}
-                {/* Reports tab */}
-                {detailTab === 'reports' && (
-                  <div className="space-y-4">
-                    <div className="rounded-xl bg-slate-800/30 border border-slate-700/40 p-4">
-                      <p className="text-sm font-bold text-white mb-3">Export Options</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        {[['xlsx','Excel','teal'],['pdf','PDF','rose'],['docx','Word','blue'],['zip','ZIP Bundle','purple']].map(([fmt,label,color]) => (
-                          <button key={fmt} onClick={() => {
-                            const EXPORT_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
-                            const params = new URLSearchParams({ format: fmt, mode: 'consolidated' });
-                            if (fmt === 'zip') params.set('subformat', 'pdf');
-                            const token = localStorage.getItem('auth_token');
-                            fetch(`${EXPORT_BASE}/api/assessments/${viewDetail.id}/export-reports?${params}`, { headers: { Authorization: `Bearer ${token}` } })
-                              .then(r => r.blob()).then(blob => {
-                                const url = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = `${(viewDetail.title || 'Assessment').replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Reports.${fmt === 'zip' ? 'zip' : fmt}`;
-                                a.click(); URL.revokeObjectURL(url);
-                              }).catch(e => showToast(e.message || 'Export failed', 'error'));
-                          }}
-                            className={`py-3 rounded-xl border bg-slate-800 border-slate-700 text-sm font-bold text-slate-300 hover:text-white hover:border-${color}-500/50 transition-colors`}>
-                            ⬇ {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    {submitted.length > 0 && (
-                      <div>
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Individual Reports</p>
-                        <div className="space-y-2">
-                          {submitted.map((ea, i) => (
-                            <div key={i} className="flex items-center justify-between px-4 py-3 rounded-xl bg-slate-800/30 border border-slate-700/40">
-                              <span className="text-sm text-white">{ea.userName || ea.userId}</span>
-                              <div className="flex gap-1.5">
-                                {[['pdf','PDF'],['xlsx','Excel'],['docx','Word']].map(([fmt,lbl]) => (
+                            {/* Emp ID */}
+                            <span className="text-xs text-slate-400 truncate">{emp?.employeeId || ea.userId?.slice(-8) || '—'}</span>
+                            {/* Email */}
+                            <span className="text-xs text-slate-400 truncate">{ea.userEmail || emp?.email || '—'}</span>
+                            {/* Group */}
+                            <span className="text-xs text-slate-400 truncate">{group?.name || '—'}</span>
+                            {/* Manager */}
+                            <span className="text-xs text-slate-400 truncate">{managerEmp?.name || '—'}</span>
+                            {/* Status */}
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border capitalize w-fit ${STATUS_COLORS[ea.status || 'assigned']}`}>{ea.status || 'assigned'}</span>
+                            {/* Score */}
+                            <span className="text-xs font-bold text-white">
+                              {ea.status === 'submitted' && sc.correct != null ? `${sc.correct}/${sc.total ?? ea.questions?.length ?? 0}` : '—'}
+                            </span>
+                            {/* % */}
+                            <span className={`text-xs font-bold ${scorePct != null ? (scorePct >= passThreshold ? 'text-emerald-300' : 'text-red-300') : 'text-slate-500'}`}>
+                              {scorePct != null ? `${scorePct}%` : '—'}
+                            </span>
+                            {/* Grade */}
+                            <span className="text-xs font-bold text-white">{grade || '—'}</span>
+                            {/* Duration */}
+                            <span className="text-xs text-slate-400">{durationStr}</span>
+                            {/* Download */}
+                            <div className="flex gap-1">
+                              {ea.status === 'submitted' ? (
+                                [['pdf','PDF'],['xlsx','XLS'],['docx','DOC']].map(([fmt,lbl]) => (
                                   <button key={fmt} onClick={() => {
                                     const EXPORT_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
                                     const token = localStorage.getItem('auth_token');
                                     fetch(`${EXPORT_BASE}/api/assessments/${viewDetail.id}/export-reports?format=${fmt}&mode=individual&userId=${ea.userId}`, { headers: { Authorization: `Bearer ${token}` } })
-                                      .then(r => r.blob()).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${(ea.userName || ea.userId).replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Report.${fmt}`; a.click(); URL.revokeObjectURL(url); })
+                                      .then(r => { if (!r.ok) throw new Error('Export failed'); return r.blob(); })
+                                      .then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${(ea.userName||ea.userId).replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Report.${fmt}`; a.click(); URL.revokeObjectURL(url); })
                                       .catch(e => showToast(e.message || 'Export failed', 'error'));
-                                  }} className="px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-bold text-slate-300 hover:text-white transition-colors">
-                                    ⬇ {lbl}
+                                  }} className="px-1.5 py-1 rounded bg-slate-700 hover:bg-indigo-600/40 text-[10px] font-bold text-slate-300 hover:text-indigo-300 transition-colors">
+                                    {lbl}
                                   </button>
-                                ))}
-                              </div>
+                                ))
+                              ) : <span className="text-xs text-slate-600">Pending</span>}
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Assessment Settings */}
+              {viewDetail.settings && (
+                <div className="rounded-2xl border border-slate-700/40 bg-slate-800/20 p-5">
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4">Assessment Settings</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                    {[
+                      ['Question Types', viewDetail.questionTypes?.join(', ') || '—'],
+                      ['Question Order', viewDetail.settings.questionOrder || 'Same'],
+                      ['Timing', viewDetail.settings.timing?.type === 'timed' ? `${viewDetail.settings.timing.totalMinutes} min` : 'Untimed'],
+                      ['Reattempts', viewDetail.settings.reattempts === -1 ? 'Unlimited' : viewDetail.settings.reattempts === 0 ? 'None' : String(viewDetail.settings.reattempts ?? '—')],
+                      ['Pass Threshold', `${passThreshold}%`],
+                      ['Mandatory', viewDetail.settings.completion?.mandatory ? 'Yes' : 'No'],
+                    ].map(([k,v], i) => (
+                      <div key={i} className="rounded-xl bg-slate-800/60 border border-slate-700/40 px-3 py-2">
+                        <p className="text-slate-500 mb-0.5">{k}</p>
+                        <p className="font-semibold text-white capitalize">{v}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );
