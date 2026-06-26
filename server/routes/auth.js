@@ -532,6 +532,10 @@ router.post('/login', rateLimitLogin, async (req, res) => {
           email: user.email,
           name: user.name,
           role: user.role,
+          accesses: user.accesses || [],
+          companyId: user.companyId || null,
+          jobRole: user.jobRole || null,
+          department: user.department || null,
           learningUUID: user.learningUUID
         }
       },
@@ -608,6 +612,10 @@ router.get('/me', authenticate, async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        accesses: user.accesses || [],
+        companyId: user.companyId || null,
+        jobRole: user.jobRole || null,
+        department: user.department || null,
         learningUUID: user.learningUUID,
         emailVerified: user.emailVerified,
         createdAt: user.createdAt,
