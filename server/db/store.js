@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { readFile, writeFile, access, mkdir } from 'fs/promises';
 import { join } from 'path';
+import { GeneratedModules } from '../services/DataStore.js';
 
 const DATA_DIR = join(new URL('..', import.meta.url).pathname, 'data');
 let supabase = null;
@@ -165,17 +166,32 @@ function toSupabaseModule(module, createdBy, id) {
 }
 
 export async function getModules(filters = {}) {
+  let flatModules = [];
   if (isOn()) {
     let qb = supabase.from('modules').select('*');
     if (filters.category) qb = qb.eq('category', filters.category);
     if (filters.difficulty) qb = qb.eq('difficulty', filters.difficulty);
     if (filters.companyId) qb = qb.eq('company_id', filters.companyId);
     const { data, error } = await qb;
-    if (error) throw error;
-    // When Supabase is ON, always return its result (even if empty).
-    // Never fall through to the ephemeral file — it is wiped on every Render restart.
-    return (data || []).map(normalizeModule);
+    if (!error) flatModules = (data || []).map(normalizeModule);
   }
+  // Also pull from DataStore JSONB table (generated_modules) and merge
+  let dsModules = [];
+  try {
+    const all = await GeneratedModules.getAll();
+    dsModules = (all || []).filter(m => {
+      if (!m?.id) return false;
+      if (filters.category && m.category !== filters.category) return false;
+      if (filters.difficulty && m.difficulty !== filters.difficulty) return false;
+      if (filters.companyId && m.companyId && m.companyId !== filters.companyId) return false;
+      return true;
+    });
+  } catch (_) {}
+  // Merge: flat-column modules take precedence; JSONB fills the gaps
+  const seen = new Set(flatModules.map(m => m.id));
+  const merged = [...flatModules, ...dsModules.filter(m => !seen.has(m.id))];
+  if (merged.length > 0) return merged;
+  // Absolute fallback: ephemeral file (pre-migration data)
   const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
   return f?.modules || [];
 }
@@ -186,49 +202,36 @@ export async function getModuleById(id) {
     const { data, error } = await supabase.from('modules').select('*').eq('id', id).maybeSingle();
     if (error && error.code !== 'PGRST116') throw error;
     if (data) return normalizeModule(data);
-    // Not in Supabase — check file for stranded modules (pre-migration data)
-    const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
-    const fileModule = (f?.modules || []).find(m => m.id === id) || null;
-    if (fileModule) {
-      // Sync stranded module to Supabase so it persists
-      try {
-        const payload = toSupabaseModule(fileModule, fileModule.createdBy, fileModule.id);
-        await supabase.from('modules').upsert([payload], { onConflict: 'id' });
-        console.log(`[getModuleById] Synced stranded module ${id} to Supabase`);
-      } catch (e) {
-        console.warn(`[getModuleById] Failed to sync stranded module ${id}:`, e.message);
-      }
-    }
-    return fileModule;
   }
+  // Check DataStore JSONB table (generated_modules) — used when flat-column table fails
+  try {
+    const dsModule = await GeneratedModules.getById(id);
+    if (dsModule) return dsModule;
+  } catch (_) {}
+  // Check ephemeral file (last resort / pre-migration stranded data)
   const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
   return (f?.modules || []).find(m => m.id === id) || null;
 }
 
 export async function getModulesByIds(ids) {
   if (!ids?.length) return [];
+  let found = [];
   if (isOn()) {
     const { data, error } = await supabase.from('modules').select('*').in('id', ids);
-    if (!error) {
-      const found = (data || []).map(normalizeModule);
-      const foundIds = new Set(found.map(m => m.id));
-      const missingIds = ids.filter(id => !foundIds.has(id));
-      // For IDs not in Supabase, check file (stranded modules) and sync them up
-      if (missingIds.length) {
-        const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
-        const fileModules = (f?.modules || []).filter(m => missingIds.includes(m.id));
-        for (const fm of fileModules) {
-          try {
-            const payload = toSupabaseModule(fm, fm.createdBy, fm.id);
-            await supabase.from('modules').upsert([payload], { onConflict: 'id' });
-            console.log(`[getModulesByIds] Synced stranded module ${fm.id} to Supabase`);
-          } catch (e) { /* non-fatal */ }
-        }
-        return [...found, ...fileModules];
-      }
-      return found;
-    }
+    if (!error) found = (data || []).map(normalizeModule);
   }
+  // Fill missing IDs from DataStore JSONB
+  const foundIds = new Set(found.map(m => m.id));
+  const missingIds = ids.filter(id => !foundIds.has(id));
+  if (missingIds.length) {
+    try {
+      const dsAll = await GeneratedModules.getAll();
+      const dsFound = (dsAll || []).filter(m => missingIds.includes(m.id));
+      found = [...found, ...dsFound];
+    } catch (_) {}
+  }
+  if (found.length > 0) return found;
+  // Ephemeral file as absolute last resort
   const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
   return (f?.modules || []).filter(m => ids.includes(m.id));
 }
@@ -265,16 +268,16 @@ export async function createModule(module, createdBy) {
         }
         console.error('[createModule] Retry without created_by also failed:', JSON.stringify(retry2.error));
       }
-      // Fall through to ephemeral file fallback — better than losing data entirely
-      console.warn('[createModule] Falling back to ephemeral file storage after Supabase error:', error.message);
+      // Fall through to JSONB fallback
+      console.warn('[createModule] Flat-column Supabase write failed, trying JSONB fallback:', error.message);
     } else {
       return normalizeModule(data);
     }
   } // end if (isOn())
-  // Supabase is not available or errored — writing to ephemeral file (data will be lost on Render restart!)
-  console.error('[createModule] ⚠️ Supabase is OFF — module will be written to ephemeral JSON file and will not survive a server restart. Check SUPABASE_URL and SUPABASESERVICE_ROLE_KEY env vars.');
-  const path = join(DATA_DIR, 'modules.json');
-  const f = await readJsonFile(path) || { modules: [], nextModuleId: 1 };
+
+  // Flat-column modules table unavailable or errored — persist via DataStore JSONB (generated_modules table)
+  // This survives Render restarts because DataStore writes to Supabase.
+  console.warn('[createModule] Using DataStore JSONB fallback for module persistence.');
   const newModule = {
     id,
     title: module.title,
@@ -287,14 +290,25 @@ export async function createModule(module, createdBy) {
     resources: module.resources || [],
     completionCriteria: module.completionCriteria || 'Complete all tasks',
     content: module.content || {},
-    companyId: module.companyId || null,
+    companyId: module.companyId || module.company_id || null,
     createdBy,
     createdAt: new Date().toISOString(),
+    _source: 'generated_modules',
   };
-  f.modules.push(newModule);
-  f.nextModuleId += 1;
-  await writeJsonFile(path, f);
-  return newModule;
+  try {
+    const saved = await GeneratedModules.create(newModule);
+    console.log(`[createModule] Saved to generated_modules JSONB table: ${id}`);
+    return saved || newModule;
+  } catch (dsErr) {
+    // Absolute last resort: ephemeral file (data will be lost on Render restart)
+    console.error('[createModule] ⚠️ DataStore JSONB also failed — falling back to ephemeral file. Check SUPABASE_URL and SUPABASESERVICE_ROLE_KEY.', dsErr.message);
+    const path = join(DATA_DIR, 'modules.json');
+    const f = await readJsonFile(path) || { modules: [], nextModuleId: 1 };
+    f.modules.push(newModule);
+    f.nextModuleId += 1;
+    await writeJsonFile(path, f);
+    return newModule;
+  }
 }
 
 /**
