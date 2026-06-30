@@ -851,4 +851,40 @@ export const AssessmentThresholds = {
   },
 };
 
-export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds, AccessCodes };
+// ── GENERATED MODULES (JSONB fallback for flat-column modules table) ──────────
+// Table: generated_modules { id TEXT PK, data JSONB, created_at, updated_at }
+// Used when the flat-column `modules` Supabase table is missing or has schema issues.
+// SQL to create: CREATE TABLE IF NOT EXISTS generated_modules (
+//   id TEXT PRIMARY KEY, data JSONB NOT NULL,
+//   created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
+// );
+
+export const GeneratedModules = {
+  async getAll() {
+    return getAllHealed('generated_modules', 'generated_modules_ds.json');
+  },
+  async getById(id) {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbGetById('generated_modules', id);
+      if (result) return result;
+    }
+    return readFile('generated_modules_ds.json').find(m => m?.id === id) || null;
+  },
+  async create(doc) {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbInsert('generated_modules', doc.id, doc);
+      if (result) return result;
+    }
+    const all = readFile('generated_modules_ds.json');
+    all.push(doc);
+    writeFile('generated_modules_ds.json', all);
+    return doc;
+  },
+  async update(id, updates) {
+    return updateHealed('generated_modules', 'generated_modules_ds.json', id, updates);
+  },
+};
+
+export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds, AccessCodes, GeneratedModules };
