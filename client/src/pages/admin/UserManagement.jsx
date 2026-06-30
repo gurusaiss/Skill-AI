@@ -353,6 +353,11 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   const [currentManagerId, setCurrentManagerId] = useState(null);
   const [assigning, setAssigning] = useState(false);
   const [activeSection, setActiveSection] = useState('profile'); // 'profile' | 'jd' | 'assign'
+  // Additional job roles
+  const [additionalRoles, setAdditionalRoles] = useState(user.additionalJobRoles || []);
+  const [addRoleForm, setAddRoleForm] = useState({ roleName: '', department: '', jobDescription: '' });
+  const [addingRole, setAddingRole] = useState(false);
+  const [showAddRoleForm, setShowAddRoleForm] = useState(false);
 
   const managers = useMemo(() => users.filter(u => u.role === 'manager' && u.userId !== user.userId), [users, user.userId]);
   const isEmployee = form.role === 'employee';
@@ -394,6 +399,32 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   const f = (key) => (e) => {
     if (key === 'jobRole') return handleJobRoleChange(e);
     setForm(prev => ({ ...prev, [key]: e.target.value }));
+  };
+
+  const handleAddJobRole = async () => {
+    if (!addRoleForm.roleName.trim()) { setToast({ message: 'Role name is required', type: 'error' }); return; }
+    setAddingRole(true);
+    try {
+      const res = await authFetch(`/api/users/${user.userId}/job-roles`, {
+        method: 'POST',
+        body: JSON.stringify(addRoleForm),
+      });
+      const newRole = res?.role || { roleName: addRoleForm.roleName, id: Date.now() };
+      setAdditionalRoles(prev => [...prev, newRole]);
+      setAddRoleForm({ roleName: '', department: '', jobDescription: '' });
+      setShowAddRoleForm(false);
+      setToast({ message: `"${newRole.roleName}" added. Assessment workflow triggered.`, type: 'success' });
+    } catch (e) { setToast({ message: e.message || 'Failed to add role', type: 'error' }); }
+    finally { setAddingRole(false); }
+  };
+
+  const handleRemoveJobRole = async (roleId, roleName) => {
+    if (!window.confirm(`Remove "${roleName}" from this user?`)) return;
+    try {
+      await authFetch(`/api/users/${user.userId}/job-roles/${roleId}`, { method: 'DELETE' });
+      setAdditionalRoles(prev => prev.filter(r => r.id !== roleId));
+      setToast({ message: `"${roleName}" removed`, type: 'success' });
+    } catch (e) { setToast({ message: e.message || 'Failed to remove role', type: 'error' }); }
   };
 
   const handleSave = async () => {
@@ -617,7 +648,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
               {/* Job Role + Department */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <FieldLabel>Job Role {roleLibLookup && <span className="text-indigo-400 text-xs ml-1">↻ looking up…</span>}</FieldLabel>
+                  <FieldLabel>Primary Job Role {roleLibLookup && <span className="text-indigo-400 text-xs ml-1">↻ looking up…</span>}</FieldLabel>
                   <input type="text" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Frontend Developer" />
                   <p className="text-xs text-slate-600 mt-0.5">JD auto-fills from Role Library on match</p>
                 </div>
@@ -625,6 +656,52 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                   <FieldLabel>Department</FieldLabel>
                   <input type="text" value={form.department} onChange={f('department')} className={inputCls} placeholder="e.g. Engineering" />
                 </div>
+              </div>
+
+              {/* Additional Job Roles */}
+              <div className="pt-1">
+                <div className="flex items-center justify-between mb-2">
+                  <FieldLabel>Additional Job Roles</FieldLabel>
+                  <button type="button" onClick={() => setShowAddRoleForm(v => !v)}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold transition-colors">
+                    {showAddRoleForm ? '✕ Cancel' : '+ Add Job Role'}
+                  </button>
+                </div>
+                {additionalRoles.length > 0 && (
+                  <div className="space-y-1.5 mb-2">
+                    {additionalRoles.map(r => (
+                      <div key={r.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50">
+                        <div>
+                          <span className="text-sm text-white font-medium">{r.roleName}</span>
+                          {r.department && <span className="text-xs text-slate-500 ml-2">· {r.department}</span>}
+                        </div>
+                        <button type="button" onClick={() => handleRemoveJobRole(r.id, r.roleName)}
+                          className="text-slate-500 hover:text-red-400 text-xs transition-colors ml-2">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {additionalRoles.length === 0 && !showAddRoleForm && (
+                  <p className="text-xs text-slate-600 mb-2">No additional roles. Click "+ Add Job Role" to assign multiple roles.</p>
+                )}
+                {showAddRoleForm && (
+                  <div className="rounded-xl border border-indigo-500/30 bg-slate-800/40 p-3 space-y-2">
+                    <input type="text" placeholder="Role Name (required)" value={addRoleForm.roleName}
+                      onChange={e => setAddRoleForm(p => ({ ...p, roleName: e.target.value }))}
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
+                    <input type="text" placeholder="Department (optional)" value={addRoleForm.department}
+                      onChange={e => setAddRoleForm(p => ({ ...p, department: e.target.value }))}
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
+                    <textarea placeholder="Job Description (optional — triggers auto-assessment)" value={addRoleForm.jobDescription}
+                      onChange={e => setAddRoleForm(p => ({ ...p, jobDescription: e.target.value }))}
+                      rows={2}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none resize-y" />
+                    <button type="button" onClick={handleAddJobRole} disabled={addingRole}
+                      className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-colors disabled:opacity-50">
+                      {addingRole ? 'Adding…' : '✓ Add & Trigger Assessment'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>

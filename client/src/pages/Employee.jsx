@@ -160,6 +160,8 @@ export default function Employee() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  // Job Role selector
+  const [selectedJobRole, setSelectedJobRole] = useState('all'); // 'all' or a specific role name
   const [filterType, setFilterType] = useState('all');
   const [toast, setToast] = useState(null);
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, assignmentId: null, newStatus: null, title: '', message: '' });
@@ -348,15 +350,35 @@ export default function Employee() {
     }
   };
 
+  // Build list of available job roles from user data
+  const availableJobRoles = useMemo(() => {
+    const roles = [];
+    if (user?.jobRole) roles.push({ label: user.jobRole, value: user.jobRole, isPrimary: true });
+    (user?.additionalJobRoles || []).forEach(r => {
+      if (r.roleName) roles.push({ label: r.roleName, value: r.roleName, isPrimary: false });
+    });
+    return roles;
+  }, [user]);
+
   const filteredAssignments = useMemo(() => {
     return assignments.filter(a => {
       const title = (a.module_name || a.name || a.title || a.assignable_type || 'Untitled').toLowerCase();
       const matchesSearch = !searchQuery || title.includes(searchQuery.toLowerCase());
       const matchesStatus = filterStatus === 'all' || a.status === filterStatus;
       const matchesType = filterType === 'all' || a.type === filterType;
-      return matchesSearch && matchesStatus && matchesType;
+      // Role filter: match by assignment's job role tag if available
+      const matchesRole = selectedJobRole === 'all' || !a.jobRole || a.jobRole === selectedJobRole;
+      return matchesSearch && matchesStatus && matchesType && matchesRole;
     });
-  }, [assignments, searchQuery, filterStatus, filterType]);
+  }, [assignments, searchQuery, filterStatus, filterType, selectedJobRole]);
+
+  const filteredAssessments = useMemo(() => {
+    if (selectedJobRole === 'all') return myAssessments;
+    return myAssessments.filter(a => {
+      const role = a.jobRole || a.job_role || a.targetRole || '';
+      return !role || role === selectedJobRole;
+    });
+  }, [myAssessments, selectedJobRole]);
 
   const stats = useMemo(() => {
     const active = assignments.filter(a => a.status !== 'completed' && a.status !== 'cancelled').length;
@@ -417,21 +439,50 @@ export default function Employee() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <div className="flex items-center gap-4 mb-2">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500/30 to-purple-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl">
-              👨‍💼
+          <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500/30 to-purple-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl">
+                👨‍💼
+              </div>
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">My Learning</h1>
+                <p className="text-slate-400 text-sm mt-0.5">Track your assigned modules and progress</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">My Learning</h1>
-              <p className="text-slate-400 text-sm mt-0.5">Track your assigned modules and progress</p>
-            </div>
+            <button
+              onClick={() => window.print()}
+              className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 text-xs font-bold transition-all"
+            >
+              🖨️ Export PDF
+            </button>
           </div>
-          <button
-            onClick={() => window.print()}
-            className="ml-auto flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 text-xs font-bold transition-all"
-          >
-            🖨️ Export PDF
-          </button>
+          {/* Job Role Selector — shown when user has multiple roles */}
+          {availableJobRoles.length > 1 && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Job Role</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setSelectedJobRole('all')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${selectedJobRole === 'all' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white hover:border-slate-600'}`}
+                >
+                  All Roles
+                </button>
+                {availableJobRoles.map(r => (
+                  <button
+                    key={r.value}
+                    onClick={() => setSelectedJobRole(r.value)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${selectedJobRole === r.value ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white hover:border-slate-600'}`}
+                  >
+                    {r.isPrimary && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />}
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+              {selectedJobRole !== 'all' && (
+                <span className="text-xs text-indigo-400 font-medium">Showing data for: {selectedJobRole}</span>
+              )}
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -476,8 +527,8 @@ export default function Employee() {
         <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 backdrop-blur-sm overflow-hidden mb-6 card-enter" style={{ animationDelay: '150ms' }}>
           <div className="border-b border-slate-700/40 px-5 py-4 flex items-center justify-between">
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">📝 My Assessments</h3>
-            {myAssessments.length > 0 && (
-              <span className="text-xs text-slate-500">{myAssessments.length} assigned</span>
+            {filteredAssessments.length > 0 && (
+              <span className="text-xs text-slate-500">{filteredAssessments.length} assigned</span>
             )}
           </div>
           <div className="p-4">
@@ -487,13 +538,13 @@ export default function Employee() {
                   <div key={i} className="h-12 rounded-xl bg-slate-800/40 animate-pulse" />
                 ))}
               </div>
-            ) : myAssessments.length === 0 ? (
+            ) : filteredAssessments.length === 0 ? (
               <div className="py-6 text-center">
-                <p className="text-sm text-slate-500">No assessments yet</p>
+                <p className="text-sm text-slate-500">{selectedJobRole !== 'all' ? `No assessments for ${selectedJobRole}` : 'No assessments yet'}</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {myAssessments.map((a) => {
+                {filteredAssessments.map((a) => {
                   const id = a.id || a._id;
                   const isSubmitted = a.status === 'submitted' || a.status === 'completed';
                   const isExpired = a.isExpired && !isSubmitted;

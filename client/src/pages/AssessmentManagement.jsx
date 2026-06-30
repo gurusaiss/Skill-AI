@@ -204,6 +204,7 @@ export default function AssessmentManagement() {
   const [qEmpIdx, setQEmpIdx] = useState(0);            // which employeeAssignment index
   const [qDraft, setQDraft] = useState([]);             // editable questions array
   const [qSaving, setQSaving] = useState(false);
+  const [qTypePickerOpen, setQTypePickerOpen] = useState(false); // type picker for new questions
 
   // Export reports modal
   const [exportTarget, setExportTarget] = useState(null);
@@ -474,16 +475,15 @@ export default function AssessmentManagement() {
     }));
   };
 
-  const addQuestion = () => {
-    setQDraft(prev => [...prev, {
-      type: 'mcq',
-      question: '',
-      difficulty: 'medium',
-      options: ['A) ', 'B) ', 'C) ', 'D) '],
-      answer: 'A',
-      explanation: '',
-      skillArea: '',
-    }]);
+  const addQuestion = (type = 'mcq') => {
+    const base = { question: '', difficulty: 'medium', explanation: '', skillArea: '', type };
+    const templates = {
+      mcq:        { ...base, options: ['A) ', 'B) ', 'C) ', 'D) '], answer: 'A' },
+      fill_blank: { ...base, answer: '' },
+      subjective: { ...base, answer: '' },
+    };
+    setQDraft(prev => [...prev, templates[type] || templates.mcq]);
+    setQTypePickerOpen(false);
   };
 
   const removeQuestion = (qi) => {
@@ -1413,14 +1413,26 @@ export default function AssessmentManagement() {
                   {/* Answer + explanation */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs font-bold text-slate-500 mb-1 block">Answer</label>
-                      <input
-                        type="text"
-                        value={q.answer || ''}
-                        onChange={e => updateQuestion(qi, 'answer', e.target.value)}
-                        placeholder={q.type === 'mcq' ? 'A / B / C / D' : 'Model answer'}
-                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
-                      />
+                      <label className="text-xs font-bold text-slate-500 mb-1 block">
+                        {q.type === 'mcq' ? 'Correct Answer (A/B/C/D)' : q.type === 'fill_blank' ? 'Correct Answer' : 'Suggested Answer / Evaluation Notes'}
+                      </label>
+                      {q.type === 'subjective' ? (
+                        <textarea
+                          value={q.answer || ''}
+                          onChange={e => updateQuestion(qi, 'answer', e.target.value)}
+                          placeholder="Model answer or grading notes for evaluators"
+                          rows={3}
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none resize-y"
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={q.answer || ''}
+                          onChange={e => updateQuestion(qi, 'answer', e.target.value)}
+                          placeholder={q.type === 'mcq' ? 'A / B / C / D' : 'Exact answer phrase'}
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                        />
+                      )}
                     </div>
                     <div>
                       <label className="text-xs font-bold text-slate-500 mb-1 block">Skill Area</label>
@@ -1446,12 +1458,36 @@ export default function AssessmentManagement() {
                 </div>
               ))}
 
-              <button
-                onClick={addQuestion}
-                className="w-full py-2.5 rounded-xl border border-dashed border-slate-600 text-slate-400 hover:text-white hover:border-indigo-500/50 text-sm font-semibold transition-colors"
-              >
-                + Add Question
-              </button>
+              {qTypePickerOpen ? (
+                <div className="rounded-xl border border-indigo-500/40 bg-slate-800/60 p-4">
+                  <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Select Question Type</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { type: 'mcq', label: 'MCQ', icon: '◉', desc: 'Multiple choice with 4 options' },
+                      { type: 'fill_blank', label: 'Fill in the Blank', icon: '▭', desc: 'Complete the sentence' },
+                      { type: 'subjective', label: 'Subjective', icon: '✍', desc: 'Open-ended written answer' },
+                    ].map(({ type, label, icon, desc }) => (
+                      <button
+                        key={type}
+                        onClick={() => addQuestion(type)}
+                        className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-slate-900 border border-slate-700 hover:border-indigo-500 hover:bg-indigo-600/10 transition-all text-center"
+                      >
+                        <span className="text-xl">{icon}</span>
+                        <span className="text-xs font-bold text-white">{label}</span>
+                        <span className="text-[10px] text-slate-500 leading-tight">{desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => setQTypePickerOpen(false)} className="mt-3 w-full text-xs text-slate-500 hover:text-slate-300 transition-colors">Cancel</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setQTypePickerOpen(true)}
+                  className="w-full py-2.5 rounded-xl border border-dashed border-slate-600 text-slate-400 hover:text-white hover:border-indigo-500/50 text-sm font-semibold transition-colors"
+                >
+                  + Add Question
+                </button>
+              )}
             </div>
 
             {/* Footer */}

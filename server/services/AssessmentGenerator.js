@@ -5,12 +5,76 @@
  */
 import { randomUUID } from 'crypto';
 
+// Deduplicate questions by meaning: remove questions whose text is >70% similar
+// to any already-seen question (simple normalized-token overlap check)
+function deduplicateQuestions(questions) {
+  const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean);
+  const seen = [];
+  return questions.filter(q => {
+    const tokens = new Set(normalize(q.question));
+    for (const prev of seen) {
+      const prevTokens = new Set(normalize(prev.question));
+      const intersection = [...tokens].filter(t => prevTokens.has(t)).length;
+      const union = new Set([...tokens, ...prevTokens]).size;
+      if (union > 0 && intersection / union > 0.70) return false; // too similar
+    }
+    seen.push(q);
+    return true;
+  });
+}
+
+// Re-balance difficulty to ~35% easy, ~45% medium, ~20% hard
+function rebalanceDifficulty(questions) {
+  const n = questions.length;
+  const targets = {
+    easy:   Math.round(n * 0.35),
+    medium: Math.round(n * 0.45),
+    hard:   Math.max(1, n - Math.round(n * 0.35) - Math.round(n * 0.45)),
+  };
+  const buckets = { easy: [], medium: [], hard: [] };
+  for (const q of questions) {
+    const d = q.difficulty || 'medium';
+    buckets[d] = buckets[d] || [];
+    buckets[d].push(q);
+  }
+  const result = [];
+  for (const [diff, target] of Object.entries(targets)) {
+    const bucket = buckets[diff] || [];
+    result.push(...bucket.slice(0, target));
+    // borrow from other buckets if short
+    if (bucket.length < target) {
+      const shortage = target - bucket.length;
+      const donors = Object.entries(buckets).filter(([d]) => d !== diff);
+      for (let i = 0; i < shortage; i++) {
+        for (const [donorDiff, donorBucket] of donors) {
+          if (donorBucket.length > targets[donorDiff]) {
+            const borrowed = donorBucket.pop();
+            if (borrowed) result.push({ ...borrowed, difficulty: diff });
+            break;
+          }
+        }
+      }
+    }
+  }
+  // Shuffle so difficulties are interleaved, not grouped
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
 export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed }) {
   const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 50);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const seed = employeeSeed || randomUUID().slice(0, 8);
   const jdText = (jobDescription || '').trim();
   const skillsList = Array.isArray(jdSkills) && jdSkills.length ? jdSkills : [];
+
+  // Compute target counts per difficulty
+  const easyCount  = Math.round(num * 0.35);
+  const mediumCount = Math.round(num * 0.45);
+  const hardCount  = Math.max(1, num - easyCount - mediumCount);
 
   const system = `You are an expert HR assessment designer who creates role-specific assessments for ALL job functions across ALL industries — HR, Operations, Finance, Sales, Marketing, Customer Success, Procurement, L&D, Project Management, IT, Engineering, Healthcare, Legal, and any other domain.
 
@@ -21,9 +85,11 @@ ABSOLUTE RULES:
 4. Every question must trace directly to a specific responsibility, skill, process, tool, or competency in the JD.
 5. Match seniority level: Executive/Director → strategy, policy, P&L, stakeholder decisions. Manager → team management, planning, escalation, reporting. Specialist/Executive → applied process, tools, day-to-day procedures. Junior/Coordinator → foundational knowledge, process steps.
 6. Never generate software coding or engineering architecture questions unless the JD explicitly lists programming as a requirement.
-7. Always return valid JSON with exactly a "questions" array.`;
+7. Always return valid JSON with exactly a "questions" array.
+8. QUESTION WORDING — CRITICAL: At most 1 out of every 10 questions may begin with "As a [role]", "In your role as", "While working as", or "As an [role]". The other 9+ questions must open naturally — ask directly about the concept, situation, scenario, or decision. Write questions like a real corporate assessment, not like a role-play prompt.
+9. NO DUPLICATE QUESTIONS: Every question must test a different concept, situation, or scenario. No two questions may have the same meaning, even if the wording differs. No duplicate answer options.`;
 
-  const prompt = `Generate ${num} assessment questions for this employee.
+  const prompt = `Generate ${num} assessment questions for the following employee profile.
 
 === EMPLOYEE PROFILE ===
 Job Role: ${jobRole || 'Professional'}
@@ -48,27 +114,33 @@ Identify before generating any question:
 • Key performance indicators or expected outcomes mentioned
 
 STEP 2 — GENERATE QUESTIONS GROUNDED IN THE EXTRACTED PROFILE:
-• Use exactly this question type mix (cycle through): ${types.join(', ')}
-• Difficulty distribution: EXACTLY one-third each — assign difficulty in a strict rotating cycle (easy → medium → hard → easy → medium → hard …). Every third question must be hard. Do NOT cluster all hard questions at the end.
-• Each question must test something from the profile extracted in Step 1
-• Prefer scenario-based questions: "In your role as ${jobRole || 'a professional'}, when [situation], what do you do?"
-• For non-technical roles: test processes, decisions, communication, and domain knowledge — NOT coding or engineering
-• For managerial roles: include team management, delegation, conflict resolution, resource planning, KPI reporting
-• For finance/procurement: include budgeting, approval workflows, vendor management, compliance
-• For HR roles: include recruitment processes, employee relations, HR policies, performance management
-• For sales/marketing: include pipeline management, client handling, campaign strategy, metrics tracking
-• Use the variation seed (${seed}) to select different angles and scenarios even if two employees share the same JD
+
+QUESTION TYPE MIX — cycle through in order: ${types.join(', ')}
+
+DIFFICULTY DISTRIBUTION — MANDATORY:
+• Easy: exactly ${easyCount} questions (~35%) — foundational knowledge, definitions, straightforward processes
+• Medium: exactly ${mediumCount} questions (~45%) — applied situations, multi-step decisions, moderate complexity
+• Hard: exactly ${hardCount} questions (~20%) — complex scenarios, strategic thinking, edge cases, cross-functional judgment
+Generate all easy questions first, then medium, then hard in the JSON — the final reordering will happen in code.
+
+WORDING RULES — STRICTLY ENFORCED:
+• Maximum ${Math.max(1, Math.floor(num * 0.08))} question(s) in the entire set may start with "As a [role]" / "In your role as" / "While working as". ALL OTHER questions must be worded differently.
+• Write questions that directly address: concepts, best practices, scenarios, decisions, processes, policies, tools, case situations — without mentioning the job role in the question stem.
+• Good examples: "What is the recommended approach when...", "Which of the following best describes...", "A team encounters [situation]. What should be done first?", "When evaluating [process], which factor is most important?"
+• Bad examples: "As an HR Executive, when you face...", "In your role as a Finance Manager, what would you do..."
+• Make each question test a UNIQUE concept — no two questions may test the same thing even with different wording.
 
 STEP 3 — VALIDATE EACH QUESTION BEFORE RETURNING:
-For every question ask: "Can I point to a specific line or responsibility in the JD that makes this question relevant?"
-If the answer is NO — replace the question with one that passes this test.
+• Can I point to a specific line or responsibility in the JD that makes this question relevant? If NO — replace it.
+• Is this question unique compared to all others in the set? If similar to another — replace it.
+• Does the wording follow the rules above? If not — rewrite it.
 
 === OUTPUT FORMAT ===
 {
   "questions": [
     {
       "type": "mcq|fill_blank|subjective",
-      "question": "specific, scenario-grounded question relevant to this exact role and JD",
+      "question": "direct, naturally worded question about a concept, scenario, or decision",
       "difficulty": "easy|medium|hard",
       "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
       "answer": "A (or B/C/D for mcq) | exact phrase for fill_blank | detailed model answer for subjective",
@@ -88,7 +160,7 @@ If the answer is NO — replace the question with one that passes this test.
         body: JSON.stringify({
           model: 'llama-3.3-70b-versatile',
           messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-          temperature: 0.8,
+          temperature: 0.85,
           max_tokens: 8000,
           response_format: { type: 'json_object' },
         }),
@@ -97,7 +169,9 @@ If the answer is NO — replace the question with one that passes this test.
       if (r.ok) {
         const d = await r.json();
         const parsed = JSON.parse(d.choices?.[0]?.message?.content || '{}');
-        if (Array.isArray(parsed.questions) && parsed.questions.length > 0) return parsed.questions;
+        if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+          return rebalanceDifficulty(deduplicateQuestions(parsed.questions));
+        }
       }
     }
   } catch (e) { console.warn('[AssessmentGenerator] Groq failed:', e.message); }
@@ -114,7 +188,7 @@ If the answer is NO — replace the question with one that passes this test.
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: system + '\n\n' + prompt }] }],
-            generationConfig: { temperature: 0.8, maxOutputTokens: 8192, responseMimeType: 'application/json' },
+            generationConfig: { temperature: 0.85, maxOutputTokens: 8192, responseMimeType: 'application/json' },
           }),
           signal: AbortSignal.timeout(30000),
         }
@@ -122,26 +196,56 @@ If the answer is NO — replace the question with one that passes this test.
       if (r.ok) {
         const d = await r.json();
         const parsed = JSON.parse(d.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
-        if (Array.isArray(parsed.questions) && parsed.questions.length > 0) return parsed.questions;
+        if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+          return rebalanceDifficulty(deduplicateQuestions(parsed.questions));
+        }
       }
     }
   } catch (e) { console.warn('[AssessmentGenerator] Gemini failed:', e.message); }
 
-  // Fallback — skill-grounded rule-based questions
+  // Fallback — skill-grounded rule-based questions (no "As a..." prefix)
   const role = jobRole || 'Professional';
   const fallbackSkills = skillsList.length > 0 ? skillsList
     : ['core responsibilities', 'stakeholder communication', 'process management', 'performance delivery', 'problem solving'];
-  return Array.from({ length: num }, (_, i) => {
+
+  const fallbackTemplates = {
+    easy: [
+      (skill) => `What is the primary purpose of ${skill} in a professional context?`,
+      (skill) => `Which of the following best describes ${skill}?`,
+      (skill) => `What is a key indicator of effective ${skill}?`,
+    ],
+    medium: [
+      (skill) => `A team encounters conflicting priorities related to ${skill}. What is the recommended first step?`,
+      (skill) => `When evaluating options for ${skill}, which factor should take highest priority?`,
+      (skill) => `A stakeholder requests a change that impacts ${skill}. How should this be handled?`,
+    ],
+    hard: [
+      (skill) => `Multiple departments disagree on the approach to ${skill}. How would you build consensus while meeting the deadline?`,
+      (skill) => `A critical failure occurs in ${skill} with no clear precedent. Describe the decision-making framework you would apply.`,
+      (skill) => `How would you design a scalable process for ${skill} that balances efficiency, compliance, and stakeholder expectations?`,
+    ],
+  };
+
+  const difficulties = [
+    ...Array(easyCount).fill('easy'),
+    ...Array(mediumCount).fill('medium'),
+    ...Array(hardCount).fill('hard'),
+  ];
+
+  return deduplicateQuestions(Array.from({ length: num }, (_, i) => {
     const t = types[i % types.length];
-    const difficulty = ['easy', 'medium', 'hard'][i % 3];
+    const difficulty = difficulties[i] || ['easy', 'medium', 'hard'][i % 3];
     const skill = fallbackSkills[i % fallbackSkills.length];
+    const tpls = fallbackTemplates[difficulty];
+    const questionText = t === 'fill_blank'
+      ? `A key outcome of effective ${skill} management is ______.`
+      : t === 'subjective'
+      ? `Describe a situation where ${skill} required careful judgment. What approach did you take and what was the result?`
+      : tpls[i % tpls.length](skill);
+
     return {
       type: t,
-      question: t === 'mcq'
-        ? `As a ${role}, when facing a challenge related to ${skill}, what is the most effective first step?`
-        : t === 'fill_blank'
-        ? `A key outcome of strong ${skill} in the ${role} role is ______.`
-        : `Describe a specific situation in your ${role} role where ${skill} was critical. What approach did you take and what was the result?`,
+      question: questionText,
       difficulty,
       options: t === 'mcq' ? [
         `A) Assess the situation, identify root cause, and develop a structured plan`,
@@ -151,9 +255,9 @@ If the answer is NO — replace the question with one that passes this test.
       ] : undefined,
       answer: t === 'mcq' ? 'A'
         : t === 'fill_blank' ? 'consistent, measurable, and high-quality outcomes'
-        : `In my ${role} role, I approach ${skill} challenges by first clarifying objectives and constraints, then systematically identifying root causes, designing solutions aligned with organizational goals, and tracking outcomes against defined KPIs.`,
-      explanation: `Tests applied ${skill} competency directly required in the ${role} role.`,
+        : `An effective approach involves clarifying objectives and constraints, systematically identifying root causes, designing solutions aligned with organizational goals, and tracking outcomes against defined KPIs.`,
+      explanation: `Tests applied ${skill} competency for the ${role} role.`,
       skillArea: skill,
     };
-  });
+  }));
 }
