@@ -59,6 +59,7 @@ function rowToUser(row) {
     jdSourceUrl:         row.jd_source_url || '',
     jdSourceType:        row.jd_source_type || 'text',
     accesses:            row.accesses || [],
+    additionalJobRoles:  row.additional_job_roles || [],
     // Auth fields
     otp:                 row.otp || null,
     otpExpires:          row.otp_expires || null,
@@ -93,6 +94,7 @@ function userToRow(u) {
   if (u.jdSourceUrl  !== undefined) row.jd_source_url      = u.jdSourceUrl;
   if (u.jdSourceType !== undefined) row.jd_source_type     = u.jdSourceType;
   if (u.accesses     !== undefined) row.accesses            = u.accesses;
+  if (u.additionalJobRoles !== undefined) row.additional_job_roles = u.additionalJobRoles;
   if (u.otp          !== undefined) row.otp                = u.otp;
   if (u.otpExpires   !== undefined) row.otp_expires        = u.otpExpires;
   if (u.resetToken   !== undefined) row.reset_token        = u.resetToken;

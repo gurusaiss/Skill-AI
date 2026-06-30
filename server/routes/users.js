@@ -1379,4 +1379,129 @@ router.get('/:userId/checklist', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/users/:userId/job-roles
+ * Get all job roles (primary + additional) for a user
+ */
+router.get('/:userId/job-roles', authenticate, async (req, res) => {
+  try {
+    const user = await UserStore.getUserById(req.params.userId);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    const primary = user.jobRole ? [{
+      roleName: user.jobRole, department: user.department || '',
+      jobDescription: user.jobDescription || '', jdSkills: user.jdSkills || [],
+      isPrimary: true,
+    }] : [];
+    const additional = (user.additionalJobRoles || []).map(r => ({ ...r, isPrimary: false }));
+    res.json({ success: true, data: { roles: [...primary, ...additional] } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/users/:userId/job-roles
+ * Add an additional job role and trigger assessment workflow
+ */
+router.post('/:userId/job-roles', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { roleName, department, jobDescription, jdSkills } = req.body;
+    if (!roleName?.trim()) return res.status(400).json({ success: false, error: 'roleName is required' });
+
+    const user = await UserStore.getUserById(userId);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+    const existing = user.additionalJobRoles || [];
+    // Prevent duplicates
+    if (existing.some(r => r.roleName?.toLowerCase() === roleName.toLowerCase())) {
+      return res.status(409).json({ success: false, error: 'This job role is already assigned to the user' });
+    }
+
+    const newRole = {
+      id: `role_${Date.now()}`,
+      roleName: roleName.trim(),
+      department: department || '',
+      jobDescription: jobDescription || '',
+      jdSkills: Array.isArray(jdSkills) ? jdSkills : [],
+      addedAt: new Date().toISOString(),
+      addedBy: req.user.userId,
+    };
+
+    const updatedRoles = [...existing, newRole];
+    await UserStore.updateUser(userId, { additionalJobRoles: updatedRoles });
+
+    // Fire-and-forget: trigger assessment workflow for this new role
+    if (jobDescription?.trim()) {
+      (async () => {
+        try {
+          const { generateQuestionsFromJD } = await import('../services/AssessmentGenerator.js');
+          const { Assessments } = await import('../services/DataStore.js');
+          const { randomUUID } = await import('crypto');
+
+          const questions = await generateQuestionsFromJD({
+            jobRole: roleName,
+            jobDescription,
+            jdSkills: newRole.jdSkills,
+            questionCount: 20,
+            questionTypes: ['mcq', 'fill_blank', 'subjective'],
+            employeeSeed: userId.slice(-6),
+          });
+
+          const assessmentId = randomUUID();
+          const assessment = {
+            id: assessmentId,
+            title: `${roleName} Assessment`,
+            companyId: user.companyId || 'default',
+            createdBy: req.user.userId,
+            createdAt: new Date().toISOString(),
+            status: 'active',
+            jobRole: roleName,
+            targetRole: roleName,
+            questionCount: questions.length,
+            duration: 30,
+            employeeAssignments: [{
+              userId,
+              jobRole: roleName,
+              status: 'assigned',
+              questions,
+              assignedAt: new Date().toISOString(),
+              additionalRoleId: newRole.id,
+            }],
+          };
+          await Assessments.create(assessment);
+          console.log(`[job-roles] Auto-assessment created for user=${userId} role=${roleName}`);
+        } catch (e) {
+          console.error('[job-roles] Auto-assessment failed:', e.message);
+        }
+      })();
+    }
+
+    res.json({ success: true, data: { role: newRole, message: 'Job role added. Assessment workflow triggered.' } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * DELETE /api/users/:userId/job-roles/:roleId
+ * Remove an additional job role
+ */
+router.delete('/:userId/job-roles/:roleId', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const { userId, roleId } = req.params;
+    const user = await UserStore.getUserById(userId);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+    const existing = user.additionalJobRoles || [];
+    const updated = existing.filter(r => r.id !== roleId);
+    if (updated.length === existing.length) return res.status(404).json({ success: false, error: 'Role not found' });
+
+    await UserStore.updateUser(userId, { additionalJobRoles: updated });
+    res.json({ success: true, data: { message: 'Job role removed' } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 export default router;
