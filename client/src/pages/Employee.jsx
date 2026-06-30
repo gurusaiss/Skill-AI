@@ -381,12 +381,13 @@ export default function Employee() {
   }, [myAssessments, selectedJobRole]);
 
   const stats = useMemo(() => {
-    const active = assignments.filter(a => a.status !== 'completed' && a.status !== 'cancelled').length;
-    const completed = assignments.filter(a => a.status === 'completed').length;
-    const overdue = assignments.filter(a => a.status === 'overdue' || (a.due_date && new Date(a.due_date) < new Date() && a.status !== 'completed' && a.status !== 'cancelled')).length;
-    const avgProgress = assignments.length > 0 ? Math.round(assignments.reduce((s, a) => s + (a.progress || 0), 0) / assignments.length) : 0;
+    const base = selectedJobRole === 'all' ? assignments : assignments.filter(a => !a.jobRole || a.jobRole === selectedJobRole);
+    const active = base.filter(a => a.status !== 'completed' && a.status !== 'cancelled').length;
+    const completed = base.filter(a => a.status === 'completed').length;
+    const overdue = base.filter(a => a.status === 'overdue' || (a.due_date && new Date(a.due_date) < new Date() && a.status !== 'completed' && a.status !== 'cancelled')).length;
+    const avgProgress = base.length > 0 ? Math.round(base.reduce((s, a) => s + (a.progress || 0), 0) / base.length) : 0;
     return { active, completed, overdue, avgProgress };
-  }, [assignments]);
+  }, [assignments, selectedJobRole]);
 
   const formatDate = (dateStr) => {
     if (!dateStr) return 'No due date';

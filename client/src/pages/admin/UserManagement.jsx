@@ -964,6 +964,9 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
   const [form, setForm] = useState({ name: '', email: '', role: 'employee', jobRole: '', department: '', jobDescription: '', companyName: '' });
   const [saving, setSaving] = useState(false);
   const [roleOptions, setRoleOptions] = useState([]);
+  const [additionalRoles, setAdditionalRoles] = useState([]);
+  const [addRoleForm, setAddRoleForm] = useState({ roleName: '', department: '' });
+  const [showAddRoleForm, setShowAddRoleForm] = useState(false);
   const f = (key) => (e) => setForm(prev => ({ ...prev, [key]: e.target.value }));
 
   useEffect(() => {
@@ -981,6 +984,15 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
         method: 'POST',
         body: JSON.stringify({ ...form, name: form.name.trim(), email: form.email.trim() }),
       });
+      // Add additional job roles after user creation
+      for (const ar of additionalRoles) {
+        try {
+          await authFetch(`/api/users/${user.id}/job-roles`, {
+            method: 'POST',
+            body: JSON.stringify({ roleName: ar.roleName, department: ar.department }),
+          });
+        } catch (e) { console.warn('Failed to add extra role:', ar.roleName, e.message); }
+      }
       onCreated(user);
       onClose();
     } catch (err) { setToast({ message: err.message, type: 'error' }); }
@@ -1049,6 +1061,56 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
               className={`${inputCls} resize-y`}
               placeholder="Paste Job Description here (optional — can be added/uploaded later)" />
           </div>
+          {/* Additional Job Roles */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <FieldLabel>Additional Job Roles</FieldLabel>
+              <button onClick={() => setShowAddRoleForm(v => !v)}
+                className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
+                {showAddRoleForm ? '− Cancel' : '+ Add More Job Role'}
+              </button>
+            </div>
+            {additionalRoles.length > 0 && (
+              <div className="space-y-1.5 mb-2">
+                {additionalRoles.map((ar, idx) => (
+                  <div key={idx} className="flex items-center justify-between bg-slate-900/60 rounded-lg px-3 py-2">
+                    <div>
+                      <span className="text-sm text-white font-medium">{ar.roleName}</span>
+                      {ar.department && <span className="text-xs text-slate-400 ml-2">· {ar.department}</span>}
+                    </div>
+                    <button onClick={() => setAdditionalRoles(prev => prev.filter((_, i) => i !== idx))}
+                      className="text-slate-500 hover:text-red-400 text-xs transition-colors">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {showAddRoleForm && (
+              <div className="bg-slate-900/50 rounded-xl p-3 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="text" list="create-add-role-options" value={addRoleForm.roleName}
+                    onChange={e => setAddRoleForm(prev => ({ ...prev, roleName: e.target.value }))}
+                    className={inputCls} placeholder="Role name" autoComplete="off" />
+                  <datalist id="create-add-role-options">
+                    {roleOptions.map(r => <option key={r.name} value={r.name} />)}
+                  </datalist>
+                  <input type="text" value={addRoleForm.department}
+                    onChange={e => setAddRoleForm(prev => ({ ...prev, department: e.target.value }))}
+                    className={inputCls} placeholder="Department (optional)" />
+                </div>
+                <button
+                  onClick={() => {
+                    if (!addRoleForm.roleName.trim()) return;
+                    setAdditionalRoles(prev => [...prev, { roleName: addRoleForm.roleName.trim(), department: addRoleForm.department.trim() }]);
+                    setAddRoleForm({ roleName: '', department: '' });
+                    setShowAddRoleForm(false);
+                  }}
+                  className="w-full py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-white text-xs font-medium transition-colors">
+                  Add Role
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-900/50 rounded-xl p-3">
             <span>📧</span>
             <span>An activation email will be sent to the user's email. They click the link to set their own password and log in.</span>
