@@ -201,11 +201,14 @@ export default function Employee() {
     loadData();
   }, [user, navigate]);
 
-  // Poll for module generation: if employee has a completed assessment but no assignments yet
+  // Poll for module generation: if employee has a completed assessment but no assignments yet (for the active role)
   useEffect(() => {
     if (loading || assessmentsLoading) return;
-    const hasCompletedAssessment = myAssessments.some(a => a.status === 'completed' || a.submittedAt || a.completedAt);
-    const hasNoModules = assignments.length === 0;
+    const relevantAssessments = selectedJobRole === 'all' ? myAssessments
+      : myAssessments.filter(a => { const r = a.jobRole || a.job_role || a.targetRole || ''; return !r || r === selectedJobRole; });
+    const hasCompletedAssessment = relevantAssessments.some(a => a.status === 'completed' || a.submittedAt || a.completedAt);
+    const roleAssignments = selectedJobRole === 'all' ? assignments : assignments.filter(a => !a.jobRole || a.jobRole === selectedJobRole);
+    const hasNoModules = roleAssignments.length === 0;
     if (hasCompletedAssessment && hasNoModules) {
       setModuleGenerating(true);
       const poll = setInterval(async () => {
@@ -224,7 +227,7 @@ export default function Employee() {
     } else {
       setModuleGenerating(false);
     }
-  }, [loading, assessmentsLoading, myAssessments, assignments.length, userId]);
+  }, [loading, assessmentsLoading, myAssessments, assignments, selectedJobRole, userId]);
 
   const loadData = async () => {
     if (!userId) return;
