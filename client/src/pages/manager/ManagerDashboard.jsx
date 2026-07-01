@@ -895,6 +895,41 @@ export default function ManagerDashboard() {
                     />
                   </div>
                   <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                      Employees <span className="text-slate-500 font-normal">(select one or more)</span>
+                    </label>
+                    <div className="max-h-36 overflow-y-auto bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2 space-y-1">
+                      {employees.length === 0 ? (
+                        <p className="text-slate-500 text-xs py-1">No employees found</p>
+                      ) : employees.map(emp => {
+                        const id = emp.userId || emp.id;
+                        const checked = requestForm.employeeIds.includes(id);
+                        return (
+                          <label key={id} className="flex items-center gap-2 cursor-pointer py-0.5 group">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => setRequestForm(f => ({
+                                ...f,
+                                employeeIds: checked
+                                  ? f.employeeIds.filter(eid => eid !== id)
+                                  : [...f.employeeIds, id],
+                              }))}
+                              className="accent-violet-500"
+                            />
+                            <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
+                              {emp.name || emp.email}
+                              {emp.jobRole && <span className="text-slate-500 text-xs ml-1">· {emp.jobRole}</span>}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {requestForm.employeeIds.length > 0 && (
+                      <p className="text-xs text-violet-400 mt-1">{requestForm.employeeIds.length} employee{requestForm.employeeIds.length > 1 ? 's' : ''} selected</p>
+                    )}
+                  </div>
+                  <div>
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Priority</label>
                     <select
                       value={requestForm.priority}
