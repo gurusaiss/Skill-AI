@@ -65,7 +65,7 @@ function rebalanceDifficulty(questions) {
 }
 
 export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed }) {
-  const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 50);
+  const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const seed = employeeSeed || randomUUID().slice(0, 8);
   const jdText = (jobDescription || '').trim();

@@ -288,6 +288,11 @@ function ImportModal({ onClose, onImported }) {
 // ── Question Bank Modal ───────────────────────────────────────────────────────
 const DIFF_COLORS = { easy: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', medium: 'bg-amber-500/20 text-amber-300 border-amber-500/30', hard: 'bg-red-500/20 text-red-300 border-red-500/30' };
 const EMPTY_Q = { type: 'mcq', question: '', difficulty: 'medium', options: ['A) ', 'B) ', 'C) ', 'D) '], answer: 'A', explanation: '', skillArea: '' };
+const Q_TYPES = [
+  { value: 'mcq',        label: 'Multiple Choice',    icon: '☑️', desc: '4 options, one correct answer' },
+  { value: 'fill_blank', label: 'Fill in the Blank',  icon: '✏️', desc: 'One-word or short phrase answer' },
+  { value: 'subjective', label: 'Subjective',          icon: '📝', desc: 'Open-ended model answer' },
+];
 
 function QuestionBankModal({ role, onClose }) {
   const [questions, setQuestions] = useState([]);
@@ -299,6 +304,7 @@ function QuestionBankModal({ role, onClose }) {
   const [editIdx, setEditIdx] = useState(null);
   const [editQ, setEditQ] = useState(null);
   const [addMode, setAddMode] = useState(false);
+  const [qTypePicker, setQTypePicker] = useState(false);
   const [newQ, setNewQ] = useState({ ...EMPTY_Q });
   const [diffFilter, setDiffFilter] = useState('all');
 
@@ -432,9 +438,36 @@ function QuestionBankModal({ role, onClose }) {
               {d === 'all' ? `All (${questions.length})` : `${d} (${counts[d] ?? 0})`}
             </button>
           ))}
-          <button onClick={() => { setAddMode(true); setEditIdx(null); }} className="ml-auto text-xs px-3 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 transition-colors">
-            + Add Question
-          </button>
+          <div className="ml-auto relative">
+            <button onClick={() => { setQTypePicker(v => !v); setAddMode(false); }} className="text-xs px-3 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 transition-colors">
+              + Add Question
+            </button>
+            {qTypePicker && (
+              <div className="absolute right-0 top-8 z-20 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl w-56 p-1">
+                {Q_TYPES.map(qt => (
+                  <button key={qt.value} onClick={() => {
+                    const empty = qt.value === 'mcq'
+                      ? { ...EMPTY_Q, type: 'mcq' }
+                      : qt.value === 'fill_blank'
+                      ? { type: 'fill_blank', question: '', difficulty: 'medium', options: [], answer: '', explanation: '', skillArea: '' }
+                      : { type: 'subjective', question: '', difficulty: 'medium', options: [], answer: '', explanation: '', skillArea: '' };
+                    setNewQ(empty);
+                    setAddMode(true);
+                    setEditIdx(null);
+                    setQTypePicker(false);
+                  }} className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-slate-700 transition-colors group">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{qt.icon}</span>
+                      <div>
+                        <p className="text-sm text-white font-medium">{qt.label}</p>
+                        <p className="text-xs text-slate-400">{qt.desc}</p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Body */}
@@ -449,7 +482,10 @@ function QuestionBankModal({ role, onClose }) {
           {/* Add new question form */}
           {addMode && (
             <div className="bg-[#0F172A] border border-indigo-500/40 rounded-xl p-4 space-y-3">
-              <p className="text-xs font-semibold text-indigo-300">New Question</p>
+              <div className="flex items-center gap-2">
+                <span className="text-base">{Q_TYPES.find(t => t.value === newQ.type)?.icon}</span>
+                <p className="text-xs font-semibold text-indigo-300">New {Q_TYPES.find(t => t.value === newQ.type)?.label} Question</p>
+              </div>
               <textarea rows={3} className={inputCls} value={newQ.question} onChange={e => setNewQ(p => ({ ...p, question: e.target.value }))} placeholder="Question text…" />
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -463,20 +499,34 @@ function QuestionBankModal({ role, onClose }) {
                   <input className={inputCls} value={newQ.skillArea} onChange={e => setNewQ(p => ({ ...p, skillArea: e.target.value }))} placeholder="e.g. Recruitment" />
                 </div>
               </div>
-              {newQ.options.map((opt, oi) => (
-                <input key={oi} className={inputCls} value={opt} onChange={e => { const o = [...newQ.options]; o[oi] = e.target.value; setNewQ(p => ({ ...p, options: o })); }} placeholder={`Option ${['A','B','C','D'][oi]}`} />
-              ))}
-              <div className="grid grid-cols-2 gap-3">
+              {newQ.type === 'mcq' && (
+                <>
+                  {(newQ.options || ['A) ', 'B) ', 'C) ', 'D) ']).map((opt, oi) => (
+                    <input key={oi} className={inputCls} value={opt} onChange={e => { const o = [...(newQ.options || ['A) ','B) ','C) ','D) '])]; o[oi] = e.target.value; setNewQ(p => ({ ...p, options: o })); }} placeholder={`Option ${['A','B','C','D'][oi]}`} />
+                  ))}
+                  <div>
+                    <label className={labelCls}>Correct Answer</label>
+                    <select className={inputCls} value={newQ.answer || 'A'} onChange={e => setNewQ(p => ({ ...p, answer: e.target.value }))}>
+                      {['A','B','C','D'].map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
+              {newQ.type === 'fill_blank' && (
                 <div>
-                  <label className={labelCls}>Correct Answer</label>
-                  <select className={inputCls} value={newQ.answer} onChange={e => setNewQ(p => ({ ...p, answer: e.target.value }))}>
-                    {['A','B','C','D'].map(l => <option key={l} value={l}>{l}</option>)}
-                  </select>
+                  <label className={labelCls}>Expected Answer <span className="text-slate-500 font-normal">(exact phrase)</span></label>
+                  <input className={inputCls} value={newQ.answer || ''} onChange={e => setNewQ(p => ({ ...p, answer: e.target.value }))} placeholder="e.g. agile methodology" />
                 </div>
-              </div>
+              )}
+              {newQ.type === 'subjective' && (
+                <div>
+                  <label className={labelCls}>Model Answer</label>
+                  <textarea rows={3} className={inputCls} value={newQ.answer || ''} onChange={e => setNewQ(p => ({ ...p, answer: e.target.value }))} placeholder="Describe the ideal response…" />
+                </div>
+              )}
               <textarea rows={2} className={inputCls} value={newQ.explanation} onChange={e => setNewQ(p => ({ ...p, explanation: e.target.value }))} placeholder="Explanation (optional)" />
               <div className="flex gap-2">
-                <button onClick={() => setAddMode(false)} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs">Cancel</button>
+                <button onClick={() => { setAddMode(false); setNewQ({ ...EMPTY_Q }); }} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs">Cancel</button>
                 <button onClick={saveNewQ} disabled={saving} className="px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold disabled:opacity-50">Save</button>
               </div>
             </div>
@@ -529,12 +579,22 @@ function QuestionBankModal({ role, onClose }) {
                         <button onClick={() => deleteQ(realIdx)} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40">Del</button>
                       </div>
                     </div>
-                    {q.skillArea && <p className="text-xs text-slate-500 mt-1">Skill: {q.skillArea}</p>}
-                    <div className="mt-2 grid grid-cols-2 gap-1">
-                      {(q.options || []).map((opt, oi) => (
-                        <p key={oi} className={`text-xs px-2 py-1 rounded ${opt.startsWith(q.answer) ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400'}`}>{opt}</p>
-                      ))}
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {q.skillArea && <p className="text-xs text-slate-500">Skill: {q.skillArea}</p>}
+                      <span className="text-xs text-slate-600 capitalize">{q.type === 'fill_blank' ? 'Fill in the Blank' : q.type === 'subjective' ? 'Subjective' : 'MCQ'}</span>
                     </div>
+                    {q.type === 'mcq' && (
+                      <div className="mt-2 grid grid-cols-2 gap-1">
+                        {(q.options || []).map((opt, oi) => (
+                          <p key={oi} className={`text-xs px-2 py-1 rounded ${opt.startsWith(q.answer) ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400'}`}>{opt}</p>
+                        ))}
+                      </div>
+                    )}
+                    {(q.type === 'fill_blank' || q.type === 'subjective') && q.answer && (
+                      <p className="text-xs text-emerald-400/80 mt-2 bg-emerald-500/10 rounded px-2 py-1">
+                        <span className="text-slate-500">Answer: </span>{q.answer}
+                      </p>
+                    )}
                     {q.explanation && <p className="text-xs text-slate-500 mt-2 italic">{q.explanation}</p>}
                   </div>
                 )}

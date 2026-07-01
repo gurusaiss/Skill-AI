@@ -596,12 +596,22 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
     if (!role.jobDescription) return res.status(400).json({ success: false, error: 'Role has no job description — add a JD first' });
     const { questionCount = 50 } = req.body;
+    const num = Math.min(Math.max(parseInt(questionCount) || 50, 5), 100);
+    // Build type list: 50% MCQ, 25% fill_blank, 25% subjective
+    const mcqCount = Math.ceil(num * 0.50);
+    const fillCount = Math.round(num * 0.25);
+    const subjCount = num - mcqCount - fillCount;
+    const typeSequence = [
+      ...Array(mcqCount).fill('mcq'),
+      ...Array(fillCount).fill('fill_blank'),
+      ...Array(subjCount).fill('subjective'),
+    ];
     const questions = await generateQuestionsFromJD({
       jobRole: role.roleName,
       jobDescription: role.jobDescription,
       jdSkills: role.skills || [],
-      questionCount: Math.min(questionCount, 50),
-      questionTypes: ['mcq'],
+      questionCount: num,
+      questionTypes: typeSequence,
       employeeSeed: `qbank-${role.id}-regen-${Date.now()}`,
     });
     const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
@@ -643,12 +653,27 @@ router.post('/:id/approve-assessment', authenticate, requireRole('admin', 'manag
       return res.status(400).json({ success: false, error: `No employees found with job role "${role.roleName}". Assign this role to employees first.` });
     }
 
-    // Build per-employee assignments from the question bank
+    // Build per-employee assignments from the question bank (preserve 50% MCQ, 25% fill_blank, 25% subjective)
     const assignedAt = new Date().toISOString();
     const bank = role.questionBank;
+    const mcqPool  = bank.filter(q => !q.type || q.type === 'mcq');
+    const fillPool = bank.filter(q => q.type === 'fill_blank');
+    const subjPool = bank.filter(q => q.type === 'subjective');
+    const mcqTarget  = Math.ceil(qCount * 0.50);
+    const fillTarget = Math.round(qCount * 0.25);
+    const subjTarget = qCount - mcqTarget - fillTarget;
+    const pickRandom = (pool, n) => [...pool].sort(() => Math.random() - 0.5).slice(0, n);
     const employeeAssignments = targets.map(user => {
-      const shuffled = [...bank].sort(() => Math.random() - 0.5);
-      const questions = shuffled.slice(0, qCount);
+      const mcqs  = pickRandom(mcqPool,  Math.min(mcqTarget, mcqPool.length));
+      const fills = pickRandom(fillPool, Math.min(fillTarget, fillPool.length));
+      const subjs = pickRandom(subjPool, Math.min(subjTarget, subjPool.length));
+      // Fill shortfalls from MCQ pool (most abundant)
+      let questions = [...mcqs, ...fills, ...subjs];
+      if (questions.length < qCount) {
+        const extra = pickRandom(mcqPool.filter(q => !mcqs.includes(q)), qCount - questions.length);
+        questions = [...questions, ...extra];
+      }
+      questions = questions.sort(() => Math.random() - 0.5).slice(0, qCount);
       return {
         userId: user.userId || user.id,
         userName: user.name,
@@ -670,7 +695,7 @@ router.post('/:id/approve-assessment', authenticate, requireRole('admin', 'manag
       targetUsers: targets.map(u => u.userId || u.id),
       employeeAssignments,
       questionCount: qCount,
-      questionTypes: ['mcq'],
+      questionTypes: ['mcq', 'fill_blank', 'subjective'],
       difficulty: null,
       assessmentDate: assessmentDate || null,
       deadline: null,
