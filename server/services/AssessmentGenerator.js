@@ -64,6 +64,28 @@ function rebalanceDifficulty(questions) {
   return result;
 }
 
+// Trim a processed question list down to exactly `target`, preserving type ratios
+function trimToTarget(questions, target, types) {
+  if (questions.length <= target) return questions;
+  // If types array has a specific distribution (e.g. 25 mcq, 13 fill, 12 subj), respect it
+  const typeCounts = {};
+  types.forEach(t => { typeCounts[t] = (typeCounts[t] || 0) + 1; });
+  const total = types.length || target;
+  const result = [];
+  for (const [type, count] of Object.entries(typeCounts)) {
+    const want = Math.round((count / total) * target);
+    result.push(...questions.filter(q => q.type === type).slice(0, want));
+  }
+  // Fill remainder from any type if we're still short
+  if (result.length < target) {
+    const used = new Set(result);
+    for (const q of questions) {
+      if (!used.has(q) && result.length < target) result.push(q);
+    }
+  }
+  return result.slice(0, target);
+}
+
 export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed }) {
   const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
@@ -71,10 +93,13 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
   const jdText = (jobDescription || '').trim();
   const skillsList = Array.isArray(jdSkills) && jdSkills.length ? jdSkills : [];
 
-  // Compute target counts per difficulty
-  const easyCount  = Math.round(num * 0.35);
-  const mediumCount = Math.round(num * 0.45);
-  const hardCount  = Math.max(1, num - easyCount - mediumCount);
+  // Request 40% more than needed so deduplication losses don't reduce the final count
+  const requestNum = Math.min(Math.ceil(num * 1.4), 100);
+
+  // Compute target counts per difficulty (based on requestNum so we have buffer)
+  const easyCount  = Math.round(requestNum * 0.35);
+  const mediumCount = Math.round(requestNum * 0.45);
+  const hardCount  = Math.max(1, requestNum - easyCount - mediumCount);
 
   const system = `You are an expert HR assessment designer who creates role-specific assessments for ALL job functions across ALL industries — HR, Operations, Finance, Sales, Marketing, Customer Success, Procurement, L&D, Project Management, IT, Engineering, Healthcare, Legal, and any other domain.
 
@@ -89,7 +114,7 @@ ABSOLUTE RULES:
 8. QUESTION WORDING — CRITICAL: At most 1 out of every 10 questions may begin with "As a [role]", "In your role as", "While working as", or "As an [role]". The other 9+ questions must open naturally — ask directly about the concept, situation, scenario, or decision. Write questions like a real corporate assessment, not like a role-play prompt.
 9. NO DUPLICATE QUESTIONS: Every question must test a different concept, situation, or scenario. No two questions may have the same meaning, even if the wording differs. No duplicate answer options.`;
 
-  const prompt = `Generate ${num} assessment questions for the following employee profile.
+  const prompt = `Generate ${requestNum} assessment questions for the following employee profile.
 
 === EMPLOYEE PROFILE ===
 Job Role: ${jobRole || 'Professional'}
@@ -124,7 +149,7 @@ DIFFICULTY DISTRIBUTION — MANDATORY:
 Generate all easy questions first, then medium, then hard in the JSON — the final reordering will happen in code.
 
 WORDING RULES — STRICTLY ENFORCED:
-• Maximum ${Math.max(1, Math.floor(num * 0.08))} question(s) in the entire set may start with "As a [role]" / "In your role as" / "While working as". ALL OTHER questions must be worded differently.
+• Maximum ${Math.max(1, Math.floor(requestNum * 0.08))} question(s) in the entire set may start with "As a [role]" / "In your role as" / "While working as". ALL OTHER questions must be worded differently.
 • Write questions that directly address: concepts, best practices, scenarios, decisions, processes, policies, tools, case situations — without mentioning the job role in the question stem.
 • Good examples: "What is the recommended approach when...", "Which of the following best describes...", "A team encounters [situation]. What should be done first?", "When evaluating [process], which factor is most important?"
 • Bad examples: "As an HR Executive, when you face...", "In your role as a Finance Manager, what would you do..."
@@ -161,7 +186,7 @@ STEP 3 — VALIDATE EACH QUESTION BEFORE RETURNING:
           model: 'llama-3.3-70b-versatile',
           messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
           temperature: 0.85,
-          max_tokens: 8000,
+          max_tokens: 16000,
           response_format: { type: 'json_object' },
         }),
         signal: AbortSignal.timeout(30000),
@@ -170,7 +195,29 @@ STEP 3 — VALIDATE EACH QUESTION BEFORE RETURNING:
         const d = await r.json();
         const parsed = JSON.parse(d.choices?.[0]?.message?.content || '{}');
         if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-          return rebalanceDifficulty(deduplicateQuestions(parsed.questions));
+          const processed = rebalanceDifficulty(deduplicateQuestions(parsed.questions));
+          // If still short, make a top-up call with a different seed
+          if (processed.length < num) {
+            try {
+              const topUpNeeded = Math.ceil((num - processed.length) * 1.5);
+              const topUpPrompt = prompt.replace(`Generate ${requestNum}`, `Generate ${topUpNeeded}`).replace(seed, seed + '-topup');
+              const r2 = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
+                body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'system', content: system }, { role: 'user', content: topUpPrompt }], temperature: 0.9, max_tokens: 8000, response_format: { type: 'json_object' } }),
+                signal: AbortSignal.timeout(25000),
+              });
+              if (r2.ok) {
+                const d2 = await r2.json();
+                const p2 = JSON.parse(d2.choices?.[0]?.message?.content || '{}');
+                if (Array.isArray(p2.questions)) {
+                  const merged = deduplicateQuestions([...processed, ...p2.questions]);
+                  return trimToTarget(rebalanceDifficulty(merged), num, types);
+                }
+              }
+            } catch { /* top-up failed, return what we have */ }
+          }
+          return trimToTarget(processed, num, types);
         }
       }
     }
@@ -188,7 +235,7 @@ STEP 3 — VALIDATE EACH QUESTION BEFORE RETURNING:
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: system + '\n\n' + prompt }] }],
-            generationConfig: { temperature: 0.85, maxOutputTokens: 8192, responseMimeType: 'application/json' },
+            generationConfig: { temperature: 0.85, maxOutputTokens: 16384, responseMimeType: 'application/json' },
           }),
           signal: AbortSignal.timeout(30000),
         }
@@ -197,7 +244,8 @@ STEP 3 — VALIDATE EACH QUESTION BEFORE RETURNING:
         const d = await r.json();
         const parsed = JSON.parse(d.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
         if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-          return rebalanceDifficulty(deduplicateQuestions(parsed.questions));
+          const processed = rebalanceDifficulty(deduplicateQuestions(parsed.questions));
+          return trimToTarget(processed, num, types);
         }
       }
     }
@@ -232,7 +280,7 @@ STEP 3 — VALIDATE EACH QUESTION BEFORE RETURNING:
     ...Array(hardCount).fill('hard'),
   ];
 
-  return deduplicateQuestions(Array.from({ length: num }, (_, i) => {
+  return trimToTarget(deduplicateQuestions(Array.from({ length: requestNum }, (_, i) => {
     const t = types[i % types.length];
     const difficulty = difficulties[i] || ['easy', 'medium', 'hard'][i % 3];
     const skill = fallbackSkills[i % fallbackSkills.length];
@@ -259,5 +307,5 @@ STEP 3 — VALIDATE EACH QUESTION BEFORE RETURNING:
       explanation: `Tests applied ${skill} competency for the ${role} role.`,
       skillArea: skill,
     };
-  }));
+  })), num, types);
 }
