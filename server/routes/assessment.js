@@ -1378,6 +1378,137 @@ ${headerRow}${tableRows}
   }
 });
 
+// ── Generic tabular export helpers (real PDF/DOCX/XLSX — no HTML-as-PDF hacks) ─
+function escapeCell(v) {
+  if (v === null || v === undefined) return '';
+  return String(v);
+}
+
+async function generateTabularPDFBuffer(headers, rows, title, metaLine) {
+  const PDFDocument = (await import('pdfkit')).default;
+  const chunks = [];
+  const doc = new PDFDocument({ margin: 28, size: 'A4', layout: 'landscape' });
+  doc.on('data', (c) => chunks.push(c));
+  const done = new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
+
+  doc.fontSize(16).fillColor('#4f46e5').text(title, { align: 'left' });
+  doc.moveDown(0.2);
+  doc.fontSize(8.5).fillColor('#64748b').text(metaLine);
+  doc.moveDown(0.5);
+
+  const startX = doc.page.margins.left;
+  const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const n = headers.length || 1;
+  const colWidth = pageWidth / n;
+  const rowHeight = 18;
+  let y = doc.y;
+
+  const drawRow = (cells, isHeader, rowIdx) => {
+    if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
+      doc.addPage();
+      y = doc.page.margins.top;
+    }
+    if (isHeader) {
+      doc.rect(startX, y, pageWidth, rowHeight).fill('#1e293b');
+    } else if (rowIdx % 2 === 1) {
+      doc.rect(startX, y, pageWidth, rowHeight).fill('#f8fafc');
+    }
+    cells.forEach((cell, i) => {
+      doc.fontSize(7.5).fillColor(isHeader ? '#ffffff' : '#1e293b');
+      doc.text(escapeCell(cell), startX + i * colWidth + 4, y + 5, { width: colWidth - 8, height: rowHeight - 4, ellipsis: true });
+    });
+    y += rowHeight;
+  };
+
+  drawRow(headers, true, -1);
+  rows.forEach((r, idx) => drawRow(r, false, idx));
+
+  doc.end();
+  return done;
+}
+
+async function generateTabularDOCXBuffer(headers, rows, title, metaLine) {
+  const docxLib = await import('docx');
+  const { Document, Paragraph, TextRun, Table, TableRow, TableCell, Packer, WidthType, HeadingLevel } = docxLib;
+
+  const headerRow = new TableRow({
+    children: headers.map((h) => new TableCell({
+      shading: { fill: '1E293B' },
+      children: [new Paragraph({ children: [new TextRun({ text: escapeCell(h), bold: true, color: 'FFFFFF' })] })],
+    })),
+  });
+  const dataRows = rows.map((r) => new TableRow({
+    children: r.map((c) => new TableCell({ children: [new Paragraph(escapeCell(c))] })),
+  }));
+
+  const doc = new Document({
+    sections: [{
+      properties: { page: { size: { orientation: 'landscape' } } },
+      children: [
+        new Paragraph({ text: title, heading: HeadingLevel.HEADING1 }),
+        new Paragraph({ text: metaLine, spacing: { after: 200 } }),
+        new Table({ rows: [headerRow, ...dataRows], width: { size: 100, type: WidthType.PERCENTAGE } }),
+      ],
+    }],
+  });
+  return Packer.toBuffer(doc);
+}
+
+/**
+ * POST /api/assessments/export-filtered-reports
+ * Exports EXACTLY the rows/columns the client currently has filtered & sorted —
+ * guarantees the downloaded file matches the on-screen table 1:1 (no server-side
+ * re-filtering, no drift, no duplicate/missing rows).
+ * Body: { format: 'xlsx'|'pdf'|'doc', title, headers: string[], rows: any[][], filterSummary? }
+ */
+router.post('/export-filtered-reports', authenticate, async (req, res) => {
+  try {
+    const { format = 'xlsx', title, headers, rows, filterSummary } = req.body || {};
+    if (!Array.isArray(headers) || !headers.length) return res.status(400).json({ success: false, error: 'headers array required' });
+    if (!Array.isArray(rows)) return res.status(400).json({ success: false, error: 'rows array required' });
+
+    // De-duplicate rows (defensive — guarantees "no duplicate rows" even if caller sends dupes)
+    const seen = new Set();
+    const uniqueRows = rows.filter((r) => {
+      const key = JSON.stringify(r);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const safeTitle = (title || 'Training Reports').slice(0, 200);
+    const metaLine = `Generated: ${new Date().toLocaleString()}  |  Total Records: ${uniqueRows.length}${filterSummary ? `  |  Filters: ${filterSummary}` : ''}`;
+    const fmt = String(format).toLowerCase();
+    const fileBase = safeTitle.replace(/[^a-zA-Z0-9-_ ]/g, '').trim().replace(/\s+/g, '-') || 'Training-Reports';
+
+    if (fmt === 'pdf') {
+      const buf = await generateTabularPDFBuffer(headers, uniqueRows, safeTitle, metaLine);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.pdf"`);
+      return res.end(buf);
+    }
+    if (fmt === 'doc' || fmt === 'docx') {
+      const buf = await generateTabularDOCXBuffer(headers, uniqueRows, safeTitle, metaLine);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.docx"`);
+      return res.end(buf);
+    }
+    // Default: real XLSX
+    const XLSX = await import('xlsx');
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...uniqueRows]);
+    ws['!cols'] = headers.map(() => ({ wch: 22 }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Reports');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.xlsx"`);
+    return res.end(Buffer.isBuffer(buf) ? buf : Buffer.from(buf));
+  } catch (e) {
+    console.error('[export-filtered-reports]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 /**
  * POST /api/assessments/generate (legacy compat — module-based)
  */

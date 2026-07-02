@@ -67,18 +67,41 @@ ${assignments.map(a => `<tr>
   }
 }
 
+// ─── Shared table styling tokens (used by the standardized Reports table) ─────
+const TH_CLS = 'px-3 py-2.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none';
+const TD_CLS = 'px-3 py-3 text-sm text-slate-200 align-middle';
+const PAGE_SIZE = 20;
+
+function SortIcon({ active, dir }) {
+  if (!active) return <span className="text-slate-600 text-[10px] ml-1">↕</span>;
+  return <span className="text-indigo-400 text-[10px] ml-1">{dir === 'asc' ? '▲' : '▼'}</span>;
+}
+
 // ─── Admin/Manager Report Table ───────────────────────────────────────────────
 function AdminReportView({ user, navigate }) {
-  const [reports, setReports] = useState([]);
+  const [reports, setReports] = useState([]); // module reports (per-employee, with .assignments[])
   const [assessmentReports, setAssessmentReports] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
   const [error, setError] = useState(null);
-  const [filterType, setFilterType] = useState('all'); // 'all' | 'assessment' | 'module'
-  const [filterJobRole, setFilterJobRole] = useState('all');
-  const [filterDateRange, setFilterDateRange] = useState({ from: '', to: '' });
   const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [downloadingAll, setDownloadingAll] = useState(false);
+  const [downloadingFmt, setDownloadingFmt] = useState(null);
+
+  // Filters
+  const [search, setSearch] = useState('');
+  const [reportType, setReportType] = useState('all'); // all | assessment | module
+  const [nameFilter, setNameFilter] = useState('all');
+  const [employeeFilter, setEmployeeFilter] = useState('all');
+  const [groupFilter, setGroupFilter] = useState('all');
+  const [managerFilter, setManagerFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  // Sort + pagination
+  const [sortCol, setSortCol] = useState('completedDate');
+  const [sortDir, setSortDir] = useState('desc');
+  const [page, setPage] = useState(1);
 
   const loadReports = useCallback(async () => {
     setLoading(true);
@@ -94,19 +117,156 @@ function AdminReportView({ user, navigate }) {
     try {
       const arData = await authFetch('/api/assessments/reports/all');
       setAssessmentReports(Array.isArray(arData) ? arData : []);
-    } catch {}
+    } catch { /* non-fatal */ }
+    try {
+      const gData = await authFetch('/api/groups');
+      setGroups(gData?.data?.groups || gData?.groups || []);
+    } catch { /* non-fatal — manager/group filters just stay empty */ }
   }, []);
 
   useEffect(() => { loadReports(); }, [loadReports]);
 
-  const downloadAllReports = async (format = 'xlsx') => {
-    setDownloadingAll(true);
+  // Employee → { group, manager } lookup
+  const employeeMeta = useMemo(() => {
+    const map = {};
+    groups.forEach(g => {
+      (g.employeeIds || []).forEach(eid => { map[eid] = { group: g.name || '—', manager: g.managerName || '—' }; });
+    });
+    return map;
+  }, [groups]);
+
+  // Flatten both data sources into one unified row shape
+  const allRows = useMemo(() => {
+    const moduleRows = reports.flatMap(r =>
+      (r.assignments || []).map(a => ({
+        id: `m-${r.userId}-${a.id}`,
+        type: 'module',
+        employeeName: r.employeeName || '—',
+        email: r.email || '—',
+        jobRole: r.jobRole || '—',
+        name: a.moduleName || 'Unknown Module',
+        status: a.status || 'assigned',
+        scoreOrCompletion: a.progress || 0,
+        assignedDate: null,
+        deadline: a.dueDate || null,
+        completedDate: a.status === 'completed' ? (a.dueDate || null) : null,
+        manager: employeeMeta[r.userId]?.manager || '—',
+        group: employeeMeta[r.userId]?.group || '—',
+      }))
+    );
+    const assessmentRows = assessmentReports.map(r => {
+      const uid = r.userId || r.user_id;
+      return {
+        id: `a-${r.id || uid}-${r.assessmentId || ''}`,
+        type: 'assessment',
+        employeeName: r.employeeName || r.userName || '—',
+        email: r.email || r.userEmail || '—',
+        jobRole: r.jobRole || '—',
+        name: r.assessmentTitle || r.title || 'Untitled Assessment',
+        status: r.status || 'submitted',
+        scoreOrCompletion: r.score ?? r.completionRate ?? 0,
+        assignedDate: r.assignedAt || null,
+        deadline: r.deadline || null,
+        completedDate: r.submittedAt || r.completedAt || null,
+        manager: employeeMeta[uid]?.manager || '—',
+        group: employeeMeta[uid]?.group || '—',
+      };
+    });
+    return [...moduleRows, ...assessmentRows];
+  }, [reports, assessmentReports, employeeMeta]);
+
+  // Dynamic dropdown option lists — always derived from the currently selected report type
+  const typeScopedRows = useMemo(() => reportType === 'all' ? allRows : allRows.filter(r => r.type === reportType), [allRows, reportType]);
+  const nameOptions = useMemo(() => [...new Set(typeScopedRows.map(r => r.name).filter(Boolean))].sort(), [typeScopedRows]);
+  const employeeOptions = useMemo(() => [...new Set(allRows.map(r => r.employeeName).filter(Boolean))].sort(), [allRows]);
+  const groupOptions = useMemo(() => [...new Set(allRows.map(r => r.group).filter(g => g && g !== '—'))].sort(), [allRows]);
+  const managerOptions = useMemo(() => [...new Set(allRows.map(r => r.manager).filter(m => m && m !== '—'))].sort(), [allRows]);
+  const statusOptions = useMemo(() => [...new Set(allRows.map(r => r.status).filter(Boolean))].sort(), [allRows]);
+
+  // Reset the name filter whenever report type changes, since its options change
+  useEffect(() => { setNameFilter('all'); }, [reportType]);
+  // Reset to page 1 whenever any filter changes
+  useEffect(() => { setPage(1); }, [search, reportType, nameFilter, employeeFilter, groupFilter, managerFilter, statusFilter, dateFrom, dateTo]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return allRows.filter(r => {
+      if (reportType !== 'all' && r.type !== reportType) return false;
+      if (nameFilter !== 'all' && r.name !== nameFilter) return false;
+      if (employeeFilter !== 'all' && r.employeeName !== employeeFilter) return false;
+      if (groupFilter !== 'all' && r.group !== groupFilter) return false;
+      if (managerFilter !== 'all' && r.manager !== managerFilter) return false;
+      if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      if (q && !(r.employeeName.toLowerCase().includes(q) || r.email.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))) return false;
+      const dateVal = r.completedDate || r.deadline || r.assignedDate;
+      if (dateFrom && (!dateVal || new Date(dateVal) < new Date(dateFrom))) return false;
+      if (dateTo && (!dateVal || new Date(dateVal) > new Date(dateTo + 'T23:59:59'))) return false;
+      return true;
+    });
+  }, [allRows, search, reportType, nameFilter, employeeFilter, groupFilter, managerFilter, statusFilter, dateFrom, dateTo]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      let av = a[sortCol], bv = b[sortCol];
+      if (sortCol === 'scoreOrCompletion') { av = av || 0; bv = bv || 0; }
+      else if (['assignedDate', 'deadline', 'completedDate'].includes(sortCol)) { av = av ? new Date(av).getTime() : 0; bv = bv ? new Date(bv).getTime() : 0; }
+      else { av = (av || '').toString().toLowerCase(); bv = (bv || '').toString().toLowerCase(); }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return arr;
+  }, [filtered, sortCol, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortCol(col); setSortDir('asc'); }
+  };
+
+  const hasActiveFilters = reportType !== 'all' || nameFilter !== 'all' || employeeFilter !== 'all' || groupFilter !== 'all' || managerFilter !== 'all' || statusFilter !== 'all' || dateFrom || dateTo || search;
+  const clearFilters = () => {
+    setSearch(''); setReportType('all'); setNameFilter('all'); setEmployeeFilter('all');
+    setGroupFilter('all'); setManagerFilter('all'); setStatusFilter('all'); setDateFrom(''); setDateTo('');
+  };
+
+  const filterSummaryText = () => {
+    const parts = [];
+    if (reportType !== 'all') parts.push(`Type=${reportType}`);
+    if (nameFilter !== 'all') parts.push(`Name=${nameFilter}`);
+    if (employeeFilter !== 'all') parts.push(`Employee=${employeeFilter}`);
+    if (groupFilter !== 'all') parts.push(`Group=${groupFilter}`);
+    if (managerFilter !== 'all') parts.push(`Manager=${managerFilter}`);
+    if (statusFilter !== 'all') parts.push(`Status=${statusFilter}`);
+    if (dateFrom) parts.push(`From=${dateFrom}`);
+    if (dateTo) parts.push(`To=${dateTo}`);
+    if (search) parts.push(`Search="${search}"`);
+    return parts.join(', ');
+  };
+
+  // Exports EXACTLY the filtered + sorted rows currently on screen (all pages, not just the visible page)
+  const downloadFiltered = async (format) => {
+    setDownloadingFmt(format);
     setShowDownloadModal(false);
     try {
+      const headers = ['Employee Name', 'Email', 'Job Role', 'Type', 'Assessment / Module', 'Status', 'Score / Completion %', 'Assigned Date', 'Deadline', 'Completed Date', 'Manager', 'Group'];
+      const rows = sorted.map(r => [
+        r.employeeName, r.email, r.jobRole, r.type === 'assessment' ? 'Assessment' : 'Module', r.name,
+        r.status, `${Math.round(r.scoreOrCompletion || 0)}%`,
+        r.assignedDate ? new Date(r.assignedDate).toLocaleDateString() : '—',
+        r.deadline ? new Date(r.deadline).toLocaleDateString() : '—',
+        r.completedDate ? new Date(r.completedDate).toLocaleDateString() : '—',
+        r.manager, r.group,
+      ]);
       const token = localStorage.getItem('auth_token');
       const BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
-      const res = await fetch(`${BASE}/api/assessments/export-all-reports?format=${format}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await fetch(`${BASE}/api/assessments/export-filtered-reports`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ format, title: 'Training Reports', headers, rows, filterSummary: filterSummaryText() }),
       });
       if (!res.ok) throw new Error('Export failed');
       const blob = await res.blob();
@@ -120,41 +280,17 @@ function AdminReportView({ user, navigate }) {
     } catch (e) {
       alert(e.message || 'Export failed');
     } finally {
-      setDownloadingAll(false);
+      setDownloadingFmt(null);
     }
   };
 
-  const jobRoles = useMemo(() => {
-    const roles = new Set();
-    reports.forEach(r => { if (r.jobRole || r.role) roles.add(r.jobRole || r.role); });
-    assessmentReports.forEach(r => { if (r.jobRole) roles.add(r.jobRole); });
-    return [...roles].filter(Boolean);
-  }, [reports, assessmentReports]);
-
-  const filtered = useMemo(() => {
-    const base = filterType === 'assessment' ? [] : reports;
-    const arBase = filterType === 'module' ? [] : assessmentReports;
-
-    const combined = [
-      ...base.map(r => ({ ...r, _reportType: 'module' })),
-      ...arBase.map(r => ({ ...r, _reportType: 'assessment', employeeName: r.employeeName || r.userName, completionRate: r.score ?? r.completionRate })),
-    ];
-
-    return combined.filter(r => {
-      const q = search.toLowerCase();
-      const matchesSearch = !q || (r.employeeName || '').toLowerCase().includes(q) || (r.email || '').toLowerCase().includes(q);
-      const matchesJobRole = filterJobRole === 'all' || r.jobRole === filterJobRole;
-      const matchesDate = (!filterDateRange.from || new Date(r.generatedAt || r.completedAt || r.createdAt) >= new Date(filterDateRange.from)) &&
-        (!filterDateRange.to || new Date(r.generatedAt || r.completedAt || r.createdAt) <= new Date(filterDateRange.to + 'T23:59:59'));
-      return matchesSearch && matchesJobRole && matchesDate;
-    });
-  }, [reports, assessmentReports, search, filterType, filterJobRole, filterDateRange]);
+  const selectCls = "px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors";
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-8 max-w-7xl mx-auto">
       <button onClick={() => navigate('/admin/dashboard')} className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2">← Back to Dashboard</button>
 
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black text-white">Training Reports</h1>
           <p className="text-slate-400 text-sm mt-0.5">
@@ -164,177 +300,191 @@ function AdminReportView({ user, navigate }) {
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowDownloadModal(true)} disabled={downloadingAll}
+          <button onClick={() => setShowDownloadModal(true)} disabled={!!downloadingFmt}
             className="px-4 py-2 rounded-lg bg-teal-600/20 border border-teal-500/30 text-teal-300 hover:bg-teal-600/40 text-sm font-medium transition-all disabled:opacity-40">
-            {downloadingAll ? 'Downloading…' : '⬇ Download All Reports'}
+            {downloadingFmt ? 'Downloading…' : '⬇ Download All Reports'}
           </button>
           <button onClick={loadReports} className="px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white text-sm font-medium transition-all">↻ Refresh</button>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        {[
-          { label: user?.role === 'manager' ? 'Team Members' : 'Module Reports', value: reports.length, color: '#6366f1' },
-          { label: 'Avg Module Completion', value: reports.length ? Math.round(reports.reduce((s, r) => s + (r.completionRate || 0), 0) / reports.length) + '%' : '0%', color: '#10b981' },
-          { label: 'Assessment Reports', value: assessmentReports.length, color: '#f59e0b' },
-          { label: 'Avg Assessment Score', value: assessmentReports.length ? Math.round(assessmentReports.reduce((s, r) => s + (r.score || 0), 0) / assessmentReports.length) + '%' : '—', color: '#8b5cf6' },
-        ].map((s, i) => (
-          <div key={i} className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
-            <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Table */}
+      {/* Table card */}
       <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 overflow-hidden">
+        {/* Filter bar */}
         <div className="flex flex-col gap-3 px-5 py-4 border-b border-slate-700/40">
-          <input type="text" placeholder="Search by name or email..." value={search} onChange={e => setSearch(e.target.value)}
+          <input type="text" placeholder="Search by employee, email, or assessment/module name..." value={search} onChange={e => setSearch(e.target.value)}
             className="w-full px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
-          <div className="flex flex-wrap gap-2">
-            <select value={filterType} onChange={e => setFilterType(e.target.value)}
-              className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors">
-              <option value="all">All Reports</option>
-              <option value="module">Module Reports</option>
-              <option value="assessment">Assessment Reports</option>
+          <div className="flex flex-wrap gap-2 items-center">
+            <select value={reportType} onChange={e => setReportType(e.target.value)} className={selectCls}>
+              <option value="all">All Report Types</option>
+              <option value="module">Module</option>
+              <option value="assessment">Assessment</option>
             </select>
-            {jobRoles.length > 0 && (
-              <select value={filterJobRole} onChange={e => setFilterJobRole(e.target.value)}
-                className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors">
-                <option value="all">All Job Roles</option>
-                {jobRoles.map(jr => <option key={jr} value={jr}>{jr}</option>)}
-              </select>
-            )}
-            <input type="date" value={filterDateRange.from} onChange={e => setFilterDateRange(p => ({ ...p, from: e.target.value }))}
-              className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs focus:outline-none focus:border-indigo-500" />
-            <input type="date" value={filterDateRange.to} onChange={e => setFilterDateRange(p => ({ ...p, to: e.target.value }))}
-              className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs focus:outline-none focus:border-indigo-500" />
-            {(filterType !== 'all' || filterJobRole !== 'all' || filterDateRange.from || filterDateRange.to) && (
-              <button onClick={() => { setFilterType('all'); setFilterJobRole('all'); setFilterDateRange({ from: '', to: '' }); }}
+            <select value={nameFilter} onChange={e => setNameFilter(e.target.value)} className={selectCls}>
+              <option value="all">{reportType === 'assessment' ? 'All Assessments' : reportType === 'module' ? 'All Modules' : 'All Assessments / Modules'}</option>
+              {nameOptions.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <select value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)} className={selectCls}>
+              <option value="all">All Employees</option>
+              {employeeOptions.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)} className={selectCls}>
+              <option value="all">All Groups</option>
+              {groupOptions.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <select value={managerFilter} onChange={e => setManagerFilter(e.target.value)} className={selectCls}>
+              <option value="all">All Managers</option>
+              {managerOptions.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={selectCls}>
+              <option value="all">All Statuses</option>
+              {statusOptions.map(n => <option key={n} value={n} className="capitalize">{n}</option>)}
+            </select>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-slate-500">From</label>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs focus:outline-none focus:border-indigo-500" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-slate-500">To</label>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs focus:outline-none focus:border-indigo-500" />
+            </div>
+            {hasActiveFilters && (
+              <button onClick={clearFilters}
                 className="px-3 py-1.5 bg-slate-700/50 border border-slate-600/40 rounded-lg text-slate-400 text-xs font-semibold hover:text-white transition-colors">
-                ✕ Clear
+                ✕ Clear Filters
               </button>
             )}
           </div>
+          <p className="text-xs text-slate-500">
+            Showing <span className="text-slate-300 font-semibold">{sorted.length}</span> of <span className="text-slate-400">{allRows.length}</span> total records
+            {hasActiveFilters && ' (filtered)'}
+          </p>
         </div>
 
-        {/* Header */}
-        <div className="hidden md:grid grid-cols-[2fr_2fr_1fr_1fr_1fr_1fr_auto] px-5 py-2 border-b border-slate-700/30 text-xs font-bold text-slate-500 uppercase tracking-widest">
-          <span>Employee</span><span>Email</span><span>Total</span><span>Completed</span><span>Completion %</span><span>Last Activity</span><span></span>
-        </div>
-
+        {/* Table */}
         {loading ? (
           <div className="p-8 text-center text-slate-500">
             <div className="animate-spin text-3xl mb-2">⟳</div>
             <p className="text-sm">Loading reports...</p>
           </div>
         ) : error ? (
-          <div className="p-8 text-center text-red-400">{error}</div>
-        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center text-red-400">
+            <p className="font-semibold mb-1">Failed to load reports</p>
+            <p className="text-sm text-red-400/70">{error}</p>
+            <button onClick={loadReports} className="mt-4 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm hover:bg-red-500/20 transition-colors">Retry</button>
+          </div>
+        ) : sorted.length === 0 ? (
           <div className="py-16 text-center">
             <div className="text-5xl mb-4 opacity-20">📊</div>
             <p className="text-lg font-bold text-slate-400 mb-1">No Reports Found</p>
-            <p className="text-sm text-slate-600">Reports will appear once employees have assignments.</p>
+            <p className="text-sm text-slate-600">{hasActiveFilters ? 'Try adjusting or clearing your filters.' : 'Reports will appear once employees have assignments.'}</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-700/30">
-            {filtered.map((r, i) => {
-              const isAssessment = r._reportType === 'assessment';
-              const displayValue = isAssessment ? (r.score ?? r.completionRate ?? 0) : (r.completionRate ?? 0);
-              const valueColor = displayValue >= 80 ? 'text-emerald-400' : displayValue >= 50 ? 'text-amber-400' : 'text-red-400';
-              const valueLabel = isAssessment ? 'Score' : 'Completion';
-              return (
-                <div key={r.id || r.userId || i} className="px-5 py-4 flex flex-wrap md:grid md:grid-cols-[2fr_2fr_1fr_1fr_1fr_auto] items-center gap-3 hover:bg-slate-800/20 transition-all">
-                  {/* Employee + type badge */}
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500/30 to-purple-500/20 border border-indigo-500/20 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0">
-                      {(r.employeeName || '?').charAt(0).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-sm font-semibold text-white truncate block">{r.employeeName}</span>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className={`text-xs px-1.5 py-0.5 rounded font-bold border ${
-                          isAssessment
-                            ? 'bg-amber-500/15 text-amber-300 border-amber-500/25'
-                            : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/25'
-                        }`}>
-                          {isAssessment ? '📝 Assessment' : '📚 Module'}
-                        </span>
-                        {r.jobRole && <span className="text-xs text-slate-600 truncate">{r.jobRole}</span>}
-                      </div>
-                    </div>
-                  </div>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse min-w-[1100px]">
+                <thead className="sticky top-0 z-10 bg-slate-900">
+                  <tr className="border-b border-slate-700/40">
+                    <th className={TH_CLS}><button onClick={() => toggleSort('employeeName')} className="flex items-center hover:text-white transition-colors">Employee Name<SortIcon active={sortCol === 'employeeName'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('email')} className="flex items-center hover:text-white transition-colors">Email<SortIcon active={sortCol === 'email'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('jobRole')} className="flex items-center hover:text-white transition-colors">Job Role<SortIcon active={sortCol === 'jobRole'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('type')} className="flex items-center hover:text-white transition-colors">Type<SortIcon active={sortCol === 'type'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('name')} className="flex items-center hover:text-white transition-colors">Assessment / Module<SortIcon active={sortCol === 'name'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('status')} className="flex items-center hover:text-white transition-colors">Status<SortIcon active={sortCol === 'status'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('scoreOrCompletion')} className="flex items-center hover:text-white transition-colors">Score / Completion %<SortIcon active={sortCol === 'scoreOrCompletion'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('deadline')} className="flex items-center hover:text-white transition-colors">Deadline<SortIcon active={sortCol === 'deadline'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('completedDate')} className="flex items-center hover:text-white transition-colors">Completed Date<SortIcon active={sortCol === 'completedDate'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('manager')} className="flex items-center hover:text-white transition-colors">Manager<SortIcon active={sortCol === 'manager'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('group')} className="flex items-center hover:text-white transition-colors">Group<SortIcon active={sortCol === 'group'} dir={sortDir} /></button></th>
+                    <th className={`${TH_CLS} text-right`}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/30">
+                  {pageRows.map(r => {
+                    const displayValue = Math.round(r.scoreOrCompletion || 0);
+                    const valueColor = displayValue >= 80 ? 'text-emerald-400' : displayValue >= 50 ? 'text-amber-400' : 'text-red-400';
+                    return (
+                      <tr key={r.id} className="hover:bg-slate-800/20 transition-all h-[52px]">
+                        <td className={TD_CLS}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500/30 to-purple-500/20 border border-indigo-500/20 flex items-center justify-center text-[10px] font-black text-indigo-300 flex-shrink-0">
+                              {r.employeeName.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-semibold text-white truncate">{r.employeeName}</span>
+                          </div>
+                        </td>
+                        <td className={`${TD_CLS} text-slate-400 truncate max-w-[180px]`}>{r.email}</td>
+                        <td className={`${TD_CLS} text-slate-400`}>{r.jobRole}</td>
+                        <td className={TD_CLS}>
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-bold border whitespace-nowrap ${r.type === 'assessment' ? 'bg-amber-500/15 text-amber-300 border-amber-500/25' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/25'}`}>
+                            {r.type === 'assessment' ? '📝 Assessment' : '📚 Module'}
+                          </span>
+                        </td>
+                        <td className={`${TD_CLS} truncate max-w-[220px]`} title={r.name}>{r.name}</td>
+                        <td className={TD_CLS}><span className="capitalize text-xs px-2 py-0.5 rounded bg-slate-700/40 border border-slate-600/40">{r.status}</span></td>
+                        <td className={TD_CLS}>
+                          <div className="flex items-center gap-2 min-w-[100px]">
+                            <div className="flex-1 h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                              <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(displayValue, 100)}%`, background: displayValue >= 80 ? '#10b981' : displayValue >= 50 ? '#f59e0b' : '#ef4444' }} />
+                            </div>
+                            <span className={`text-xs font-bold ${valueColor}`}>{displayValue}%</span>
+                          </div>
+                        </td>
+                        <td className={`${TD_CLS} text-slate-400 whitespace-nowrap`}>{r.deadline ? new Date(r.deadline).toLocaleDateString() : '—'}</td>
+                        <td className={`${TD_CLS} text-slate-400 whitespace-nowrap`}>{r.completedDate ? new Date(r.completedDate).toLocaleDateString() : '—'}</td>
+                        <td className={`${TD_CLS} text-slate-400`}>{r.manager}</td>
+                        <td className={`${TD_CLS} text-slate-400`}>{r.group}</td>
+                        <td className={`${TD_CLS} text-right`}>
+                          {r.type === 'module' ? (
+                            <button
+                              onClick={() => downloadReportPDF({ employeeName: r.employeeName, email: r.email, completionRate: displayValue, completedAssignments: r.status === 'completed' ? 1 : 0, totalAssignments: 1, assignments: [{ moduleName: r.name, status: r.status, progress: displayValue, dueDate: r.deadline }] })}
+                              className="px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all whitespace-nowrap bg-indigo-600/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30"
+                            >
+                              ↓ PDF
+                            </button>
+                          ) : (
+                            <span className="px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap bg-slate-700/30 border-slate-600/30 text-slate-500">📊 {displayValue}%</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-                  {/* Assessment title or email */}
-                  <span className="text-xs text-slate-400 truncate">
-                    {isAssessment ? (r.assessmentTitle || r.title || '—') : (r.email || '—')}
-                  </span>
-
-                  {/* Module/assessment specific info */}
-                  {isAssessment ? (
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded border ${
-                      (r.grade === 'A' || r.grade === 'B') ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'
-                      : r.grade === 'C' ? 'bg-amber-500/15 text-amber-400 border-amber-500/25'
-                      : 'bg-red-500/15 text-red-400 border-red-500/25'
-                    }`}>
-                      Grade {r.grade || '—'}
-                    </span>
-                  ) : (
-                    <span className="text-sm font-bold text-slate-300">{r.totalAssignments ?? '—'}</span>
-                  )}
-
-                  {/* Score/Completion bar */}
-                  <div>
-                    <p className="text-xs text-slate-500 mb-1">{valueLabel}</p>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 rounded-full bg-slate-700 overflow-hidden">
-                        <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(displayValue, 100)}%`, background: displayValue >= 80 ? '#10b981' : displayValue >= 50 ? '#f59e0b' : '#ef4444' }} />
-                      </div>
-                      <span className={`text-xs font-bold ${valueColor}`}>{Math.round(displayValue)}%</span>
-                    </div>
-                  </div>
-
-                  {/* Date */}
-                  <span className="text-xs text-slate-500">
-                    {(r.generatedAt || r.submittedAt || r.lastActivity)
-                      ? new Date(r.generatedAt || r.submittedAt || r.lastActivity).toLocaleDateString()
-                      : '—'}
-                  </span>
-
-                  {/* Actions */}
-                  <button
-                    onClick={() => isAssessment ? null : downloadReportPDF(r)}
-                    disabled={isAssessment}
-                    title={isAssessment ? 'Assessment report' : 'Download PDF'}
-                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all whitespace-nowrap ${
-                      isAssessment
-                        ? 'bg-slate-700/30 border-slate-600/30 text-slate-600 cursor-default'
-                        : 'bg-indigo-600/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30'
-                    }`}
-                  >
-                    {isAssessment ? '📊 Score' : '↓ PDF'}
-                  </button>
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-5 py-3 border-t border-slate-700/40">
+                <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+                <div className="flex gap-1.5">
+                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold disabled:opacity-30 hover:enabled:bg-slate-700 transition-colors">‹ Prev</button>
+                  <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold disabled:opacity-30 hover:enabled:bg-slate-700 transition-colors">Next ›</button>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
       {showDownloadModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={e => e.target === e.currentTarget && setShowDownloadModal(false)}>
-          <div className="bg-[#1E293B] border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl p-6">
-            <h3 className="text-lg font-bold text-white mb-1">Download All Reports</h3>
-            <p className="text-slate-400 text-sm mb-5">Choose export format</p>
-            <div className="space-y-3">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[200] p-4 overflow-y-auto" onClick={e => e.target === e.currentTarget && setShowDownloadModal(false)}>
+          <div className="bg-[#1E293B] border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl p-6 my-8 max-h-[85vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-white mb-1">Download Reports</h3>
+            <p className="text-slate-400 text-sm mb-2">Exports exactly the {sorted.length} filtered record{sorted.length === 1 ? '' : 's'} currently shown</p>
+            {hasActiveFilters && <p className="text-xs text-indigo-400/80 mb-4 truncate">Filters: {filterSummaryText()}</p>}
+            <div className="space-y-3 mt-4">
               {[
                 { fmt: 'xlsx', label: 'Excel (.xlsx)', icon: '📊', desc: 'Spreadsheet with all data' },
                 { fmt: 'pdf',  label: 'PDF (.pdf)',   icon: '📄', desc: 'Formatted printable report' },
                 { fmt: 'doc',  label: 'Word (.docx)', icon: '📝', desc: 'Editable document' },
               ].map(({ fmt, label, icon, desc }) => (
-                <button key={fmt} onClick={() => downloadAllReports(fmt)}
-                  className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-indigo-500/50 hover:bg-slate-800 transition-all text-left">
+                <button key={fmt} onClick={() => downloadFiltered(fmt)} disabled={!!downloadingFmt}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-indigo-500/50 hover:bg-slate-800 transition-all text-left disabled:opacity-50">
                   <span className="text-2xl">{icon}</span>
                   <div>
                     <p className="text-sm font-bold text-white">{label}</p>
