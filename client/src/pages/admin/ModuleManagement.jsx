@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
+import SearchableSelect from '../../components/SearchableSelect.jsx';
 
 const AGENT_STEPS = [
   { agent: 'GoalAgent', icon: '🎯', color: '#6366F1', text: 'Analyzing learning goal...' },
@@ -934,39 +935,14 @@ export default function ModuleManagement() {
 
         <div className="flex flex-wrap items-center gap-3 mb-6">
           {/* Category dropdown */}
-          <select
-            value={activeTab}
-            onChange={e => setActiveTab(e.target.value)}
-            className="px-3 py-2 bg-slate-800 border border-slate-700/60 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-          >
-            <option value="all">All Types</option>
-            {categories.map(cat => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
-          </select>
+          <SearchableSelect value={activeTab} onChange={setActiveTab} allLabel="All Types" options={categories} />
 
           {/* Job Role dropdown */}
-          <select
-            value={filterJobRole}
-            onChange={e => setFilterJobRole(e.target.value)}
-            className="px-3 py-2 bg-slate-800 border border-slate-700/60 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500"
-          >
-            <option value="all">All Job Roles</option>
-            {jobRoles.map(jr => (
-              <option key={jr} value={jr}>{jr}</option>
-            ))}
-          </select>
+          <SearchableSelect value={filterJobRole} onChange={setFilterJobRole} allLabel="All Job Roles" options={jobRoles} />
 
           {/* Assign Type dropdown */}
-          <select
-            value={filterAssignType}
-            onChange={e => setFilterAssignType(e.target.value)}
-            className="px-3 py-2 bg-slate-800 border border-slate-700/60 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-          >
-            <option value="all">All Modules</option>
-            <option value="auto">Auto Assigned</option>
-            <option value="manual">Manual Assigned</option>
-          </select>
+          <SearchableSelect value={filterAssignType} onChange={setFilterAssignType} allLabel="All Modules"
+            options={[{ value: 'auto', label: 'Auto Assigned' }, { value: 'manual', label: 'Manual Assigned' }]} />
 
           {/* Pending Approvals button (kept as special tab) */}
           <button

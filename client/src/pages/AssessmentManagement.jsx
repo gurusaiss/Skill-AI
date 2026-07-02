@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { authFetch } from '../utils/authFetch.js';
+import SearchableSelect from '../components/SearchableSelect.jsx';
 
 const Toast = ({ message, type, onClose }) => {
   useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [onClose]);
@@ -622,25 +623,12 @@ export default function AssessmentManagement() {
 
           {/* Filter row */}
           <div className="flex flex-wrap gap-2 px-5 pb-3">
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-              className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors">
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="pending">Pending</option>
-              <option value="completed">Completed</option>
-            </select>
-            <select value={filterType} onChange={e => setFilterType(e.target.value)}
-              className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors">
-              <option value="all">All Types</option>
-              <option value="individual">Individual</option>
-              <option value="group">Group</option>
-            </select>
+            <SearchableSelect value={filterStatus} onChange={setFilterStatus} allLabel="All Status"
+              options={[{ value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }, { value: 'completed', label: 'Completed' }]} />
+            <SearchableSelect value={filterType} onChange={setFilterType} allLabel="All Types"
+              options={[{ value: 'individual', label: 'Individual' }, { value: 'group', label: 'Group' }]} />
             {jobRoles.length > 0 && (
-              <select value={filterJobRole} onChange={e => setFilterJobRole(e.target.value)}
-                className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors">
-                <option value="all">All Job Roles</option>
-                {jobRoles.map(jr => <option key={jr} value={jr}>{jr}</option>)}
-              </select>
+              <SearchableSelect value={filterJobRole} onChange={setFilterJobRole} allLabel="All Job Roles" options={jobRoles} />
             )}
             {(filterStatus !== 'all' || filterType !== 'all' || filterJobRole !== 'all') && (
               <button onClick={() => { setFilterStatus('all'); setFilterType('all'); setFilterJobRole('all'); }}

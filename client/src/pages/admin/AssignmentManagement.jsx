@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
+import SearchableSelect from '../../components/SearchableSelect.jsx';
 
 const Toast = ({ message, type, onClose }) => {
   useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [onClose]);
@@ -287,38 +288,31 @@ export default function AssignmentManagement() {
                 className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 transition-colors"
               />
             </div>
-            <select
+            <SearchableSelect
               value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value)}
-              className="px-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-slate-300 font-semibold focus:outline-none focus:border-indigo-500/60 min-w-[160px]"
-            >
-              <option value="all">All Status</option>
-              <option value="assigned">Assigned</option>
-              <option value="pending">Pending Approval</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="overdue">Overdue</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            <select
+              onChange={setFilterStatus}
+              allLabel="All Status"
+              options={[
+                { value: 'assigned', label: 'Assigned' },
+                { value: 'pending', label: 'Pending Approval' },
+                { value: 'in_progress', label: 'In Progress' },
+                { value: 'completed', label: 'Completed' },
+                { value: 'overdue', label: 'Overdue' },
+                { value: 'cancelled', label: 'Cancelled' },
+              ]}
+            />
+            <SearchableSelect
               value={filterMandatory}
-              onChange={e => setFilterMandatory(e.target.value)}
-              className="px-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-slate-300 font-semibold focus:outline-none focus:border-indigo-500/60"
-            >
-              <option value="all">All Types</option>
-              <option value="mandatory">Mandatory</option>
-              <option value="optional">Optional</option>
-            </select>
-            <select
+              onChange={setFilterMandatory}
+              allLabel="All Types"
+              options={[{ value: 'mandatory', label: 'Mandatory' }, { value: 'optional', label: 'Optional' }]}
+            />
+            <SearchableSelect
               value={filterEmployee}
-              onChange={e => setFilterEmployee(e.target.value)}
-              className="px-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-slate-300 font-semibold focus:outline-none focus:border-indigo-500/60 min-w-[160px]"
-            >
-              <option value="all">All Employees</option>
-              {employees.map(emp => (
-                <option key={emp.userId || emp.id} value={emp.userId || emp.id}>{emp.name || emp.email}</option>
-              ))}
-            </select>
+              onChange={setFilterEmployee}
+              allLabel="All Employees"
+              options={employees.map(emp => ({ value: emp.userId || emp.id, label: emp.name || emp.email }))}
+            />
             {(filterStatus !== 'all' || filterMandatory !== 'all' || filterEmployee !== 'all') && (
               <button
                 onClick={() => { setFilterStatus('all'); setFilterMandatory('all'); setFilterEmployee('all'); }}
