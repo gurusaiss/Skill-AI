@@ -783,6 +783,11 @@ export default function Employee() {
                               <span className="text-xs text-slate-500 font-medium">
                                 📅 {formatDate(dueDate)}
                               </span>
+                              {(a.moduleRef?.estimatedDuration || a.estimatedDuration) && (
+                                <span className="text-xs text-slate-500 font-medium">
+                                  ⏱ {a.moduleRef?.estimatedDuration || a.estimatedDuration}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-3">
                               <div className="flex-1">

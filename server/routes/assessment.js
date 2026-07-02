@@ -1649,57 +1649,88 @@ router.post('/:id/submit', authenticate, async (req, res) => {
         const score = report.score || 0;
         const classification = report.performanceClassification?.label || 'Average';
 
-        // Determine module depth from classification
+        // ── Adaptive learning-path sizing (enterprise LMS pattern) ──────────
+        // Base length from performance classification, then adjusted by the
+        // actual number of skill gaps and JD complexity — so two employees with
+        // the same score but different gap profiles get different journeys.
         const depthMap = {
-          'Critical':         { numSessions: 8, difficulty: 'beginner',     priority: 'urgent' },
-          'Needs Improvement':{ numSessions: 6, difficulty: 'intermediate', priority: 'high'   },
-          'Average':          { numSessions: 5, difficulty: 'intermediate', priority: 'high'   },
-          'Good':             { numSessions: 4, difficulty: 'intermediate', priority: 'medium' },
-          'Excellent':        { numSessions: 3, difficulty: 'advanced',     priority: 'medium' },
-          'Outstanding':      { numSessions: 2, difficulty: 'advanced',     priority: 'low'    },
+          'Critical':         { numSessions: 8, difficulty: 'beginner',     priority: 'urgent', pathType: 'Extended Learning Journey',  dailyMinutes: 60 },
+          'Needs Improvement':{ numSessions: 6, difficulty: 'intermediate', priority: 'high',   pathType: 'Structured Learning Plan',   dailyMinutes: 50 },
+          'Average':          { numSessions: 5, difficulty: 'intermediate', priority: 'high',   pathType: 'Standard Learning Plan',     dailyMinutes: 45 },
+          'Good':             { numSessions: 4, difficulty: 'intermediate', priority: 'medium', pathType: 'Focused Learning Plan',      dailyMinutes: 40 },
+          'Excellent':        { numSessions: 3, difficulty: 'advanced',     priority: 'medium', pathType: 'Targeted Skill Boost',       dailyMinutes: 35 },
+          'Outstanding':      { numSessions: 2, difficulty: 'advanced',     priority: 'low',    pathType: 'Refresher',                  dailyMinutes: 30 },
         };
-        const depth = depthMap[classification] || depthMap['Average'];
+        const base = depthMap[classification] || depthMap['Average'];
+        // Gap-count adjustment: many distinct gaps need more runway; very few need less.
+        const gapCount = skills.length;
+        let numSessions = base.numSessions;
+        if (gapCount >= 6) numSessions += 2;
+        else if (gapCount >= 4) numSessions += 1;
+        else if (gapCount <= 1 && numSessions > 3) numSessions -= 1;
+        // JD complexity adjustment: long, skill-dense JDs warrant slightly deeper coverage.
+        const jdComplexity = (user?.jdSkills?.length || 0) >= 8 || jdContext.length > 1500;
+        if (jdComplexity && numSessions < 10) numSessions += 1;
+        numSessions = Math.min(Math.max(numSessions, 2), 10);
+        const depth = { ...base, numSessions };
 
         // Groq module generation
         let moduleContent = null;
         const groqKey = process.env.GROQ_API_KEY;
         if (groqKey?.length > 10) {
           try {
-            const prompt = `Design a personalized remedial training module for an employee based on their assessment results.
+            const prompt = `Design a personalized corporate learning journey for an employee based on their assessment results. You are an enterprise L&D instructional designer.
+
+=== PERSONALIZATION PRIORITY (highest first) ===
+1. Assessment performance: ${classification}, score ${score}%
+2. Specific skill gaps found in the assessment (listed below)
+3. Job Description requirements
+4. Job Role: ${jobRole}
 
 === EMPLOYEE CONTEXT ===
 Job Role: ${jobRole}
 Classification: ${classification} (Score: ${score}%)
+Path Type: ${depth.pathType} (${depth.numSessions} days, ~${depth.dailyMinutes} min/day)
 ${jdSkillsCtx ? `JD Skills: ${jdSkillsCtx}` : ''}
 ${jdContext ? `Job Description:\n${jdContext}` : ''}
 
 === SKILL GAPS (address ALL of these) ===
 ${skills.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 
-=== MODULE DESIGN RULES ===
-1. Generate EXACTLY ${depth.numSessions} sessions — one per day.
-2. Each session must directly address a specific skill gap above.
-3. Session topics must match the employee's job domain (${jobRole}) — no generic tech content for non-technical roles.
-4. Sessions build progressively: Day 1 = foundational, final day = applied practice.
-5. Each session MUST have a quiz with 3-5 multiple-choice questions that test that day's topic.
-6. Include keyPoints (3-5 bullet points of key takeaways per session).
+=== LEARNING JOURNEY DESIGN RULES ===
+1. Generate EXACTLY ${depth.numSessions} sessions — one per day, ~${depth.dailyMinutes} minutes each.
+2. Each session must directly address a specific skill gap above. Cover ALL gaps across the journey.
+3. Session content must match the employee's job domain (${jobRole}) — no generic tech content for non-technical roles.
+4. Progressive structure: Day 1 = foundations of the weakest area; middle days = applied practice per gap; the FINAL session = capstone that integrates all gaps (mark it "type": "capstone") with a realistic workplace case study and a slightly harder final quiz.
+5. Each session MUST include:
+   - learningObjectives: 2-3 specific "By the end of this session you will be able to..." statements
+   - topics, keyPoints (3-5 practical takeaways)
+   - exercise: ONE practical workplace exercise the employee can actually do on the job (title + instructions + expected deliverable)
+   - quiz: 3-5 scenario-based multiple-choice questions on that day's topic
+6. Include a caseStudy (short realistic workplace scenario + 2-3 discussion points) on the capstone session and on at least one mid-journey session.
+7. Module-level: objectives (what the journey covers) and expectedOutcomes (observable on-the-job behaviors after completion).
 
 Return ONLY valid JSON matching exactly this structure:
 {
   "title": "string (specific, not generic)",
   "description": "string (2-3 sentences)",
   "objectives": ["string", ...],
+  "expectedOutcomes": ["observable on-the-job behavior", ...],
   "estimatedDuration": "${depth.numSessions} days",
   "sessions": [
     {
       "title": "string",
       "dayNumber": 1,
-      "duration": "45 mins",
+      "type": "learning | capstone",
+      "duration": "${depth.dailyMinutes} mins",
+      "learningObjectives": ["By the end of this session...", ...],
       "topics": ["string", ...],
       "keyPoints": ["string", ...],
+      "exercise": { "title": "string", "instructions": "string", "deliverable": "string" },
+      "caseStudy": { "scenario": "string", "discussionPoints": ["string", ...] },
       "quiz": [
         {
-          "question": "string",
+          "question": "scenario-based question",
           "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
           "answer": "A",
           "explanation": "string"
@@ -1707,7 +1738,8 @@ Return ONLY valid JSON matching exactly this structure:
       ]
     }
   ]
-}`;
+}
+Note: "caseStudy" may be null on sessions that don't need one, but MUST be present on the capstone.`;
 
             const r = await LLMQueue.run(() => fetch('https://api.groq.com/openai/v1/chat/completions', {
               method: 'POST',
@@ -1716,7 +1748,7 @@ Return ONLY valid JSON matching exactly this structure:
                 model: 'llama-3.3-70b-versatile',
                 messages: [{ role: 'user', content: prompt }],
                 temperature: 0.7,
-                max_tokens: 4000,
+                max_tokens: 8000,
                 response_format: { type: 'json_object' },
               }),
               signal: AbortSignal.timeout(45000),
@@ -1745,19 +1777,36 @@ Return ONLY valid JSON matching exactly this structure:
         const startDate = new Date();
         const rawSessions = moduleContent?.sessions?.length > 0
           ? moduleContent.sessions
-          : skills.slice(0, depth.numSessions).map((s, i) => ({
-              title: `Day ${i + 1}: ${s}`,
-              dayNumber: i + 1,
-              duration: '45 mins',
-              topics: [s],
-              keyPoints: [`Understanding ${s}`, `Applying ${s} in ${jobRole} context`, `Common pitfalls with ${s}`],
-              quiz: [{
-                question: `What is the most important aspect of ${s} for a ${jobRole}?`,
-                options: ['A) Memorizing theory only', `B) Applying ${s} practically`, 'C) Avoiding it entirely', 'D) Delegating to others'],
-                answer: 'B',
-                explanation: `Practical application of ${s} is critical for ${jobRole} effectiveness.`,
-              }],
-            }));
+          : Array.from({ length: depth.numSessions }, (_, i) => {
+              const isCapstone = i === depth.numSessions - 1;
+              const s = skills[i % skills.length];
+              return {
+                title: isCapstone ? `Day ${i + 1}: Capstone — Applying ${skills.slice(0, 3).join(', ')}` : `Day ${i + 1}: ${s}`,
+                dayNumber: i + 1,
+                type: isCapstone ? 'capstone' : 'learning',
+                duration: `${depth.dailyMinutes} mins`,
+                learningObjectives: isCapstone
+                  ? [`By the end of this session you will be able to integrate ${skills.slice(0, 3).join(', ')} in a realistic ${jobRole} scenario`]
+                  : [`By the end of this session you will be able to explain the core principles of ${s}`, `By the end of this session you will be able to apply ${s} in your daily ${jobRole} work`],
+                topics: [s],
+                keyPoints: [`Understanding ${s}`, `Applying ${s} in ${jobRole} context`, `Common pitfalls with ${s}`],
+                exercise: {
+                  title: `Practice: ${s}`,
+                  instructions: `Identify one real situation from your current work where ${s} applies. Document how you would handle it step by step.`,
+                  deliverable: `A short written walkthrough (5-10 lines) of your approach.`,
+                },
+                caseStudy: isCapstone ? {
+                  scenario: `A ${jobRole} on your team is facing a situation that requires ${skills.slice(0, 2).join(' and ')} simultaneously under a tight deadline.`,
+                  discussionPoints: ['What should be prioritized first and why?', 'Which stakeholders need to be informed?', 'How would you measure whether the outcome was successful?'],
+                } : null,
+                quiz: [{
+                  question: `What is the most important aspect of ${s} for a ${jobRole}?`,
+                  options: ['A) Memorizing theory only', `B) Applying ${s} practically`, 'C) Avoiding it entirely', 'D) Delegating to others'],
+                  answer: 'B',
+                  explanation: `Practical application of ${s} is critical for ${jobRole} effectiveness.`,
+                }],
+              };
+            });
 
         const sessions = rawSessions.map((s, i) => {
           const dayNumber = s.dayNumber || (i + 1);
@@ -1793,6 +1842,15 @@ Return ONLY valid JSON matching exactly this structure:
             isMandatory: true,
             sessions,
             objectives: moduleContent?.objectives || skills.map(s => `Master ${s} skills`),
+            expectedOutcomes: moduleContent?.expectedOutcomes || skills.map(s => `Apply ${s} confidently in day-to-day ${jobRole} work`),
+            pathType: depth.pathType,
+            dailyMinutes: depth.dailyMinutes,
+            estimatedMinutesTotal: depth.dailyMinutes * sessions.length,
+            milestones: [
+              { at: 1, label: 'Journey started' },
+              ...(sessions.length >= 4 ? [{ at: Math.ceil(sessions.length / 2), label: 'Halfway checkpoint' }] : []),
+              { at: sessions.length, label: sessions.length > 1 ? 'Capstone & completion' : 'Completion' },
+            ],
             assessmentSource: report.id,
             jobRole,
             assessmentGaps: skills,

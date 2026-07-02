@@ -28,6 +28,12 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
   const sessions = module?.sessions || module?.content?.sessions || [];
   const completed = sessions.filter((_, i) => sessionStatuses[i] === 'completed').length;
   const pct = sessions.length > 0 ? Math.round((completed / sessions.length) * 100) : 0;
+  const content = module?.content || {};
+  const pathType = content.pathType;
+  const dailyMinutes = content.dailyMinutes;
+  const totalMinutes = content.estimatedMinutesTotal;
+  const expectedOutcomes = content.expectedOutcomes || [];
+  const milestones = content.milestones || [];
 
   return (
     <div className="space-y-6">
@@ -53,6 +59,16 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
               {sessions.length > 0 && (
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-700/40 border border-slate-600/40 text-slate-300">
                   📚 {sessions.length} sessions
+                </span>
+              )}
+              {pathType && (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-600/15 border border-teal-500/25 text-teal-300">
+                  🧭 {pathType}
+                </span>
+              )}
+              {dailyMinutes && (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-700/40 border border-slate-600/40 text-slate-300">
+                  ⏱ ~{dailyMinutes} min/day{totalMinutes ? ` · ${Math.round(totalMinutes / 60 * 10) / 10}h total` : ''}
                 </span>
               )}
             </div>
@@ -93,6 +109,44 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
           );
         })}
       </div>
+
+      {/* Learning Milestones */}
+      {milestones.length > 0 && sessions.length > 0 && (
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Learning Milestones</h3>
+          <div className="flex items-center gap-1">
+            {milestones.map((m, i) => {
+              const reached = completed >= m.at;
+              return (
+                <React.Fragment key={i}>
+                  {i > 0 && <div className={`flex-1 h-0.5 ${reached ? 'bg-emerald-500/60' : 'bg-slate-700'}`} />}
+                  <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm border-2 ${reached ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300' : 'bg-slate-800 border-slate-600 text-slate-500'}`}>
+                      {reached ? '✓' : m.at}
+                    </div>
+                    <span className={`text-[10px] font-bold text-center max-w-[80px] leading-tight ${reached ? 'text-emerald-400' : 'text-slate-500'}`}>{m.label}</span>
+                  </div>
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Expected Outcomes */}
+      {expectedOutcomes.length > 0 && (
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+          <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-3">Expected Outcomes After Completion</h3>
+          <ul className="space-y-1.5">
+            {expectedOutcomes.map((o, i) => (
+              <li key={i} className="text-sm text-slate-200 flex gap-2">
+                <span className="text-emerald-400 flex-shrink-0">▸</span>
+                <span>{typeof o === 'string' ? o : JSON.stringify(o)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Skills */}
       {(module?.skills?.length > 0 || module?.content?.skills?.length > 0) && (
