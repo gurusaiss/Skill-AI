@@ -53,11 +53,22 @@ function AnimatedDots() {
   return <span className="text-slate-400">{dots}</span>;
 }
 
+const Q_TYPE_META = {
+  mcq: { label: 'Multiple Choice', icon: '☑️' },
+  fill_blank: { label: 'Fill in the Blank', icon: '✏️' },
+  subjective: { label: 'Subjective', icon: '📝' },
+};
+
 function SessionsEditor({ sessions = [], onChange }) {
   const [expandedIdx, setExpandedIdx] = useState(null);
 
   const update = (idx, field, value) => {
     const next = sessions.map((s, i) => i === idx ? { ...s, [field]: value } : s);
+    onChange(next);
+  };
+
+  const updateNested = (idx, field, subfield, value) => {
+    const next = sessions.map((s, i) => i === idx ? { ...s, [field]: { ...(s[field] || {}), [subfield]: value } } : s);
     onChange(next);
   };
 
@@ -83,10 +94,12 @@ function SessionsEditor({ sessions = [], onChange }) {
     onChange(next);
   };
 
-  const addQuestion = (sIdx) => {
+  const addQuestion = (sIdx, type = 'mcq') => {
     const next = sessions.map((s, i) => {
       if (i !== sIdx) return s;
-      const newQ = { question: '', options: ['A) ', 'B) ', 'C) ', 'D) '], answer: 'A', explanation: '' };
+      const newQ = type === 'mcq'
+        ? { type: 'mcq', question: '', options: ['A) ', 'B) ', 'C) ', 'D) '], answer: 'A', explanation: '', marks: 1 }
+        : { type, question: '', answer: '', explanation: '', marks: 1 };
       return { ...s, quiz: [...(s.quiz || []), newQ] };
     });
     onChange(next);
@@ -100,144 +113,227 @@ function SessionsEditor({ sessions = [], onChange }) {
     onChange(next);
   };
 
-  if (!sessions.length) return (
-    <div className="rounded-xl border border-slate-700/40 bg-slate-800/20 p-6 text-center">
-      <p className="text-xs text-slate-500">No sessions yet — sessions are generated automatically after saving with AI content.</p>
-    </div>
-  );
+  const addSession = () => {
+    const nextDay = sessions.length + 1;
+    onChange([...sessions, {
+      title: `Day ${nextDay}: New Session`, dayNumber: nextDay, type: 'learning', duration: '45 mins',
+      learningObjectives: [], topics: [], keyPoints: [], notes: '', resources: [],
+      exercise: { title: '', instructions: '', deliverable: '' }, caseStudy: null, quiz: [],
+    }]);
+    setExpandedIdx(sessions.length);
+  };
+
+  const removeSession = (idx) => {
+    if (!window.confirm('Delete this session? This cannot be undone until you save.')) return;
+    const next = sessions.filter((_, i) => i !== idx).map((s, i) => ({ ...s, dayNumber: i + 1 }));
+    onChange(next);
+    setExpandedIdx(null);
+  };
+
+  const moveSession = (idx, dir) => {
+    const target = idx + dir;
+    if (target < 0 || target >= sessions.length) return;
+    const next = [...sessions];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    onChange(next.map((s, i) => ({ ...s, dayNumber: i + 1 })));
+    setExpandedIdx(target);
+  };
+
+  const inputCls = "w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none";
+  const labelCls = "block text-xs text-slate-500 font-semibold mb-1";
 
   return (
     <div className="space-y-3">
-      <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">Sessions & Quizzes ({sessions.length})</label>
+      <div className="flex items-center justify-between">
+        <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">Sessions & Quizzes ({sessions.length})</label>
+        <button type="button" onClick={addSession}
+          className="text-xs text-emerald-400 hover:text-emerald-300 font-bold px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all">
+          + Add Session
+        </button>
+      </div>
+
+      {!sessions.length && (
+        <div className="rounded-xl border border-slate-700/40 bg-slate-800/20 p-6 text-center">
+          <p className="text-xs text-slate-500">No sessions yet. Click "+ Add Session" to create one, or save with AI content to auto-generate.</p>
+        </div>
+      )}
+
+      {sessions.length > 0 && (
+        <p className="text-xs text-amber-400/80 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2">
+          ⚠️ Reordering or deleting a session changes its day position — employees already in progress on this module will see the updated order/content on their next visit. Existing session-completion records stay linked by day number.
+        </p>
+      )}
+
       {sessions.map((session, sIdx) => {
         const isOpen = expandedIdx === sIdx;
         const quizCount = session.quiz?.length || 0;
+        const isCapstone = session.type === 'capstone';
         return (
-          <div key={sIdx} className="rounded-xl border border-slate-700/40 bg-slate-800/30 overflow-hidden">
+          <div key={sIdx} className={`rounded-xl border overflow-hidden ${isCapstone ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-700/40 bg-slate-800/30'}`}>
             {/* Session header - click to expand */}
-            <button
-              type="button"
-              onClick={() => setExpandedIdx(isOpen ? null : sIdx)}
-              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-700/20 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <span className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-300">
+            <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700/20 transition-colors">
+              <button type="button" onClick={() => setExpandedIdx(isOpen ? null : sIdx)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                <span className={`w-7 h-7 rounded-lg border flex items-center justify-center text-xs font-black flex-shrink-0 ${isCapstone ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-indigo-500/20 border-indigo-500/30 text-indigo-300'}`}>
                   {session.dayNumber || sIdx + 1}
                 </span>
-                <span className="text-sm font-semibold text-white truncate">
-                  {session.title || `Day ${sIdx + 1}`}
-                </span>
-                <span className="text-xs text-slate-500">{quizCount} question{quizCount !== 1 ? 's' : ''}</span>
+                <span className="text-sm font-semibold text-white truncate">{session.title || `Day ${sIdx + 1}`}</span>
+                {isCapstone && <span className="text-xs text-amber-400 flex-shrink-0">🏆 Capstone</span>}
+                <span className="text-xs text-slate-500 flex-shrink-0">{quizCount} question{quizCount !== 1 ? 's' : ''}</span>
+              </button>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button type="button" onClick={() => moveSession(sIdx, -1)} disabled={sIdx === 0}
+                  className="w-6 h-6 rounded-md bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700 disabled:opacity-30 flex items-center justify-center text-xs">▲</button>
+                <button type="button" onClick={() => moveSession(sIdx, 1)} disabled={sIdx === sessions.length - 1}
+                  className="w-6 h-6 rounded-md bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700 disabled:opacity-30 flex items-center justify-center text-xs">▼</button>
+                <button type="button" onClick={() => removeSession(sIdx)}
+                  className="w-6 h-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 flex items-center justify-center text-xs">✕</button>
+                <button type="button" onClick={() => setExpandedIdx(isOpen ? null : sIdx)} className="text-slate-500 text-sm px-1">{isOpen ? '▲' : '▼'}</button>
               </div>
-              <span className="text-slate-500 text-sm">{isOpen ? '▲' : '▼'}</span>
-            </button>
+            </div>
 
             {isOpen && (
               <div className="border-t border-slate-700/40 p-4 space-y-4">
-                {/* Session title */}
-                <div>
-                  <label className="block text-xs text-slate-500 font-semibold mb-1">Session Title</label>
-                  <input
-                    type="text"
-                    value={session.title || ''}
-                    onChange={e => update(sIdx, 'title', e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Session Title</label>
+                    <input type="text" value={session.title || ''} onChange={e => update(sIdx, 'title', e.target.value)} className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Duration</label>
+                    <input type="text" value={session.duration || ''} onChange={e => update(sIdx, 'duration', e.target.value)} placeholder="e.g. 45 mins" className={inputCls} />
+                  </div>
                 </div>
 
-                {/* Topics */}
                 <div>
-                  <label className="block text-xs text-slate-500 font-semibold mb-1">Topics (comma-separated)</label>
-                  <input
-                    type="text"
-                    value={(session.topics || []).join(', ')}
-                    onChange={e => update(sIdx, 'topics', e.target.value.split(',').map(t => t.trim()).filter(Boolean))}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
-                  />
+                  <label className={labelCls}>Description / Notes</label>
+                  <textarea rows={3} value={session.notes || session.description || ''} onChange={e => update(sIdx, 'notes', e.target.value)}
+                    placeholder="Learning content / explanation shown to the employee..." className={`${inputCls} resize-y`} />
                 </div>
 
-                {/* Key Points */}
                 <div>
-                  <label className="block text-xs text-slate-500 font-semibold mb-1">Key Points (one per line)</label>
-                  <textarea
-                    rows={3}
-                    value={(session.keyPoints || []).join('\n')}
+                  <label className={labelCls}>Learning Objectives (one per line)</label>
+                  <textarea rows={2} value={(session.learningObjectives || []).join('\n')}
+                    onChange={e => update(sIdx, 'learningObjectives', e.target.value.split('\n').map(t => t.trim()).filter(Boolean))}
+                    className={`${inputCls} resize-none`} />
+                </div>
+
+                <div>
+                  <label className={labelCls}>Topics (comma-separated)</label>
+                  <input type="text" value={(session.topics || []).join(', ')}
+                    onChange={e => update(sIdx, 'topics', e.target.value.split(',').map(t => t.trim()).filter(Boolean))} className={inputCls} />
+                </div>
+
+                <div>
+                  <label className={labelCls}>Key Points (one per line)</label>
+                  <textarea rows={3} value={(session.keyPoints || []).join('\n')}
                     onChange={e => update(sIdx, 'keyPoints', e.target.value.split('\n').map(t => t.trim()).filter(Boolean))}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none"
-                  />
+                    className={`${inputCls} resize-none`} />
                 </div>
 
-                {/* Quiz questions */}
+                <div>
+                  <label className={labelCls}>Resources / Attachments (one URL or reference per line)</label>
+                  <textarea rows={2} value={(session.resources || []).map(r => typeof r === 'string' ? r : (r.url || r.title || '')).join('\n')}
+                    onChange={e => update(sIdx, 'resources', e.target.value.split('\n').map(t => t.trim()).filter(Boolean))}
+                    placeholder="Video links, PPT links, documents, external references..." className={`${inputCls} resize-none`} />
+                </div>
+
+                {/* Practical Exercise */}
+                <div className="rounded-lg border border-teal-500/20 bg-teal-500/5 p-3 space-y-2">
+                  <label className="text-xs font-bold text-teal-400 uppercase tracking-widest">Practical Exercise</label>
+                  <input type="text" value={session.exercise?.title || ''} onChange={e => updateNested(sIdx, 'exercise', 'title', e.target.value)}
+                    placeholder="Exercise title" className={inputCls} />
+                  <textarea rows={2} value={session.exercise?.instructions || ''} onChange={e => updateNested(sIdx, 'exercise', 'instructions', e.target.value)}
+                    placeholder="Instructions" className={`${inputCls} resize-none`} />
+                  <input type="text" value={session.exercise?.deliverable || ''} onChange={e => updateNested(sIdx, 'exercise', 'deliverable', e.target.value)}
+                    placeholder="Expected deliverable" className={inputCls} />
+                </div>
+
+                {/* Case Study */}
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-amber-400 uppercase tracking-widest">Case Study</label>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-400">
+                      <input type="checkbox" checked={!!session.caseStudy} onChange={e => update(sIdx, 'caseStudy', e.target.checked ? { scenario: '', discussionPoints: [] } : null)} />
+                      Include
+                    </label>
+                  </div>
+                  {session.caseStudy && (
+                    <>
+                      <textarea rows={2} value={session.caseStudy?.scenario || ''} onChange={e => updateNested(sIdx, 'caseStudy', 'scenario', e.target.value)}
+                        placeholder="Workplace scenario" className={`${inputCls} resize-none`} />
+                      <textarea rows={2} value={(session.caseStudy?.discussionPoints || []).join('\n')}
+                        onChange={e => updateNested(sIdx, 'caseStudy', 'discussionPoints', e.target.value.split('\n').map(t => t.trim()).filter(Boolean))}
+                        placeholder="Discussion points (one per line)" className={`${inputCls} resize-none`} />
+                    </>
+                  )}
+                </div>
+
+                {/* Quiz questions — type-aware */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <label className="text-xs text-slate-500 font-semibold">Quiz Questions</label>
-                    <button
-                      type="button"
-                      onClick={() => addQuestion(sIdx)}
-                      className="text-xs text-indigo-400 hover:text-indigo-300 font-bold px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all"
-                    >
-                      + Add Question
-                    </button>
+                    <div className="flex gap-1.5">
+                      {Object.entries(Q_TYPE_META).map(([type, meta]) => (
+                        <button key={type} type="button" onClick={() => addQuestion(sIdx, type)}
+                          title={`Add ${meta.label}`}
+                          className="text-xs text-indigo-400 hover:text-indigo-300 font-bold px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all whitespace-nowrap">
+                          {meta.icon} +
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {(session.quiz || []).length === 0 ? (
-                    <p className="text-xs text-slate-600 text-center py-2">No questions — click "Add Question"</p>
-                  ) : (session.quiz || []).map((q, qIdx) => (
-                    <div key={qIdx} className="rounded-lg border border-slate-700/50 bg-slate-900/60 p-3 space-y-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-xs font-black text-slate-500 mt-1">Q{qIdx + 1}</span>
-                        <textarea
-                          rows={2}
-                          value={q.question || ''}
-                          onChange={e => updateQuiz(sIdx, qIdx, 'question', e.target.value)}
-                          placeholder="Question text..."
-                          className="flex-1 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeQuestion(sIdx, qIdx)}
-                          className="w-6 h-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 flex items-center justify-center text-xs flex-shrink-0"
-                        >✕</button>
-                      </div>
+                    <p className="text-xs text-slate-600 text-center py-2">No questions — use the buttons above to add MCQ / Fill Blank / Subjective</p>
+                  ) : (session.quiz || []).map((q, qIdx) => {
+                    const qType = q.type || 'mcq';
+                    return (
+                      <div key={qIdx} className="rounded-lg border border-slate-700/50 bg-slate-900/60 p-3 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-xs font-black text-slate-500 mt-1">Q{qIdx + 1} · {Q_TYPE_META[qType]?.icon} {Q_TYPE_META[qType]?.label}</span>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <label className="text-[10px] text-slate-500">Marks</label>
+                            <input type="number" min={0} value={q.marks ?? 1} onChange={e => updateQuiz(sIdx, qIdx, 'marks', parseFloat(e.target.value) || 0)}
+                              className="w-12 px-1.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-white text-xs focus:border-indigo-500 focus:outline-none" />
+                            <button type="button" onClick={() => removeQuestion(sIdx, qIdx)}
+                              className="w-6 h-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 flex items-center justify-center text-xs">✕</button>
+                          </div>
+                        </div>
+                        <textarea rows={2} value={q.question || ''} onChange={e => updateQuiz(sIdx, qIdx, 'question', e.target.value)}
+                          placeholder="Question text..." className="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none" />
 
-                      {/* Options A-D */}
-                      <div className="space-y-1.5 ml-6">
-                        {(q.options || ['A) ', 'B) ', 'C) ', 'D) ']).map((opt, oIdx) => {
-                          const letter = String.fromCharCode(65 + oIdx);
-                          const isCorrect = (q.answer || 'A') === letter;
-                          return (
-                            <div key={oIdx} className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => updateQuiz(sIdx, qIdx, 'answer', letter)}
-                                className={`w-5 h-5 rounded-full border flex-shrink-0 flex items-center justify-center text-xs font-black transition-all ${isCorrect ? 'bg-emerald-500/30 border-emerald-500/60 text-emerald-300' : 'border-slate-600 text-slate-500 hover:border-indigo-500/50'}`}
-                                title="Mark as correct answer"
-                              >
-                                {isCorrect ? '✓' : letter}
-                              </button>
-                              <input
-                                type="text"
-                                value={opt}
-                                onChange={e => updateQuizOption(sIdx, qIdx, oIdx, e.target.value)}
-                                className="flex-1 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs focus:border-indigo-500 focus:outline-none"
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
+                        {qType === 'mcq' && (
+                          <div className="space-y-1.5 ml-2">
+                            {(q.options || ['A) ', 'B) ', 'C) ', 'D) ']).map((opt, oIdx) => {
+                              const letter = String.fromCharCode(65 + oIdx);
+                              const isCorrect = (q.answer || 'A') === letter;
+                              return (
+                                <div key={oIdx} className="flex items-center gap-2">
+                                  <button type="button" onClick={() => updateQuiz(sIdx, qIdx, 'answer', letter)} title="Mark as correct answer"
+                                    className={`w-5 h-5 rounded-full border flex-shrink-0 flex items-center justify-center text-xs font-black transition-all ${isCorrect ? 'bg-emerald-500/30 border-emerald-500/60 text-emerald-300' : 'border-slate-600 text-slate-500 hover:border-indigo-500/50'}`}>
+                                    {isCorrect ? '✓' : letter}
+                                  </button>
+                                  <input type="text" value={opt} onChange={e => updateQuizOption(sIdx, qIdx, oIdx, e.target.value)}
+                                    className="flex-1 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs focus:border-indigo-500 focus:outline-none" />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {qType === 'fill_blank' && (
+                          <input type="text" value={q.answer || ''} onChange={e => updateQuiz(sIdx, qIdx, 'answer', e.target.value)}
+                            placeholder="Expected answer (exact phrase)" className="w-full ml-2 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs focus:border-indigo-500 focus:outline-none" />
+                        )}
+                        {qType === 'subjective' && (
+                          <textarea rows={2} value={q.answer || ''} onChange={e => updateQuiz(sIdx, qIdx, 'answer', e.target.value)}
+                            placeholder="Model answer" className="w-full ml-2 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs focus:border-indigo-500 focus:outline-none resize-none" />
+                        )}
 
-                      {/* Explanation */}
-                      <div className="ml-6">
-                        <input
-                          type="text"
-                          value={q.explanation || ''}
-                          onChange={e => updateQuiz(sIdx, qIdx, 'explanation', e.target.value)}
-                          placeholder="Explanation for correct answer..."
-                          className="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs focus:border-indigo-500 focus:outline-none"
-                        />
+                        <input type="text" value={q.explanation || ''} onChange={e => updateQuiz(sIdx, qIdx, 'explanation', e.target.value)}
+                          placeholder="Explanation for correct answer..." className="w-full ml-2 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs focus:border-indigo-500 focus:outline-none" />
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

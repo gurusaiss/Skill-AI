@@ -87,6 +87,8 @@ function AdminReportView({ user, navigate }) {
   const [error, setError] = useState(null);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [downloadingFmt, setDownloadingFmt] = useState(null);
+  const [rowDownloadTarget, setRowDownloadTarget] = useState(null); // row awaiting format choice
+  const [rowDownloadingFmt, setRowDownloadingFmt] = useState(null);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -163,6 +165,7 @@ function AdminReportView({ user, navigate }) {
       return {
         id: `a-${r.id || uid}-${r.assessmentId || ''}`,
         type: 'assessment',
+        assessmentId: r.assessmentId || '',
         employeeId: uid || '—',
         employeeName: r.employeeName || r.userName || '—',
         email: r.email || r.userEmail || '—',
@@ -177,6 +180,11 @@ function AdminReportView({ user, navigate }) {
         completedDate: r.submittedAt || r.completedAt || null,
         manager: employeeMeta[uid]?.manager || '—',
         group: employeeMeta[uid]?.group || '—',
+        grade: r.grade || '',
+        strengths: (r.strengths || []).join('; '),
+        weaknesses: (r.weakAreas || []).join('; '),
+        skillGaps: (r.missingCompetencies || []).join('; '),
+        recommendations: (r.improvementRecommendations || r.recommendedLearningAreas || []).map(x => (typeof x === 'string' ? x : x?.area || String(x))).join('; '),
       };
     });
     return [...moduleRows, ...assessmentRows];
@@ -262,16 +270,18 @@ function AdminReportView({ user, navigate }) {
       // Exports always include the FULL record — every field stored, even ones
       // simplified out of the on-screen table (Type, Assigned Date, Deadline,
       // Manager, Group) — so no data is ever lost by downloading a report.
-      const headers = ['Employee Name', 'Employee ID', 'Email', 'Job Role', 'Type', 'Assessment / Module', 'Status', 'Score', 'Progress', 'Assigned Date', 'Deadline', 'Completed Date', 'Manager', 'Group'];
+      const headers = ['Employee Name', 'Employee ID', 'Email', 'Job Role', 'Type', 'Assessment / Module', 'Status', 'Score', 'Progress', 'Grade', 'Assigned Date', 'Deadline', 'Completed Date', 'Manager', 'Group', 'Strengths', 'Weaknesses', 'Skill Gaps', 'Recommendations'];
       const rows = sorted.map(r => [
         r.employeeName, r.employeeId, r.email, r.jobRole, r.type === 'assessment' ? 'Assessment' : 'Module', r.name,
         r.status,
         r.score != null ? `${Math.round(r.score)}%` : '—',
         r.progress != null ? `${Math.round(r.progress)}%` : '—',
+        r.grade || '—',
         r.assignedDate ? new Date(r.assignedDate).toLocaleDateString() : '—',
         r.deadline ? new Date(r.deadline).toLocaleDateString() : '—',
         r.completedDate ? new Date(r.completedDate).toLocaleDateString() : '—',
         r.manager, r.group,
+        r.strengths || '—', r.weaknesses || '—', r.skillGaps || '—', r.recommendations || '—',
       ]);
       const token = localStorage.getItem('auth_token');
       const BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
@@ -293,6 +303,36 @@ function AdminReportView({ user, navigate }) {
       alert(e.message || 'Export failed');
     } finally {
       setDownloadingFmt(null);
+    }
+  };
+
+  // Downloads the FULL enterprise report (employee details, assessment details,
+  // every question with answers/marks/result, performance analysis, linked
+  // module info, and audit trail) for a single assessment row.
+  const downloadSingleAssessmentReport = async (row, format) => {
+    if (!row.assessmentId) { alert('This report cannot be downloaded (missing assessment reference).'); return; }
+    setRowDownloadingFmt(format);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+      const res = await fetch(`${BASE}/api/assessments/${row.assessmentId}/reports/${row.employeeId}/download?format=${format}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ext = format === 'pdf' ? 'pdf' : format === 'docx' ? 'docx' : 'xlsx';
+      const safeName = (row.employeeName + '-' + row.name).replace(/[^a-zA-Z0-9-_ ]/g, '_');
+      a.download = `${safeName}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setRowDownloadTarget(null);
+    } catch (e) {
+      alert(e.message || 'Download failed');
+    } finally {
+      setRowDownloadingFmt(null);
     }
   };
 
@@ -438,7 +478,13 @@ function AdminReportView({ user, navigate }) {
                               ↓ PDF
                             </button>
                           ) : (
-                            <span className="px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap bg-slate-700/30 border-slate-600/30 text-slate-500">📊 {displayValue}%</span>
+                            <button
+                              onClick={() => setRowDownloadTarget(r)}
+                              title="Download full report"
+                              className="px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap bg-slate-700/30 border-slate-600/30 text-slate-300 hover:bg-slate-700/50 hover:border-slate-500/50 transition-all"
+                            >
+                              📊 {displayValue}% ↓
+                            </button>
                           )}
                         </td>
                       </tr>
@@ -487,6 +533,33 @@ function AdminReportView({ user, navigate }) {
               ))}
             </div>
             <button onClick={() => setShowDownloadModal(false)} className="mt-4 w-full py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {rowDownloadTarget && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[200] p-4 overflow-y-auto" onClick={e => e.target === e.currentTarget && !rowDownloadingFmt && setRowDownloadTarget(null)}>
+          <div className="bg-[#1E293B] border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl p-6 my-8 max-h-[85vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-white mb-1">Download Full Report</h3>
+            <p className="text-slate-400 text-sm mb-1 truncate">{rowDownloadTarget.employeeName} — {rowDownloadTarget.name}</p>
+            <p className="text-xs text-slate-500 mb-4">Includes employee details, full question-by-question breakdown, performance analysis, and audit trail</p>
+            <div className="space-y-3">
+              {[
+                { fmt: 'xlsx', label: 'Excel (.xlsx)', icon: '📊', desc: 'Summary + question sheets' },
+                { fmt: 'pdf',  label: 'PDF (.pdf)',   icon: '📄', desc: 'Complete formatted report' },
+                { fmt: 'docx', label: 'Word (.docx)', icon: '📝', desc: 'Editable document' },
+              ].map(({ fmt, label, icon, desc }) => (
+                <button key={fmt} onClick={() => downloadSingleAssessmentReport(rowDownloadTarget, fmt)} disabled={!!rowDownloadingFmt}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-indigo-500/50 hover:bg-slate-800 transition-all text-left disabled:opacity-50">
+                  <span className="text-2xl">{icon}</span>
+                  <div>
+                    <p className="text-sm font-bold text-white">{rowDownloadingFmt === fmt ? 'Generating…' : label}</p>
+                    <p className="text-xs text-slate-400">{desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setRowDownloadTarget(null)} disabled={!!rowDownloadingFmt} className="mt-4 w-full py-2 text-sm text-slate-400 hover:text-white transition-colors disabled:opacity-40">Cancel</button>
           </div>
         </div>
       )}
