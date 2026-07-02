@@ -13,6 +13,29 @@ import { ActivationTokens, Assessments, RoleLibrary, GeneratedContent, Groups } 
 import { randomBytes } from 'crypto';
 import { getGroups } from '../db/store.js';
 
+// ── Authorization helper: can `actor` (req.user) access `target` user record? ──
+// Rules (additive, preserves existing single-tenant 'default' behavior):
+//  • The user themselves → always.
+//  • superadmin → always.
+//  • admin/manager → only within the SAME company (company 'default' stays open
+//    for single-tenant installs, matching existing list-endpoint behavior).
+//  • everyone else → denied.
+function canAccessUser(actor, target) {
+  if (!actor || !target) return false;
+  const actorId = actor.userId || actor.id;
+  const targetId = target.userId || target.id;
+  if (actorId && targetId && actorId === targetId) return true;
+  if (actor.role === 'superadmin') return true;
+  if (actor.role === 'admin' || actor.role === 'manager') {
+    const actorCompany = actor.companyId || 'default';
+    const targetCompany = target.companyId || 'default';
+    // Single-tenant default installs: admins in 'default' retain full visibility.
+    if (actorCompany === 'default') return true;
+    return actorCompany === targetCompany;
+  }
+  return false;
+}
+
 function generatePassword() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
   let s = '';
@@ -400,6 +423,9 @@ router.get('/:userId', authenticate, async (req, res) => {
     if (!user) {
       return res.status(404).json({ success: false, data: null, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
     }
+    if (!canAccessUser(req.user, user)) {
+      return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
+    }
 
     res.json({ success: true, data: sanitizeUser(user), error: null });
   } catch (error) {
@@ -426,6 +452,9 @@ router.put('/:userId', authenticate, async (req, res) => {
     const user = await UserStore.getUserById(userId);
     if (!user) {
       return res.status(404).json({ success: false, data: null, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+    }
+    if (!canAccessUser(req.user, user)) {
+      return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Cannot update this user' } });
     }
 
     const { name, email, role, status, jobRole, department, jobDescription, companyName, onboardingComplete } = req.body;
@@ -887,13 +916,15 @@ router.get('/:userId/assignments', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
     const isSelf = req.user.userId === userId;
-    const isAdmin = req.user.role === 'admin';
-    const isManager = req.user.role === 'manager';
 
-    if (!isSelf && !isAdmin && !isManager) {
-      const managers = await UserStore.getEmployeeManagers(userId);
-      const isThisManager = managers.some(m => m.userId === req.user.userId);
-      if (!isThisManager) return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
+    if (!isSelf) {
+      const target = await UserStore.getUserById(userId);
+      if (!canAccessUser(req.user, target)) {
+        // Managers outside the same company still allowed if they directly manage this user
+        const managers = await UserStore.getEmployeeManagers(userId);
+        const isThisManager = managers.some(m => m.userId === req.user.userId);
+        if (!isThisManager) return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
+      }
     }
 
     const assignments = await UserStore.getAssignments({ user_id: userId });
@@ -1347,6 +1378,7 @@ router.get('/:userId/skills-gap', authenticate, async (req, res) => {
   try {
     const user = await UserStore.getUserById(req.params.userId);
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    if (!canAccessUser(req.user, user)) return res.status(403).json({ success: false, error: 'Access denied' });
     const { RoleLibrary } = await import('../services/DataStore.js');
     const role = user.jobRole ? await RoleLibrary.findByName(user.jobRole, user.companyId || 'default') : null;
     const required    = role?.skills || [];
@@ -1371,6 +1403,8 @@ router.get('/:userId/skills-gap', authenticate, async (req, res) => {
  */
 router.get('/:userId/checklist', authenticate, async (req, res) => {
   try {
+    const target = await UserStore.getUserById(req.params.userId);
+    if (target && !canAccessUser(req.user, target)) return res.status(403).json({ success: false, error: 'Access denied' });
     const { EmployeeChecklists } = await import('../services/DataStore.js');
     const checklist = await EmployeeChecklists.getByUserId(req.params.userId);
     res.json({ success: true, data: checklist });
@@ -1387,6 +1421,7 @@ router.get('/:userId/job-roles', authenticate, async (req, res) => {
   try {
     const user = await UserStore.getUserById(req.params.userId);
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    if (!canAccessUser(req.user, user)) return res.status(403).json({ success: false, error: 'Access denied' });
     const primary = user.jobRole ? [{
       roleName: user.jobRole, department: user.department || '',
       jobDescription: user.jobDescription || '', jdSkills: user.jdSkills || [],
