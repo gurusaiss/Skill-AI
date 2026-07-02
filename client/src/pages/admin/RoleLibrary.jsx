@@ -552,17 +552,31 @@ function QuestionBankModal({ role, onClose }) {
                         <input className={inputCls} value={editQ.skillArea || ''} onChange={e => setEditQ(p => ({ ...p, skillArea: e.target.value }))} />
                       </div>
                     </div>
-                    {(editQ.options || []).map((opt, oi) => (
-                      <input key={oi} className={inputCls} value={opt} onChange={e => { const o = [...(editQ.options || [])]; o[oi] = e.target.value; setEditQ(p => ({ ...p, options: o })); }} placeholder={`Option ${['A','B','C','D'][oi]}`} />
-                    ))}
-                    <div className="grid grid-cols-2 gap-3">
+                    {(editQ.type === 'mcq' || !editQ.type) && (
+                      <>
+                        {(editQ.options || ['A) ', 'B) ', 'C) ', 'D) ']).map((opt, oi) => (
+                          <input key={oi} className={inputCls} value={opt} onChange={e => { const o = [...(editQ.options || ['A) ','B) ','C) ','D) '])]; o[oi] = e.target.value; setEditQ(p => ({ ...p, options: o })); }} placeholder={`Option ${['A','B','C','D'][oi]}`} />
+                        ))}
+                        <div>
+                          <label className={labelCls}>Correct Answer</label>
+                          <select className={inputCls} value={editQ.answer || 'A'} onChange={e => setEditQ(p => ({ ...p, answer: e.target.value }))}>
+                            {['A','B','C','D'].map(l => <option key={l} value={l}>{l}</option>)}
+                          </select>
+                        </div>
+                      </>
+                    )}
+                    {editQ.type === 'fill_blank' && (
                       <div>
-                        <label className={labelCls}>Correct Answer</label>
-                        <select className={inputCls} value={editQ.answer || 'A'} onChange={e => setEditQ(p => ({ ...p, answer: e.target.value }))}>
-                          {['A','B','C','D'].map(l => <option key={l} value={l}>{l}</option>)}
-                        </select>
+                        <label className={labelCls}>Expected Answer <span className="text-slate-500 font-normal">(exact phrase)</span></label>
+                        <input className={inputCls} value={editQ.answer || ''} onChange={e => setEditQ(p => ({ ...p, answer: e.target.value }))} placeholder="e.g. agile methodology" />
                       </div>
-                    </div>
+                    )}
+                    {editQ.type === 'subjective' && (
+                      <div>
+                        <label className={labelCls}>Model Answer</label>
+                        <textarea rows={3} className={inputCls} value={editQ.answer || ''} onChange={e => setEditQ(p => ({ ...p, answer: e.target.value }))} placeholder="Describe the ideal response…" />
+                      </div>
+                    )}
                     <textarea rows={2} className={inputCls} value={editQ.explanation || ''} onChange={e => setEditQ(p => ({ ...p, explanation: e.target.value }))} placeholder="Explanation" />
                     <div className="flex gap-2">
                       <button onClick={cancelEdit} className="px-3 py-1.5 rounded border border-slate-600 text-slate-300 text-xs">Cancel</button>
