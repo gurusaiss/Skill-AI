@@ -614,13 +614,24 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
       questionTypes: typeSequence,
       employeeSeed: `qbank-${role.id}-regen-${Date.now()}`,
     });
+    // Integrity guard: never persist a partial bank. generateQuestionsFromJD guarantees
+    // an exact count, but if that contract is ever violated, fail loudly instead of
+    // silently saving fewer questions than configured (the existing bank stays intact).
+    if (!Array.isArray(questions) || questions.length !== num) {
+      console.error(`[regenerate-questions] Generated ${questions?.length ?? 0}/${num} questions — aborting save, existing bank preserved.`);
+      return res.status(500).json({ success: false, error: `Question generation returned ${questions?.length ?? 0} of ${num} requested questions. Existing question bank was not modified — please retry.` });
+    }
     const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
-    await RoleLibrary.update(req.params.id, {
+    const updated = await RoleLibrary.update(req.params.id, {
       questionBank: bank,
       questionBankGeneratedAt: new Date().toISOString(),
       questionBankCount: bank.length,
       updatedAt: new Date().toISOString(),
     });
+    if (!updated) {
+      console.error(`[regenerate-questions] RoleLibrary.update returned falsy for role ${req.params.id} — save may not have persisted.`);
+      return res.status(500).json({ success: false, error: 'Failed to save regenerated question bank. Please retry.' });
+    }
     res.json({ success: true, data: { count: bank.length, questions: bank } });
   } catch (e) {
     console.error('[POST /api/roles/:id/regenerate-questions]', e);
