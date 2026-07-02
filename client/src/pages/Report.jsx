@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
+import SearchableSelect from '../components/SearchableSelect.jsx';
 
 // ─── PDF Download helper ──────────────────────────────────────────────────────
 function downloadReportPDF(employeeData) {
@@ -141,12 +142,15 @@ function AdminReportView({ user, navigate }) {
       (r.assignments || []).map(a => ({
         id: `m-${r.userId}-${a.id}`,
         type: 'module',
+        employeeId: r.userId || '—',
         employeeName: r.employeeName || '—',
         email: r.email || '—',
         jobRole: r.jobRole || '—',
         name: a.moduleName || 'Unknown Module',
         status: a.status || 'assigned',
-        scoreOrCompletion: a.progress || 0,
+        score: null, // modules track progress, not a graded score
+        progress: a.progress || 0,
+        scoreOrCompletion: a.progress || 0, // unified field kept for sorting
         assignedDate: null,
         deadline: a.dueDate || null,
         completedDate: a.status === 'completed' ? (a.dueDate || null) : null,
@@ -159,12 +163,15 @@ function AdminReportView({ user, navigate }) {
       return {
         id: `a-${r.id || uid}-${r.assessmentId || ''}`,
         type: 'assessment',
+        employeeId: uid || '—',
         employeeName: r.employeeName || r.userName || '—',
         email: r.email || r.userEmail || '—',
         jobRole: r.jobRole || '—',
         name: r.assessmentTitle || r.title || 'Untitled Assessment',
         status: r.status || 'submitted',
-        scoreOrCompletion: r.score ?? r.completionRate ?? 0,
+        score: r.score ?? r.completionRate ?? 0,
+        progress: null, // assessments are graded, not progress-tracked
+        scoreOrCompletion: r.score ?? r.completionRate ?? 0, // unified field kept for sorting
         assignedDate: r.assignedAt || null,
         deadline: r.deadline || null,
         completedDate: r.submittedAt || r.completedAt || null,
@@ -209,7 +216,7 @@ function AdminReportView({ user, navigate }) {
     const arr = [...filtered];
     arr.sort((a, b) => {
       let av = a[sortCol], bv = b[sortCol];
-      if (sortCol === 'scoreOrCompletion') { av = av || 0; bv = bv || 0; }
+      if (['scoreOrCompletion', 'score', 'progress'].includes(sortCol)) { av = av || 0; bv = bv || 0; }
       else if (['assignedDate', 'deadline', 'completedDate'].includes(sortCol)) { av = av ? new Date(av).getTime() : 0; bv = bv ? new Date(bv).getTime() : 0; }
       else { av = (av || '').toString().toLowerCase(); bv = (bv || '').toString().toLowerCase(); }
       if (av < bv) return sortDir === 'asc' ? -1 : 1;
@@ -252,10 +259,15 @@ function AdminReportView({ user, navigate }) {
     setDownloadingFmt(format);
     setShowDownloadModal(false);
     try {
-      const headers = ['Employee Name', 'Email', 'Job Role', 'Type', 'Assessment / Module', 'Status', 'Score / Completion %', 'Assigned Date', 'Deadline', 'Completed Date', 'Manager', 'Group'];
+      // Exports always include the FULL record — every field stored, even ones
+      // simplified out of the on-screen table (Type, Assigned Date, Deadline,
+      // Manager, Group) — so no data is ever lost by downloading a report.
+      const headers = ['Employee Name', 'Employee ID', 'Email', 'Job Role', 'Type', 'Assessment / Module', 'Status', 'Score', 'Progress', 'Assigned Date', 'Deadline', 'Completed Date', 'Manager', 'Group'];
       const rows = sorted.map(r => [
-        r.employeeName, r.email, r.jobRole, r.type === 'assessment' ? 'Assessment' : 'Module', r.name,
-        r.status, `${Math.round(r.scoreOrCompletion || 0)}%`,
+        r.employeeName, r.employeeId, r.email, r.jobRole, r.type === 'assessment' ? 'Assessment' : 'Module', r.name,
+        r.status,
+        r.score != null ? `${Math.round(r.score)}%` : '—',
+        r.progress != null ? `${Math.round(r.progress)}%` : '—',
         r.assignedDate ? new Date(r.assignedDate).toLocaleDateString() : '—',
         r.deadline ? new Date(r.deadline).toLocaleDateString() : '—',
         r.completedDate ? new Date(r.completedDate).toLocaleDateString() : '—',
@@ -283,8 +295,6 @@ function AdminReportView({ user, navigate }) {
       setDownloadingFmt(null);
     }
   };
-
-  const selectCls = "px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors";
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-8 max-w-7xl mx-auto">
@@ -315,31 +325,16 @@ function AdminReportView({ user, navigate }) {
           <input type="text" placeholder="Search by employee, email, or assessment/module name..." value={search} onChange={e => setSearch(e.target.value)}
             className="w-full px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
           <div className="flex flex-wrap gap-2 items-center">
-            <select value={reportType} onChange={e => setReportType(e.target.value)} className={selectCls}>
-              <option value="all">All Report Types</option>
-              <option value="module">Module</option>
-              <option value="assessment">Assessment</option>
-            </select>
-            <select value={nameFilter} onChange={e => setNameFilter(e.target.value)} className={selectCls}>
-              <option value="all">{reportType === 'assessment' ? 'All Assessments' : reportType === 'module' ? 'All Modules' : 'All Assessments / Modules'}</option>
-              {nameOptions.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <select value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)} className={selectCls}>
-              <option value="all">All Employees</option>
-              {employeeOptions.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)} className={selectCls}>
-              <option value="all">All Groups</option>
-              {groupOptions.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <select value={managerFilter} onChange={e => setManagerFilter(e.target.value)} className={selectCls}>
-              <option value="all">All Managers</option>
-              {managerOptions.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={selectCls}>
-              <option value="all">All Statuses</option>
-              {statusOptions.map(n => <option key={n} value={n} className="capitalize">{n}</option>)}
-            </select>
+            <SearchableSelect value={reportType} onChange={setReportType} allLabel="All Report Types"
+              options={[{ value: 'module', label: 'Module' }, { value: 'assessment', label: 'Assessment' }]} />
+            <SearchableSelect value={nameFilter} onChange={setNameFilter}
+              allLabel={reportType === 'assessment' ? 'All Assessments' : reportType === 'module' ? 'All Modules' : 'All Assessments / Modules'}
+              options={nameOptions} />
+            <SearchableSelect value={employeeFilter} onChange={setEmployeeFilter} allLabel="All Employees" options={employeeOptions} />
+            <SearchableSelect value={groupFilter} onChange={setGroupFilter} allLabel="All Groups" options={groupOptions} />
+            <SearchableSelect value={managerFilter} onChange={setManagerFilter} allLabel="All Managers" options={managerOptions} />
+            <SearchableSelect value={statusFilter} onChange={setStatusFilter} allLabel="All Statuses"
+              options={statusOptions.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))} />
             <div className="flex items-center gap-1.5">
               <label className="text-xs text-slate-500">From</label>
               <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
@@ -383,21 +378,22 @@ function AdminReportView({ user, navigate }) {
           </div>
         ) : (
           <>
+            {/* Simplified frontend view — Employee Name, ID, Email, Job Role, Assessment/Module,
+                Status, Score, Progress, Completed Date + Actions. Every other field (Type,
+                Deadline, Manager, Group, Assigned Date, etc.) is still stored and included in
+                every export (PDF/Excel/DOC) below — nothing is deleted, only hidden from view. */}
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse min-w-[1100px]">
+              <table className="w-full border-collapse">
                 <thead className="sticky top-0 z-10 bg-slate-900">
                   <tr className="border-b border-slate-700/40">
                     <th className={TH_CLS}><button onClick={() => toggleSort('employeeName')} className="flex items-center hover:text-white transition-colors">Employee Name<SortIcon active={sortCol === 'employeeName'} dir={sortDir} /></button></th>
-                    <th className={TH_CLS}><button onClick={() => toggleSort('email')} className="flex items-center hover:text-white transition-colors">Email<SortIcon active={sortCol === 'email'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('employeeId')} className="flex items-center hover:text-white transition-colors">Employee ID<SortIcon active={sortCol === 'employeeId'} dir={sortDir} /></button></th>
                     <th className={TH_CLS}><button onClick={() => toggleSort('jobRole')} className="flex items-center hover:text-white transition-colors">Job Role<SortIcon active={sortCol === 'jobRole'} dir={sortDir} /></button></th>
-                    <th className={TH_CLS}><button onClick={() => toggleSort('type')} className="flex items-center hover:text-white transition-colors">Type<SortIcon active={sortCol === 'type'} dir={sortDir} /></button></th>
                     <th className={TH_CLS}><button onClick={() => toggleSort('name')} className="flex items-center hover:text-white transition-colors">Assessment / Module<SortIcon active={sortCol === 'name'} dir={sortDir} /></button></th>
                     <th className={TH_CLS}><button onClick={() => toggleSort('status')} className="flex items-center hover:text-white transition-colors">Status<SortIcon active={sortCol === 'status'} dir={sortDir} /></button></th>
-                    <th className={TH_CLS}><button onClick={() => toggleSort('scoreOrCompletion')} className="flex items-center hover:text-white transition-colors">Score / Completion %<SortIcon active={sortCol === 'scoreOrCompletion'} dir={sortDir} /></button></th>
-                    <th className={TH_CLS}><button onClick={() => toggleSort('deadline')} className="flex items-center hover:text-white transition-colors">Deadline<SortIcon active={sortCol === 'deadline'} dir={sortDir} /></button></th>
-                    <th className={TH_CLS}><button onClick={() => toggleSort('completedDate')} className="flex items-center hover:text-white transition-colors">Completed Date<SortIcon active={sortCol === 'completedDate'} dir={sortDir} /></button></th>
-                    <th className={TH_CLS}><button onClick={() => toggleSort('manager')} className="flex items-center hover:text-white transition-colors">Manager<SortIcon active={sortCol === 'manager'} dir={sortDir} /></button></th>
-                    <th className={TH_CLS}><button onClick={() => toggleSort('group')} className="flex items-center hover:text-white transition-colors">Group<SortIcon active={sortCol === 'group'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('score')} className="flex items-center hover:text-white transition-colors">Score<SortIcon active={sortCol === 'score'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('progress')} className="flex items-center hover:text-white transition-colors">Progress<SortIcon active={sortCol === 'progress'} dir={sortDir} /></button></th>
+                    <th className={TH_CLS}><button onClick={() => toggleSort('completedDate')} className="flex items-center hover:text-white transition-colors">Completion Date<SortIcon active={sortCol === 'completedDate'} dir={sortDir} /></button></th>
                     <th className={`${TH_CLS} text-right`}>Actions</th>
                   </tr>
                 </thead>
@@ -412,30 +408,27 @@ function AdminReportView({ user, navigate }) {
                             <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500/30 to-purple-500/20 border border-indigo-500/20 flex items-center justify-center text-[10px] font-black text-indigo-300 flex-shrink-0">
                               {r.employeeName.charAt(0).toUpperCase()}
                             </div>
-                            <span className="font-semibold text-white truncate">{r.employeeName}</span>
+                            <span className="font-semibold text-white truncate" title={r.employeeName}>{r.employeeName}</span>
                           </div>
                         </td>
-                        <td className={`${TD_CLS} text-slate-400 truncate max-w-[180px]`}>{r.email}</td>
-                        <td className={`${TD_CLS} text-slate-400`}>{r.jobRole}</td>
-                        <td className={TD_CLS}>
-                          <span className={`text-xs px-1.5 py-0.5 rounded font-bold border whitespace-nowrap ${r.type === 'assessment' ? 'bg-amber-500/15 text-amber-300 border-amber-500/25' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/25'}`}>
-                            {r.type === 'assessment' ? '📝 Assessment' : '📚 Module'}
-                          </span>
+                        <td className={`${TD_CLS} text-slate-500 font-mono text-xs truncate max-w-[100px]`} title={r.employeeId}>{r.employeeId}</td>
+                        <td className={`${TD_CLS} text-slate-400 truncate max-w-[130px]`} title={r.jobRole}>{r.jobRole}</td>
+                        <td className={`${TD_CLS} truncate max-w-[200px]`} title={r.name}>
+                          <span className="mr-1">{r.type === 'assessment' ? '📝' : '📚'}</span>{r.name}
                         </td>
-                        <td className={`${TD_CLS} truncate max-w-[220px]`} title={r.name}>{r.name}</td>
-                        <td className={TD_CLS}><span className="capitalize text-xs px-2 py-0.5 rounded bg-slate-700/40 border border-slate-600/40">{r.status}</span></td>
+                        <td className={TD_CLS}><span className="capitalize text-xs px-2 py-0.5 rounded bg-slate-700/40 border border-slate-600/40 whitespace-nowrap">{r.status}</span></td>
+                        <td className={TD_CLS}>{r.score != null ? <span className={`text-xs font-bold ${valueColor}`}>{Math.round(r.score)}%</span> : <span className="text-slate-600">—</span>}</td>
                         <td className={TD_CLS}>
-                          <div className="flex items-center gap-2 min-w-[100px]">
-                            <div className="flex-1 h-1.5 rounded-full bg-slate-700 overflow-hidden">
-                              <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(displayValue, 100)}%`, background: displayValue >= 80 ? '#10b981' : displayValue >= 50 ? '#f59e0b' : '#ef4444' }} />
+                          {r.progress != null ? (
+                            <div className="flex items-center gap-2 min-w-[90px]">
+                              <div className="flex-1 h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(r.progress, 100)}%`, background: r.progress >= 80 ? '#10b981' : r.progress >= 50 ? '#f59e0b' : '#ef4444' }} />
+                              </div>
+                              <span className={`text-xs font-bold ${valueColor}`}>{Math.round(r.progress)}%</span>
                             </div>
-                            <span className={`text-xs font-bold ${valueColor}`}>{displayValue}%</span>
-                          </div>
+                          ) : <span className="text-slate-600">—</span>}
                         </td>
-                        <td className={`${TD_CLS} text-slate-400 whitespace-nowrap`}>{r.deadline ? new Date(r.deadline).toLocaleDateString() : '—'}</td>
                         <td className={`${TD_CLS} text-slate-400 whitespace-nowrap`}>{r.completedDate ? new Date(r.completedDate).toLocaleDateString() : '—'}</td>
-                        <td className={`${TD_CLS} text-slate-400`}>{r.manager}</td>
-                        <td className={`${TD_CLS} text-slate-400`}>{r.group}</td>
                         <td className={`${TD_CLS} text-right`}>
                           {r.type === 'module' ? (
                             <button

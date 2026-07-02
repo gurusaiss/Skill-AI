@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { authFetch } from '../../utils/authFetch.js';
+import SearchableSelect from '../../components/SearchableSelect.jsx';
 
 // ── tiny helpers ──────────────────────────────────────────────────────────────
 const toast = (msg, type = 'success') => {
@@ -766,13 +767,12 @@ export default function RoleLibrary() {
           placeholder="Search roles…"
           className="flex-1 bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
         />
-        <select
-          value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
-          className="bg-[#1E293B] border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-        >
-          <option value="">All Departments</option>
-          {departments.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+        <SearchableSelect
+          value={deptFilter || 'all'}
+          onChange={v => setDeptFilter(v === 'all' ? '' : v)}
+          allLabel="All Departments"
+          options={departments}
+        />
       </div>
 
       {/* Stats */}
