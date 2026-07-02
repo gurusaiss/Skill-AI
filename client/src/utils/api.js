@@ -12,7 +12,11 @@ const API_BASE_URL = getApiBaseUrl();
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('auth_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const activeRole = localStorage.getItem('active_role');
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(activeRole ? { 'X-Active-Role': activeRole } : {}),
+  };
 };
 
 // Retry a fetch up to `maxRetries` times on network errors (not on HTTP errors).

@@ -91,6 +91,7 @@ export const AuthProvider = ({ children }) => {
   // Handle token expiration
   const handleTokenExpiration = () => {
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('active_role'); // prevent stale switched-role leaking to next login
     setToken(null);
     setUser(null);
     // Redirect to login page

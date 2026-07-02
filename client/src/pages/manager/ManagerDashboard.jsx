@@ -6,10 +6,12 @@ const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'h
 
 const fetchJSON = async (path) => {
   const token = localStorage.getItem('auth_token');
+  const activeRole = localStorage.getItem('active_role');
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
+      ...(activeRole ? { 'X-Active-Role': activeRole } : {}),
     },
   });
   if (!res.ok) {

@@ -1091,6 +1091,16 @@ router.get('/:id/reports/:userId/download', authenticate, async (req, res) => {
     const assessment = await Assessments.getById(id);
     if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
 
+    // Tenant scoping: privileged users may only download reports within their own company.
+    // ('default' company stays open for single-tenant installs, and superadmin is global.)
+    if (isPrivileged && !isSelf && req.user.role !== 'superadmin') {
+      const actorCompany = req.user.companyId || 'default';
+      const assessmentCompany = assessment.companyId || 'default';
+      if (actorCompany !== 'default' && actorCompany !== assessmentCompany) {
+        return res.status(403).json({ success: false, data: null, error: 'Access denied' });
+      }
+    }
+
     const ea = assessment.employeeAssignments?.find(a => a.userId === userId);
     if (!ea) return res.status(404).json({ success: false, data: null, error: 'Employee not assigned to this assessment' });
 

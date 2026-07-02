@@ -211,7 +211,13 @@ export default function Employee() {
     const hasNoModules = roleAssignments.length === 0;
     if (hasCompletedAssessment && hasNoModules) {
       setModuleGenerating(true);
+      // Cap polling at ~3 minutes (36 × 5s) so a stuck/failed generation doesn't
+      // poll forever in an open tab. After the cap we stop the spinner and let the
+      // employee use Refresh manually.
+      let attempts = 0;
+      const MAX_ATTEMPTS = 36;
       const poll = setInterval(async () => {
+        attempts++;
         try {
           const data = await authFetch(`/api/assignments?userId=${userId}`);
           const list = Array.isArray(data) ? data : (data?.assignments || data?.data || []);
@@ -220,8 +226,13 @@ export default function Employee() {
             setModuleGenerating(false);
             clearInterval(poll);
             showToast('Your personalized module is ready!', 'success');
+            return;
           }
-        } catch { /* silent */ }
+        } catch { /* transient — keep polling until cap */ }
+        if (attempts >= MAX_ATTEMPTS) {
+          clearInterval(poll);
+          setModuleGenerating(false);
+        }
       }, 5000);
       return () => clearInterval(poll);
     } else {

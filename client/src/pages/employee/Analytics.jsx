@@ -55,7 +55,7 @@ const ChartCard = ({ title, subtitle, children, loading, className = '' }) => (
 );
 
 export default function Analytics() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading]           = useState(true);
@@ -67,7 +67,7 @@ export default function Analytics() {
 
   useEffect(() => {
     if (!user) return;
-    if (user.role !== 'employee') { navigate('/dashboard'); return; }
+    if (!hasRole('employee')) { navigate('/dashboard'); return; }
     loadAll();
   }, [user]);
 

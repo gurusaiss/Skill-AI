@@ -1,6 +1,6 @@
 {
   "userId": "0e45e1d3-3289-444e-aa95-ee466babc377",
-  "generatedAt": "2026-06-03T15:11:48.855Z",
+  "generatedAt": "2026-07-01T20:36:12.267Z",
   "type": "daily_brief",
   "streak": 1,
   "completedDays": 1,
@@ -11,7 +11,7 @@
     "topic": "routing and request handling",
     "skillName": "Node.js Development"
   },
-  "insight": "You've just taken the first step by completing your first session, and although your current average score is 10%, this initial attempt provides a valuable baseline to build upon and identify areas where you can focus your efforts to improve. As you move forward, try to focus on small, incremental increases in your score, such as aiming to raise your average by 5-10% in the next few sessions, which can help you establish a sense of progress and momentum, even after just a 1-day streak.",
+  "insight": "You've made a great start with just one session, and your consistent score of 10% shows that you're applying what you've learned, so keep building on that momentum and focus on improving your understanding of the material. By analyzing your last score, identify one area where you can make a slight adjustment, such as reviewing a specific concept or changing your approach to a particular type of question, and make that change in your next session.",
   "alerts": [
     {
       "type": "review",

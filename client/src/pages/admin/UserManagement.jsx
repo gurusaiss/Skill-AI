@@ -1763,7 +1763,7 @@ function ManageAccessModal({ user: targetUser, onClose, onSaved, setToast }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function UserManagement() {
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, activeRole } = useAuth();
   const navigate = useNavigate();
 
   const [users, setUsers] = useState([]);
@@ -1783,13 +1783,15 @@ export default function UserManagement() {
   const [inviteResultUser, setInviteResultUser] = useState(null);
   const [manageAccessUser, setManageAccessUser] = useState(null);
 
-  const isAdmin = hasRole('admin');
-  const isManager = user?.role === 'manager';
-  const currentUserRole = user?.role;
+  // View follows the effective (switched) role so admins acting as manager see the
+  // manager-scoped variant, and vice versa. Access is still gated by hasRole below.
+  const isManager = activeRole === 'manager';
+  const isAdmin = !isManager && hasRole('admin');
+  const currentUserRole = activeRole || user?.role;
 
   useEffect(() => {
-    if (!isAdmin && !isManager) navigate('/dashboard');
-  }, [isAdmin, isManager, navigate]);
+    if (!hasRole('admin') && !hasRole('manager')) navigate('/dashboard');
+  }, [navigate]);
 
   const fetchData = async () => {
     setLoading(true);

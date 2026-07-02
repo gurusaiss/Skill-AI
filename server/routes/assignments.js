@@ -6,6 +6,26 @@ import { Groups } from '../services/DataStore.js';
 
 const router = express.Router();
 
+// Can `actor` (req.user) access an assignment belonging to `assignedUserId`?
+// Owner → yes. superadmin → yes. admin/manager → only same company
+// ('default' stays open for single-tenant). Others → no.
+async function canAccessAssignment(actor, assignedUserId) {
+  if (!actor) return false;
+  const actorId = actor.userId || actor.id;
+  if (actorId && assignedUserId && actorId === assignedUserId) return true;
+  if (actor.role === 'superadmin') return true;
+  if (actor.role !== 'admin' && actor.role !== 'manager') return false;
+  const actorCompany = actor.companyId || 'default';
+  if (actorCompany === 'default') return true;
+  try {
+    const target = await UserStore.getUserById(assignedUserId);
+    const targetCompany = (target?.companyId) || 'default';
+    return actorCompany === targetCompany;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * POST /api/assignments/manager/:managerId/employees
  * Assign employees to a manager (admin only)
@@ -431,11 +451,8 @@ router.get('/:id', authenticate, async (req, res) => {
     const a = all.find(r => r.id === id);
     if (!a) return res.status(404).json({ success: false, error: { message: 'Assignment not found' } });
 
-    // Authorization: employee can only read own assignment
-    const isOwner   = req.user.userId === a.assigned_to_user;
-    const isManager = req.user.role === 'manager';
-    const isAdmin   = req.user.role === 'admin';
-    if (!isOwner && !isManager && !isAdmin) {
+    // Authorization: owner, or same-company admin/manager (superadmin global)
+    if (!(await canAccessAssignment(req.user, a.assigned_to_user))) {
       return res.status(403).json({ success: false, error: { message: 'Forbidden' } });
     }
 
@@ -624,11 +641,7 @@ router.put('/:id', authenticate, async (req, res) => {
       });
     }
 
-    const isOwner   = req.user.userId === (assignment.assigned_to_user || assignment.assignedToUser);
-    const isManager = req.user.role === 'manager';
-    const isAdmin   = req.user.role === 'admin';
-
-    if (!isOwner && !isManager && !isAdmin) {
+    if (!(await canAccessAssignment(req.user, assignment.assigned_to_user || assignment.assignedToUser))) {
       return res.status(403).json({
         success: false,
         data: null,
