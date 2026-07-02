@@ -84,6 +84,10 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
   const definitions = session.definitions || [];
   const notes = session.notes || session.content || '';
   const explanation = session.explanation || '';
+  const learningObjectives = session.learningObjectives || [];
+  const exercise = session.exercise && (session.exercise.instructions || session.exercise.title) ? session.exercise : null;
+  const caseStudy = session.caseStudy && session.caseStudy.scenario ? session.caseStudy : null;
+  const isCapstone = session.type === 'capstone';
 
   return (
     <div className="min-h-screen bg-[#0F172A]">
@@ -102,8 +106,9 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
 
         {/* Header */}
         <div className="mb-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-600/15 border border-indigo-500/25 text-indigo-300 text-xs font-bold mb-3">
-            <span>📚</span> Day {sessionIndex + 1}
+          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold mb-3 ${isCapstone ? 'bg-amber-600/15 border border-amber-500/25 text-amber-300' : 'bg-indigo-600/15 border border-indigo-500/25 text-indigo-300'}`}>
+            <span>{isCapstone ? '🏆' : '📚'}</span> {isCapstone ? `Day ${sessionIndex + 1} · Capstone` : `Day ${sessionIndex + 1}`}
+            {session.duration && <span className="text-slate-400 font-medium">· {session.duration}</span>}
           </div>
           <h1 className="text-3xl font-black text-white mb-3 leading-tight">{title}</h1>
           {description && <p className="text-slate-300 text-base leading-relaxed">{description}</p>}
@@ -111,6 +116,23 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
 
         {/* Content scroll area */}
         <div className="space-y-6" ref={contentRef}>
+          {/* Learning Objectives */}
+          {learningObjectives.length > 0 && (
+            <section className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+              <h2 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                <span>🎯</span> Learning Objectives
+              </h2>
+              <ul className="space-y-1.5">
+                {learningObjectives.map((o, i) => (
+                  <li key={i} className="text-sm text-slate-200 leading-relaxed flex gap-2">
+                    <span className="text-emerald-400 flex-shrink-0">▸</span>
+                    <span>{typeof o === 'string' ? o : JSON.stringify(o)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {/* Definitions */}
           {definitions.length > 0 && (
             <section className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
@@ -173,6 +195,43 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
                 Learning content for <strong className="text-white">{title}</strong> covers the foundational concepts of the module.
                 Complete the knowledge quiz below to progress.
               </p>
+            </section>
+          )}
+
+          {/* Practical Exercise */}
+          {exercise && (
+            <section className="rounded-xl border border-teal-500/20 bg-teal-500/5 p-5">
+              <h2 className="text-xs font-bold text-teal-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                <span>🛠️</span> Practical Exercise
+              </h2>
+              {exercise.title && <p className="text-sm font-bold text-white mb-2">{exercise.title}</p>}
+              {exercise.instructions && <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{exercise.instructions}</p>}
+              {exercise.deliverable && (
+                <div className="mt-3 rounded-lg bg-slate-900/60 border border-teal-500/15 px-3 py-2">
+                  <span className="text-xs font-bold text-teal-400 uppercase tracking-wider">Deliverable: </span>
+                  <span className="text-xs text-slate-300">{exercise.deliverable}</span>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Case Study */}
+          {caseStudy && (
+            <section className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
+              <h2 className="text-xs font-bold text-amber-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                <span>💼</span> Case Study
+              </h2>
+              <p className="text-sm text-slate-200 leading-relaxed italic">"{caseStudy.scenario}"</p>
+              {(caseStudy.discussionPoints || []).length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Think through:</p>
+                  <ul className="space-y-1">
+                    {caseStudy.discussionPoints.map((p, i) => (
+                      <li key={i} className="text-sm text-slate-300 flex gap-2"><span className="text-amber-400 flex-shrink-0">{i + 1}.</span><span>{p}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </section>
           )}
 
