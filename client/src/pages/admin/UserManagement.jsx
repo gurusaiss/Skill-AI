@@ -1964,8 +1964,13 @@ export default function UserManagement() {
     let filtered = q
       ? list.filter(u => u.name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || u.jobRole?.toLowerCase().includes(q) || u.department?.toLowerCase().includes(q))
       : list;
-    if (filterDept !== 'all') filtered = filtered.filter(u => u.department === filterDept);
-    if (filterStatus !== 'all') filtered = filtered.filter(u => (u.status || 'active') === filterStatus);
+    if (activeTab === 'employees') {
+      if (filterDept !== 'all') filtered = filtered.filter(u => u.department === filterDept);
+      if (filterStatus !== 'all') filtered = filtered.filter(u => (u.status || 'active') === filterStatus);
+    } else {
+      // Management tab: filterStatus is used as a role filter
+      if (filterStatus !== 'all') filtered = filtered.filter(u => u.role === filterStatus);
+    }
 
     filtered = [...filtered].sort((a, b) => {
       let aVal, bVal;
@@ -2110,37 +2115,54 @@ export default function UserManagement() {
             </div>
           </div>
 
-          {/* Row 2: Additional filters (Employees tab only) */}
-          {activeTab === 'employees' && (
-            <div className="flex flex-wrap items-center gap-2">
-              <SearchableSelect
-                value={filterDept}
-                onChange={setFilterDept}
-                allLabel="All Departments"
-                options={departments.map(d => ({ value: d, label: d }))}
-              />
-              <SearchableSelect
-                value={filterStatus}
-                onChange={setFilterStatus}
-                allLabel="All Statuses"
-                options={[{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'pending', label: 'Pending' }]}
-              />
-              {(filterDept !== 'all' || filterStatus !== 'all') && (
-                <button onClick={() => { setFilterDept('all'); setFilterStatus('all'); }}
-                  className="px-3 py-2 rounded-xl bg-slate-700/50 border border-slate-600/40 text-xs text-slate-400 font-semibold hover:text-white transition-colors">
-                  ✕ Clear
-                </button>
-              )}
-            </div>
-          )}
+          {/* Row 2: Additional filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            {activeTab === 'employees' ? (
+              <>
+                <SearchableSelect
+                  value={filterDept}
+                  onChange={setFilterDept}
+                  allLabel="All Departments"
+                  options={departments.map(d => ({ value: d, label: d }))}
+                />
+                <SearchableSelect
+                  value={filterStatus}
+                  onChange={setFilterStatus}
+                  allLabel="All Statuses"
+                  options={[{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'pending', label: 'Pending' }]}
+                />
+                {(filterDept !== 'all' || filterStatus !== 'all') && (
+                  <button onClick={() => { setFilterDept('all'); setFilterStatus('all'); }}
+                    className="px-3 py-2 rounded-xl bg-slate-700/50 border border-slate-600/40 text-xs text-slate-400 font-semibold hover:text-white transition-colors">
+                    ✕ Clear
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <SearchableSelect
+                  value={filterStatus}
+                  onChange={setFilterStatus}
+                  allLabel="All Roles"
+                  options={[{ value: 'admin', label: 'Admin' }, { value: 'manager', label: 'Manager' }, { value: 'trainer', label: 'Trainer' }]}
+                />
+                {filterStatus !== 'all' && (
+                  <button onClick={() => setFilterStatus('all')}
+                    className="px-3 py-2 rounded-xl bg-slate-700/50 border border-slate-600/40 text-xs text-slate-400 font-semibold hover:text-white transition-colors">
+                    ✕ Clear
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* Table */}
         {displayedUsers.length === 0 ? (
           <div className="bg-[#111827] border border-slate-700/40 rounded-2xl p-16 text-center shadow-xl">
             <div className="text-5xl mb-4 opacity-20">👤</div>
-            <h3 className="text-lg font-bold text-slate-400 mb-1">{search ? 'No results found' : 'No users yet'}</h3>
-            <p className="text-slate-600 text-sm">{search ? 'Try a different search term' : 'Click "+ Add User" to create the first user'}</p>
+            <h3 className="text-lg font-bold text-slate-400 mb-1">{(search || filterDept !== 'all' || filterStatus !== 'all') ? 'No users match your filters' : 'No users yet'}</h3>
+            <p className="text-slate-600 text-sm">{(search || filterDept !== 'all' || filterStatus !== 'all') ? 'Try adjusting your search or filter options' : 'Click "+ Add User" to create the first user'}</p>
           </div>
         ) : (
           <div className="bg-[#111827] border border-slate-700/40 rounded-2xl overflow-hidden shadow-xl">
