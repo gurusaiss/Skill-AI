@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
+import { useNotification } from '../../contexts/NotificationContext.jsx';
 
 const AGENT_STEPS = [
   { agent: 'GoalAgent', icon: '🎯', color: '#6366F1', text: 'Analyzing learning goal...' },
@@ -15,17 +16,6 @@ const AGENT_STEPS = [
   { agent: 'MarketAgent', icon: '💼', color: '#EC4899', text: 'Analyzing market demand...' },
   { agent: 'InterviewAgent', icon: '🎤', color: '#14B8A6', text: 'Preparing interview scenarios...' },
 ];
-
-const Toast = ({ message, type, onClose }) => {
-  useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [onClose]);
-  const colors = { success: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300', error: 'bg-red-500/15 border-red-500/30 text-red-300', info: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300' };
-  return (
-    <div className={`fixed top-6 right-6 z-[100] flex items-center gap-3 px-5 py-3.5 rounded-xl border backdrop-blur-xl shadow-2xl ${colors[type]}`}>
-      <span className="text-sm font-semibold">{message}</span>
-      <button onClick={onClose} className="ml-2 text-current/50 hover:text-current text-lg leading-none">&times;</button>
-    </div>
-  );
-};
 
 const SkeletonCard = () => (
   <div className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5 animate-pulse">
@@ -674,7 +664,8 @@ export default function ModuleManagement() {
 
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState(null);
+  const { notify } = useNotification();
+  const setToast = ({ message, type = 'info' }) => notify(message, type);
   const [editing, setEditing] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
   const [filterJobRole, setFilterJobRole] = useState('all');
@@ -995,7 +986,7 @@ export default function ModuleManagement() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+}
 
       {/* ── Module List ── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -1029,33 +1020,38 @@ export default function ModuleManagement() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          {/* Category dropdown */}
-          <SearchableSelect value={activeTab} onChange={setActiveTab} allLabel="All Types" options={categories} />
-
-          {/* Job Role dropdown */}
-          <SearchableSelect value={filterJobRole} onChange={setFilterJobRole} allLabel="All Job Roles" options={jobRoles} />
-
-          {/* Assign Type dropdown */}
-          <SearchableSelect value={filterAssignType} onChange={setFilterAssignType} allLabel="All Modules"
-            options={[{ value: 'auto', label: 'Auto Assigned' }, { value: 'manual', label: 'Manual Assigned' }]} />
-
-          {/* Pending Approvals button (kept as special tab) */}
-          <button
-            onClick={() => setActiveTab('pending')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-all ${activeTab === 'pending' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30' : 'bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white'}`}
-          >
-            ⏳ Pending Approvals
-            {pendingCount > 0 && (
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white text-xs font-black">
-                {pendingCount > 9 ? '9+' : pendingCount}
-              </span>
+        {/* Filters */}
+        <div className="space-y-3 mb-6">
+          {/* Row 1: Search */}
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+            <input type="text" placeholder="Search modules by title or description..." value={search} onChange={e => setSearch(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm" />
+          </div>
+          {/* Row 2: Dropdowns + Pending */}
+          <div className="flex flex-wrap items-center gap-3">
+            <SearchableSelect value={activeTab} onChange={setActiveTab} allLabel="All Categories" options={categories} />
+            <SearchableSelect value={filterJobRole} onChange={setFilterJobRole} allLabel="All Job Roles" options={jobRoles} />
+            <SearchableSelect value={filterAssignType} onChange={setFilterAssignType} allLabel="All Assignment Types"
+              options={[{ value: 'auto', label: 'Auto Assigned' }, { value: 'manual', label: 'Manual Assigned' }]} />
+            {(activeTab !== 'all' || filterJobRole !== 'all' || filterAssignType !== 'all') && (
+              <button onClick={() => { setActiveTab('all'); setFilterJobRole('all'); setFilterAssignType('all'); }}
+                className="px-3 py-2 rounded-xl bg-slate-700/50 border border-slate-600/40 text-xs text-slate-400 font-semibold hover:text-white transition-colors">
+                ✕ Clear
+              </button>
             )}
-          </button>
-        </div>
-
-        <div className="mb-4">
-          <input type="text" placeholder="Search modules..." value={search} onChange={e => setSearch(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+            <button
+              onClick={() => setActiveTab('pending')}
+              className={`ml-auto flex items-center gap-2 px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-all ${activeTab === 'pending' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30' : 'bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white'}`}
+            >
+              ⏳ Pending Approvals
+              {pendingCount > 0 && (
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white text-xs font-black">
+                  {pendingCount > 9 ? '9+' : pendingCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* ── Pending Approvals Tab ── */}

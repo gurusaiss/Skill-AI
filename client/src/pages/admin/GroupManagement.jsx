@@ -5,18 +5,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
-
-function Toast({ message, type, onClose }) {
-  useEffect(() => { const t = setTimeout(onClose, 3500); return () => clearTimeout(t); }, [onClose]);
-  return (
-    <div className={`fixed top-5 right-5 z-[200] flex items-center gap-3 px-5 py-3 rounded-xl text-white text-sm font-semibold shadow-2xl border
-      ${type === 'success' ? 'bg-emerald-600/95 border-emerald-500/50' : type === 'error' ? 'bg-red-600/95 border-red-500/50' : 'bg-indigo-600/95 border-indigo-500/50'}`}>
-      <span>{type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ'}</span>
-      <span>{message}</span>
-      <button onClick={onClose} className="ml-2 opacity-60 hover:opacity-100">✕</button>
-    </div>
-  );
-}
+import { useNotification } from '../../contexts/NotificationContext.jsx';
+import SearchableSelect from '../../components/SearchableSelect.jsx';
 
 function StatusBadge({ status }) {
   return (
@@ -337,8 +327,11 @@ export default function GroupManagement() {
   const [managers, setManagers] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState(null);
+  const { notify } = useNotification();
+  const setToast = useCallback(({ message, type = 'info' }) => notify(message, type), [notify]);
   const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterManager, setFilterManager] = useState('all');
   const [modal, setModal] = useState(null); // null | { mode: 'create' } | { mode: 'edit', group } | { mode: 'view', groupId } | { mode: 'delete', group }
 
   const showToast = (message, type = 'success') => setToast({ message, type });
@@ -394,9 +387,16 @@ export default function GroupManagement() {
     fetchAll();
   };
 
-  const filtered = groups.filter(g =>
-    !search || g.name?.toLowerCase().includes(search.toLowerCase()) || g.managerName?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = groups.filter(g => {
+    const q = search.toLowerCase();
+    if (q && !g.name?.toLowerCase().includes(q) && !g.managerName?.toLowerCase().includes(q)) return false;
+    if (filterStatus !== 'all') {
+      const st = g.status || 'active';
+      if (st !== filterStatus) return false;
+    }
+    if (filterManager !== 'all' && g.managerId !== filterManager) return false;
+    return true;
+  });
 
   const activeCount = groups.filter(g => g.status !== 'inactive').length;
   const totalMembers = groups.reduce((sum, g) => sum + (g.employeeIds?.length || g.employeeCount || 0), 0);
@@ -406,7 +406,7 @@ export default function GroupManagement() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+}
 
       {/* Modals */}
       {modal?.mode === 'create' && (
@@ -474,9 +474,9 @@ export default function GroupManagement() {
           ))}
         </div>
 
-        {/* Search */}
-        <div className="mb-5">
-          <div className="relative">
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-5">
+          <div className="relative flex-1">
             <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
             <input
               value={search}
@@ -485,6 +485,24 @@ export default function GroupManagement() {
               className="w-full bg-slate-800/50 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500/60"
             />
           </div>
+          <SearchableSelect
+            value={filterStatus}
+            onChange={setFilterStatus}
+            allLabel="All Statuses"
+            options={[{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]}
+          />
+          <SearchableSelect
+            value={filterManager}
+            onChange={setFilterManager}
+            allLabel="All Managers"
+            options={managers.map(m => ({ value: m.userId || m.id, label: m.name || m.email }))}
+          />
+          {(filterStatus !== 'all' || filterManager !== 'all') && (
+            <button onClick={() => { setFilterStatus('all'); setFilterManager('all'); }}
+              className="px-4 py-2.5 rounded-xl bg-slate-700/50 border border-slate-600/40 text-sm text-slate-400 font-semibold hover:text-white transition-colors whitespace-nowrap">
+              ✕ Clear
+            </button>
+          )}
         </div>
 
         {/* Table */}
@@ -496,8 +514,8 @@ export default function GroupManagement() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-slate-500">
             <div className="text-5xl mb-3">👥</div>
-            <p className="text-sm font-semibold mb-2">{search ? 'No groups match your search.' : 'No groups yet.'}</p>
-            {!search && isAdmin && (
+            <p className="text-sm font-semibold mb-2">{(search || filterStatus !== 'all' || filterManager !== 'all') ? 'No groups match your filters.' : 'No groups yet.'}</p>
+            {!(search || filterStatus !== 'all' || filterManager !== 'all') && isAdmin && (
               <button onClick={() => setModal({ mode: 'create' })} className="mt-2 text-teal-400 hover:text-teal-300 text-sm font-bold underline">
                 Create your first group →
               </button>

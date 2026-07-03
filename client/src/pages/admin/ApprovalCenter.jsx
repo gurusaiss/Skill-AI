@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
+import SearchableSelect from '../../components/SearchableSelect.jsx';
 
 function TypeBadge({ type }) {
   const styles = {
@@ -89,6 +90,8 @@ export default function ApprovalCenter() {
   const [users, setUsers] = useState([]);
   const [modules, setModules] = useState([]);
   const [filterStatus, setFilterStatus] = useState('pending');
+  const [filterType, setFilterType] = useState('all');
+  const [search, setSearch] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -142,8 +145,15 @@ export default function ApprovalCenter() {
   ].sort((a, b) => (b._sortDate || '') > (a._sortDate || '') ? 1 : -1);
 
   const filtered = allRequests.filter(r => {
-    if (filterStatus === 'all') return true;
-    return r.status === filterStatus;
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (filterType !== 'all' && r._type !== filterType) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const requesterName = (r.requesterName || r.requestedBy || r.managerName || '').toLowerCase();
+      const moduleName = (r.moduleName || r.module_name || r.actionType || '').toLowerCase();
+      if (!requesterName.includes(q) && !moduleName.includes(q)) return false;
+    }
+    return true;
   });
 
   const pendingCount = allRequests.filter(r => r.status === 'pending').length;
@@ -277,22 +287,40 @@ export default function ApprovalCenter() {
           ))}
         </div>
 
-        {/* Filter */}
-        <div className="flex gap-2 mb-5">
-          {['pending', 'approved', 'rejected', 'all'].map(s => (
-            <button
-              key={s}
-              onClick={() => setFilterStatus(s)}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all capitalize ${
-                filterStatus === s
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-          <span className="ml-auto text-slate-500 text-sm self-center">{filtered.length} requests</span>
+        {/* Filters */}
+        <div className="space-y-3 mb-5">
+          {/* Search */}
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search by requester name or module…"
+              className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 transition-colors" />
+          </div>
+          {/* Status + Type + Count */}
+          <div className="flex flex-wrap items-center gap-2">
+            {['pending', 'approved', 'rejected', 'all'].map(s => (
+              <button key={s} onClick={() => setFilterStatus(s)}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all capitalize ${filterStatus === s ? 'bg-indigo-600 text-white' : 'bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white'}`}>
+                {s}
+              </button>
+            ))}
+            <SearchableSelect
+              value={filterType}
+              onChange={setFilterType}
+              allLabel="All Types"
+              options={[
+                { value: 'assignment_request', label: 'Module Assignment' },
+                { value: 'approval_request', label: 'Approval Request' },
+              ]}
+            />
+            {(search || filterType !== 'all') && (
+              <button onClick={() => { setSearch(''); setFilterType('all'); }}
+                className="px-3 py-2 rounded-lg bg-slate-700/50 border border-slate-600/40 text-xs text-slate-400 font-semibold hover:text-white transition-colors">
+                ✕ Clear
+              </button>
+            )}
+            <span className="ml-auto text-slate-500 text-sm self-center">{filtered.length} requests</span>
+          </div>
         </div>
 
         {/* Requests List */}
@@ -305,7 +333,9 @@ export default function ApprovalCenter() {
           <div className="text-center py-16 text-slate-500">
             <div className="text-4xl mb-3">✅</div>
             <p className="text-sm font-semibold">
-              {filterStatus === 'pending' ? 'No pending requests.' : `No ${filterStatus} requests.`}
+              {search || filterType !== 'all'
+                ? 'No requests match your filters.'
+                : filterStatus === 'pending' ? 'No pending requests.' : `No ${filterStatus} requests.`}
             </p>
           </div>
         ) : (

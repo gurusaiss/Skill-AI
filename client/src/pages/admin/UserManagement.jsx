@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
+import { useNotification } from '../../contexts/NotificationContext.jsx';
+import SearchableSelect from '../../components/SearchableSelect.jsx';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -43,19 +45,6 @@ function getAvatarColor(role) {
   return 'bg-emerald-600/30 border-emerald-500/40 text-emerald-300';
 }
 
-// ─── Toast ───────────────────────────────────────────────────────────────────
-
-function Toast({ message, type, onClose }) {
-  useEffect(() => { const t = setTimeout(onClose, 3500); return () => clearTimeout(t); }, [onClose]);
-  return (
-    <div className={`fixed top-5 right-5 z-[200] flex items-center gap-3 px-5 py-3 rounded-xl text-white text-sm font-semibold shadow-2xl border
-      ${type === 'success' ? 'bg-emerald-600/95 border-emerald-500/50' : 'bg-red-600/95 border-red-500/50'}`}>
-      <span>{type === 'success' ? '✓' : '✕'}</span>
-      <span>{message}</span>
-      <button onClick={onClose} className="ml-2 opacity-70 hover:opacity-100">✕</button>
-    </div>
-  );
-}
 
 function SortIcon({ column, sortBy, sortDir }) {
   if (sortBy !== column) return <span className="text-slate-600 ml-1">⇅</span>;
@@ -1891,9 +1880,12 @@ export default function UserManagement() {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState(null);
-  const [toast, setToast] = useState(null);
+  const { notify } = useNotification();
+  const setToast = useCallback(({ message, type = 'info' }) => notify(message, type), [notify]);
   const [activeTab, setActiveTab] = useState('employees');
   const [search, setSearch] = useState('');
+  const [filterDept, setFilterDept] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
   const [detailUser, setDetailUser] = useState(null);
@@ -1964,12 +1956,16 @@ export default function UserManagement() {
 
   const getUserAssignments = (userId) => assignments.filter(a => a.employeeId === userId || a.userId === userId);
 
+  const departments = useMemo(() => [...new Set(employeeUsers.map(u => u.department).filter(Boolean))].sort(), [employeeUsers]);
+
   const displayedUsers = useMemo(() => {
     const list = activeTab === 'staff' ? staffUsers : employeeUsers;
     const q = search.toLowerCase();
     let filtered = q
       ? list.filter(u => u.name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || u.jobRole?.toLowerCase().includes(q) || u.department?.toLowerCase().includes(q))
       : list;
+    if (filterDept !== 'all') filtered = filtered.filter(u => u.department === filterDept);
+    if (filterStatus !== 'all') filtered = filtered.filter(u => (u.status || 'active') === filterStatus);
 
     filtered = [...filtered].sort((a, b) => {
       let aVal, bVal;
@@ -1989,7 +1985,7 @@ export default function UserManagement() {
       return 0;
     });
     return filtered;
-  }, [users, assignments, activeTab, search, sortBy, sortDir]);
+  }, [users, assignments, activeTab, search, filterDept, filterStatus, sortBy, sortDir]);
 
   const handleSort = (col) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -2016,8 +2012,6 @@ export default function UserManagement() {
 
   return (
     <div className="min-h-screen bg-[#0F172A]">
-      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-
       {detailUser && (
         <DetailModal user={detailUser} assignments={assignments} onClose={() => setDetailUser(null)}
           onEdit={u => { setDetailUser(null); setEditUser(u); }}
@@ -2084,49 +2078,61 @@ export default function UserManagement() {
           </div>
         </div>
 
-        {/* Job Role Distribution */}
-        {roleCounts.length > 0 && (
-          <div className="mb-5 p-3 bg-slate-800/50 border border-slate-700/50 rounded-xl">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Job Role Distribution</p>
-            <div className="flex flex-wrap gap-2">
-              {roleCounts.map(([role, count]) => (
-                <span key={role} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
-                  {role}
-                  <span className="bg-indigo-500/30 text-indigo-200 rounded-full px-1.5 py-0.5 text-xs font-bold leading-none">{count}</span>
-                </span>
+        {/* Controls */}
+        <div className="space-y-3 mb-5">
+          {/* Row 1: Tabs + Search + Count */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex bg-slate-800/60 border border-slate-700/60 rounded-xl p-1 gap-1">
+              {[
+                { id: 'employees', label: 'Employees', count: employeeUsers.length },
+                { id: 'staff', label: 'Management', count: staffUsers.length },
+              ].map(tab => (
+                <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSortBy('name'); setSearch(''); setFilterDept('all'); setFilterStatus('all'); }}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white'}`}>
+                  {tab.label}
+                  <span className={`px-1.5 py-0.5 rounded-md text-xs ${activeTab === tab.id ? 'bg-indigo-500/50' : 'bg-slate-700 text-slate-500'}`}>{tab.count}</span>
+                </button>
               ))}
             </div>
-          </div>
-        )}
 
-        {/* Controls */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-5">
-          <div className="flex bg-slate-800/60 border border-slate-700/60 rounded-xl p-1 gap-1">
-            {[
-              { id: 'employees', label: 'Employees', count: employeeUsers.length },
-              { id: 'staff', label: 'Staff', count: staffUsers.length },
-            ].map(tab => (
-              <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSortBy('name'); setSearch(''); }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white'}`}>
-                {tab.label}
-                <span className={`px-1.5 py-0.5 rounded-md text-xs ${activeTab === tab.id ? 'bg-indigo-500/50' : 'bg-slate-700 text-slate-500'}`}>{tab.count}</span>
+            <div className="flex-1 relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Search name, email, job role, department…"
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-800 border border-slate-700/60 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 transition-colors" />
+            </div>
+
+            <div className="flex items-center gap-2 text-slate-500 text-sm whitespace-nowrap">
+              <span>{displayedUsers.length} shown</span>
+              <button onClick={fetchData} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-700/50 bg-slate-800/40 hover:bg-slate-700/50 hover:text-white transition-all text-xs font-medium">
+                <span className={loading ? 'animate-spin' : ''}>↻</span> Refresh
               </button>
-            ))}
+            </div>
           </div>
 
-          <div className="flex-1 relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search name, email, job role, department…"
-              className="w-full pl-9 pr-4 py-2.5 bg-slate-800 border border-slate-700/60 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 transition-colors" />
-          </div>
-
-          <div className="flex items-center gap-2 text-slate-500 text-sm whitespace-nowrap">
-            <span>{displayedUsers.length} shown</span>
-            <button onClick={fetchData} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-700/50 bg-slate-800/40 hover:bg-slate-700/50 hover:text-white transition-all text-xs font-medium">
-              <span className={loading ? 'animate-spin' : ''}>↻</span> Refresh
-            </button>
-          </div>
+          {/* Row 2: Additional filters (Employees tab only) */}
+          {activeTab === 'employees' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <SearchableSelect
+                value={filterDept}
+                onChange={setFilterDept}
+                allLabel="All Departments"
+                options={departments.map(d => ({ value: d, label: d }))}
+              />
+              <SearchableSelect
+                value={filterStatus}
+                onChange={setFilterStatus}
+                allLabel="All Statuses"
+                options={[{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'pending', label: 'Pending' }]}
+              />
+              {(filterDept !== 'all' || filterStatus !== 'all') && (
+                <button onClick={() => { setFilterDept('all'); setFilterStatus('all'); }}
+                  className="px-3 py-2 rounded-xl bg-slate-700/50 border border-slate-600/40 text-xs text-slate-400 font-semibold hover:text-white transition-colors">
+                  ✕ Clear
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Table */}
