@@ -72,15 +72,17 @@ function Navbar() {
     || location.pathname === '/demo'
     || location.pathname.startsWith('/module/');
 
+  // Canonical order (standardized platform-wide): Dashboard, Role Library, Users,
+  // Groups, Assessments, Modules, Assignments, Reports, AI Metrics.
   const NAV_LINKS = [
     { to: '/admin/dashboard',   label: 'Dashboard',   icon: '📊', roles: ['admin'] },
+    { to: '/admin/roles',       label: 'Role Library', icon: '🗂️', roles: ['admin'] },
     { to: '/admin/users',       label: 'Users',       icon: '👥', roles: ['admin'] },
+    { to: '/admin/groups',      label: 'Groups',      icon: '👥', roles: ['admin'] },
     { to: '/admin/assessments', label: 'Assessment',  icon: '📝', roles: ['admin', 'manager'] },
     { to: '/admin/modules',     label: 'Modules',     icon: '📚', roles: ['admin', 'manager'] },
     { to: '/admin/assignments', label: 'Assignments', icon: '📋', roles: ['admin', 'manager'] },
     { to: '/report',            label: 'Reports',     icon: '📄', roles: ['admin', 'manager'] },
-    { to: '/admin/roles',          label: 'Role Library',   icon: '🗂️', roles: ['admin'] },
-    { to: '/admin/groups',      label: 'Groups',      icon: '👥', roles: ['admin'] },
     { to: '/admin/metrics',     label: 'AI Metrics',  icon: '📈', roles: ['admin'] },
   ];
 
@@ -92,13 +94,13 @@ function Navbar() {
     ],
     manager: [
       { to: '/manager/dashboard',  label: 'Dashboard',     icon: '📊' },
+      { to: '/admin/roles',        label: 'Role Library',  icon: '🎯' },
       { to: '/admin/users',        label: 'Users',         icon: '👥' },
+      { to: '/admin/groups',       label: 'Groups',        icon: '🗂️' },
       { to: '/admin/assessments',  label: 'Assessments',   icon: '📝' },
       { to: '/admin/modules',      label: 'Modules',       icon: '📚' },
       { to: '/admin/assignments',  label: 'Assignments',   icon: '📋' },
       { to: '/report',             label: 'Reports',       icon: '📄' },
-      { to: '/admin/roles',        label: 'Role Library',  icon: '🎯' },
-      { to: '/admin/groups',       label: 'Groups',        icon: '🗂️' },
     ],
     employee: [
       { to: '/dashboard',           label: 'My Learning', icon: '📚' },

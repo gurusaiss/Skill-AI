@@ -1230,15 +1230,16 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
 
 // ─── Bulk Import Modal ────────────────────────────────────────────────────────
 
-const IMPORT_TEMPLATE_CSV = `name,email,system_role,employee_id,job_role,department,job_description,company_name,password,phone,manager_email
+const IMPORT_TEMPLATE_CSV = `name,email,system_role,employee_id,job_role_1,job_role_2,job_role_3,job_role_4,department,job_description,company_name,password,phone,manager_email
 # MANDATORY: name, email
-# OPTIONAL: system_role (admin/manager/employee - default: employee), employee_id, job_role, department, job_description, company_name, password, phone, manager_email
+# OPTIONAL: system_role (admin/manager/employee - default: employee), employee_id, job_role_1 (primary), job_role_2/3/4 (additional — leave blank if not needed), department, job_description, company_name, password, phone, manager_email
 # IMMUTABLE (never changes after creation): email
+# job_role_1 becomes the primary job role. job_role_2/3/4 are added as additional job roles, in order, and each triggers its own auto-assessment just like adding a role manually.
 # If email already exists -> existing user will be UPDATED with the provided fields
 # If email is new -> a new user will be CREATED
-Jane Smith,jane@company.com,employee,EMP001,Frontend Developer,Engineering,Builds React UIs,Acme Corp,,+91-9876543210,
-John Doe,john@company.com,employee,EMP002,Data Analyst,Analytics,Analyzes business data,Acme Corp,,+91-9123456789,
-Sara Lee,sara@company.com,manager,MGR001,Engineering Manager,Engineering,Leads frontend team,Acme Corp,,,
+Jane Smith,jane@company.com,employee,EMP001,Frontend Developer,,,,Engineering,Builds React UIs,Acme Corp,,+91-9876543210,
+John Doe,john@company.com,employee,EMP002,Data Analyst,Reporting Specialist,,,Analytics,Analyzes business data,Acme Corp,,+91-9123456789,
+Sara Lee,sara@company.com,manager,MGR001,Engineering Manager,,,,Engineering,Leads frontend team,Acme Corp,,,
 `;
 
 function ImportModal({ onClose, onImported, setToast }) {
@@ -2170,9 +2171,14 @@ export default function UserManagement() {
                         {activeTab === 'employees' ? (
                           <>
                             <td className="py-3 px-4">
-                              {u.jobRole
-                                ? <span className="px-2 py-0.5 rounded-lg text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/25">{u.jobRole}</span>
-                                : <span className="text-slate-600 text-xs italic">—</span>}
+                              {u.jobRole ? (
+                                <div className="flex flex-wrap gap-1 max-w-[220px]">
+                                  <span className="px-2 py-0.5 rounded-lg text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/25" title="Primary job role">{u.jobRole}</span>
+                                  {(u.additionalJobRoles || []).map(r => (
+                                    <span key={r.id || r.roleName} className="px-2 py-0.5 rounded-lg text-xs font-medium bg-slate-700/40 text-slate-300 border border-slate-600/40" title="Additional job role">{r.roleName}</span>
+                                  ))}
+                                </div>
+                              ) : <span className="text-slate-600 text-xs italic">—</span>}
                             </td>
                             <td className="py-3 px-4"><span className="text-slate-400 text-sm">{u.department || '—'}</span></td>
                             <td className="py-3 px-4">

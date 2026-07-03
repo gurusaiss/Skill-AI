@@ -143,6 +143,10 @@ const COL_MAP = {
   role: 'role', user_role: 'role', system_role: 'role', 'system role': 'role', 'system_role': 'role',
   employee_id: 'employeeId', 'employee id': 'employeeId', employeeid: 'employeeId', emp_id: 'employeeId',
   job_role: 'jobRole', jobrole: 'jobRole', 'job role': 'jobRole', position: 'jobRole', title: 'jobRole',
+  job_role_1: 'jobRole', 'job role 1': 'jobRole', jobrole1: 'jobRole',
+  job_role_2: 'jobRole2', 'job role 2': 'jobRole2', jobrole2: 'jobRole2',
+  job_role_3: 'jobRole3', 'job role 3': 'jobRole3', jobrole3: 'jobRole3',
+  job_role_4: 'jobRole4', 'job role 4': 'jobRole4', jobrole4: 'jobRole4',
   department: 'department', dept: 'department',
   job_description: 'jobDescription', 'job description': 'jobDescription', jd: 'jobDescription',
   company_name: 'companyName', 'company name': 'companyName', company: 'companyName',
@@ -206,6 +210,7 @@ function sanitizeUser(user) {
     jdSourceUrl: user.jdSourceUrl || '',
     jdSourceType: user.jdSourceType || 'text',
     accesses: user.accesses || [],
+    additionalJobRoles: user.additionalJobRoles || [],
   };
 }
 
@@ -1135,7 +1140,17 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
           if (Object.keys(updateFields).length > 0) {
             await UserStore.updateUser(existingUser.userId || existingUser.id, updateFields);
           }
-          updated.push({ userId: existingUser.userId || existingUser.id, email: existingUser.email, name: existingUser.name, updated: Object.keys(updateFields) });
+
+          // Additional job roles (job_role_2/3/4) — same behavior as manually
+          // adding a role: appended in order, each triggers its own assessment.
+          const extraRoleNames = [row.jobRole2, row.jobRole3, row.jobRole4].filter(Boolean);
+          const addedExtraRoles = [];
+          for (const roleName of extraRoleNames) {
+            const { role } = await addAdditionalJobRole(existingUser, { roleName }, req.user.userId);
+            if (role) addedExtraRoles.push(role.roleName);
+          }
+
+          updated.push({ userId: existingUser.userId || existingUser.id, email: existingUser.email, name: existingUser.name, updated: Object.keys(updateFields), additionalRolesAdded: addedExtraRoles });
           continue;
         } catch (e) {
           failed.push({ row, reason: e.message });
@@ -1172,6 +1187,13 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
 
         existingEmails.add(row.email.toLowerCase());
         UserStore.updateUser(user.userId, { mustChangePassword: true }).catch(() => {});
+
+        // Additional job roles (job_role_2/3/4) — order preserved, primary
+        // (job_role_1) is already set above via createUser's jobRole field.
+        const extraRoleNames = [row.jobRole2, row.jobRole3, row.jobRole4].filter(Boolean);
+        for (const roleName of extraRoleNames) {
+          await addAdditionalJobRole(user, { roleName }, req.user.userId).catch(() => {});
+        }
 
         // Activation link — an alternate path to the same outcome as the temp
         // password: either credential lets the user log in and set a real password.
@@ -1512,6 +1534,82 @@ router.get('/:userId/job-roles', authenticate, async (req, res) => {
  * POST /api/users/:userId/job-roles
  * Add an additional job role and trigger assessment workflow
  */
+// Shared by the manual "Add Job Role" endpoint and bulk import (job_role_2/3/4
+// columns) — behaves identically either way, per the "must work exactly like
+// manual assignment" requirement. Returns the new role, or null if it was a
+// no-op (missing name / duplicate) — callers decide whether that's an error.
+async function addAdditionalJobRole(user, { roleName, department, jobDescription, jdSkills }, actorUserId) {
+  if (!roleName?.trim()) return { role: null, reason: 'roleName is required' };
+
+  const existing = user.additionalJobRoles || [];
+  if (existing.some(r => r.roleName?.toLowerCase() === roleName.toLowerCase())
+      || (user.jobRole || '').toLowerCase() === roleName.toLowerCase()) {
+    return { role: null, reason: 'duplicate' };
+  }
+
+  const newRole = {
+    id: `role_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    roleName: roleName.trim(),
+    department: department || '',
+    jobDescription: jobDescription || '',
+    jdSkills: Array.isArray(jdSkills) ? jdSkills : [],
+    addedAt: new Date().toISOString(),
+    addedBy: actorUserId,
+  };
+
+  const updatedRoles = [...existing, newRole];
+  await UserStore.updateUser(user.userId, { additionalJobRoles: updatedRoles });
+  user.additionalJobRoles = updatedRoles; // keep in-memory copy in sync for subsequent calls in the same request
+
+  // Fire-and-forget: trigger assessment workflow for this new role
+  if (jobDescription?.trim()) {
+    (async () => {
+      try {
+        const { generateQuestionsFromJD } = await import('../services/AssessmentGenerator.js');
+        const { Assessments } = await import('../services/DataStore.js');
+        const { randomUUID } = await import('crypto');
+
+        const questions = await generateQuestionsFromJD({
+          jobRole: roleName,
+          jobDescription,
+          jdSkills: newRole.jdSkills,
+          questionCount: 20,
+          questionTypes: ['mcq', 'fill_blank', 'subjective'],
+          employeeSeed: user.userId.slice(-6),
+        });
+
+        const assessmentId = randomUUID();
+        const assessment = {
+          id: assessmentId,
+          title: `${roleName} Assessment`,
+          companyId: user.companyId || 'default',
+          createdBy: actorUserId,
+          createdAt: new Date().toISOString(),
+          status: 'active',
+          jobRole: roleName,
+          targetRole: roleName,
+          questionCount: questions.length,
+          duration: 30,
+          employeeAssignments: [{
+            userId: user.userId,
+            jobRole: roleName,
+            status: 'assigned',
+            questions,
+            assignedAt: new Date().toISOString(),
+            additionalRoleId: newRole.id,
+          }],
+        };
+        await Assessments.create(assessment);
+        console.log(`[job-roles] Auto-assessment created for user=${user.userId} role=${roleName}`);
+      } catch (e) {
+        console.error('[job-roles] Auto-assessment failed:', e.message);
+      }
+    })();
+  }
+
+  return { role: newRole, reason: null };
+}
+
 router.post('/:userId/job-roles', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1521,72 +1619,13 @@ router.post('/:userId/job-roles', authenticate, requireRole('admin', 'manager'),
     const user = await UserStore.getUserById(userId);
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
 
-    const existing = user.additionalJobRoles || [];
-    // Prevent duplicates
-    if (existing.some(r => r.roleName?.toLowerCase() === roleName.toLowerCase())) {
-      return res.status(409).json({ success: false, error: 'This job role is already assigned to the user' });
+    const { role, reason } = await addAdditionalJobRole(user, { roleName, department, jobDescription, jdSkills }, req.user.userId);
+    if (!role) {
+      if (reason === 'duplicate') return res.status(409).json({ success: false, error: 'This job role is already assigned to the user' });
+      return res.status(400).json({ success: false, error: reason || 'Failed to add job role' });
     }
 
-    const newRole = {
-      id: `role_${Date.now()}`,
-      roleName: roleName.trim(),
-      department: department || '',
-      jobDescription: jobDescription || '',
-      jdSkills: Array.isArray(jdSkills) ? jdSkills : [],
-      addedAt: new Date().toISOString(),
-      addedBy: req.user.userId,
-    };
-
-    const updatedRoles = [...existing, newRole];
-    await UserStore.updateUser(userId, { additionalJobRoles: updatedRoles });
-
-    // Fire-and-forget: trigger assessment workflow for this new role
-    if (jobDescription?.trim()) {
-      (async () => {
-        try {
-          const { generateQuestionsFromJD } = await import('../services/AssessmentGenerator.js');
-          const { Assessments } = await import('../services/DataStore.js');
-          const { randomUUID } = await import('crypto');
-
-          const questions = await generateQuestionsFromJD({
-            jobRole: roleName,
-            jobDescription,
-            jdSkills: newRole.jdSkills,
-            questionCount: 20,
-            questionTypes: ['mcq', 'fill_blank', 'subjective'],
-            employeeSeed: userId.slice(-6),
-          });
-
-          const assessmentId = randomUUID();
-          const assessment = {
-            id: assessmentId,
-            title: `${roleName} Assessment`,
-            companyId: user.companyId || 'default',
-            createdBy: req.user.userId,
-            createdAt: new Date().toISOString(),
-            status: 'active',
-            jobRole: roleName,
-            targetRole: roleName,
-            questionCount: questions.length,
-            duration: 30,
-            employeeAssignments: [{
-              userId,
-              jobRole: roleName,
-              status: 'assigned',
-              questions,
-              assignedAt: new Date().toISOString(),
-              additionalRoleId: newRole.id,
-            }],
-          };
-          await Assessments.create(assessment);
-          console.log(`[job-roles] Auto-assessment created for user=${userId} role=${roleName}`);
-        } catch (e) {
-          console.error('[job-roles] Auto-assessment failed:', e.message);
-        }
-      })();
-    }
-
-    res.json({ success: true, data: { role: newRole, message: 'Job role added. Assessment workflow triggered.' } });
+    res.json({ success: true, data: { role, message: 'Job role added. Assessment workflow triggered.' } });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }

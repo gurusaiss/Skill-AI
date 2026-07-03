@@ -801,7 +801,14 @@ router.post('/:id/approve-assessment', authenticate, requireRole('admin', 'manag
     const { Assessments: AssessmentsStore } = await import('../services/DataStore.js');
     const saved = await AssessmentsStore.create(newAssessment);
     console.log(`[approve-assessment] Created assessment for role "${role.roleName}" → ${targets.length} employees`);
-    res.status(201).json({ success: true, data: saved || newAssessment, employeeCount: targets.length });
+
+    // Persist approval on the role itself — this is the durable state the
+    // frontend's row highlight reflects (survives refresh/logout), replacing
+    // the old client-only "Assessment Ready" flag that never touched the DB.
+    const roleApproval = { approved: true, approvedAt: assignedAt, approvedBy: req.user.userId };
+    await RoleLibrary.update(role.id, { ...roleApproval, lastApprovedAssessmentId: newAssessment.id, updatedAt: assignedAt });
+
+    res.status(201).json({ success: true, data: saved || newAssessment, employeeCount: targets.length, roleApproval });
   } catch (e) {
     console.error('[POST /api/roles/:id/approve-assessment]', e);
     res.status(500).json({ success: false, error: e.message });

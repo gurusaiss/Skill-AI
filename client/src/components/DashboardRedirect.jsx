@@ -8,7 +8,10 @@ export default function DashboardRedirect() {
 
   useEffect(() => {
     if (!user) {
-      navigate('/');
+      // replace (not push) — otherwise Back from the eventual dashboard route
+      // has to skip through this bounce page, making Back feel like it jumps
+      // two pages instead of returning to the page the user was actually on.
+      navigate('/', { replace: true });
       return;
     }
     const route = getDashboardRoute();

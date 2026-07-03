@@ -643,7 +643,7 @@ function ApproveModal({ role, onClose }) {
       });
       const count = res?.employeeCount ?? res?.data?.employeeAssignments?.length ?? 0;
       toast(`Assessment approved & assigned to ${count} employee${count !== 1 ? 's' : ''}`);
-      onClose(true);
+      onClose(res?.roleApproval || true);
     } catch (e) {
       toast(e.message || 'Failed to approve assessment', 'error');
     } finally {
@@ -810,20 +810,18 @@ export default function RoleLibrary() {
             </thead>
             <tbody>
               {filtered.map((role, i) => (
-                <tr key={role.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${role.assessmentTemplateId ? 'bg-emerald-900/10 border-l-2 border-l-emerald-500/50' : (i % 2 === 0 ? '' : 'bg-slate-800/20')}`}>
-                  <td className="px-4 py-3 font-medium text-white">{role.roleName}</td>
+                <tr key={role.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${role.approved ? 'bg-emerald-900/15 border-l-4 border-l-emerald-500' : (i % 2 === 0 ? '' : 'bg-slate-800/20')}`} title={role.approved && role.approvedAt ? `Approved ${new Date(role.approvedAt).toLocaleString()}` : undefined}>
+                  <td className="px-4 py-3 font-medium text-white">
+                    <span className="flex items-center gap-2">
+                      {role.approved && <span className="text-emerald-400" title="Approved">✓</span>}
+                      {role.roleName}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-slate-400">{role.department || '—'}</td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-col gap-1">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold w-fit ${role.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-600'}`}>
-                        {role.status}
-                      </span>
-                      {role.assessmentTemplateId && (
-                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold w-fit bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                          ✓ Assessment Ready
-                        </span>
-                      )}
-                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold w-fit ${role.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-600'}`}>
+                      {role.status}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1.5 flex-wrap">
@@ -881,9 +879,10 @@ export default function RoleLibrary() {
       {approveRole && (
         <ApproveModal
           role={approveRole}
-          onClose={(approved) => {
-            if (approved) {
-              setRoles(prev => prev.map(r => r.id === approveRole.id ? { ...r, assessmentTemplateId: 'approved' } : r));
+          onClose={(result) => {
+            if (result) {
+              const approval = typeof result === 'object' ? result : { approved: true, approvedAt: new Date().toISOString() };
+              setRoles(prev => prev.map(r => r.id === approveRole.id ? { ...r, ...approval } : r));
             }
             setApproveRole(null);
           }}
