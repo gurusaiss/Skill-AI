@@ -8,13 +8,16 @@ const RATE_LIMIT_MS = 2 * 60 * 1000; // 2 minutes (reduced from 15)
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isAuthenticated, getDashboardRoute } = useAuth();
+  const { login, completePasswordChange, isAuthenticated, getDashboardRoute } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [forcedChange, setForcedChange] = useState(null); // { email, currentPassword } while awaiting new password
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState(() => {
     const stored = localStorage.getItem(RATE_LIMIT_KEY);
@@ -112,10 +115,15 @@ export default function Login() {
 
     setLoading(true);
     try {
-      await login(email, password);
+      const result = await login(email, password);
       // Clear any lockout state on successful login
       setFailedAttempts(0);
       localStorage.removeItem(RATE_LIMIT_KEY);
+      if (result?.requiresPasswordChange) {
+        setForcedChange({ email: result.email || email, currentPassword: password });
+        setLoading(false);
+        return;
+      }
       const redirectPath = location.state?.from || getDashboardRoute();
       navigate(redirectPath, { replace: true });
     } catch (err) {
@@ -136,6 +144,23 @@ export default function Login() {
           setError(msg);
         }
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompletePasswordChange = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (newPassword.length < 8) { setError('New password must be at least 8 characters'); return; }
+    if (newPassword !== confirmNewPassword) { setError('Passwords do not match'); return; }
+    setLoading(true);
+    try {
+      await completePasswordChange(forcedChange.email, forcedChange.currentPassword, newPassword);
+      const redirectPath = location.state?.from || getDashboardRoute();
+      navigate(redirectPath, { replace: true });
+    } catch (err) {
+      setError(err.message || 'Failed to update password');
     } finally {
       setLoading(false);
     }
@@ -169,6 +194,58 @@ export default function Login() {
 
         {/* Login Card */}
         <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 backdrop-blur p-8">
+          {forcedChange ? (
+            <>
+              <div className="mb-6 p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-sm">
+                🔐 For your security, please create a new password before continuing.
+              </div>
+              {error && (
+                <div className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex items-start gap-2">
+                  <span className="mt-0.5 flex-shrink-0">⚠️</span><span>{error}</span>
+                </div>
+              )}
+              <form onSubmit={handleCompletePasswordChange} className="space-y-5">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">New Password</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    placeholder="At least 8 characters"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-40"
+                    disabled={loading}
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">Confirm New Password</label>
+                  <input
+                    type="password"
+                    value={confirmNewPassword}
+                    onChange={e => setConfirmNewPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-40"
+                    disabled={loading}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
+                >
+                  {loading ? '⏳ Updating…' : 'Set New Password & Continue'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setForcedChange(null); setPassword(''); setNewPassword(''); setConfirmNewPassword(''); setError(''); }}
+                  className="w-full text-center text-sm text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  ← Back to login
+                </button>
+              </form>
+            </>
+          ) : (
+          <>
           {/* Success Message */}
           {successMessage && (
             <div className="mb-6 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
@@ -270,6 +347,8 @@ export default function Login() {
               Sign up
             </Link>
           </div>
+          </>
+          )}
         </div>
 
         {/* Back to Home */}

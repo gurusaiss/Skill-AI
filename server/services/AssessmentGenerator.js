@@ -9,7 +9,10 @@ import { randomUUID } from 'crypto';
 // to any already-seen question (simple normalized-token overlap check)
 function deduplicateQuestions(questions) {
   const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean);
+  const normOpt = (o) => (o || '').toLowerCase().replace(/^[a-d]\)\s*/i, '').trim();
   const seen = [];
+  const seenOptionSets = new Set(); // catches identical MCQ option sets reused across different questions
+  const seenAnswers = new Set();    // catches identical fill_blank/subjective answers reused verbatim
   return questions.filter(q => {
     if (!q || !q.question) return false;
     const tokens = new Set(normalize(q.question));
@@ -19,10 +22,19 @@ function deduplicateQuestions(questions) {
       const union = new Set([...tokens, ...prevTokens]).size;
       if (union > 0 && intersection / union > 0.70) return false; // too similar
     }
-    // Reject duplicate options within the same question
     if (Array.isArray(q.options) && q.options.length) {
-      const normOpts = q.options.map(o => (o || '').toLowerCase().replace(/^[a-d]\)\s*/i, '').trim());
+      const normOpts = q.options.map(normOpt);
+      // Reject duplicate options within the same question
       if (new Set(normOpts).size !== normOpts.length) return false;
+      // Reject if this exact option set has already appeared on a different question
+      // (guards against templated fallback content reusing the same generic choices)
+      const optionSetKey = [...normOpts].sort().join('|');
+      if (optionSetKey && seenOptionSets.has(optionSetKey)) return false;
+      seenOptionSets.add(optionSetKey);
+    } else if (q.answer && (q.type === 'fill_blank' || q.type === 'subjective')) {
+      const answerKey = (q.answer || '').toLowerCase().trim();
+      if (answerKey && seenAnswers.has(answerKey)) return false;
+      seenAnswers.add(answerKey);
     }
     seen.push(q);
     return true;
@@ -46,13 +58,18 @@ function mergeUnique(pool, batch) {
 function mergeFallbackUnique(pool, batch) {
   if (!Array.isArray(batch) || batch.length === 0) return pool;
   const seen = new Set(pool.map(q => (q.question || '').trim().toLowerCase()));
+  const seenOptionSets = new Set(pool.filter(q => q.options?.length).map(q => q.options.map(o => o.toLowerCase()).sort().join('|')));
   const additions = [];
   for (const q of batch) {
     const key = (q.question || '').trim().toLowerCase();
-    if (key && !seen.has(key)) {
-      seen.add(key);
-      additions.push(q);
+    if (!key || seen.has(key)) continue;
+    if (q.options?.length) {
+      const optKey = q.options.map(o => o.toLowerCase()).sort().join('|');
+      if (seenOptionSets.has(optKey)) continue; // reject — identical option set already used
+      seenOptionSets.add(optKey);
     }
+    seen.add(key);
+    additions.push(q);
   }
   return [...pool, ...additions];
 }
@@ -131,7 +148,9 @@ ABSOLUTE RULES:
 6. Never generate software coding or engineering architecture questions unless the JD explicitly lists programming as a requirement.
 7. Always return valid JSON with exactly a "questions" array.
 8. QUESTION WORDING — CRITICAL: At most 1 out of every 10 questions may begin with "As a [role]", "In your role as", "While working as", or "As an [role]". The other 9+ questions must open naturally — ask directly about the concept, situation, scenario, or decision. Write questions like a real corporate assessment, not like a role-play prompt.
-9. NO DUPLICATE QUESTIONS: Every question must test a different concept, situation, or scenario. No two questions may have the same meaning, even if the wording differs. No duplicate answer options.`;
+9. NO DUPLICATE QUESTIONS: Every question must test a different concept, situation, or scenario. No two questions may have the same meaning, even if the wording differs. No duplicate answer options.
+10. NO CROSS-DIFFICULTY REPEATS: A concept/scenario tested at Easy must not reappear (even reworded, or "applied" instead of "explained") at Medium or Hard, and vice versa. Each difficulty tier must cover DIFFERENT scenarios and concepts from the JD — not the same scenario retold at increasing complexity. Plan the full set of distinct scenarios FIRST, then assign each one to exactly one difficulty tier.
+11. NO REPEATED MCQ OPTION SETS: Do not reuse the same four answer choices (even reworded) across different questions — every MCQ's option set must be unique to that question.`;
 }
 
 function buildUserPrompt({ count, jobRole, jdText, skillsList, types, seed }) {
@@ -290,18 +309,22 @@ const FALLBACK_TEMPLATES = {
 };
 
 const FALLBACK_FILL_TEMPLATES = [
-  (s) => [`A key outcome of effective ${s} is ______.`, 'consistent, measurable, and high-quality outcomes'],
-  (s) => [`The primary goal of ${s} is to achieve ______.`, 'reliable, repeatable results'],
-  (s) => [`When ${s} is executed well, the result is typically ______.`, 'improved efficiency and stakeholder satisfaction'],
-  (s) => [`A common best practice in ${s} is to ______.`, 'document decisions and validate against requirements'],
-  (s) => [`The most important input to successful ${s} is ______.`, 'clear, accurate, and timely information'],
+  (s) => [`A key outcome of effective ${s} is ______.`, `consistent, measurable, and high-quality ${s} outcomes`],
+  (s) => [`The primary goal of ${s} is to achieve ______.`, `reliable, repeatable results in ${s}`],
+  (s) => [`When ${s} is executed well, the result is typically ______.`, `improved efficiency and stakeholder satisfaction in ${s}`],
+  (s) => [`A common best practice in ${s} is to ______.`, `document ${s} decisions and validate them against requirements`],
+  (s) => [`The most important input to successful ${s} is ______.`, `clear, accurate, and timely information about ${s}`],
 ];
 
 const FALLBACK_SUBJECTIVE_TEMPLATES = [
-  (s) => `Describe a situation where ${s} required careful judgment. What approach did you take and what was the result?`,
-  (s) => `Explain how you would approach ${s} when requirements are ambiguous. What steps would you take to reduce risk?`,
-  (s) => `Walk through how you would evaluate the success of ${s} over a full quarter. What would you track and why?`,
-  (s) => `Describe a scenario where ${s} conflicted with another priority. How would you decide which to address first?`,
+  (s) => [`Describe a situation where ${s} required careful judgment. What approach did you take and what was the result?`,
+          `A strong answer identifies the specific judgment call in ${s}, explains the reasoning behind the chosen approach, and states a concrete, measurable result.`],
+  (s) => [`Explain how you would approach ${s} when requirements are ambiguous. What steps would you take to reduce risk?`,
+          `A strong answer sequences clarification, stakeholder input, and incremental validation to reduce risk while progressing ${s} under ambiguity.`],
+  (s) => [`Walk through how you would evaluate the success of ${s} over a full quarter. What would you track and why?`,
+          `A strong answer names specific leading and lagging metrics for ${s}, ties them to business outcomes, and explains the review cadence.`],
+  (s) => [`Describe a scenario where ${s} conflicted with another priority. How would you decide which to address first?`,
+          `A strong answer weighs urgency, impact, and dependencies to justify the prioritization between ${s} and the competing priority.`],
 ];
 
 // Given a global combo index, deterministically pick a skill/template pairing.
@@ -354,33 +377,48 @@ function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyD
     const t = types[i % types.length];
     const comboIdx = comboCounters[difficulty]++;
 
-    let questionText, answer, skill;
+    let questionText, answer, skill, options;
     if (t === 'fill_blank') {
       const { skill: s, tpl } = pickCombo(FALLBACK_FILL_TEMPLATES, fallbackSkills, comboIdx);
       const [text, ans] = tpl(s);
       questionText = text; answer = ans; skill = s;
     } else if (t === 'subjective') {
       const { skill: s, tpl } = pickCombo(FALLBACK_SUBJECTIVE_TEMPLATES, fallbackSkills, comboIdx);
-      questionText = tpl(s);
-      answer = `An effective approach involves clarifying objectives and constraints, systematically identifying root causes, designing solutions aligned with organizational goals, and tracking outcomes against defined KPIs.`;
-      skill = s;
+      const [text, ans] = tpl(s);
+      questionText = text; answer = ans; skill = s;
     } else {
       const { skill: s, tpl } = pickCombo(FALLBACK_TEMPLATES[difficulty], fallbackSkills, comboIdx);
       questionText = tpl(s);
       answer = 'A';
       skill = s;
+      // Options are skill + phrasing-bank specific so no two MCQs share an identical
+      // option set, even when the same skill recurs across difficulty tiers.
+      const OPTION_BANKS = [
+        (sk) => [`A) Assess the ${sk} situation, identify the root cause, and develop a structured plan`,
+                 `B) Escalate the ${sk} issue immediately without gathering information`,
+                 `C) Wait for the ${sk} situation to resolve on its own`,
+                 `D) Delegate the ${sk} decision without providing context or follow-up`],
+        (sk) => [`A) Gather relevant data on ${sk}, consult stakeholders, then act`,
+                 `B) Apply a generic solution to ${sk} without reviewing context`,
+                 `C) Postpone the ${sk} decision indefinitely`,
+                 `D) Act on ${sk} unilaterally without informing the team`],
+        (sk) => [`A) Break the ${sk} challenge into smaller steps and validate each one`,
+                 `B) Assume the ${sk} outcome without checking assumptions`,
+                 `C) Ignore the ${sk} issue since it may resolve naturally`,
+                 `D) Reassign the ${sk} responsibility without a handover plan`],
+        (sk) => [`A) Align the ${sk} approach with team goals and measurable outcomes`,
+                 `B) Prioritize speed over accuracy when handling ${sk}`,
+                 `C) Avoid ${sk} decisions that require cross-team input`,
+                 `D) Handle ${sk} in isolation without documenting the rationale`],
+      ];
+      options = OPTION_BANKS[comboIdx % OPTION_BANKS.length](s);
     }
 
     return {
       type: t,
       question: questionText,
       difficulty,
-      options: t === 'mcq' ? [
-        `A) Assess the situation, identify root cause, and develop a structured plan`,
-        `B) Escalate immediately without gathering information`,
-        `C) Wait for the situation to resolve on its own`,
-        `D) Delegate without providing context or follow-up`,
-      ] : undefined,
+      options,
       answer,
       explanation: `Tests applied ${skill} competency for the ${role} role.`,
       skillArea: skill,

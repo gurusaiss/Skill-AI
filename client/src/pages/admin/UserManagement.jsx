@@ -316,6 +316,8 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   });
   const [saving, setSaving] = useState(false);
   const [resending, setResending] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regeneratedCreds, setRegeneratedCreds] = useState(null); // { tempPassword, activationUrl }
 
   const handleResendInvite = async () => {
     setResending(true);
@@ -328,6 +330,22 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
       }
     } catch (err) { setToast({ message: err.message, type: 'error' }); }
     finally { setResending(false); }
+  };
+
+  const handleRegeneratePassword = async () => {
+    if (!window.confirm(`Regenerate password for ${user.name}? Their current password will stop working immediately. All other data (progress, assessments, reports) stays unchanged.`)) return;
+    setRegenerating(true);
+    try {
+      const res = await authFetch(`/api/users/${user.userId}/regenerate-password`, { method: 'POST' });
+      setRegeneratedCreds(res);
+      setToast({ message: 'New credentials generated', type: 'success' });
+    } catch (err) { setToast({ message: err.message, type: 'error' }); }
+    finally { setRegenerating(false); }
+  };
+
+  const copyCred = (text, label) => {
+    navigator.clipboard.writeText(text).then(() => setToast({ message: `${label} copied`, type: 'success' }))
+      .catch(() => setToast({ message: 'Copy failed', type: 'error' }));
   };
 
   // JD upload / URL
@@ -720,6 +738,35 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                   {resending ? <><span className="w-3.5 h-3.5 border-2 border-indigo-300/30 border-t-indigo-300 rounded-full animate-spin" /> Sending…</> : '📧 Resend Invitation Email'}
                 </button>
               </div>
+
+              <div className="pt-1 border-t border-slate-700/40">
+                <p className="text-xs text-slate-500 mb-2">Invalidate the current password and issue new credentials. Profile, progress, assessments, and reports are unaffected.</p>
+                <button
+                  type="button"
+                  onClick={handleRegeneratePassword}
+                  disabled={regenerating}
+                  className="flex items-center gap-2 px-4 py-2 bg-amber-600/20 hover:bg-amber-600/40 border border-amber-500/30 rounded-xl text-amber-300 text-sm font-semibold transition-colors disabled:opacity-50"
+                >
+                  {regenerating ? <><span className="w-3.5 h-3.5 border-2 border-amber-300/30 border-t-amber-300 rounded-full animate-spin" /> Generating…</> : '🔑 Regenerate Password'}
+                </button>
+
+                {regeneratedCreds && (
+                  <div className="mt-3 space-y-2 p-3 rounded-xl bg-slate-900/60 border border-amber-500/20">
+                    <p className="text-xs font-bold text-amber-300">New credentials — share with {user.name}:</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 px-2.5 py-2 rounded-lg bg-slate-950/60 border border-slate-700 text-emerald-300 text-xs font-mono">{regeneratedCreds.tempPassword}</code>
+                      <button type="button" onClick={() => copyCred(regeneratedCreds.tempPassword, 'Password')} className="px-2.5 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold">Copy</button>
+                    </div>
+                    {regeneratedCreds.activationUrl && (
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 px-2.5 py-2 rounded-lg bg-slate-950/60 border border-slate-700 text-indigo-300 text-xs font-mono truncate">{regeneratedCreds.activationUrl}</code>
+                        <button type="button" onClick={() => copyCred(regeneratedCreds.activationUrl, 'Link')} className="px-2.5 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold whitespace-nowrap">Copy</button>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-slate-500">User will be forced to set a new password on next login.</p>
+                  </div>
+                )}
+              </div>
             </>
           )}
 
@@ -967,6 +1014,7 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
   const [additionalRoles, setAdditionalRoles] = useState([]);
   const [addRoleForm, setAddRoleForm] = useState({ roleName: '', department: '' });
   const [showAddRoleForm, setShowAddRoleForm] = useState(false);
+  const [createdResult, setCreatedResult] = useState(null); // { user, tempPassword, activationUrl }
   const f = (key) => (e) => setForm(prev => ({ ...prev, [key]: e.target.value }));
 
   useEffect(() => {
@@ -994,10 +1042,61 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
         } catch (e) { console.warn('Failed to add extra role:', ar.roleName, e.message); }
       }
       onCreated(user);
-      onClose();
+      // Show credentials instead of closing immediately — admin picks what to share.
+      setCreatedResult({ user, tempPassword: user.tempPassword, activationUrl: user.activationUrl });
     } catch (err) { setToast({ message: err.message, type: 'error' }); }
     finally { setSaving(false); }
   };
+
+  const copyToClipboard = (text, label) => {
+    navigator.clipboard.writeText(text).then(() => setToast({ message: `${label} copied to clipboard`, type: 'success' }))
+      .catch(() => setToast({ message: 'Copy failed — please copy manually', type: 'error' }));
+  };
+
+  if (createdResult) {
+    const { user, tempPassword, activationUrl } = createdResult;
+    return (
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+        <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div className="p-5 border-b border-slate-700/60">
+            <h2 className="text-lg font-bold text-white">✅ User Created</h2>
+            <p className="text-slate-500 text-xs mt-0.5">Share credentials with {user.name} ({user.email})</p>
+          </div>
+          <div className="p-5 space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Temporary Password</label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-emerald-300 text-sm font-mono">{tempPassword}</code>
+                <button onClick={() => copyToClipboard(tempPassword, 'Password')} className="px-3 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition-colors">Copy</button>
+              </div>
+            </div>
+            {activationUrl && (
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Login / Activation Link</label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 px-3 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-indigo-300 text-xs font-mono truncate">{activationUrl}</code>
+                  <button onClick={() => copyToClipboard(activationUrl, 'Link')} className="px-3 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition-colors whitespace-nowrap">Copy</button>
+                </div>
+              </div>
+            )}
+            <button
+              onClick={() => copyToClipboard(`Email: ${user.email}\nTemporary Password: ${tempPassword}${activationUrl ? `\nLogin Link: ${activationUrl}` : ''}`, 'Credentials')}
+              className="w-full py-2.5 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-sm font-bold transition-all"
+            >
+              📋 Copy Both (Email + Password + Link)
+            </button>
+            <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-900/50 rounded-xl p-3">
+              <span>ℹ️</span>
+              <span>The user will be required to set a new password the first time they log in — whether they use the temporary password or the activation link.</span>
+            </div>
+          </div>
+          <div className="px-5 pb-5">
+            <button onClick={onClose} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white font-bold text-sm transition-colors">Done</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -1952,7 +2051,7 @@ export default function UserManagement() {
                 </div>
                 <div className="bg-slate-800 border border-slate-700/60 rounded-xl px-3 py-2 text-center">
                   <div className="text-xl font-bold text-sky-300">{staffUsers.length}</div>
-                  <div className="text-slate-500 text-xs">Staff</div>
+                  <div className="text-slate-500 text-xs">Management</div>
                 </div>
               </div>
               {/* Import button */}

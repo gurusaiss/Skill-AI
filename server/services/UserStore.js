@@ -65,6 +65,7 @@ function rowToUser(row) {
     otpExpires:          row.otp_expires || null,
     resetToken:          row.reset_token || null,
     resetTokenExpires:   row.reset_token_expires || null,
+    mustChangePassword:  row.must_change_password || false,
   };
 }
 
@@ -99,6 +100,7 @@ function userToRow(u) {
   if (u.otpExpires   !== undefined) row.otp_expires        = u.otpExpires;
   if (u.resetToken   !== undefined) row.reset_token        = u.resetToken;
   if (u.resetTokenExpires !== undefined) row.reset_token_expires = u.resetTokenExpires;
+  if (u.mustChangePassword !== undefined) row.must_change_password = u.mustChangePassword;
   return row;
 }
 

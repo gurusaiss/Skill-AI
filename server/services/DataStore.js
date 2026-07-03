@@ -691,11 +691,13 @@ export const UserJDProfiles = {
 // ── ACTIVATION TOKENS ─────────────────────────────────────────────────────────
 export const ActivationTokens = {
   async create(doc)       { return (await (async () => { const sb = getSB(); if (sb) { const r = await sbInsert('activation_tokens', doc.id, doc); if (r) return r; } const all = readFile('activation_tokens.json'); all.push(doc); writeFile('activation_tokens.json', all); return doc; })()) },
+  async getAll()           { return getAllHealed('activation_tokens', 'activation_tokens.json'); },
   async getById(id) {
     const sb = getSB();
     if (sb) { const r = await sbGetById('activation_tokens', id); if (r) return r; }
     return readFile('activation_tokens.json').find(t => t.id === id) || null;
   },
+  async update(id, updates) { return updateHealed('activation_tokens', 'activation_tokens.json', id, updates); },
   async delete(id)        { return deleteHealed('activation_tokens', 'activation_tokens.json', id); },
 };
 

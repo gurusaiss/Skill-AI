@@ -165,8 +165,13 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (response.success && response.data) {
+        // New/regenerated accounts must set a real password before a session is granted.
+        if (response.data.requiresPasswordChange) {
+          return { success: true, requiresPasswordChange: true, email: response.data.email };
+        }
+
         const { token: newToken, user: userData } = response.data;
-        
+
         // Store token and learning user ID in localStorage
         localStorage.setItem('auth_token', newToken);
         if (userData?.learningUUID) {
@@ -176,11 +181,38 @@ export const AuthProvider = ({ children }) => {
         }
         setToken(newToken);
         setUser(userData);
-        
+
         return { success: true, data: userData };
       } else {
         throw new Error(response.error?.message || 'Login failed');
       }
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  // Completes the forced-password-change flow (see login() above), then
+  // establishes a normal session identical to a regular login.
+  const completePasswordChange = async (email, currentPassword, newPassword) => {
+    try {
+      const response = await authRequest('/api/auth/complete-password-change', {
+        method: 'POST',
+        body: JSON.stringify({ email, currentPassword, newPassword }),
+      });
+
+      if (response.success && response.data) {
+        const { token: newToken, user: userData } = response.data;
+        localStorage.setItem('auth_token', newToken);
+        if (userData?.learningUUID) {
+          localStorage.setItem('skillforge:userId', userData.learningUUID);
+        } else if (userData?.userId) {
+          localStorage.setItem('skillforge:userId', userData.userId);
+        }
+        setToken(newToken);
+        setUser(userData);
+        return { success: true, data: userData };
+      }
+      throw new Error(response.error?.message || 'Failed to update password');
     } catch (error) {
       throw error;
     }
@@ -467,6 +499,7 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated: !!user && !!token,
     isLoading,
     login,
+    completePasswordChange,
     loginWithGoogle,
     logout,
     register,

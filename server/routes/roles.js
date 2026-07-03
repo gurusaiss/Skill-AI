@@ -31,6 +31,77 @@ function parseSkills(raw) {
   return String(raw).split(/[,;|]/).map(s => s.trim()).filter(Boolean);
 }
 
+// Build a question-type sequence honoring the platform's fixed 50% MCQ / 25%
+// fill-in-the-blank / 25% subjective split. Shared by every question-generation
+// trigger (manual regenerate, auto-create, auto-update) so they never drift.
+function buildTypeSequence(num) {
+  const mcqCount = Math.ceil(num * 0.50);
+  const fillCount = Math.round(num * 0.25);
+  const subjCount = num - mcqCount - fillCount;
+  return [
+    ...Array(mcqCount).fill('mcq'),
+    ...Array(fillCount).fill('fill_blank'),
+    ...Array(subjCount).fill('subjective'),
+  ];
+}
+
+// Distill a raw, possibly noisy JD (with company intro, benefits, legal
+// boilerplate, etc.) down to ONLY Role / Responsibilities / Required Skills.
+// Falls back to the raw text untouched if the LLM is unavailable or fails —
+// this must never block role creation.
+async function extractJDEssentials(rawText, roleName) {
+  const text = (rawText || '').trim();
+  if (!text || text.length < 40) return text; // too short to be worth extracting from
+
+  const system = `You extract ONLY the substantive job-relevant content from a job description document. Discard everything else.`;
+  const prompt = `From the job description below, extract ONLY:
+1. Role / Title (if stated)
+2. Responsibilities (bullet list)
+3. Required Skills (bullet list)
+
+STRICTLY IGNORE and DO NOT include: company introduction, "about us", benefits, perks, salary, location, legal/equal-opportunity text, application instructions, contact details, headers/footers, or any other unrelated content.
+
+If a section is genuinely absent from the source, omit it — do not invent content.
+
+=== ROLE NAME (context) ===
+${roleName || 'Unknown'}
+
+=== SOURCE DOCUMENT ===
+${text.slice(0, 12000)}
+
+Return ONLY the extracted content as plain text, formatted like:
+Role: ...
+Responsibilities:
+- ...
+Required Skills:
+- ...`;
+
+  try {
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey?.length > 10) {
+      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
+          temperature: 0.2,
+          max_tokens: 2000,
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        const extracted = d.choices?.[0]?.message?.content?.trim();
+        if (extracted && extracted.length > 20) return extracted;
+      }
+    }
+  } catch (e) {
+    console.warn('[extractJDEssentials] LLM extraction failed, storing raw JD:', e.message);
+  }
+  return text; // graceful fallback — never block role creation on extraction failure
+}
+
 function normalise(row) {
   return {
     roleName:        (row.role_name || row.roleName || row.Role || row.title || '').trim(),
@@ -148,12 +219,16 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
     const existing = await RoleLibrary.findByName(roleName, companyId);
     if (existing) return res.status(409).json({ success: false, error: `Role "${roleName}" already exists in your company` });
 
+    // Extract only Role / Responsibilities / Required Skills — strips company
+    // intro, benefits, legal text, etc. before storage and question generation.
+    const extractedJD = await extractJDEssentials((jobDescription || '').trim(), roleName);
+
     const doc = {
       id: randomUUID(),
       companyId,
       roleName:       roleName.trim(),
       department:     (department || '').trim(),
-      jobDescription: (jobDescription || '').trim(),
+      jobDescription: extractedJD,
       skills:         parseSkills(skills),
       status:         status || 'active',
       createdAt:      new Date().toISOString(),
@@ -163,7 +238,7 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
     const saved = await RoleLibrary.create(doc);
     res.status(201).json({ success: true, data: saved });
 
-    // Auto-generate question bank in background (30–50 questions with difficulty)
+    // Auto-generate question bank in background (50 questions, mixed types, unique)
     if (doc.jobDescription) {
       setImmediate(async () => {
         try {
@@ -172,7 +247,7 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
             jobDescription: doc.jobDescription,
             jdSkills: doc.skills,
             questionCount: 50,
-            questionTypes: ['mcq'],
+            questionTypes: buildTypeSequence(50),
             employeeSeed: `qbank-${doc.id}-${Date.now()}`,
           });
           if (questions?.length) {
@@ -202,10 +277,14 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
     if (!existing) return res.status(404).json({ success: false, error: 'Role not found' });
 
     const { roleName, department, jobDescription, skills, status } = req.body;
+    // Extract only Role / Responsibilities / Required Skills before comparing/storing,
+    // so re-pasting the same noisy source JD doesn't spuriously trigger regeneration
+    // and the stored value is always the distilled version.
+    const extractedJD = jobDescription !== undefined ? await extractJDEssentials(jobDescription.trim(), roleName || existing.roleName) : undefined;
     const updates = {
       ...(roleName        !== undefined && { roleName: roleName.trim() }),
       ...(department      !== undefined && { department: department.trim() }),
-      ...(jobDescription  !== undefined && { jobDescription: jobDescription.trim() }),
+      ...(jobDescription  !== undefined && { jobDescription: extractedJD }),
       ...(skills          !== undefined && { skills: parseSkills(skills) }),
       ...(status          !== undefined && { status }),
       updatedAt: new Date().toISOString(),
@@ -214,7 +293,7 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
     res.json({ success: true, data: updated });
 
     // Regenerate question bank in background if JD changed
-    const jdChanged = jobDescription !== undefined && jobDescription !== existing.jobDescription;
+    const jdChanged = extractedJD !== undefined && extractedJD !== existing.jobDescription;
     if (jdChanged && (updates.jobDescription || existing.jobDescription)) {
       const effectiveJD = updates.jobDescription || existing.jobDescription;
       const effectiveRole = updates.roleName || existing.roleName;
@@ -226,7 +305,7 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
             jobDescription: effectiveJD,
             jdSkills: effectiveSkills,
             questionCount: 50,
-            questionTypes: ['mcq'],
+            questionTypes: buildTypeSequence(50),
             employeeSeed: `qbank-${req.params.id}-upd-${Date.now()}`,
           });
           if (questions?.length) {
@@ -283,7 +362,7 @@ router.post('/import', authenticate, requireRole('admin'), upload.single('file')
         companyId,
         roleName,
         department,
-        jobDescription,
+        jobDescription: await extractJDEssentials(jobDescription, roleName),
         skills,
         status: status || 'active',
         createdAt: new Date().toISOString(),
@@ -308,7 +387,7 @@ router.post('/import', authenticate, requireRole('admin'), upload.single('file')
               jobDescription: doc.jobDescription,
               jdSkills: doc.skills,
               questionCount: 50,
-              questionTypes: ['mcq'],
+              questionTypes: buildTypeSequence(50),
               employeeSeed: `qbank-${doc.id}`,
             });
             if (questions?.length) {

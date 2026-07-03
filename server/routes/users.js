@@ -330,15 +330,18 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
 
     // Managers can only create employees
     const assignedRole = (req.user.role === 'manager') ? 'employee' : (role || 'employee');
-    // Generate a placeholder hash — user will set real password via activation link
-    const placeholderHash = await AuthService.hashPassword(uuidv4());
+    // Generate a real temporary password — admin can share it directly, and/or
+    // share the activation link below. Either path forces a real password to be
+    // set before normal login proceeds (see mustChangePassword).
+    const tempPassword = generatePassword();
+    const passwordHash = await AuthService.hashPassword(tempPassword);
 
     const user = await UserStore.createUser({
       email,
-      passwordHash: placeholderHash,
+      passwordHash,
       name: name.trim(),
       role: assignedRole,
-      emailVerified: false,
+      emailVerified: true,
       onboardingComplete: false,
       jobRole: jobRole || '',
       department: department || '',
@@ -346,6 +349,9 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       companyName: companyName || '',
       companyId: req.user.companyId || 'default',
     });
+    // Best-effort: mark forced-password-change (new optional column — must not
+    // block user creation if the migration hasn't been applied yet).
+    UserStore.updateUser(user.userId, { mustChangePassword: true }).catch(() => {});
 
     await UserStore.logAuthEvent('user_created_by_admin', user.userId, {
       createdBy: req.user.userId,
@@ -395,12 +401,65 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
         emailSent,
         emailError,
         activationUrl,
+        tempPassword,
       },
       error: null,
     });
   } catch (error) {
     console.error('[User Routes] Create user error:', error.message);
     res.status(500).json({ success: false, data: null, error: { code: 'USER_ERROR', message: 'Failed to create user' } });
+  }
+});
+
+/**
+ * POST /api/users/:userId/regenerate-password
+ * Admin action: invalidate all existing credentials and issue a fresh temporary
+ * password + activation link. Touches ONLY auth fields — no other user data
+ * (progress, assessments, modules, reports, assignments) is modified.
+ */
+router.post('/:userId/regenerate-password', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const target = await UserStore.getUserById(req.params.userId);
+    if (!target) return res.status(404).json({ success: false, error: 'User not found' });
+    if (!canAccessUser(req.user, target)) return res.status(403).json({ success: false, error: 'Access denied' });
+
+    const tempPassword = generatePassword();
+    const passwordHash = await AuthService.hashPassword(tempPassword);
+    // Critical path first (guaranteed-existing columns) — the new password must
+    // take effect even if the optional mustChangePassword column isn't migrated yet.
+    await UserStore.updateUser(target.userId, {
+      passwordHash,
+      // Clear any outstanding self-service reset token so the old one can't be used
+      resetToken: null,
+      resetTokenExpires: null,
+    });
+    UserStore.updateUser(target.userId, { mustChangePassword: true }).catch(() => {});
+
+    // Invalidate previous activation tokens and issue a fresh one
+    let activationUrl = null;
+    try {
+      const allTokens = await ActivationTokens.getAll?.() ?? [];
+      await Promise.all((allTokens || []).filter(t => t.userId === target.userId && !t.used)
+        .map(t => ActivationTokens.update?.(t.id, { used: true }).catch(() => {})));
+      const tokenId = uuidv4();
+      const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+      await ActivationTokens.create({ id: tokenId, userId: target.userId, email: target.email, expiresAt, used: false });
+      const frontendUrl = process.env.FRONTEND_URL || 'https://skillforge-swart-mu.vercel.app';
+      activationUrl = `${frontendUrl}/auth/activate?token=${tokenId}`;
+    } catch (e) {
+      console.warn('[regenerate-password] Activation token issue failed:', e.message);
+    }
+
+    await UserStore.logAuthEvent('password_regenerated_by_admin', target.userId, {
+      regeneratedBy: req.user.userId,
+      regeneratedByRole: req.user.role,
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, data: { tempPassword, activationUrl } });
+  } catch (e) {
+    console.error('[regenerate-password]', e);
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 
@@ -1112,12 +1171,27 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
         });
 
         existingEmails.add(row.email.toLowerCase());
+        UserStore.updateUser(user.userId, { mustChangePassword: true }).catch(() => {});
+
+        // Activation link — an alternate path to the same outcome as the temp
+        // password: either credential lets the user log in and set a real password.
+        let activationUrl = '';
+        try {
+          const tokenId = uuidv4();
+          const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+          await ActivationTokens.create({ id: tokenId, userId: user.userId, email: user.email, expiresAt, used: false });
+          const frontendUrl = process.env.FRONTEND_URL || 'https://skillforge-swart-mu.vercel.app';
+          activationUrl = `${frontendUrl}/auth/activate?token=${tokenId}`;
+        } catch (e) {
+          console.warn('[bulk-import] Activation token creation failed:', e.message);
+        }
 
         created.push({
           userId:       user.userId,
           name:         user.name,
           email:        user.email,
           tempPassword,                // plaintext — included in Excel, never stored
+          activationUrl,
           managerEmail: row.managerEmail || '',
           _userObj:     user,
           _emailPayload: {
@@ -1138,12 +1212,12 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
       try {
         const XLSX = await import('xlsx');
         const wsData = [
-          ['Employee Name', 'Employee Email', 'Generated Password'],
-          ...created.map(u => [u.name, u.email, u.tempPassword]),
+          ['Employee Name', 'Employee Email', 'Temporary Password', 'Login/Activation Link'],
+          ...created.map(u => [u.name, u.email, u.tempPassword, u.activationUrl || '']),
         ];
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(wsData);
-        ws['!cols'] = [{ wch: 30 }, { wch: 35 }, { wch: 20 }];
+        ws['!cols'] = [{ wch: 30 }, { wch: 35 }, { wch: 20 }, { wch: 60 }];
         XLSX.utils.book_append_sheet(wb, ws, 'Credentials');
         const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
         credentialExcelB64 = buf.toString('base64');
