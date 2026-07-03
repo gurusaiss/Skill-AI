@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useNotification } from '../contexts/NotificationContext.jsx';
 
 const QUESTION_BANK = [
   { q: "What does CSS stand for?",                        options: ["Cascading Style Sheets", "Creative Style System", "Computer Style Sheet", "Colorful Style Script"],   answer: 0 },
@@ -149,11 +150,12 @@ function IntroScreen({ onStart }) {
 function ResultScreen({ correct, totalXP, questions, answers, onRetry, onCertificate }) {
   const { grade, color, label } = getGrade(correct);
   const navigate = useNavigate();
+  const { notify } = useNotification();
 
   const handleShare = () => {
     const msg = `I scored ${correct}/10 (Grade ${grade}) in the SkillForge AI Speed Challenge! ⚡ ${totalXP} XP earned!`;
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(msg).then(() => alert('Copied! Share it anywhere 🎉'));
+      navigator.clipboard.writeText(msg).then(() => notify('Copied! Share it anywhere', 'success'));
     }
   };
 

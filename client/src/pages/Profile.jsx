@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useNotification } from '../contexts/NotificationContext.jsx';
 
 /**
  * Profile Page Component
@@ -18,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 export default function Profile() {
   const { user, updateProfile, logout } = useAuth();
   const navigate = useNavigate();
+  const { notify } = useNotification();
 
   // Form states
   const [editingName, setEditingName] = useState(false);
@@ -110,6 +112,7 @@ export default function Profile() {
 
       await updateProfile({ name: name.trim() });
       setSuccess('Name updated successfully');
+      notify('Name updated successfully', 'success');
       setEditingName(false);
     } catch (err) {
       setError(err.message || 'Failed to update name');
@@ -150,6 +153,7 @@ export default function Profile() {
 
       setOtpSent(true);
       setSuccess('OTP sent to your new email address');
+      notify('OTP sent to your new email address', 'info');
     } catch (err) {
       setError(err.message || 'Failed to send OTP');
     } finally {
@@ -171,6 +175,7 @@ export default function Profile() {
 
       await updateProfile({ email: newEmail.trim(), otp: otp.trim() });
       setSuccess('Email updated successfully');
+      notify('Email updated successfully', 'success');
       setEditingEmail(false);
       setOtpSent(false);
       setNewEmail('');
@@ -224,6 +229,7 @@ export default function Profile() {
       }
 
       setSuccess('Password changed successfully');
+      notify('Password changed successfully', 'success');
       setEditingPassword(false);
       setCurrentPassword('');
       setNewPassword('');

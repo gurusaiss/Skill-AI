@@ -7,23 +7,9 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { authFetch } from '../../utils/authFetch.js';
+import { useNotification } from '../../contexts/NotificationContext.jsx';
 
 // ── Utility UI ─────────────────────────────────────────────────────────────────
-
-const Toast = ({ message, type, onClose }) => {
-  useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [onClose]);
-  const colors = {
-    success: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300',
-    error:   'bg-red-500/15 border-red-500/30 text-red-300',
-    info:    'bg-indigo-500/15 border-indigo-500/30 text-indigo-300',
-  };
-  return (
-    <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl border backdrop-blur-xl shadow-2xl ${colors[type] || colors.info}`}>
-      <span className="text-sm font-semibold">{message}</span>
-      <button onClick={onClose} className="ml-2 text-current/50 hover:text-current text-lg leading-none">&times;</button>
-    </div>
-  );
-};
 
 const Skeleton = ({ className = '' }) => (
   <div className={`animate-pulse rounded-lg bg-slate-700/40 ${className}`} />
@@ -431,7 +417,6 @@ export default function AdminDashboard() {
   // Core
   const [loading, setLoading] = useState(true);
   const [company, setCompany] = useState(null);
-  const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
@@ -460,7 +445,8 @@ export default function AdminDashboard() {
   const [newCodeMax, setNewCodeMax] = useState('');
   const [newCodeExpiry, setNewCodeExpiry] = useState('');
 
-  const showToast = useCallback((msg, type = 'info') => setToast({ message: msg, type }), []);
+  const { notify } = useNotification();
+  const showToast = useCallback((msg, type = 'info') => notify(msg, type), [notify]);
 
   useEffect(() => {
     if (!user || !hasRole('admin')) { navigate('/dashboard'); return; }
@@ -673,8 +659,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] px-4 sm:px-6 py-8 max-w-7xl mx-auto">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
       {/* Employee detail popup */}
       {selectedEmployee && (
         <EmployeeDetailPopup

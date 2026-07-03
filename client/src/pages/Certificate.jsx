@@ -1,10 +1,12 @@
 import React, { useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useNotification } from '../contexts/NotificationContext.jsx';
 
 export default function Certificate() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const certRef = useRef(null);
+  const { notify } = useNotification();
 
   const skill = params.get('skill') || 'Full-Stack Development';
   const score = parseInt(params.get('score') || '88', 10);
@@ -26,10 +28,10 @@ export default function Certificate() {
     const msg = `I just completed ${skill} with ${score}% mastery on SkillForge AI! 🎓`;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(msg).then(() => {
-        alert('Copied to clipboard! Share it anywhere 🎉');
+        notify('Copied to clipboard! Share it anywhere', 'success');
       });
     } else {
-      alert(msg);
+      notify(msg, 'info');
     }
   };
 

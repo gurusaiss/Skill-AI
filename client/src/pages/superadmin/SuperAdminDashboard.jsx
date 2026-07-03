@@ -1,21 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { authFetch } from '../../utils/authFetch.js';
-
-// ─── Toast ────────────────────────────────────────────────────────────────────
-
-function Toast({ message, type, onClose }) {
-  useEffect(() => { const t = setTimeout(onClose, 3500); return () => clearTimeout(t); }, [onClose]);
-  return (
-    <div className={`fixed top-5 right-5 z-[200] flex items-center gap-3 px-5 py-3 rounded-xl text-white text-sm font-semibold shadow-2xl border
-      ${type === 'success' ? 'bg-emerald-600/95 border-emerald-500/50' : 'bg-red-600/95 border-red-500/50'}`}>
-      <span>{type === 'success' ? '✓' : '✕'}</span>
-      <span>{message}</span>
-      <button onClick={onClose} className="ml-2 opacity-70 hover:opacity-100">✕</button>
-    </div>
-  );
-}
+import { useNotification } from '../../contexts/NotificationContext.jsx';
 
 // ─── Plan badge ───────────────────────────────────────────────────────────────
 
@@ -662,7 +649,8 @@ export default function SuperAdminDashboard() {
   const [stats, setStats]           = useState(null);
   const [companies, setCompanies]   = useState([]);
   const [loading, setLoading]       = useState(true);
-  const [toast, setToast]           = useState(null);
+  const { notify } = useNotification();
+  const setToast = useCallback(({ message, type = 'info' }) => notify(message, type), [notify]);
   const [showCreate, setShowCreate] = useState(false);
   const [editCompany, setEditCompany] = useState(null);
   const [expandedRows, setExpandedRows] = useState({});
@@ -745,7 +733,7 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+}
       {tempPasswordData && <CompanyCreatedModal company={tempPasswordData} onClose={() => setTempPasswordData(null)} />}
       {codesCompany && <CompanyCodesModal company={codesCompany} onClose={() => setCodesCompany(null)} setToast={setToast} />}
       {showCreate && (

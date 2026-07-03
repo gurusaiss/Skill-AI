@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
+import { useNotification } from '../contexts/NotificationContext.jsx';
 
 const SkeletonCard = () => (
   <div className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5 animate-pulse">
@@ -28,27 +29,6 @@ const SkeletonStat = () => (
   </div>
 );
 
-const Toast = ({ message, type, onClose }) => {
-  useEffect(() => {
-    const t = setTimeout(onClose, 4000);
-    return () => clearTimeout(t);
-  }, [onClose]);
-
-  const colors = {
-    success: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300',
-    error: 'bg-red-500/15 border-red-500/30 text-red-300',
-    info: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300',
-  };
-  const icons = { success: '✓', error: '✕', info: 'ℹ' };
-
-  return (
-    <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl border backdrop-blur-xl shadow-2xl ${colors[type]} animate-[slideIn_0.3s_ease-out]`}>
-      <span className="text-lg font-bold">{icons[type]}</span>
-      <span className="text-sm font-semibold">{message}</span>
-      <button onClick={onClose} className="ml-2 text-current/50 hover:text-current transition-colors text-lg leading-none">&times;</button>
-    </div>
-  );
-};
 
 const ConfirmModal = ({ isOpen, title, message, confirmLabel, onConfirm, onCancel, loading }) => {
   if (!isOpen) return null;
@@ -163,7 +143,6 @@ export default function Employee() {
   // Job Role selector
   const [selectedJobRole, setSelectedJobRole] = useState('all'); // 'all' or a specific role name
   const [filterType, setFilterType] = useState('all');
-  const [toast, setToast] = useState(null);
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, assignmentId: null, newStatus: null, title: '', message: '' });
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
@@ -186,9 +165,7 @@ export default function Employee() {
     return () => document.removeEventListener('click', close);
   }, [tooltipSkill]);
 
-  const showToast = useCallback((message, type = 'info') => {
-    setToast({ message, type, id: Date.now() });
-  }, []);
+  const { notify: showToast } = useNotification();
 
   const userId = useMemo(() => user?.userId || user?.id, [user]);
 
@@ -441,7 +418,7 @@ export default function Employee() {
           <span className="text-sm font-semibold">Generating your personalized learning module…</span>
         </div>
       )}
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+}
       <ConfirmModal
         isOpen={confirmModal.isOpen}
         title={confirmModal.title}
