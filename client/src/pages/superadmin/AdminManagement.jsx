@@ -331,7 +331,6 @@ export default function AdminManagement() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
-}
       {viewAdmin && (
         <AdminDetailModal
           admin={viewAdmin}

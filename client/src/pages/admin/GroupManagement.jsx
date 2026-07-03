@@ -406,7 +406,6 @@ export default function GroupManagement() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
-}
 
       {/* Modals */}
       {modal?.mode === 'create' && (

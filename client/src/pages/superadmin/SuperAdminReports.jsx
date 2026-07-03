@@ -123,7 +123,6 @@ export default function SuperAdminReports() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
-}
 
       <div className="max-w-7xl mx-auto px-6 py-8 lg:px-8">
 

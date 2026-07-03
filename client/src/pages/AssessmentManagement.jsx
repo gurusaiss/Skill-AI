@@ -3,21 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { authFetch } from '../utils/authFetch.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
-
-const Toast = ({ message, type, onClose }) => {
-  useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [onClose]);
-  const colors = {
-    success: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300',
-    error: 'bg-red-500/15 border-red-500/30 text-red-300',
-    info: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300',
-  };
-  return (
-    <div className={`fixed top-6 right-6 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-xl border backdrop-blur-xl shadow-2xl ${colors[type]}`}>
-      <span className="text-sm font-semibold">{message}</span>
-      <button onClick={onClose} className="ml-2 opacity-60 hover:opacity-100 text-lg">&times;</button>
-    </div>
-  );
-};
+import { useNotification } from '../contexts/NotificationContext.jsx';
 
 const QUESTION_TYPE_OPTIONS = [
   { value: 'mcq', label: 'MCQ' },
@@ -177,7 +163,7 @@ export default function AssessmentManagement() {
   const [employees, setEmployees] = useState([]);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState(null);
+  const { notify: showToast } = useNotification();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterType, setFilterType] = useState('all'); // 'all' | 'individual' | 'group'
@@ -212,7 +198,6 @@ export default function AssessmentManagement() {
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [showExportFormatModal, setShowExportFormatModal] = useState(false);
 
-  const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
   const downloadAllReports = async (format = 'xlsx') => {
     setDownloadingAll(true);
@@ -544,7 +529,6 @@ export default function AssessmentManagement() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
