@@ -4,6 +4,8 @@ import Navbar from './components/Navbar.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import ServerStatusBanner from './components/ServerStatusBanner.jsx';
+import { NotificationProvider } from './contexts/NotificationContext.jsx';
+import NotificationContainer from './components/NotificationContainer.jsx';
 
 const Landing              = lazy(() => import('./pages/Landing.jsx'));
 const Profiling            = lazy(() => import('./pages/Profiling.jsx'));
@@ -67,7 +69,9 @@ const App = () => {
   return (
     <BrowserRouter>
       <ErrorBoundary>
+        <NotificationProvider>
         <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
+          <NotificationContainer />
           <Navbar />
           <ServerStatusBanner />
           <Suspense fallback={<Loader />}>
@@ -230,6 +234,7 @@ const App = () => {
             </Routes>
           </Suspense>
         </div>
+        </NotificationProvider>
       </ErrorBoundary>
     </BrowserRouter>
   );

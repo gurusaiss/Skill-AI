@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotification } from '../../contexts/NotificationContext.jsx';
 
 const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
@@ -30,35 +31,6 @@ const fetchJSON = async (path) => {
   }
   return res.json();
 };
-
-const Toast = ({ message, type, onClose }) => {
-  const colors = {
-    success: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300',
-    error: 'bg-red-500/20 border-red-500/40 text-red-300',
-    info: 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300',
-    warning: 'bg-amber-500/20 border-amber-500/40 text-amber-300',
-  };
-  const icons = { success: '✓', error: '✕', info: 'ℹ', warning: '⚠' };
-  useEffect(() => {
-    const t = setTimeout(onClose, 4000);
-    return () => clearTimeout(t);
-  }, [onClose]);
-  return (
-    <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl border backdrop-blur-sm shadow-2xl animate-slide-in ${colors[type] || colors.info}`}>
-      <span className="text-lg font-bold">{icons[type] || icons.info}</span>
-      <span className="text-sm font-medium">{message}</span>
-      <button onClick={onClose} className="ml-2 text-current opacity-60 hover:opacity-100 text-lg leading-none">&times;</button>
-    </div>
-  );
-};
-
-const ToastContainer = ({ toasts, removeToast }) => (
-  <div className="fixed top-6 right-6 z-50 flex flex-col gap-3">
-    {toasts.map((t) => (
-      <Toast key={t.id} message={t.message} type={t.type} onClose={() => removeToast(t.id)} />
-    ))}
-  </div>
-);
 
 const Skeleton = ({ className = '' }) => (
   <div className={`animate-pulse rounded-lg bg-slate-700/40 ${className}`} />
@@ -205,21 +177,11 @@ export default function ManagerDashboard() {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [employeeDetailLoading, setEmployeeDetailLoading] = useState(false);
   const [employeeAssignments, setEmployeeAssignments] = useState([]);
-  const [toasts, setToasts] = useState([]);
+  const { notify: addToast } = useNotification();
   const [activeView, setActiveView] = useState('overview');
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [requestForm, setRequestForm] = useState({ actionType: 'assign_module', title: '', description: '', category: 'General', difficulty: 'beginner', targetId: '', targetTitle: '', employeeIds: [], priority: 'medium', dueDate: '', notes: '' });
   const [submittingRequest, setSubmittingRequest] = useState(false);
-  const toastIdRef = useRef(0);
-
-  const addToast = useCallback((message, type = 'info') => {
-    const id = ++toastIdRef.current;
-    setToasts((prev) => [...prev, { id, message, type }]);
-  }, []);
-
-  const removeToast = useCallback((id) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -323,10 +285,9 @@ export default function ManagerDashboard() {
       });
       setShowRequestModal(false);
       setRequestForm({ actionType: 'assign_module', title: '', description: '', category: 'General', difficulty: 'beginner', targetId: '', targetTitle: '', employeeIds: [], priority: 'medium', dueDate: '', notes: '' });
-      // Show a simple alert since we may not have addToast available
-      alert('Request submitted! Admin will review and take action.');
+      addToast('Request submitted. Admin will review and take action.', 'success');
     } catch (err) {
-      alert('Failed to submit request: ' + err.message);
+      addToast('Failed to submit request: ' + err.message, 'error');
     } finally {
       setSubmittingRequest(false);
     }
@@ -412,7 +373,6 @@ export default function ManagerDashboard() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] px-4 sm:px-6 py-8 max-w-7xl mx-auto">
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
 
       {selectedEmployee && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4" onClick={closeEmployeeDetail}>

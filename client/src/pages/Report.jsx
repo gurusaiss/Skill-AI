@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
+import { useNotification } from '../contexts/NotificationContext.jsx';
 
 // ─── PDF Download helper ──────────────────────────────────────────────────────
 function downloadReportPDF(employeeData) {
@@ -80,6 +81,7 @@ function SortIcon({ active, dir }) {
 
 // ─── Admin/Manager Report Table ───────────────────────────────────────────────
 function AdminReportView({ user, navigate }) {
+  const { notify } = useNotification();
   const [reports, setReports] = useState([]); // module reports (per-employee, with .assignments[])
   const [assessmentReports, setAssessmentReports] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -299,8 +301,9 @@ function AdminReportView({ user, navigate }) {
       a.download = `Training-Reports.${ext}`;
       a.click();
       URL.revokeObjectURL(url);
+      notify('Reports exported successfully', 'success');
     } catch (e) {
-      alert(e.message || 'Export failed');
+      notify(e.message || 'Export failed', 'error');
     } finally {
       setDownloadingFmt(null);
     }
@@ -310,7 +313,7 @@ function AdminReportView({ user, navigate }) {
   // every question with answers/marks/result, performance analysis, linked
   // module info, and audit trail) for a single assessment row.
   const downloadSingleAssessmentReport = async (row, format) => {
-    if (!row.assessmentId) { alert('This report cannot be downloaded (missing assessment reference).'); return; }
+    if (!row.assessmentId) { notify('This report cannot be downloaded (missing assessment reference).', 'error'); return; }
     setRowDownloadingFmt(format);
     try {
       const token = localStorage.getItem('auth_token');
@@ -329,8 +332,9 @@ function AdminReportView({ user, navigate }) {
       a.click();
       URL.revokeObjectURL(url);
       setRowDownloadTarget(null);
+      notify('Report downloaded successfully', 'success');
     } catch (e) {
-      alert(e.message || 'Download failed');
+      notify(e.message || 'Download failed', 'error');
     } finally {
       setRowDownloadingFmt(null);
     }
@@ -569,6 +573,7 @@ function AdminReportView({ user, navigate }) {
 
 // ─── Employee Report View ─────────────────────────────────────────────────────
 function EmployeeReportView({ user, navigate }) {
+  const { notify } = useNotification();
   const [moduleContent, setModuleContent] = useState(null);
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -619,7 +624,7 @@ function EmployeeReportView({ user, navigate }) {
       await authFetch('/api/report/generate', { method: 'POST', body: JSON.stringify({ userId: uid }) });
       await loadReport();
     } catch (e) {
-      alert(e.message || 'Failed to generate report');
+      notify(e.message || 'Failed to generate report', 'error');
     } finally {
       setLoading(false);
     }

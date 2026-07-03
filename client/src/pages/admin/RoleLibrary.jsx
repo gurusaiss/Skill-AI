@@ -1,15 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { authFetch } from '../../utils/authFetch.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
-
-// ── tiny helpers ──────────────────────────────────────────────────────────────
-const toast = (msg, type = 'success') => {
-  const el = document.createElement('div');
-  el.textContent = msg;
-  el.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 20px;border-radius:8px;font-size:14px;font-weight:600;color:#fff;background:${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#f59e0b'};box-shadow:0 4px 12px rgba(0,0,0,.3);`;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 3500);
-};
+import { useNotification } from '../../contexts/NotificationContext.jsx';
 
 const inputCls = 'w-full bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500';
 const labelCls = 'block text-xs font-medium text-slate-400 mb-1';
@@ -22,6 +14,7 @@ Product Manager,Product,"Define product vision and work with cross-functional te
 
 // ── Role form modal ────────────────────────────────────────────────────────────
 function RoleModal({ role, onClose, onSaved }) {
+  const { notify: toast } = useNotification();
   const [form, setForm] = useState({
     roleName:       role?.roleName       || '',
     department:     role?.department     || '',
@@ -230,6 +223,7 @@ function ViewModal({ role, onClose, onEdit }) {
 
 // ── Import modal ──────────────────────────────────────────────────────────────
 function ImportModal({ onClose, onImported }) {
+  const { notify: toast } = useNotification();
   const [file, setFile] = useState(null);
   const [importing, setImporting] = useState(false);
   const fileRef = useRef();
@@ -296,6 +290,7 @@ const Q_TYPES = [
 ];
 
 function QuestionBankModal({ role, onClose }) {
+  const { notify: toast } = useNotification();
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [regen, setRegen] = useState(false);
@@ -628,6 +623,7 @@ function QuestionBankModal({ role, onClose }) {
 
 // ── Approve Assessment Modal ──────────────────────────────────────────────────
 function ApproveModal({ role, onClose }) {
+  const { notify: toast } = useNotification();
   const [questionCount, setQuestionCount] = useState(10);
   const [assessmentDate, setAssessmentDate] = useState('');
   const [approving, setApproving] = useState(false);
@@ -703,6 +699,7 @@ function ApproveModal({ role, onClose }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function RoleLibrary() {
+  const { notify: toast } = useNotification();
   const [roles, setRoles]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
