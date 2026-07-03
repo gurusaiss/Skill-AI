@@ -74,64 +74,50 @@ function mergeFallbackUnique(pool, batch) {
   return [...pool, ...additions];
 }
 
-// Re-balance difficulty to ~35% easy, ~45% medium, ~20% hard
+// Interleave questions by difficulty (easy → medium → hard → easy → ...) without
+// relabeling or cross-difficulty borrowing. The exact count is always preserved.
+// Cross-difficulty borrowing was the root cause of two bugs:
+//   (a) count loss when donors couldn't spare questions (41 of 50 error)
+//   (b) difficulty label corruption (hard questions relabeled as easy)
 function rebalanceDifficulty(questions) {
-  const n = questions.length;
-  const targets = {
-    easy:   Math.round(n * 0.35),
-    medium: Math.round(n * 0.45),
-    hard:   Math.max(1, n - Math.round(n * 0.35) - Math.round(n * 0.45)),
-  };
   const buckets = { easy: [], medium: [], hard: [] };
   for (const q of questions) {
-    const d = q.difficulty || 'medium';
-    buckets[d] = buckets[d] || [];
+    const d = (q.difficulty === 'easy' || q.difficulty === 'medium' || q.difficulty === 'hard')
+      ? q.difficulty : 'medium';
     buckets[d].push(q);
   }
+  // Interleave round-robin so output is easy, medium, hard, easy, medium, hard …
   const result = [];
-  for (const [diff, target] of Object.entries(targets)) {
-    const bucket = buckets[diff] || [];
-    result.push(...bucket.slice(0, target));
-    // borrow from other buckets if short
-    if (bucket.length < target) {
-      const shortage = target - bucket.length;
-      const donors = Object.entries(buckets).filter(([d]) => d !== diff);
-      for (let i = 0; i < shortage; i++) {
-        for (const [donorDiff, donorBucket] of donors) {
-          if (donorBucket.length > targets[donorDiff]) {
-            const borrowed = donorBucket.pop();
-            if (borrowed) result.push({ ...borrowed, difficulty: diff });
-            break;
-          }
-        }
-      }
+  const order = ['easy', 'medium', 'hard'];
+  const maxLen = Math.max(buckets.easy.length, buckets.medium.length, buckets.hard.length);
+  for (let i = 0; i < maxLen; i++) {
+    for (const diff of order) {
+      if (i < buckets[diff].length) result.push(buckets[diff][i]);
     }
   }
-  // Shuffle so difficulties are interleaved, not grouped
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
+  // result.length === questions.length — no questions are ever dropped or added
   return result;
 }
 
-// Trim a processed question list down to exactly `target`, preserving type ratios
+// Trim down to exactly `target` questions, preserving type ratios where possible.
+// Always returns exactly target items as long as questions.length >= target.
 function trimToTarget(questions, target, types) {
   if (questions.length <= target) return questions;
   const typeCounts = {};
   types.forEach(t => { typeCounts[t] = (typeCounts[t] || 0) + 1; });
   const total = types.length || target;
   const result = [];
+  const used = new Set();
   for (const [type, count] of Object.entries(typeCounts)) {
     const want = Math.round((count / total) * target);
-    result.push(...questions.filter(q => q.type === type).slice(0, want));
+    const picked = questions.filter(q => q.type === type && !used.has(q)).slice(0, want);
+    picked.forEach(q => used.add(q));
+    result.push(...picked);
   }
-  // Fill remainder from any type if we're still short
-  if (result.length < target) {
-    const used = new Set(result);
-    for (const q of questions) {
-      if (!used.has(q) && result.length < target) result.push(q);
-    }
+  // Fill remainder with any unused question (any type) to guarantee exact count
+  for (const q of questions) {
+    if (result.length >= target) break;
+    if (!used.has(q)) { result.push(q); used.add(q); }
   }
   return result.slice(0, target);
 }
@@ -148,73 +134,103 @@ ABSOLUTE RULES:
 6. Never generate software coding or engineering architecture questions unless the JD explicitly lists programming as a requirement.
 7. Always return valid JSON with exactly a "questions" array.
 8. QUESTION WORDING — CRITICAL: At most 1 out of every 10 questions may begin with "As a [role]", "In your role as", "While working as", or "As an [role]". The other 9+ questions must open naturally — ask directly about the concept, situation, scenario, or decision. Write questions like a real corporate assessment, not like a role-play prompt.
-9. NO DUPLICATE QUESTIONS: Every question must test a different concept, situation, or scenario. No two questions may have the same meaning, even if the wording differs. No duplicate answer options.
-10. NO CROSS-DIFFICULTY REPEATS: A concept/scenario tested at Easy must not reappear (even reworded, or "applied" instead of "explained") at Medium or Hard, and vice versa. Each difficulty tier must cover DIFFERENT scenarios and concepts from the JD — not the same scenario retold at increasing complexity. Plan the full set of distinct scenarios FIRST, then assign each one to exactly one difficulty tier.
-11. NO REPEATED MCQ OPTION SETS: Do not reuse the same four answer choices (even reworded) across different questions — every MCQ's option set must be unique to that question.`;
+9. NO DUPLICATE QUESTIONS: Every question must test a DIFFERENT concept, situation, and scenario. No two questions may share the same meaning, even if the wording differs. Every question must have unique answer options — no repeated option sets across questions.
+10. NO CROSS-DIFFICULTY REPEATS — STRICTLY ENFORCED: A concept or scenario tested at Easy MUST NOT reappear at Medium or Hard, even reworded or at higher complexity. Each difficulty tier covers ENTIRELY DIFFERENT scenarios. Before writing a single question, mentally list all scenarios you will cover and assign each to exactly one difficulty tier — then generate from that plan.
+11. NO REPEATED MCQ OPTION SETS: Every MCQ must have a unique set of four answer choices. Never reuse the same options (even reworded) from a previous question.
+12. QUESTION STYLE VARIETY — MANDATORY: Write questions in varied styles throughout the set. Required styles include (rotate through them): real workplace scenarios, decision-making under pressure, situational judgment, multi-step process questions, customer/client interaction scenarios, team collaboration dilemmas, compliance and policy questions, root-cause problem solving, communication and escalation, case-based analysis, tool/system usage, performance measurement, stakeholder management, and risk assessment. No single style may appear more than 20% of the time.
+13. OPTION QUALITY: MCQ distractors must be plausible but clearly distinguishable from the correct answer. Avoid "all of the above", "none of the above", and trick options. Each wrong option should represent a genuinely mistaken approach, not an obviously silly one.`;
 }
 
 function buildUserPrompt({ count, jobRole, jdText, skillsList, types, seed }) {
-  const easyCount  = Math.round(count * 0.35);
+  const easyCount   = Math.round(count * 0.35);
   const mediumCount = Math.round(count * 0.45);
-  const hardCount  = Math.max(1, count - easyCount - mediumCount);
+  const hardCount   = Math.max(1, count - easyCount - mediumCount);
+  const maxRoleOpener = Math.max(1, Math.floor(count * 0.08));
 
-  return `Generate ${count} assessment questions for the following employee profile.
+  // Build a style rotation hint so the model uses varied formats
+  const STYLE_LIST = [
+    'real workplace scenario',
+    'decision under pressure',
+    'situational judgment',
+    'multi-step process',
+    'client/customer interaction',
+    'team collaboration dilemma',
+    'compliance or policy',
+    'root-cause problem solving',
+    'communication or escalation',
+    'case-based analysis',
+    'tool or system usage',
+    'performance measurement',
+    'stakeholder management',
+    'risk assessment',
+  ];
+
+  return `Generate exactly ${count} unique assessment questions for the role described below.
 
 === EMPLOYEE PROFILE ===
 Job Role: ${jobRole || 'Professional'}
-${skillsList.length ? `Skills identified from JD: ${skillsList.join(', ')}` : ''}
+Variation Seed: ${seed}
+${skillsList.length ? `Skills from JD: ${skillsList.join(', ')}` : ''}
 
 === JOB DESCRIPTION ===
-${jdText || '(No JD provided — use only the job role to infer responsibilities)'}
+${jdText || '(No JD provided — infer responsibilities from the job role)'}
 
-=== VARIATION SEED: ${seed} ===
+=== MANDATORY PRE-GENERATION STEPS ===
 
-=== STEP-BY-STEP GENERATION PROCESS ===
+STEP 1 — EXTRACT ROLE PROFILE (do this before writing any question):
+• Primary domain/industry
+• Seniority level
+• Top responsibilities from the JD
+• Required tools, platforms, systems
+• Required processes and workflows
+• Required knowledge areas
+• Required soft skills and competencies
 
-STEP 1 — EXTRACT THE ROLE PROFILE FROM THE JD:
-Identify before generating any question:
-• Primary domain/industry (HR / Finance / Operations / Sales / IT / Healthcare / Legal / etc.)
-• Seniority level (junior / specialist / senior / manager / director / executive)
-• Top 5 day-to-day responsibilities described in the JD
-• Required tools, platforms, systems (HRMS, SAP, Salesforce, Excel, Jira, etc.)
-• Required processes (recruitment, budgeting, pipeline management, vendor evaluation, etc.)
-• Required knowledge areas (labor law, IFRS, Agile, ISO standards, etc.)
-• Required soft skills and competencies (stakeholder management, negotiation, team leadership, etc.)
-• Key performance indicators or expected outcomes mentioned
+STEP 2 — PLAN ${count} UNIQUE SCENARIOS (do this before writing any question):
+List ${count} DISTINCT real-work scenarios from the JD, one per question slot.
+RULES for scenario planning:
+• Each scenario covers a different responsibility, process, or competency from the JD
+• No two scenarios overlap in topic, situation, or wording
+• Assign each scenario to exactly ONE difficulty tier — never reuse a scenario across tiers
+• Easy scenarios: ${easyCount} — foundational knowledge, clear-cut decisions, standard process steps
+• Medium scenarios: ${mediumCount} — applied judgment, multi-step decisions, moderate complexity
+• Hard scenarios: ${hardCount} — strategic trade-offs, edge cases, cross-functional conflicts, ambiguous situations
+• Distribute styles across ALL ${count} questions using this style list (no style > 20% of total):
+  ${STYLE_LIST.join(' | ')}
 
-STEP 2 — GENERATE QUESTIONS GROUNDED IN THE EXTRACTED PROFILE:
+STEP 3 — WRITE QUESTIONS FROM THE PLANNED SCENARIOS:
 
-QUESTION TYPE MIX — cycle through in order: ${types.join(', ')}
+QUESTION TYPE SEQUENCE (cycle in this exact order): ${types.join(', ')}
 
-DIFFICULTY DISTRIBUTION — MANDATORY:
-• Easy: exactly ${easyCount} questions (~35%) — foundational knowledge, definitions, straightforward processes
-• Medium: exactly ${mediumCount} questions (~45%) — applied situations, multi-step decisions, moderate complexity
-• Hard: exactly ${hardCount} questions (~20%) — complex scenarios, strategic thinking, edge cases, cross-functional judgment
-Generate all easy questions first, then medium, then hard in the JSON — the final reordering will happen in code.
+WORDING RULES:
+• MAX ${maxRoleOpener} question(s) total may start with "As a [role]" / "In your role as" / "While working as"
+• ALL other questions must open with a direct scenario or concept — never with the role title
+• Good openers: "When evaluating...", "A colleague raises...", "Which approach best...", "A client reports...", "During a review of...", "What is the recommended...", "A team faces..."
+• Bad openers: "As an HR Executive...", "In your role as Finance Manager..."
 
-WORDING RULES — STRICTLY ENFORCED:
-• Maximum ${Math.max(1, Math.floor(count * 0.08))} question(s) in the entire set may start with "As a [role]" / "In your role as" / "While working as". ALL OTHER questions must be worded differently.
-• Write questions that directly address: concepts, best practices, scenarios, decisions, processes, policies, tools, case situations — without mentioning the job role in the question stem.
-• Good examples: "What is the recommended approach when...", "Which of the following best describes...", "A team encounters [situation]. What should be done first?", "When evaluating [process], which factor is most important?"
-• Bad examples: "As an HR Executive, when you face...", "In your role as a Finance Manager, what would you do..."
-• Make each question test a UNIQUE concept — no two questions may test the same thing even with different wording.
+MCQ OPTION RULES:
+• Every MCQ must have 4 UNIQUE options not shared with any other question
+• Options must be plausible but distinguishable — no trick options, no "all/none of the above"
+• Vary which letter (A/B/C/D) is correct — do not default to A
 
-STEP 3 — VALIDATE EACH QUESTION BEFORE RETURNING:
-• Can I point to a specific line or responsibility in the JD that makes this question relevant? If NO — replace it.
-• Is this question unique compared to all others in the set? If similar to another — replace it.
-• Does the wording follow the rules above? If not — rewrite it.
+STEP 4 — SELF-CHECK BEFORE OUTPUT:
+✓ Exactly ${count} questions total (${easyCount} easy, ${mediumCount} medium, ${hardCount} hard)
+✓ No two questions test the same scenario, concept, or wording
+✓ No difficulty tier repeats a scenario from another tier
+✓ No repeated MCQ option sets across questions
+✓ Question styles are varied — no single style exceeds 20%
 
-=== OUTPUT FORMAT ===
+=== OUTPUT FORMAT — return only this JSON ===
 {
   "questions": [
     {
       "type": "mcq|fill_blank|subjective",
-      "question": "direct, naturally worded question about a concept, scenario, or decision",
+      "question": "naturally worded question — scenario-first, not role-first",
       "difficulty": "easy|medium|hard",
       "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
-      "answer": "A (or B/C/D for mcq) | exact phrase for fill_blank | detailed model answer for subjective",
-      "explanation": "brief phrase — which JD requirement this tests",
-      "skillArea": "the specific responsibility, skill, or competency from the JD being tested"
+      "answer": "A/B/C/D for mcq | exact phrase for fill_blank | detailed model answer for subjective",
+      "explanation": "which JD responsibility or skill this tests",
+      "skillArea": "specific competency, tool, or process from the JD"
     }
   ]
 }`;
@@ -427,16 +443,85 @@ function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyD
 }
 
 /**
- * Generates exactly `questionCount` unique questions for the given job role/JD.
- * Guarantees:
- *  - Exact count (never fewer, never more)
- *  - No duplicate questions or duplicate options
- *  - Approximate 35/45/20 easy/medium/hard distribution
- *  - Type mix follows `questionTypes` sequence/ratio
- * Strategy: request from the LLM with a buffer, retry with escalating asks if
- * short, and — only as an absolute last resort — pad the remainder with
- * deterministic template questions so the caller never receives a partial set.
+ * Validates a question bank before persisting it.
+ * Returns { valid: boolean, errors: string[] }
+ * Used by routes to gate DB saves — never overwrites an existing bank if validation fails.
  */
+export function validateQuestionBank(questions, target) {
+  const errors = [];
+
+  // 1. Count
+  if (!Array.isArray(questions)) {
+    return { valid: false, errors: ['questions must be an array'] };
+  }
+  if (questions.length !== target) {
+    errors.push(`Count: got ${questions.length}, expected ${target}`);
+  }
+
+  // 2. Duplicate question text (>70% token overlap)
+  const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean);
+  const seenText = [];
+  const seenOptionSets = new Set();
+  const seenFillAnswers = new Set();
+  const seenScenarios = new Set();
+
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    if (!q || !q.question) { errors.push(`Question ${i}: missing question text`); continue; }
+
+    // Duplicate question text
+    const tokens = new Set(normalize(q.question));
+    for (let j = 0; j < seenText.length; j++) {
+      const prev = seenText[j];
+      const prevTokens = new Set(normalize(prev.text));
+      const inter = [...tokens].filter(t => prevTokens.has(t)).length;
+      const union = new Set([...tokens, ...prevTokens]).size;
+      if (union > 0 && inter / union > 0.70) {
+        errors.push(`Duplicate question: [${i}] is >70% similar to [${j}]`);
+      }
+    }
+    seenText.push({ text: q.question, idx: i });
+
+    // Duplicate MCQ option sets
+    if (Array.isArray(q.options) && q.options.length) {
+      const key = q.options.map(o => (o || '').toLowerCase().replace(/^[a-d]\)\s*/i, '').trim()).sort().join('|');
+      if (key && seenOptionSets.has(key)) errors.push(`Duplicate MCQ options at question ${i}`);
+      seenOptionSets.add(key);
+      // Internal duplicates within same question
+      if (new Set(q.options.map(o => (o || '').toLowerCase().trim())).size !== q.options.length) {
+        errors.push(`Question ${i} has duplicate options within itself`);
+      }
+    }
+
+    // Duplicate fill_blank / subjective answers
+    if ((q.type === 'fill_blank' || q.type === 'subjective') && q.answer) {
+      const ansKey = q.answer.toLowerCase().trim();
+      if (seenFillAnswers.has(ansKey)) errors.push(`Duplicate answer at question ${i}`);
+      seenFillAnswers.add(ansKey);
+    }
+
+    // Difficulty value check
+    if (!['easy', 'medium', 'hard'].includes(q.difficulty)) {
+      errors.push(`Question ${i}: invalid difficulty "${q.difficulty}"`);
+    }
+
+    // Type value check
+    if (!['mcq', 'fill_blank', 'subjective'].includes(q.type)) {
+      errors.push(`Question ${i}: invalid type "${q.type}"`);
+    }
+  }
+
+  // 3. Difficulty distribution check (warn if more than 20% off target)
+  const easy   = questions.filter(q => q.difficulty === 'easy').length;
+  const medium  = questions.filter(q => q.difficulty === 'medium').length;
+  const hard   = questions.filter(q => q.difficulty === 'hard').length;
+  const n = questions.length || 1;
+  if (Math.abs(easy / n - 0.35) > 0.20) errors.push(`Difficulty distribution: easy=${easy} (${Math.round(easy/n*100)}%) is far from target 35%`);
+  if (Math.abs(medium / n - 0.45) > 0.20) errors.push(`Difficulty distribution: medium=${medium} (${Math.round(medium/n*100)}%) is far from target 45%`);
+
+  return { valid: errors.length === 0, errors };
+}
+
 export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed }) {
   const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
@@ -498,6 +583,23 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     }
   }
 
+  // Final trim to exact target
   const trimmed = trimToTarget(pool, num, types);
-  return rebalanceDifficulty(trimmed);
+  const rebalanced = rebalanceDifficulty(trimmed);
+
+  // Post-generation safety net: if count is still off (should never happen after the
+  // fallback loop, but guard against any future edge case), force to exact count.
+  if (rebalanced.length !== num) {
+    console.warn(`[AssessmentGenerator] Post-rebalance count mismatch: ${rebalanced.length}/${num} — applying emergency fix`);
+    if (rebalanced.length > num) {
+      return rebalanced.slice(0, num);
+    }
+    // Still short — generate emergency fallback for the remaining gap
+    const emergencyComboCounters = { easy: 9999, medium: 9999, hard: 9999 };
+    const gap = num - rebalanced.length;
+    const emergency = buildFallbackQuestions(gap, { types, skillsList, jobRole, comboCounters: emergencyComboCounters });
+    return [...rebalanced, ...emergency].slice(0, num);
+  }
+
+  return rebalanced;
 }

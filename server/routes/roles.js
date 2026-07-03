@@ -17,7 +17,7 @@ import multer from 'multer';
 import { randomUUID } from 'crypto';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { RoleLibrary, EmployeeChecklists, Assessments, GeneratedContent } from '../services/DataStore.js';
-import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
+import { generateQuestionsFromJD, validateQuestionBank } from '../services/AssessmentGenerator.js';
 import UserStore from '../services/UserStore.js';
 
 const router = express.Router();
@@ -250,7 +250,9 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
             questionTypes: buildTypeSequence(50),
             employeeSeed: `qbank-${doc.id}-${Date.now()}`,
           });
-          if (questions?.length) {
+          if (questions?.length === 50) {
+            const { valid, errors: ve } = validateQuestionBank(questions, 50);
+            if (!valid) console.warn(`[auto-qbank] Soft validation warnings for "${doc.roleName}":`, ve);
             const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
             await RoleLibrary.update(doc.id, {
               questionBank: bank,
@@ -259,6 +261,8 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
               updatedAt: new Date().toISOString(),
             });
             console.log(`[auto-qbank] Generated ${bank.length} questions for role "${doc.roleName}"`);
+          } else {
+            console.error(`[auto-qbank] Wrong count ${questions?.length}/50 for "${doc.roleName}" — not saving`);
           }
         } catch (e) {
           console.error(`[auto-qbank] Failed for role "${doc.roleName}":`, e.message);
@@ -308,7 +312,9 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
             questionTypes: buildTypeSequence(50),
             employeeSeed: `qbank-${req.params.id}-upd-${Date.now()}`,
           });
-          if (questions?.length) {
+          if (questions?.length === 50) {
+            const { valid, errors: ve } = validateQuestionBank(questions, 50);
+            if (!valid) console.warn(`[auto-qbank] Soft validation warnings for "${effectiveRole}" (JD update):`, ve);
             const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
             await RoleLibrary.update(req.params.id, {
               questionBank: bank,
@@ -317,6 +323,8 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
               updatedAt: new Date().toISOString(),
             });
             console.log(`[auto-qbank] Regenerated ${bank.length} questions for role "${effectiveRole}" (JD updated)`);
+          } else {
+            console.error(`[auto-qbank] Wrong count ${questions?.length}/50 for "${effectiveRole}" — not saving`);
           }
         } catch (e) {
           console.error(`[auto-qbank] Failed regen for role "${effectiveRole}":`, e.message);
@@ -693,12 +701,22 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
       questionTypes: typeSequence,
       employeeSeed: `qbank-${role.id}-regen-${Date.now()}`,
     });
-    // Integrity guard: never persist a partial bank. generateQuestionsFromJD guarantees
-    // an exact count, but if that contract is ever violated, fail loudly instead of
-    // silently saving fewer questions than configured (the existing bank stays intact).
+    // Validate before saving — never overwrite existing bank with a bad set
     if (!Array.isArray(questions) || questions.length !== num) {
-      console.error(`[regenerate-questions] Generated ${questions?.length ?? 0}/${num} questions — aborting save, existing bank preserved.`);
+      console.error(`[regenerate-questions] Generated ${questions?.length ?? 0}/${num} — aborting save, existing bank preserved.`);
       return res.status(500).json({ success: false, error: `Question generation returned ${questions?.length ?? 0} of ${num} requested questions. Existing question bank was not modified — please retry.` });
+    }
+    const { valid, errors: valErrors } = validateQuestionBank(questions, num);
+    if (!valid) {
+      // Log all validation issues; only hard-block on count mismatch (already checked above).
+      // Soft issues (distribution skew, isolated near-duplicate) are logged but don't block save
+      // since the LLM-generated content is still vastly better than no update at all.
+      const hardErrors = valErrors.filter(e => e.startsWith('Count:') || e.startsWith('Question') && e.includes('missing'));
+      if (hardErrors.length > 0) {
+        console.error(`[regenerate-questions] Validation hard errors — aborting save:`, hardErrors);
+        return res.status(500).json({ success: false, error: 'Generated question bank failed validation. Existing bank preserved. Please retry.' });
+      }
+      console.warn(`[regenerate-questions] Validation soft warnings (proceeding with save):`, valErrors);
     }
     const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
     const updated = await RoleLibrary.update(req.params.id, {
@@ -708,7 +726,7 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
       updatedAt: new Date().toISOString(),
     });
     if (!updated) {
-      console.error(`[regenerate-questions] RoleLibrary.update returned falsy for role ${req.params.id} — save may not have persisted.`);
+      console.error(`[regenerate-questions] RoleLibrary.update returned falsy for role ${req.params.id}`);
       return res.status(500).json({ success: false, error: 'Failed to save regenerated question bank. Please retry.' });
     }
     res.json({ success: true, data: { count: bank.length, questions: bank } });
