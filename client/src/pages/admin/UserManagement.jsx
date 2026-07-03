@@ -1055,41 +1055,112 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
 
   if (createdResult) {
     const { user, tempPassword, activationUrl } = createdResult;
+    const emailSent = user.emailSent;
+    const emailError = user.emailError;
+
     return (
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
         <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
-          <div className="p-5 border-b border-slate-700/60">
-            <h2 className="text-lg font-bold text-white">✅ User Created</h2>
-            <p className="text-slate-500 text-xs mt-0.5">Share credentials with {user.name} ({user.email})</p>
-          </div>
-          <div className="p-5 space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Temporary Password</label>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 px-3 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-emerald-300 text-sm font-mono">{tempPassword}</code>
-                <button onClick={() => copyToClipboard(tempPassword, 'Password')} className="px-3 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition-colors">Copy</button>
+
+          {/* Header */}
+          <div className="p-5 border-b border-slate-700/60 flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-xl shrink-0">✔</div>
+              <div>
+                <h2 className="text-lg font-bold text-white">User Created Successfully</h2>
+                <p className="text-slate-500 text-xs mt-0.5">Account is active and ready to use</p>
               </div>
             </div>
-            {activationUrl && (
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Login / Activation Link</label>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 px-3 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-indigo-300 text-xs font-mono truncate">{activationUrl}</code>
-                  <button onClick={() => copyToClipboard(activationUrl, 'Link')} className="px-3 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition-colors whitespace-nowrap">Copy</button>
+            <button onClick={onClose} className="text-slate-500 hover:text-white p-1 rounded-lg hover:bg-slate-700 transition-colors shrink-0">✕</button>
+          </div>
+
+          <div className="p-5 space-y-4">
+
+            {/* User Details */}
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">User Details</p>
+              <div className="bg-slate-900/60 rounded-xl p-4 space-y-2.5">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500 shrink-0">Name</span>
+                  <span className="text-sm text-white font-medium text-right">{user.name}</span>
                 </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500 shrink-0">Email</span>
+                  <span className="text-sm text-slate-300 text-right truncate">{user.email}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500 shrink-0">Role</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border capitalize ${getRoleBadge(user.role)}`}>{user.role}</span>
+                </div>
+                {user.jobRole && (
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500 shrink-0">Job Role</span>
+                    <span className="text-sm text-amber-300 text-right">{user.jobRole}</span>
+                  </div>
+                )}
+                {user.companyName && (
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500 shrink-0">Company</span>
+                    <span className="text-sm text-slate-300 text-right">{user.companyName}</span>
+                  </div>
+                )}
               </div>
+            </div>
+
+            {/* Account Details */}
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Account Details</p>
+              <div className="space-y-2">
+                {tempPassword && (
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1.5">Temporary Password</label>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 px-3 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-emerald-300 text-sm font-mono">{tempPassword}</code>
+                      <button onClick={() => copyToClipboard(tempPassword, 'Password')} className="px-3 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition-colors whitespace-nowrap">Copy</button>
+                    </div>
+                  </div>
+                )}
+                {activationUrl && (
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1.5">Login / Activation Link</label>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 px-3 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-indigo-300 text-xs font-mono truncate">{activationUrl}</code>
+                      <button onClick={() => copyToClipboard(activationUrl, 'Link')} className="px-3 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition-colors whitespace-nowrap">Copy</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Email Status */}
+            <div className={`flex items-start gap-3 p-3.5 rounded-xl border ${emailSent ? 'bg-emerald-500/10 border-emerald-500/30' : emailError ? 'bg-red-500/10 border-red-500/30' : 'bg-slate-700/30 border-slate-600/40'}`}>
+              <span className="text-lg mt-0.5 shrink-0">{emailSent ? '📧' : emailError ? '⚠️' : '⏳'}</span>
+              <div>
+                <p className={`text-sm font-semibold ${emailSent ? 'text-emerald-400' : emailError ? 'text-red-400' : 'text-slate-400'}`}>
+                  {emailSent ? 'Email Sent Successfully' : emailError ? 'Email Delivery Failed' : 'Email Pending'}
+                </p>
+                {emailSent && <p className="text-xs text-slate-500 mt-0.5">Activation email sent to {user.email}. Link expires in 72 hours.</p>}
+                {emailError && <p className="text-xs text-red-400/80 mt-0.5">{emailError}</p>}
+                {!emailSent && !emailError && <p className="text-xs text-slate-500 mt-0.5">Share the credentials above manually with the user.</p>}
+              </div>
+            </div>
+
+            {/* Actions */}
+            {(tempPassword || activationUrl) && (
+              <button
+                onClick={() => copyToClipboard(`Email: ${user.email}\nTemporary Password: ${tempPassword}${activationUrl ? `\nLogin Link: ${activationUrl}` : ''}`, 'Credentials')}
+                className="w-full py-2.5 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-sm font-bold transition-all"
+              >
+                📋 Copy Both (Password + Link)
+              </button>
             )}
-            <button
-              onClick={() => copyToClipboard(`Email: ${user.email}\nTemporary Password: ${tempPassword}${activationUrl ? `\nLogin Link: ${activationUrl}` : ''}`, 'Credentials')}
-              className="w-full py-2.5 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-sm font-bold transition-all"
-            >
-              📋 Copy Both (Email + Password + Link)
-            </button>
+
             <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-900/50 rounded-xl p-3">
               <span>ℹ️</span>
               <span>The user will be required to set a new password the first time they log in — whether they use the temporary password or the activation link.</span>
             </div>
           </div>
+
           <div className="px-5 pb-5">
             <button onClick={onClose} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white font-bold text-sm transition-colors">Done</button>
           </div>
@@ -1730,57 +1801,6 @@ function BulkUpdateModal({ onClose, onDone, setToast }) {
   );
 }
 
-// ─── Invite Result Modal ──────────────────────────────────────────────────────
-
-function InviteResultModal({ user, onClose }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(user.activationUrl || '');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  if (user.emailSent) {
-    return (
-      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-        <div className="bg-slate-800 border border-emerald-500/40 rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
-          <div className="text-4xl mb-3">✅</div>
-          <h3 className="text-lg font-bold text-white mb-1">Invitation Sent!</h3>
-          <p className="text-slate-400 text-sm mb-2">
-            An activation email has been sent to <span className="text-emerald-400 font-semibold">{user.email}</span>
-          </p>
-          <p className="text-slate-500 text-xs mb-5">The user will click the link in the email to set their password and log in. The link expires in 72 hours.</p>
-          <button onClick={onClose} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white font-bold text-sm transition-colors">Done</button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-slate-800 border border-amber-500/40 rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
-        <div className="text-4xl mb-3">⚠️</div>
-        <h3 className="text-lg font-bold text-white mb-1">User Created — Email Failed</h3>
-        <p className="text-slate-400 text-sm mb-1">
-          <span className="text-white font-semibold">{user.name}</span> was created but the invitation email could not be delivered to <span className="text-amber-300">{user.email}</span>.
-        </p>
-        {user.emailError && <p className="text-red-400 text-xs mb-3 bg-red-500/10 rounded-lg p-2">{user.emailError}</p>}
-        <p className="text-slate-500 text-xs mb-3">Share this activation link manually — it expires in 72 hours:</p>
-        <div className="bg-slate-900 rounded-xl p-3 text-indigo-300 text-xs font-mono break-all mb-4 border border-indigo-500/30 text-left">
-          {user.activationUrl}
-        </div>
-        <div className="flex gap-3">
-          <button onClick={copy} className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
-            {copied ? '✓ Copied!' : '📋 Copy Link'}
-          </button>
-          <button onClick={onClose} className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-slate-300 text-sm transition-colors">Done</button>
-        </div>
-        <p className="text-slate-600 text-xs mt-3">Check Render logs and verify SMTP env vars are set correctly.</p>
-      </div>
-    </div>
-  );
-}
-
 // ─── Manage Access Modal ──────────────────────────────────────────────────────
 
 const ACCESS_OPTIONS = [
@@ -1880,7 +1900,6 @@ export default function UserManagement() {
   const [editUser, setEditUser] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [inviteResultUser, setInviteResultUser] = useState(null);
   const [manageAccessUser, setManageAccessUser] = useState(null);
 
   // View follows the effective (switched) role so admins acting as manager see the
@@ -1979,7 +1998,6 @@ export default function UserManagement() {
 
   const handleUserCreated = (newUser) => {
     setUsers(prev => [newUser, ...prev]);
-    setInviteResultUser(newUser);
   };
 
   if (loading && users.length === 0) {
@@ -2017,9 +2035,6 @@ export default function UserManagement() {
         <ImportModal onClose={() => setShowImport(false)} onImported={fetchData} setToast={setToast} />
       )}
 
-      {inviteResultUser && (
-        <InviteResultModal user={inviteResultUser} onClose={() => setInviteResultUser(null)} />
-      )}
       {manageAccessUser && isAdmin && (
         <ManageAccessModal
           user={manageAccessUser}
