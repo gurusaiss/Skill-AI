@@ -733,7 +733,6 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
-}
       {tempPasswordData && <CompanyCreatedModal company={tempPasswordData} onClose={() => setTempPasswordData(null)} />}
       {codesCompany && <CompanyCodesModal company={codesCompany} onClose={() => setCodesCompany(null)} setToast={setToast} />}
       {showCreate && (

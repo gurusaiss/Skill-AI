@@ -418,7 +418,6 @@ export default function Employee() {
           <span className="text-sm font-semibold">Generating your personalized learning module…</span>
         </div>
       )}
-}
       <ConfirmModal
         isOpen={confirmModal.isOpen}
         title={confirmModal.title}
