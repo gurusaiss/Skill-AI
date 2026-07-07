@@ -141,13 +141,13 @@ ABSOLUTE RULES:
 13. OPTION QUALITY: MCQ distractors must be plausible but clearly distinguishable from the correct answer. Avoid "all of the above", "none of the above", and trick options. Each wrong option should represent a genuinely mistaken approach, not an obviously silly one.`;
 }
 
-function buildUserPrompt({ count, jobRole, jdText, skillsList, types, seed }) {
+function buildUserPrompt({ count, jobRole, jdText, skillsList, types, seed, supportingDocsText }) {
   const easyCount   = Math.round(count * 0.35);
   const mediumCount = Math.round(count * 0.45);
   const hardCount   = Math.max(1, count - easyCount - mediumCount);
   const maxRoleOpener = Math.max(1, Math.floor(count * 0.08));
+  const hasProcessDocs = !!(supportingDocsText?.trim());
 
-  // Build a style rotation hint so the model uses varied formats
   const STYLE_LIST = [
     'real workplace scenario',
     'decision under pressure',
@@ -165,6 +165,26 @@ function buildUserPrompt({ count, jobRole, jdText, skillsList, types, seed }) {
     'risk assessment',
   ];
 
+  const processDocsSection = hasProcessDocs ? `
+=== INTERNAL PROCESS DOCUMENTS ===
+These documents describe the organization's actual operating procedures, workflows, and standards.
+They are the PRIMARY source for process-based, SOP, and operational questions.
+Generate 30–40% of questions directly from these documents when they are present.
+
+${supportingDocsText}
+
+` : '';
+
+  const processDocsStep = hasProcessDocs ? `
+• Extract key processes, SOPs, workflows, and operational standards from the INTERNAL PROCESS DOCUMENTS
+• Identify company-specific terminology, step sequences, approval flows, and decision criteria` : '';
+
+  const processDocsMix = hasProcessDocs ? `
+• ${Math.round(count * 0.35)} questions from the INTERNAL PROCESS DOCUMENTS (real SOP/workflow scenarios)
+• ${count - Math.round(count * 0.35)} questions from the JD responsibilities and required competencies
+• Blend both sources — questions should feel like they come from the same organisation` : `
+• All scenarios drawn from the JD responsibilities and required competencies`;
+
   return `Generate exactly ${count} unique assessment questions for the role described below.
 
 === EMPLOYEE PROFILE ===
@@ -174,7 +194,7 @@ ${skillsList.length ? `Skills from JD: ${skillsList.join(', ')}` : ''}
 
 === JOB DESCRIPTION ===
 ${jdText || '(No JD provided — infer responsibilities from the job role)'}
-
+${processDocsSection}
 === MANDATORY PRE-GENERATION STEPS ===
 
 STEP 1 — EXTRACT ROLE PROFILE (do this before writing any question):
@@ -184,18 +204,20 @@ STEP 1 — EXTRACT ROLE PROFILE (do this before writing any question):
 • Required tools, platforms, systems
 • Required processes and workflows
 • Required knowledge areas
-• Required soft skills and competencies
+• Required soft skills and competencies${processDocsStep}
 
 STEP 2 — PLAN ${count} UNIQUE SCENARIOS (do this before writing any question):
-List ${count} DISTINCT real-work scenarios from the JD, one per question slot.
+List ${count} DISTINCT real-work scenarios, one per question slot.
+Source mix:${processDocsMix}
+
 RULES for scenario planning:
-• Each scenario covers a different responsibility, process, or competency from the JD
+• Each scenario covers a different responsibility, process, or competency
 • No two scenarios overlap in topic, situation, or wording
 • Assign each scenario to exactly ONE difficulty tier — never reuse a scenario across tiers
 • Easy scenarios: ${easyCount} — foundational knowledge, clear-cut decisions, standard process steps
 • Medium scenarios: ${mediumCount} — applied judgment, multi-step decisions, moderate complexity
 • Hard scenarios: ${hardCount} — strategic trade-offs, edge cases, cross-functional conflicts, ambiguous situations
-• Distribute styles across ALL ${count} questions using this style list (no style > 20% of total):
+• Distribute styles across ALL ${count} questions (no style > 20% of total):
   ${STYLE_LIST.join(' | ')}
 
 STEP 3 — WRITE QUESTIONS FROM THE PLANNED SCENARIOS:
@@ -219,6 +241,7 @@ STEP 4 — SELF-CHECK BEFORE OUTPUT:
 ✓ No difficulty tier repeats a scenario from another tier
 ✓ No repeated MCQ option sets across questions
 ✓ Question styles are varied — no single style exceeds 20%
+${hasProcessDocs ? '✓ Process-doc questions reference actual procedures from the uploaded documents' : ''}
 
 === OUTPUT FORMAT — return only this JSON ===
 {
@@ -229,8 +252,8 @@ STEP 4 — SELF-CHECK BEFORE OUTPUT:
       "difficulty": "easy|medium|hard",
       "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
       "answer": "A/B/C/D for mcq | exact phrase for fill_blank | detailed model answer for subjective",
-      "explanation": "which JD responsibility or skill this tests",
-      "skillArea": "specific competency, tool, or process from the JD"
+      "explanation": "which JD responsibility, skill, or process document section this tests",
+      "skillArea": "specific competency, tool, process, or SOP from the JD or process docs"
     }
   ]
 }`;
@@ -522,13 +545,31 @@ export function validateQuestionBank(questions, target) {
   return { valid: errors.length === 0, errors };
 }
 
-export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed }) {
+export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed, supportingDocs }) {
   const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const baseSeed = employeeSeed || randomUUID().slice(0, 8);
   const jdText = (jobDescription || '').trim();
   const skillsList = Array.isArray(jdSkills) && jdSkills.length ? jdSkills : [];
   const system = buildSystemPrompt();
+
+  // Build supporting docs text (cap at 8000 chars to avoid token overflow)
+  const MAX_SUPPORTING_CHARS = 8000;
+  let supportingDocsText = '';
+  if (Array.isArray(supportingDocs) && supportingDocs.length > 0) {
+    const parts = [];
+    let used = 0;
+    for (const doc of supportingDocs) {
+      if (!doc?.text) continue;
+      const header = `--- Document: ${doc.name || 'Untitled'} ---\n`;
+      const remaining = MAX_SUPPORTING_CHARS - used - parts.length * 2;
+      if (remaining <= 0) break;
+      const chunk = doc.text.slice(0, remaining);
+      parts.push(header + chunk);
+      used += header.length + chunk.length;
+    }
+    supportingDocsText = parts.join('\n\n');
+  }
 
   let pool = [];
   const MAX_ATTEMPTS = 5;
@@ -540,7 +581,7 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     const bufferMultiplier = 1.4 + attempt * 0.3;
     const askFor = Math.min(100, Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
     const seed = attempt === 0 ? baseSeed : `${baseSeed}-retry${attempt}-${randomUUID().slice(0, 6)}`;
-    const prompt = buildUserPrompt({ count: askFor, jobRole, jdText, skillsList, types, seed });
+    const prompt = buildUserPrompt({ count: askFor, jobRole, jdText, skillsList, types, seed, supportingDocsText });
 
     let batch = await callGroq(system, prompt);
     if (!batch || batch.length === 0) batch = await callGemini(system, prompt);

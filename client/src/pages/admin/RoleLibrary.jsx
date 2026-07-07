@@ -27,9 +27,16 @@ function RoleModal({ role, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState('details'); // 'details' | 'checklist'
   const [jdUploading, setJdUploading] = useState(false);
+  const [supportingUploading, setSupportingUploading] = useState(false);
+  // jdSources: [{name, chars, uploadedAt}] — tracks which files contributed to the JD textarea
+  const [jdSources, setJdSources] = useState(role?.jdSources || []);
+  // supportingDocs: [{name, text, uploadedAt}] — full text for each supporting doc
+  const [supportingDocs, setSupportingDocs] = useState(role?.supportingDocs || []);
   const jdFileRef = useRef();
+  const supportingFileRef = useRef();
   const isEdit = !!role;
 
+  // Append extracted JD text to textarea and track the source file
   const handleJdFileUpload = async (file) => {
     if (!file) return;
     setJdUploading(true);
@@ -39,8 +46,12 @@ function RoleModal({ role, onClose, onSaved }) {
       const res = await authFetch('/api/roles/parse-jd', { method: 'POST', body: fd });
       const extracted = res?.data?.text ?? res?.text ?? '';
       if (!extracted) throw new Error('No text extracted from file');
-      setForm(p => ({ ...p, jobDescription: extracted }));
-      toast(`Extracted ${extracted.length.toLocaleString()} chars from ${file.name}`);
+      setForm(p => ({
+        ...p,
+        jobDescription: p.jobDescription ? `${p.jobDescription}\n\n${extracted}` : extracted,
+      }));
+      setJdSources(p => [...p, { name: file.name, chars: extracted.length, uploadedAt: new Date().toISOString() }]);
+      toast(`Added ${extracted.length.toLocaleString()} chars from ${file.name}`);
     } catch (e) {
       toast(e.message || 'Failed to extract text', 'error');
     } finally {
@@ -48,6 +59,29 @@ function RoleModal({ role, onClose, onSaved }) {
       if (jdFileRef.current) jdFileRef.current.value = '';
     }
   };
+
+  // Upload a supporting document — store its full text separately (not in JD textarea)
+  const handleSupportingFileUpload = async (file) => {
+    if (!file) return;
+    setSupportingUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await authFetch('/api/roles/parse-jd', { method: 'POST', body: fd });
+      const extracted = res?.data?.text ?? res?.text ?? '';
+      if (!extracted) throw new Error('No text extracted from file');
+      setSupportingDocs(p => [...p, { name: file.name, text: extracted, uploadedAt: new Date().toISOString() }]);
+      toast(`Supporting doc added: ${file.name} (${extracted.length.toLocaleString()} chars)`);
+    } catch (e) {
+      toast(e.message || 'Failed to extract text', 'error');
+    } finally {
+      setSupportingUploading(false);
+      if (supportingFileRef.current) supportingFileRef.current.value = '';
+    }
+  };
+
+  const removeJdSource = idx => setJdSources(p => p.filter((_, i) => i !== idx));
+  const removeSupportingDoc = idx => setSupportingDocs(p => p.filter((_, i) => i !== idx));
 
   const f = key => e => setForm(p => ({ ...p, [key]: e.target.value }));
 
@@ -69,6 +103,8 @@ function RoleModal({ role, onClose, onSaved }) {
         skills:              form.skills.split(/[,;|]/).map(s => s.trim()).filter(Boolean),
         status:              form.status,
         onboardingChecklist: checklist,
+        jdSources,
+        supportingDocs,
       };
       const res = isEdit
         ? await authFetch(`/api/roles/${role.id}`, { method: 'PUT',    body: JSON.stringify(payload) })
@@ -81,6 +117,8 @@ function RoleModal({ role, onClose, onSaved }) {
       setSaving(false);
     }
   };
+
+  const ACCEPT_ALL = '.pdf,.doc,.docx,.pptx,.ppt,.txt,.rtf,.csv,.xls,.xlsx,.zip';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -120,6 +158,8 @@ function RoleModal({ role, onClose, onSaved }) {
               <option value="inactive">Inactive</option>
             </select>
           </div>
+
+          {/* ── Job Description ── */}
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className={labelCls} style={{marginBottom:0}}>Job Description</label>
@@ -133,17 +173,63 @@ function RoleModal({ role, onClose, onSaved }) {
                 >
                   {jdUploading ? '⏳ Extracting…' : '📎 Upload JD File'}
                 </button>
-                <input
-                  ref={jdFileRef}
-                  type="file"
-                  accept=".pdf,.doc,.docx,.txt,.rtf"
-                  className="hidden"
-                  onChange={e => handleJdFileUpload(e.target.files[0])}
-                />
+                <input ref={jdFileRef} type="file" accept={ACCEPT_ALL} className="hidden"
+                  onChange={e => handleJdFileUpload(e.target.files[0])} />
               </div>
             </div>
-            <p className="text-xs text-slate-500 mb-1">Upload PDF, DOC, DOCX, TXT or paste text directly below</p>
-            <textarea className={inputCls} rows={7} value={form.jobDescription} onChange={f('jobDescription')} placeholder="Paste the full job description here, or upload a file above..." />
+            <p className="text-xs text-slate-500 mb-1">Upload PDF, DOCX, PPTX, TXT, XLS or paste text. Multiple files are appended.</p>
+
+            {/* JD source tags */}
+            {jdSources.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {jdSources.map((src, i) => (
+                  <span key={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600">
+                    📄 {src.name}
+                    <button type="button" onClick={() => removeJdSource(i)} className="text-slate-500 hover:text-red-400 ml-0.5">✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <textarea className={inputCls} rows={7} value={form.jobDescription} onChange={f('jobDescription')}
+              placeholder="Paste the full job description here, or upload a file above..." />
+          </div>
+
+          {/* ── Supporting Documents ── */}
+          <div className="border border-slate-700 rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-slate-300">Supporting Documents</p>
+                <p className="text-xs text-slate-500 mt-0.5">SOPs, process manuals, playbooks, policies — used to enrich assessment questions</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => supportingFileRef.current?.click()}
+                disabled={supportingUploading}
+                className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 disabled:opacity-50 transition-colors whitespace-nowrap"
+              >
+                {supportingUploading ? '⏳ Uploading…' : '📂 Upload Supporting File'}
+              </button>
+              <input ref={supportingFileRef} type="file" accept={ACCEPT_ALL} className="hidden"
+                onChange={e => handleSupportingFileUpload(e.target.files[0])} />
+            </div>
+
+            {supportingDocs.length === 0 ? (
+              <p className="text-xs text-slate-600 py-1">No supporting documents added yet.</p>
+            ) : (
+              <div className="space-y-1">
+                {supportingDocs.map((doc, i) => (
+                  <div key={i} className="flex items-center justify-between bg-[#0F172A] rounded px-3 py-1.5 border border-slate-700">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-emerald-400 text-xs">📄</span>
+                      <span className="text-xs text-slate-300 truncate">{doc.name}</span>
+                      <span className="text-xs text-slate-500 shrink-0">{(doc.text?.length || 0).toLocaleString()} chars</span>
+                    </div>
+                    <button type="button" onClick={() => removeSupportingDoc(i)} className="text-slate-500 hover:text-red-400 text-xs ml-2 shrink-0">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           </>)}
 
@@ -206,8 +292,32 @@ function ViewModal({ role, onClose, onEdit }) {
           )}
           {role.jobDescription && (
             <div>
-              <p className="text-xs font-medium text-slate-400 mb-2">JOB DESCRIPTION</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium text-slate-400">JOB DESCRIPTION</p>
+                {(role.jdSources || []).length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {role.jdSources.map((src, i) => (
+                      <span key={i} className="px-1.5 py-0.5 rounded text-xs bg-slate-700 text-slate-400">📄 {src.name}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
               <pre className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed bg-[#0F172A] rounded-lg p-4 border border-slate-700">{role.jobDescription}</pre>
+            </div>
+          )}
+          {(role.supportingDocs || []).length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-slate-400 mb-2">SUPPORTING DOCUMENTS ({role.supportingDocs.length})</p>
+              <div className="space-y-1">
+                {role.supportingDocs.map((doc, i) => (
+                  <div key={i} className="flex items-center gap-2 bg-[#0F172A] rounded px-3 py-2 border border-slate-700">
+                    <span className="text-emerald-400 text-xs">📄</span>
+                    <span className="text-xs text-slate-300 flex-1">{doc.name}</span>
+                    <span className="text-xs text-slate-500">{(doc.text?.length || 0).toLocaleString()} chars</span>
+                    {doc.uploadedAt && <span className="text-xs text-slate-600">{new Date(doc.uploadedAt).toLocaleDateString()}</span>}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           <div className="flex gap-2 pt-2">

@@ -137,36 +137,78 @@ async function parseFile(buffer, mimetype, originalname) {
   return utils.sheet_to_json(ws, { defval: '' });
 }
 
-// ── POST /api/roles/parse-jd — extract text from uploaded JD file ─────────────
-// Supports: PDF, DOCX, DOC, TXT, RTF, CSV, XLS, XLSX
+// Extract plain text from a file buffer — shared by parse-jd and supporting-doc endpoints
+async function extractTextFromBuffer(buffer, originalname) {
+  const ext = (originalname?.split('.').pop() || '').toLowerCase();
+
+  if (ext === 'pdf') {
+    const pdfParse = _require('pdf-parse');
+    const result = await pdfParse(buffer);
+    return result.text || '';
+  }
+
+  if (ext === 'docx' || ext === 'doc') {
+    const mammoth = _require('mammoth');
+    const result = await mammoth.extractRawText({ buffer });
+    return result.value || '';
+  }
+
+  if (ext === 'pptx' || ext === 'ppt') {
+    // PPTX is a ZIP — extract text from ppt/slides/slide*.xml <a:t> tags
+    const AdmZip = _require('adm-zip');
+    const zip = new AdmZip(buffer);
+    const entries = zip.getEntries().filter(e => /^ppt\/slides\/slide\d+\.xml$/i.test(e.entryName));
+    // Sort by slide number
+    entries.sort((a, b) => {
+      const na = parseInt(a.entryName.match(/\d+/)?.[0] || '0');
+      const nb = parseInt(b.entryName.match(/\d+/)?.[0] || '0');
+      return na - nb;
+    });
+    const texts = entries.map(entry => {
+      const xml = entry.getData().toString('utf-8');
+      return (xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [])
+        .map(m => m.replace(/<[^>]+>/g, ''))
+        .join(' ');
+    });
+    return texts.join('\n\n');
+  }
+
+  if (ext === 'xls' || ext === 'xlsx') {
+    const { read, utils } = await import('xlsx');
+    const wb = read(buffer, { type: 'buffer' });
+    return wb.SheetNames.map(name => utils.sheet_to_csv(wb.Sheets[name])).join('\n\n');
+  }
+
+  if (ext === 'zip') {
+    // Extract text from all supported files inside the ZIP
+    const AdmZip = _require('adm-zip');
+    const zip = new AdmZip(buffer);
+    const parts = [];
+    for (const entry of zip.getEntries()) {
+      if (entry.isDirectory) continue;
+      const innerExt = (entry.entryName.split('.').pop() || '').toLowerCase();
+      if (!['pdf', 'docx', 'doc', 'pptx', 'txt', 'csv', 'xls', 'xlsx'].includes(innerExt)) continue;
+      try {
+        const innerText = await extractTextFromBuffer(entry.getData(), entry.entryName);
+        if (innerText?.trim()) parts.push(`--- ${entry.entryName} ---\n${innerText.trim()}`);
+      } catch (_) { /* skip unreadable entries */ }
+    }
+    return parts.join('\n\n');
+  }
+
+  // txt, rtf, csv and anything else text-based
+  return buffer.toString('utf-8');
+}
+
+// ── POST /api/roles/parse-jd — extract text from uploaded JD or supporting file ─
+// Supports: PDF, DOCX, DOC, PPTX, TXT, RTF, CSV, XLS, XLSX, ZIP
 // File is processed in-memory and immediately discarded — only extracted text returned
 router.post('/parse-jd', authenticate, requireRole('admin', 'manager'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
     const ext = (req.file.originalname?.split('.').pop() || '').toLowerCase();
-    let text = '';
 
-    if (ext === 'pdf') {
-      // pdf-parse v1.x exports a single callable function via module.exports
-      const pdfParse = _require('pdf-parse');
-      const result = await pdfParse(req.file.buffer);
-      text = result.text || '';
-    } else if (ext === 'docx' || ext === 'doc') {
-      const mammoth = _require('mammoth');
-      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
-      text = result.value || '';
-    } else if (ext === 'xls' || ext === 'xlsx') {
-      const { read, utils } = await import('xlsx');
-      const wb = read(req.file.buffer, { type: 'buffer' });
-      // Convert all sheets to text
-      text = wb.SheetNames.map(name => {
-        const ws = wb.Sheets[name];
-        return utils.sheet_to_csv(ws);
-      }).join('\n\n');
-    } else {
-      // txt, rtf, csv, and any other text-based format
-      text = req.file.buffer.toString('utf-8');
-    }
+    let text = await extractTextFromBuffer(req.file.buffer, req.file.originalname);
 
     // Normalise line endings and collapse excessive blank lines
     text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -226,7 +268,7 @@ router.get('/:id', authenticate, async (req, res) => {
 router.post('/', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const companyId = req.user.companyId || 'default';
-    const { roleName, department, jobDescription, skills, status } = req.body;
+    const { roleName, department, jobDescription, skills, status, jdSources, supportingDocs } = req.body;
     if (!roleName?.trim()) return res.status(400).json({ success: false, error: 'Role name is required' });
 
     // Prevent duplicates within company
@@ -245,6 +287,8 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
       jobDescription: extractedJD,
       skills:         parseSkills(skills),
       status:         status || 'active',
+      jdSources:      Array.isArray(jdSources) ? jdSources : [],
+      supportingDocs: Array.isArray(supportingDocs) ? supportingDocs : [],
       createdAt:      new Date().toISOString(),
       updatedAt:      new Date().toISOString(),
       createdBy:      req.user.userId,
@@ -263,6 +307,7 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
             questionCount: 50,
             questionTypes: buildTypeSequence(50),
             employeeSeed: `qbank-${doc.id}-${Date.now()}`,
+            supportingDocs: doc.supportingDocs,
           });
           if (questions?.length === 50) {
             const { valid, errors: ve } = validateQuestionBank(questions, 50);
@@ -294,7 +339,7 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
     const existing = await RoleLibrary.getById(req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'Role not found' });
 
-    const { roleName, department, jobDescription, skills, status } = req.body;
+    const { roleName, department, jobDescription, skills, status, jdSources, supportingDocs } = req.body;
     // Extract only Role / Responsibilities / Required Skills before comparing/storing,
     // so re-pasting the same noisy source JD doesn't spuriously trigger regeneration
     // and the stored value is always the distilled version.
@@ -305,17 +350,21 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
       ...(jobDescription  !== undefined && { jobDescription: extractedJD }),
       ...(skills          !== undefined && { skills: parseSkills(skills) }),
       ...(status          !== undefined && { status }),
+      ...(jdSources       !== undefined && { jdSources: Array.isArray(jdSources) ? jdSources : [] }),
+      ...(supportingDocs  !== undefined && { supportingDocs: Array.isArray(supportingDocs) ? supportingDocs : [] }),
       updatedAt: new Date().toISOString(),
     };
     const updated = await RoleLibrary.update(req.params.id, updates);
     res.json({ success: true, data: updated });
 
-    // Regenerate question bank in background if JD changed
+    // Regenerate question bank in background if JD or supporting docs changed
     const jdChanged = extractedJD !== undefined && extractedJD !== existing.jobDescription;
-    if (jdChanged && (updates.jobDescription || existing.jobDescription)) {
+    const docsChanged = supportingDocs !== undefined;
+    if ((jdChanged || docsChanged) && (updates.jobDescription || existing.jobDescription)) {
       const effectiveJD = updates.jobDescription || existing.jobDescription;
       const effectiveRole = updates.roleName || existing.roleName;
       const effectiveSkills = updates.skills || existing.skills || [];
+      const effectiveDocs = updates.supportingDocs ?? existing.supportingDocs ?? [];
       setImmediate(async () => {
         try {
           const questions = await generateQuestionsFromJD({
@@ -325,6 +374,7 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
             questionCount: 50,
             questionTypes: buildTypeSequence(50),
             employeeSeed: `qbank-${req.params.id}-upd-${Date.now()}`,
+            supportingDocs: effectiveDocs,
           });
           if (questions?.length === 50) {
             const { valid, errors: ve } = validateQuestionBank(questions, 50);
@@ -523,6 +573,7 @@ router.post('/:id/generate-assessment', authenticate, requireRole('admin'), asyn
       questionCount,
       questionTypes,
       employeeSeed:   `role-${role.id}-${Date.now()}`,
+      supportingDocs: role.supportingDocs || [],
     });
 
     const assessmentId = randomUUID();
@@ -596,6 +647,7 @@ router.post('/bulk-generate-assessments', authenticate, requireRole('admin'), as
             questionCount:  10,
             questionTypes:  ['mcq'],
             employeeSeed:   `role-${role.id}-bulk-${Date.now()}`,
+            supportingDocs: role.supportingDocs || [],
           });
 
           const assessmentId = randomUUID();
@@ -714,6 +766,7 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
       questionCount: num,
       questionTypes: typeSequence,
       employeeSeed: `qbank-${role.id}-regen-${Date.now()}`,
+      supportingDocs: role.supportingDocs || [],
     });
     // Validate before saving — never overwrite existing bank with a bad set
     if (!Array.isArray(questions) || questions.length !== num) {
