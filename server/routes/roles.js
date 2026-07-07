@@ -157,20 +157,32 @@ async function extractTextFromBuffer(buffer, originalname) {
     // PPTX is a ZIP — extract text from ppt/slides/slide*.xml <a:t> tags
     const AdmZip = _require('adm-zip');
     const zip = new AdmZip(buffer);
-    const entries = zip.getEntries().filter(e => /^ppt\/slides\/slide\d+\.xml$/i.test(e.entryName));
-    // Sort by slide number
-    entries.sort((a, b) => {
-      const na = parseInt(a.entryName.match(/\d+/)?.[0] || '0');
-      const nb = parseInt(b.entryName.match(/\d+/)?.[0] || '0');
+    // Normalize to forward slashes (adm-zip can use backslashes on Windows)
+    const normName = e => e.entryName.replace(/\\/g, '/');
+    const slideEntries = zip.getEntries().filter(e => /ppt\/slides\/slide\d+\.xml$/i.test(normName(e)));
+    slideEntries.sort((a, b) => {
+      const na = parseInt(normName(a).match(/slide(\d+)\.xml/i)?.[1] || '0');
+      const nb = parseInt(normName(b).match(/slide(\d+)\.xml/i)?.[1] || '0');
       return na - nb;
     });
-    const texts = entries.map(entry => {
-      const xml = entry.getData().toString('utf-8');
-      return (xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [])
-        .map(m => m.replace(/<[^>]+>/g, ''))
+    const extractXmlText = xml => {
+      // Match <a:t> tags — use [\s\S]*? to handle any whitespace/newlines inside the tag
+      const matches = xml.match(/<a:t(?:\s[^>]*)?>[\s\S]*?<\/a:t>/g) || [];
+      return matches
+        .map(m => m.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'"))
+        .filter(t => t.trim())
         .join(' ');
-    });
-    return texts.join('\n\n');
+    };
+    const slideTexts = slideEntries.map(e => extractXmlText(e.getData().toString('utf-8'))).filter(Boolean);
+    // Also grab notes slides if main slides yield nothing
+    if (!slideTexts.length) {
+      const noteEntries = zip.getEntries().filter(e => /ppt\/notesSlides\//.test(normName(e)) && normName(e).endsWith('.xml'));
+      noteEntries.forEach(e => {
+        const t = extractXmlText(e.getData().toString('utf-8'));
+        if (t) slideTexts.push(t);
+      });
+    }
+    return slideTexts.join('\n\n');
   }
 
   if (ext === 'xls' || ext === 'xlsx') {
@@ -186,10 +198,11 @@ async function extractTextFromBuffer(buffer, originalname) {
     const parts = [];
     for (const entry of zip.getEntries()) {
       if (entry.isDirectory) continue;
-      const innerExt = (entry.entryName.split('.').pop() || '').toLowerCase();
+      const baseName = entry.entryName.split('/').pop().split('\\').pop();
+      const innerExt = (baseName.split('.').pop() || '').toLowerCase();
       if (!['pdf', 'docx', 'doc', 'pptx', 'txt', 'csv', 'xls', 'xlsx'].includes(innerExt)) continue;
       try {
-        const innerText = await extractTextFromBuffer(entry.getData(), entry.entryName);
+        const innerText = await extractTextFromBuffer(entry.getData(), baseName);
         if (innerText?.trim()) parts.push(`--- ${entry.entryName} ---\n${innerText.trim()}`);
       } catch (_) { /* skip unreadable entries */ }
     }
