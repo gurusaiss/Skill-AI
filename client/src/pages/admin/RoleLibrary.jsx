@@ -16,27 +16,30 @@ Product Manager,Product,"Define product vision and work with cross-functional te
 function RoleModal({ role, onClose, onSaved }) {
   const { notify: toast } = useNotification();
   const [form, setForm] = useState({
-    roleName:       role?.roleName       || '',
-    department:     role?.department     || '',
+    roleName:   role?.roleName   || '',
+    department: role?.department || '',
+    // fallback textarea — shown only when no jdFiles are uploaded
     jobDescription: role?.jobDescription || '',
-    skills:         (role?.skills || []).join(', '),
-    status:         role?.status         || 'active',
+    skills: (role?.skills || []).join(', '),
+    status: role?.status || 'active',
   });
   const [checklist, setChecklist] = useState(role?.onboardingChecklist || []);
   const [newItem, setNewItem] = useState({ title: '', description: '', dueDay: '' });
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState('details'); // 'details' | 'checklist'
+  const [tab, setTab] = useState('details');
   const [jdUploading, setJdUploading] = useState(false);
   const [supportingUploading, setSupportingUploading] = useState(false);
-  // jdSources: [{name, chars, uploadedAt}] — tracks which files contributed to the JD textarea
-  const [jdSources, setJdSources] = useState(role?.jdSources || []);
-  // supportingDocs: [{name, text, uploadedAt}] — full text for each supporting doc
-  const [supportingDocs, setSupportingDocs] = useState(role?.supportingDocs || []);
+  // jdFiles: [{id, name, text, chars, questionCount, uploadedAt}]
+  const [jdFiles, setJdFiles] = useState(role?.jdFiles || []);
+  // supportingFiles: [{id, name, text, chars, questionCount, uploadedAt}]
+  const [supportingFiles, setSupportingFiles] = useState(role?.supportingFiles || []);
   const jdFileRef = useRef();
   const supportingFileRef = useRef();
   const isEdit = !!role;
 
-  // Append extracted JD text to textarea and track the source file
+  const genId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const ACCEPT_ALL = '.pdf,.doc,.docx,.pptx,.ppt,.txt,.rtf,.csv,.xls,.xlsx,.zip,.md';
+
   const handleJdFileUpload = async (file) => {
     if (!file) return;
     setJdUploading(true);
@@ -44,14 +47,10 @@ function RoleModal({ role, onClose, onSaved }) {
       const fd = new FormData();
       fd.append('file', file);
       const res = await authFetch('/api/roles/parse-jd', { method: 'POST', body: fd });
-      const extracted = res?.data?.text ?? res?.text ?? '';
-      if (!extracted) throw new Error('No text extracted from file');
-      setForm(p => ({
-        ...p,
-        jobDescription: p.jobDescription ? `${p.jobDescription}\n\n${extracted}` : extracted,
-      }));
-      setJdSources(p => [...p, { name: file.name, chars: extracted.length, uploadedAt: new Date().toISOString() }]);
-      toast(`Added ${extracted.length.toLocaleString()} chars from ${file.name}`);
+      const text = res?.data?.text ?? res?.text ?? '';
+      if (!text) throw new Error('No text extracted from file');
+      setJdFiles(p => [...p, { id: genId(), name: file.name, text, chars: text.length, questionCount: 10, uploadedAt: new Date().toISOString() }]);
+      toast(`JD added: ${file.name} (${text.length.toLocaleString()} chars)`);
     } catch (e) {
       toast(e.message || 'Failed to extract text', 'error');
     } finally {
@@ -60,7 +59,6 @@ function RoleModal({ role, onClose, onSaved }) {
     }
   };
 
-  // Upload a supporting document — store its full text separately (not in JD textarea)
   const handleSupportingFileUpload = async (file) => {
     if (!file) return;
     setSupportingUploading(true);
@@ -68,10 +66,10 @@ function RoleModal({ role, onClose, onSaved }) {
       const fd = new FormData();
       fd.append('file', file);
       const res = await authFetch('/api/roles/parse-jd', { method: 'POST', body: fd });
-      const extracted = res?.data?.text ?? res?.text ?? '';
-      if (!extracted) throw new Error('No text extracted from file');
-      setSupportingDocs(p => [...p, { name: file.name, text: extracted, uploadedAt: new Date().toISOString() }]);
-      toast(`Supporting doc added: ${file.name} (${extracted.length.toLocaleString()} chars)`);
+      const text = res?.data?.text ?? res?.text ?? '';
+      if (!text) throw new Error('No text extracted from file');
+      setSupportingFiles(p => [...p, { id: genId(), name: file.name, text, chars: text.length, questionCount: 5, uploadedAt: new Date().toISOString() }]);
+      toast(`Supporting doc added: ${file.name} (${text.length.toLocaleString()} chars)`);
     } catch (e) {
       toast(e.message || 'Failed to extract text', 'error');
     } finally {
@@ -80,8 +78,14 @@ function RoleModal({ role, onClose, onSaved }) {
     }
   };
 
-  const removeJdSource = idx => setJdSources(p => p.filter((_, i) => i !== idx));
-  const removeSupportingDoc = idx => setSupportingDocs(p => p.filter((_, i) => i !== idx));
+  const updateJdCount = (idx, val) =>
+    setJdFiles(p => p.map((f, i) => i === idx ? { ...f, questionCount: Math.max(1, parseInt(val) || 1) } : f));
+  const updateSupportingCount = (idx, val) =>
+    setSupportingFiles(p => p.map((f, i) => i === idx ? { ...f, questionCount: Math.max(1, parseInt(val) || 1) } : f));
+  const removeJdFile = idx => setJdFiles(p => p.filter((_, i) => i !== idx));
+  const removeSupportingFile = idx => setSupportingFiles(p => p.filter((_, i) => i !== idx));
+
+  const totalQuestions = [...jdFiles, ...supportingFiles].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0);
 
   const f = key => e => setForm(p => ({ ...p, [key]: e.target.value }));
 
@@ -96,19 +100,26 @@ function RoleModal({ role, onClose, onSaved }) {
     if (!form.roleName.trim()) return toast('Role name is required', 'error');
     setSaving(true);
     try {
+      // Derive combined JD text from uploaded files for backward compat; fall back to textarea
+      const jobDescription = jdFiles.length > 0
+        ? jdFiles.map(f => f.text).join('\n\n')
+        : form.jobDescription.trim();
       const payload = {
         roleName:            form.roleName.trim(),
         department:          form.department.trim(),
-        jobDescription:      form.jobDescription.trim(),
+        jobDescription,
         skills:              form.skills.split(/[,;|]/).map(s => s.trim()).filter(Boolean),
         status:              form.status,
         onboardingChecklist: checklist,
-        jdSources,
-        supportingDocs,
+        jdFiles,
+        supportingFiles,
+        // backward-compat fields
+        jdSources:    jdFiles.map(f => ({ name: f.name, chars: f.chars, uploadedAt: f.uploadedAt })),
+        supportingDocs: supportingFiles.map(f => ({ name: f.name, text: f.text, uploadedAt: f.uploadedAt })),
       };
       const res = isEdit
-        ? await authFetch(`/api/roles/${role.id}`, { method: 'PUT',    body: JSON.stringify(payload) })
-        : await authFetch('/api/roles',              { method: 'POST',   body: JSON.stringify(payload) });
+        ? await authFetch(`/api/roles/${role.id}`, { method: 'PUT',  body: JSON.stringify(payload) })
+        : await authFetch('/api/roles',              { method: 'POST', body: JSON.stringify(payload) });
       toast(isEdit ? 'Role updated' : 'Role created');
       onSaved(res?.data ?? res);
     } catch (err) {
@@ -118,7 +129,21 @@ function RoleModal({ role, onClose, onSaved }) {
     }
   };
 
-  const ACCEPT_ALL = '.pdf,.doc,.docx,.pptx,.ppt,.txt,.rtf,.csv,.xls,.xlsx,.zip';
+  // Per-file row component (shared by JD and supporting sections)
+  const FileRow = ({ file, idx, onCountChange, onRemove, accent = 'indigo' }) => (
+    <div className="flex items-center gap-2 bg-[#0F172A] rounded-lg px-3 py-2 border border-slate-700">
+      <span className={`text-xs shrink-0 ${accent === 'emerald' ? 'text-emerald-400' : 'text-indigo-400'}`}>📄</span>
+      <span className="text-xs text-slate-300 flex-1 truncate min-w-0" title={file.name}>{file.name}</span>
+      <span className="text-xs text-slate-500 shrink-0">{file.chars.toLocaleString()}c</span>
+      <label className="text-xs text-slate-500 shrink-0">Q:</label>
+      <input
+        type="number" min="1" max="200" value={file.questionCount}
+        onChange={e => onCountChange(idx, e.target.value)}
+        className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-xs text-center focus:outline-none focus:border-indigo-500"
+      />
+      <button type="button" onClick={() => onRemove(idx)} className="text-slate-500 hover:text-red-400 text-xs ml-1 shrink-0">✕</button>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -159,78 +184,87 @@ function RoleModal({ role, onClose, onSaved }) {
             </select>
           </div>
 
-          {/* ── Job Description ── */}
+          {/* ── Job Description Files ── */}
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className={labelCls} style={{marginBottom:0}}>Job Description</label>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">{form.jobDescription.length.toLocaleString()} chars</span>
-                <button
-                  type="button"
-                  onClick={() => jdFileRef.current?.click()}
-                  disabled={jdUploading}
-                  className="text-xs px-2.5 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40 disabled:opacity-50 transition-colors"
-                >
+            <div className="flex items-center justify-between mb-2">
+              <label className={labelCls} style={{marginBottom:0}}>
+                Job Description
+                {jdFiles.length > 0 && <span className="ml-1.5 text-indigo-400 font-normal">({jdFiles.length} file{jdFiles.length > 1 ? 's' : ''})</span>}
+              </label>
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => jdFileRef.current?.click()} disabled={jdUploading}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40 disabled:opacity-50 transition-colors">
                   {jdUploading ? '⏳ Extracting…' : '📎 Upload JD File'}
                 </button>
                 <input ref={jdFileRef} type="file" accept={ACCEPT_ALL} className="hidden"
                   onChange={e => handleJdFileUpload(e.target.files[0])} />
               </div>
             </div>
-            <p className="text-xs text-slate-500 mb-1">Upload PDF, DOCX, PPTX, TXT, XLS or paste text. Multiple files are appended.</p>
 
-            {/* JD source tags */}
-            {jdSources.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {jdSources.map((src, i) => (
-                  <span key={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600">
-                    📄 {src.name}
-                    <button type="button" onClick={() => removeJdSource(i)} className="text-slate-500 hover:text-red-400 ml-0.5">✕</button>
-                  </span>
+            {jdFiles.length === 0 ? (
+              <>
+                <p className="text-xs text-slate-500 mb-1">Upload a JD file (PDF, DOCX, PPTX, TXT…) or paste text directly</p>
+                <textarea className={inputCls} rows={6} value={form.jobDescription} onChange={f('jobDescription')}
+                  placeholder="Paste the full job description here, or upload a file above…" />
+              </>
+            ) : (
+              <div className="space-y-1.5">
+                {jdFiles.map((file, i) => (
+                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateJdCount} onRemove={removeJdFile} accent="indigo" />
                 ))}
+                <button type="button" onClick={() => jdFileRef.current?.click()} disabled={jdUploading}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 underline ml-1">
+                  + Add another JD file
+                </button>
               </div>
             )}
-
-            <textarea className={inputCls} rows={7} value={form.jobDescription} onChange={f('jobDescription')}
-              placeholder="Paste the full job description here, or upload a file above..." />
           </div>
 
-          {/* ── Supporting Documents ── */}
+          {/* ── Supporting Files ── */}
           <div className="border border-slate-700 rounded-lg p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-slate-300">Supporting Documents</p>
-                <p className="text-xs text-slate-500 mt-0.5">SOPs, process manuals, playbooks, policies — used to enrich assessment questions</p>
+                <p className="text-xs font-medium text-slate-300">
+                  Supporting Documents
+                  {supportingFiles.length > 0 && <span className="ml-1.5 text-emerald-400">({supportingFiles.length})</span>}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">SOPs, process manuals, playbooks, policies, training materials</p>
               </div>
-              <button
-                type="button"
-                onClick={() => supportingFileRef.current?.click()}
-                disabled={supportingUploading}
-                className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 disabled:opacity-50 transition-colors whitespace-nowrap"
-              >
-                {supportingUploading ? '⏳ Uploading…' : '📂 Upload Supporting File'}
-              </button>
-              <input ref={supportingFileRef} type="file" accept={ACCEPT_ALL} className="hidden"
-                onChange={e => handleSupportingFileUpload(e.target.files[0])} />
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => supportingFileRef.current?.click()} disabled={supportingUploading}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 disabled:opacity-50 whitespace-nowrap transition-colors">
+                  {supportingUploading ? '⏳ Uploading…' : '📂 Upload File'}
+                </button>
+                <input ref={supportingFileRef} type="file" accept={ACCEPT_ALL} className="hidden"
+                  onChange={e => handleSupportingFileUpload(e.target.files[0])} />
+              </div>
             </div>
 
-            {supportingDocs.length === 0 ? (
-              <p className="text-xs text-slate-600 py-1">No supporting documents added yet.</p>
+            {supportingFiles.length === 0 ? (
+              <p className="text-xs text-slate-600 py-1">No supporting documents yet.</p>
             ) : (
-              <div className="space-y-1">
-                {supportingDocs.map((doc, i) => (
-                  <div key={i} className="flex items-center justify-between bg-[#0F172A] rounded px-3 py-1.5 border border-slate-700">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-emerald-400 text-xs">📄</span>
-                      <span className="text-xs text-slate-300 truncate">{doc.name}</span>
-                      <span className="text-xs text-slate-500 shrink-0">{(doc.text?.length || 0).toLocaleString()} chars</span>
-                    </div>
-                    <button type="button" onClick={() => removeSupportingDoc(i)} className="text-slate-500 hover:text-red-400 text-xs ml-2 shrink-0">✕</button>
-                  </div>
+              <div className="space-y-1.5">
+                {supportingFiles.map((file, i) => (
+                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateSupportingCount} onRemove={removeSupportingFile} accent="emerald" />
                 ))}
               </div>
             )}
           </div>
+
+          {/* ── Total questions badge ── */}
+          {totalQuestions > 0 && (
+            <div className="flex items-center justify-between bg-indigo-900/20 border border-indigo-500/30 rounded-lg px-4 py-2.5">
+              <div>
+                <p className="text-xs text-slate-400">Total questions to generate</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {jdFiles.length > 0 && `${jdFiles.length} JD file${jdFiles.length > 1 ? 's' : ''}`}
+                  {jdFiles.length > 0 && supportingFiles.length > 0 && ' + '}
+                  {supportingFiles.length > 0 && `${supportingFiles.length} supporting doc${supportingFiles.length > 1 ? 's' : ''}`}
+                </p>
+              </div>
+              <span className="text-xl font-bold text-indigo-300">{totalQuestions}</span>
+            </div>
+          )}
           </>)}
 
           {tab === 'checklist' && (
@@ -290,36 +324,44 @@ function ViewModal({ role, onClose, onEdit }) {
               </div>
             </div>
           )}
-          {role.jobDescription && (
+          {(role.jdFiles || []).length > 0 ? (
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-medium text-slate-400">JOB DESCRIPTION</p>
-                {(role.jdSources || []).length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {role.jdSources.map((src, i) => (
-                      <span key={i} className="px-1.5 py-0.5 rounded text-xs bg-slate-700 text-slate-400">📄 {src.name}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <pre className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed bg-[#0F172A] rounded-lg p-4 border border-slate-700">{role.jobDescription}</pre>
-            </div>
-          )}
-          {(role.supportingDocs || []).length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-slate-400 mb-2">SUPPORTING DOCUMENTS ({role.supportingDocs.length})</p>
+              <p className="text-xs font-medium text-slate-400 mb-2">JD FILES ({role.jdFiles.length})</p>
               <div className="space-y-1">
-                {role.supportingDocs.map((doc, i) => (
+                {role.jdFiles.map((f, i) => (
                   <div key={i} className="flex items-center gap-2 bg-[#0F172A] rounded px-3 py-2 border border-slate-700">
-                    <span className="text-emerald-400 text-xs">📄</span>
-                    <span className="text-xs text-slate-300 flex-1">{doc.name}</span>
-                    <span className="text-xs text-slate-500">{(doc.text?.length || 0).toLocaleString()} chars</span>
-                    {doc.uploadedAt && <span className="text-xs text-slate-600">{new Date(doc.uploadedAt).toLocaleDateString()}</span>}
+                    <span className="text-indigo-400 text-xs">📄</span>
+                    <span className="text-xs text-slate-300 flex-1 truncate">{f.name}</span>
+                    <span className="text-xs text-slate-500">{(f.chars || f.text?.length || 0).toLocaleString()} chars</span>
+                    <span className="text-xs font-semibold text-indigo-300">{f.questionCount} Q</span>
                   </div>
                 ))}
               </div>
             </div>
-          )}
+          ) : role.jobDescription ? (
+            <div>
+              <p className="text-xs font-medium text-slate-400 mb-2">JOB DESCRIPTION</p>
+              <pre className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed bg-[#0F172A] rounded-lg p-4 border border-slate-700">{role.jobDescription}</pre>
+            </div>
+          ) : null}
+          {(role.supportingFiles || role.supportingDocs || []).length > 0 && (() => {
+            const docs = role.supportingFiles?.length > 0 ? role.supportingFiles : (role.supportingDocs || []);
+            return (
+              <div>
+                <p className="text-xs font-medium text-slate-400 mb-2">SUPPORTING DOCUMENTS ({docs.length})</p>
+                <div className="space-y-1">
+                  {docs.map((doc, i) => (
+                    <div key={i} className="flex items-center gap-2 bg-[#0F172A] rounded px-3 py-2 border border-slate-700">
+                      <span className="text-emerald-400 text-xs">📄</span>
+                      <span className="text-xs text-slate-300 flex-1 truncate">{doc.name}</span>
+                      <span className="text-xs text-slate-500">{(doc.chars || doc.text?.length || 0).toLocaleString()} chars</span>
+                      {doc.questionCount && <span className="text-xs font-semibold text-emerald-300">{doc.questionCount} Q</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           <div className="flex gap-2 pt-2">
             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${role.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-600'}`}>{role.status}</span>
             {role.updatedAt && <span className="text-xs text-slate-500 my-auto">Updated {new Date(role.updatedAt).toLocaleDateString()}</span>}
@@ -405,7 +447,10 @@ function QuestionBankModal({ role, onClose }) {
   const [loading, setLoading] = useState(true);
   const [regen, setRegen] = useState(false);
   const [regenConfirm, setRegenConfirm] = useState(false);
-  const [regenCount, setRegenCount] = useState(50);
+  // Compute total from per-file configs when files are present
+  const fileTotal = [...(role.jdFiles || []), ...(role.supportingFiles || [])].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0);
+  const hasFiles = (role.jdFiles?.length || 0) + (role.supportingFiles?.length || 0) > 0;
+  const [regenCount, setRegenCount] = useState(fileTotal || role.questionBankCount || 50);
   const [saving, setSaving] = useState(false);
   const [editIdx, setEditIdx] = useState(null);
   const [editQ, setEditQ] = useState(null);
@@ -490,7 +535,7 @@ function QuestionBankModal({ role, onClose }) {
             <div className="flex gap-2">
               <button
                 onClick={() => setRegenConfirm(true)}
-                disabled={regen || !role.jobDescription || regenConfirm}
+                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm}
                 className="text-xs px-3 py-1.5 rounded-lg bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/40 disabled:opacity-40 transition-colors"
               >
                 {regen ? '⏳ Generating…' : '✨ Regenerate All'}
@@ -505,18 +550,31 @@ function QuestionBankModal({ role, onClose }) {
               <p className="text-sm text-amber-300 font-medium">
                 This will replace all {questions.length} existing questions. This cannot be undone.
               </p>
-              <div className="flex items-center gap-3">
-                <label className="text-xs text-slate-400 whitespace-nowrap">Question count:</label>
-                <input
-                  type="number"
-                  min={20}
-                  max={100}
-                  value={regenCount}
-                  onChange={e => setRegenCount(Math.min(100, Math.max(20, parseInt(e.target.value) || 50)))}
-                  className="w-24 bg-[#0F172A] border border-slate-600 text-slate-100 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500"
-                />
-                <span className="text-xs text-slate-500">(20–100)</span>
-              </div>
+              {hasFiles ? (
+                <div className="space-y-1">
+                  <p className="text-xs text-slate-400">Questions will be generated per-file:</p>
+                  {[...(role.jdFiles || []), ...(role.supportingFiles || [])].map((f, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs text-slate-400 bg-[#0F172A] rounded px-3 py-1.5 border border-slate-700">
+                      <span className="truncate flex-1">{f.name}</span>
+                      <span className="text-indigo-300 font-semibold ml-2">{f.questionCount} Q</span>
+                    </div>
+                  ))}
+                  <p className="text-xs text-indigo-300 font-semibold pt-1">Total: {regenCount} questions</p>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <label className="text-xs text-slate-400 whitespace-nowrap">Question count:</label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={200}
+                    value={regenCount}
+                    onChange={e => setRegenCount(Math.min(200, Math.max(5, parseInt(e.target.value) || 50)))}
+                    className="w-24 bg-[#0F172A] border border-slate-600 text-slate-100 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500"
+                  />
+                  <span className="text-xs text-slate-500">(5–200)</span>
+                </div>
+              )}
               <div className="flex gap-2">
                 <button
                   onClick={() => setRegenConfirm(false)}

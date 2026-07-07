@@ -18,7 +18,7 @@ import { randomUUID } from 'crypto';
 import { createRequire } from 'module';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { RoleLibrary, EmployeeChecklists, Assessments, GeneratedContent } from '../services/DataStore.js';
-import { generateQuestionsFromJD, validateQuestionBank } from '../services/AssessmentGenerator.js';
+import { generateQuestionsFromJD, validateQuestionBank, generateQuestionsFromFiles } from '../services/AssessmentGenerator.js';
 import UserStore from '../services/UserStore.js';
 
 // Use createRequire so CJS packages (pdf-parse, mammoth) load correctly from ESM
@@ -47,6 +47,29 @@ function buildTypeSequence(num) {
     ...Array(fillCount).fill('fill_blank'),
     ...Array(subjCount).fill('subjective'),
   ];
+}
+
+// Build the per-file source list used by generateQuestionsFromFiles.
+// Combines jdFiles + supportingFiles stored on the role document.
+function buildFileSources(role) {
+  const sources = [];
+  for (const f of (role.jdFiles || [])) {
+    if (f.text?.trim()) {
+      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [] });
+    }
+  }
+  for (const f of (role.supportingFiles || [])) {
+    if (f.text?.trim()) {
+      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [] });
+    }
+  }
+  return sources;
+}
+
+// Total question count requested across all file sources, or `fallback` when no files.
+function filesTotalCount(role, fallback = 50) {
+  const s = buildFileSources(role);
+  return s.length > 0 ? s.reduce((acc, f) => acc + f.questionCount, 0) : fallback;
 }
 
 // Distill a raw, possibly noisy JD (with company intro, benefits, legal
@@ -281,60 +304,70 @@ router.get('/:id', authenticate, async (req, res) => {
 router.post('/', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const companyId = req.user.companyId || 'default';
-    const { roleName, department, jobDescription, skills, status, jdSources, supportingDocs } = req.body;
+    const { roleName, department, jobDescription, skills, status, jdFiles, supportingFiles, jdSources, supportingDocs } = req.body;
     if (!roleName?.trim()) return res.status(400).json({ success: false, error: 'Role name is required' });
 
     // Prevent duplicates within company
     const existing = await RoleLibrary.findByName(roleName, companyId);
     if (existing) return res.status(409).json({ success: false, error: `Role "${roleName}" already exists in your company` });
 
-    // Extract only Role / Responsibilities / Required Skills — strips company
-    // intro, benefits, legal text, etc. before storage and question generation.
-    const extractedJD = await extractJDEssentials((jobDescription || '').trim(), roleName);
+    // Derive combined JD text: prefer jdFiles content, fall back to plain jobDescription
+    const combinedJDText = Array.isArray(jdFiles) && jdFiles.length > 0
+      ? jdFiles.map(f => f.text || '').filter(Boolean).join('\n\n')
+      : (jobDescription || '').trim();
+
+    const extractedJD = await extractJDEssentials(combinedJDText, roleName);
 
     const doc = {
       id: randomUUID(),
       companyId,
-      roleName:       roleName.trim(),
-      department:     (department || '').trim(),
-      jobDescription: extractedJD,
-      skills:         parseSkills(skills),
-      status:         status || 'active',
-      jdSources:      Array.isArray(jdSources) ? jdSources : [],
-      supportingDocs: Array.isArray(supportingDocs) ? supportingDocs : [],
-      createdAt:      new Date().toISOString(),
-      updatedAt:      new Date().toISOString(),
-      createdBy:      req.user.userId,
+      roleName:        roleName.trim(),
+      department:      (department || '').trim(),
+      jobDescription:  extractedJD,
+      skills:          parseSkills(skills),
+      status:          status || 'active',
+      jdFiles:         Array.isArray(jdFiles) ? jdFiles : [],
+      supportingFiles: Array.isArray(supportingFiles) ? supportingFiles : [],
+      jdSources:       Array.isArray(jdSources) ? jdSources : [],
+      supportingDocs:  Array.isArray(supportingDocs) ? supportingDocs : [],
+      createdAt:       new Date().toISOString(),
+      updatedAt:       new Date().toISOString(),
+      createdBy:       req.user.userId,
     };
     const saved = await RoleLibrary.create(doc);
     res.status(201).json({ success: true, data: saved });
 
-    // Auto-generate question bank in background (50 questions, mixed types, unique)
-    if (doc.jobDescription) {
+    // Auto-generate question bank in background
+    const fileSources = buildFileSources(doc);
+    const targetCount = filesTotalCount(doc, 50);
+    if (doc.jobDescription || fileSources.length > 0) {
       setImmediate(async () => {
         try {
-          const questions = await generateQuestionsFromJD({
-            jobRole: doc.roleName,
-            jobDescription: doc.jobDescription,
-            jdSkills: doc.skills,
-            questionCount: 50,
-            questionTypes: buildTypeSequence(50),
-            employeeSeed: `qbank-${doc.id}-${Date.now()}`,
-            supportingDocs: doc.supportingDocs,
-          });
-          if (questions?.length === 50) {
-            const { valid, errors: ve } = validateQuestionBank(questions, 50);
+          let questions;
+          if (fileSources.length > 0) {
+            questions = await generateQuestionsFromFiles(fileSources, {
+              jobRole: doc.roleName, skills: doc.skills, seed: `qbank-${doc.id}`,
+            });
+          } else {
+            questions = await generateQuestionsFromJD({
+              jobRole: doc.roleName, jobDescription: doc.jobDescription,
+              jdSkills: doc.skills, questionCount: targetCount,
+              questionTypes: buildTypeSequence(targetCount),
+              employeeSeed: `qbank-${doc.id}-${Date.now()}`,
+              supportingDocs: doc.supportingDocs,
+            });
+          }
+          if (questions?.length === targetCount) {
+            const { valid, errors: ve } = validateQuestionBank(questions, targetCount);
             if (!valid) console.warn(`[auto-qbank] Soft validation warnings for "${doc.roleName}":`, ve);
             const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
             await RoleLibrary.update(doc.id, {
-              questionBank: bank,
-              questionBankGeneratedAt: new Date().toISOString(),
-              questionBankCount: bank.length,
-              updatedAt: new Date().toISOString(),
+              questionBank: bank, questionBankGeneratedAt: new Date().toISOString(),
+              questionBankCount: bank.length, updatedAt: new Date().toISOString(),
             });
             console.log(`[auto-qbank] Generated ${bank.length} questions for role "${doc.roleName}"`);
           } else {
-            console.error(`[auto-qbank] Wrong count ${questions?.length}/50 for "${doc.roleName}" — not saving`);
+            console.error(`[auto-qbank] Wrong count ${questions?.length}/${targetCount} for "${doc.roleName}" — not saving`);
           }
         } catch (e) {
           console.error(`[auto-qbank] Failed for role "${doc.roleName}":`, e.message);
@@ -352,61 +385,74 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
     const existing = await RoleLibrary.getById(req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'Role not found' });
 
-    const { roleName, department, jobDescription, skills, status, jdSources, supportingDocs } = req.body;
-    // Extract only Role / Responsibilities / Required Skills before comparing/storing,
-    // so re-pasting the same noisy source JD doesn't spuriously trigger regeneration
-    // and the stored value is always the distilled version.
-    const extractedJD = jobDescription !== undefined ? await extractJDEssentials(jobDescription.trim(), roleName || existing.roleName) : undefined;
+    const { roleName, department, jobDescription, skills, status, jdFiles, supportingFiles, jdSources, supportingDocs } = req.body;
+
+    // Derive combined JD text from jdFiles when provided
+    let rawJDForExtract = jobDescription;
+    if (Array.isArray(jdFiles) && jdFiles.length > 0) {
+      rawJDForExtract = jdFiles.map(f => f.text || '').filter(Boolean).join('\n\n');
+    }
+    const extractedJD = rawJDForExtract !== undefined ? await extractJDEssentials((rawJDForExtract || '').trim(), roleName || existing.roleName) : undefined;
+
     const updates = {
-      ...(roleName        !== undefined && { roleName: roleName.trim() }),
-      ...(department      !== undefined && { department: department.trim() }),
-      ...(jobDescription  !== undefined && { jobDescription: extractedJD }),
-      ...(skills          !== undefined && { skills: parseSkills(skills) }),
-      ...(status          !== undefined && { status }),
-      ...(jdSources       !== undefined && { jdSources: Array.isArray(jdSources) ? jdSources : [] }),
-      ...(supportingDocs  !== undefined && { supportingDocs: Array.isArray(supportingDocs) ? supportingDocs : [] }),
+      ...(roleName         !== undefined && { roleName: roleName.trim() }),
+      ...(department       !== undefined && { department: department.trim() }),
+      ...(rawJDForExtract  !== undefined && { jobDescription: extractedJD }),
+      ...(skills           !== undefined && { skills: parseSkills(skills) }),
+      ...(status           !== undefined && { status }),
+      ...(jdFiles          !== undefined && { jdFiles: Array.isArray(jdFiles) ? jdFiles : [] }),
+      ...(supportingFiles  !== undefined && { supportingFiles: Array.isArray(supportingFiles) ? supportingFiles : [] }),
+      ...(jdSources        !== undefined && { jdSources: Array.isArray(jdSources) ? jdSources : [] }),
+      ...(supportingDocs   !== undefined && { supportingDocs: Array.isArray(supportingDocs) ? supportingDocs : [] }),
       updatedAt: new Date().toISOString(),
     };
     const updated = await RoleLibrary.update(req.params.id, updates);
     res.json({ success: true, data: updated });
 
-    // Regenerate question bank in background if JD or supporting docs changed
-    const jdChanged = extractedJD !== undefined && extractedJD !== existing.jobDescription;
-    const docsChanged = supportingDocs !== undefined;
-    if ((jdChanged || docsChanged) && (updates.jobDescription || existing.jobDescription)) {
-      const effectiveJD = updates.jobDescription || existing.jobDescription;
-      const effectiveRole = updates.roleName || existing.roleName;
-      const effectiveSkills = updates.skills || existing.skills || [];
-      const effectiveDocs = updates.supportingDocs ?? existing.supportingDocs ?? [];
-      setImmediate(async () => {
-        try {
-          const questions = await generateQuestionsFromJD({
-            jobRole: effectiveRole,
-            jobDescription: effectiveJD,
-            jdSkills: effectiveSkills,
-            questionCount: 50,
-            questionTypes: buildTypeSequence(50),
-            employeeSeed: `qbank-${req.params.id}-upd-${Date.now()}`,
-            supportingDocs: effectiveDocs,
-          });
-          if (questions?.length === 50) {
-            const { valid, errors: ve } = validateQuestionBank(questions, 50);
-            if (!valid) console.warn(`[auto-qbank] Soft validation warnings for "${effectiveRole}" (JD update):`, ve);
-            const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
-            await RoleLibrary.update(req.params.id, {
-              questionBank: bank,
-              questionBankGeneratedAt: new Date().toISOString(),
-              questionBankCount: bank.length,
-              updatedAt: new Date().toISOString(),
-            });
-            console.log(`[auto-qbank] Regenerated ${bank.length} questions for role "${effectiveRole}" (JD updated)`);
-          } else {
-            console.error(`[auto-qbank] Wrong count ${questions?.length}/50 for "${effectiveRole}" — not saving`);
+    // Regenerate when JD text, jdFiles, or supportingFiles changed
+    const jdChanged   = extractedJD !== undefined && extractedJD !== existing.jobDescription;
+    const filesChanged = jdFiles !== undefined || supportingFiles !== undefined;
+    if (jdChanged || filesChanged) {
+      const mergedRole = { ...existing, ...updates };
+      const fileSources  = buildFileSources(mergedRole);
+      const targetCount  = filesTotalCount(mergedRole, 50);
+      const effectiveJD  = mergedRole.jobDescription;
+      const effectiveRole = mergedRole.roleName;
+      const effectiveSkills = mergedRole.skills || [];
+      if (effectiveJD || fileSources.length > 0) {
+        setImmediate(async () => {
+          try {
+            let questions;
+            if (fileSources.length > 0) {
+              questions = await generateQuestionsFromFiles(fileSources, {
+                jobRole: effectiveRole, skills: effectiveSkills, seed: `qbank-${req.params.id}-upd`,
+              });
+            } else {
+              questions = await generateQuestionsFromJD({
+                jobRole: effectiveRole, jobDescription: effectiveJD,
+                jdSkills: effectiveSkills, questionCount: targetCount,
+                questionTypes: buildTypeSequence(targetCount),
+                employeeSeed: `qbank-${req.params.id}-upd-${Date.now()}`,
+                supportingDocs: mergedRole.supportingDocs || [],
+              });
+            }
+            if (questions?.length === targetCount) {
+              const { valid, errors: ve } = validateQuestionBank(questions, targetCount);
+              if (!valid) console.warn(`[auto-qbank] Soft validation warnings for "${effectiveRole}" (update):`, ve);
+              const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
+              await RoleLibrary.update(req.params.id, {
+                questionBank: bank, questionBankGeneratedAt: new Date().toISOString(),
+                questionBankCount: bank.length, updatedAt: new Date().toISOString(),
+              });
+              console.log(`[auto-qbank] Regenerated ${bank.length} questions for role "${effectiveRole}" (files updated)`);
+            } else {
+              console.error(`[auto-qbank] Wrong count ${questions?.length}/${targetCount} for "${effectiveRole}" — not saving`);
+            }
+          } catch (e) {
+            console.error(`[auto-qbank] Failed regen for role "${effectiveRole}":`, e.message);
           }
-        } catch (e) {
-          console.error(`[auto-qbank] Failed regen for role "${effectiveRole}":`, e.message);
-        }
-      });
+        });
+      }
     }
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -760,10 +806,14 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
   try {
     const role = await RoleLibrary.getById(req.params.id);
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
-    if (!role.jobDescription) return res.status(400).json({ success: false, error: 'Role has no job description — add a JD first' });
+    const fileSources = buildFileSources(role);
+    const hasFiles = fileSources.length > 0;
+    if (!hasFiles && !role.jobDescription) {
+      return res.status(400).json({ success: false, error: 'Role has no job description or uploaded files — add a JD first' });
+    }
     const { questionCount = 50 } = req.body;
-    const num = Math.min(Math.max(parseInt(questionCount) || 50, 5), 100);
-    // Build type list: 50% MCQ, 25% fill_blank, 25% subjective
+    // When files are present, always honour their stored per-file counts
+    const num = hasFiles ? filesTotalCount(role) : Math.min(Math.max(parseInt(questionCount) || 50, 5), 200);
     const mcqCount = Math.ceil(num * 0.50);
     const fillCount = Math.round(num * 0.25);
     const subjCount = num - mcqCount - fillCount;
@@ -772,15 +822,22 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
       ...Array(fillCount).fill('fill_blank'),
       ...Array(subjCount).fill('subjective'),
     ];
-    const questions = await generateQuestionsFromJD({
-      jobRole: role.roleName,
-      jobDescription: role.jobDescription,
-      jdSkills: role.skills || [],
-      questionCount: num,
-      questionTypes: typeSequence,
-      employeeSeed: `qbank-${role.id}-regen-${Date.now()}`,
-      supportingDocs: role.supportingDocs || [],
-    });
+    let questions;
+    if (hasFiles) {
+      questions = await generateQuestionsFromFiles(fileSources, {
+        jobRole: role.roleName, skills: role.skills || [], seed: `qbank-${role.id}-regen-${Date.now()}`,
+      });
+    } else {
+      questions = await generateQuestionsFromJD({
+        jobRole: role.roleName,
+        jobDescription: role.jobDescription,
+        jdSkills: role.skills || [],
+        questionCount: num,
+        questionTypes: typeSequence,
+        employeeSeed: `qbank-${role.id}-regen-${Date.now()}`,
+        supportingDocs: role.supportingDocs || [],
+      });
+    }
     // Validate before saving — never overwrite existing bank with a bad set
     if (!Array.isArray(questions) || questions.length !== num) {
       console.error(`[regenerate-questions] Generated ${questions?.length ?? 0}/${num} — aborting save, existing bank preserved.`);

@@ -644,3 +644,87 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
 
   return rebalanced;
 }
+
+// ── Per-file multi-source generation ─────────────────────────────────────────
+// Generates exactly the requested number of questions from EACH source file
+// independently, tags every question with sourceFile + sourceType, then merges
+// with cross-file deduplication. The result length equals the sum of all
+// per-file questionCount values.
+
+function buildTypeSeqLocal(num) {
+  const m = Math.ceil(num * 0.50);
+  const f = Math.round(num * 0.25);
+  return [...Array(m).fill('mcq'), ...Array(Math.max(0, f)).fill('fill_blank'), ...Array(Math.max(0, num - m - f)).fill('subjective')];
+}
+
+export async function generateQuestionsFromFiles(fileSources, globalContext = {}) {
+  if (!Array.isArray(fileSources) || fileSources.length === 0) return [];
+
+  const { jobRole = 'Professional', skills = [], seed: baseSeed = '' } = globalContext;
+  const allQuestions = [];
+  const seenKeys = new Set();
+
+  const dedupeKey = q =>
+    (q.question || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
+
+  for (const source of fileSources) {
+    const text = (source.text || '').trim();
+    const count = Math.min(100, Math.max(1, parseInt(source.questionCount) || 5));
+    if (!text) continue;
+
+    const srcJobRole = source.jobRole || jobRole;
+    const srcSkills  = source.skills  || skills;
+    const srcSeed    = `${baseSeed || 'fs'}-${(source.name || 'file').replace(/\W/g, '').slice(0, 20)}-${Date.now()}`;
+
+    // Generate exactly `count` unique questions from this source file
+    const batch = await generateQuestionsFromJD({
+      jobRole:        srcJobRole,
+      jobDescription: text,
+      jdSkills:       srcSkills,
+      questionCount:  count,
+      questionTypes:  buildTypeSeqLocal(count),
+      employeeSeed:   srcSeed,
+    });
+
+    // Accept non-duplicates up to `count`
+    let accepted = 0;
+    for (const q of (batch || [])) {
+      if (accepted >= count) break;
+      const key = dedupeKey(q);
+      if (!key || seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      allQuestions.push({
+        ...q,
+        id: q.id || randomUUID(),
+        sourceFile: source.name || 'Unknown',
+        sourceType: source.sourceType || 'jd',
+      });
+      accepted++;
+    }
+
+    // Pad with fallback templates if the LLM came up short
+    const gap = count - accepted;
+    if (gap > 0) {
+      console.warn(`[generateQuestionsFromFiles] "${source.name}": got ${accepted}/${count} — padding ${gap} with templates`);
+      const padding = buildFallbackQuestions(gap, {
+        types:         buildTypeSeqLocal(gap),
+        skillsList:    srcSkills,
+        jobRole:       srcJobRole,
+        comboCounters: { easy: 99999, medium: 99999, hard: 99999 },
+      });
+      for (const q of padding) {
+        const key = dedupeKey(q);
+        if (!key || seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        allQuestions.push({
+          ...q,
+          id: q.id || randomUUID(),
+          sourceFile: source.name || 'Unknown',
+          sourceType: source.sourceType || 'jd',
+        });
+      }
+    }
+  }
+
+  return allQuestions;
+}
