@@ -451,6 +451,13 @@ function QuestionBankModal({ role, onClose }) {
   const fileTotal = [...(role.jdFiles || []), ...(role.supportingFiles || [])].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0);
   const hasFiles = (role.jdFiles?.length || 0) + (role.supportingFiles?.length || 0) > 0;
   const [regenCount, setRegenCount] = useState(fileTotal || role.questionBankCount || 50);
+  const [regenMode, setRegenMode] = useState('all');
+  const [localJdFiles, setLocalJdFiles] = useState(
+    (role.jdFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5 }))
+  );
+  const [localSupportingFiles, setLocalSupportingFiles] = useState(
+    (role.supportingFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5 }))
+  );
   const [saving, setSaving] = useState(false);
   const [editIdx, setEditIdx] = useState(null);
   const [editQ, setEditQ] = useState(null);
@@ -473,9 +480,15 @@ function QuestionBankModal({ role, onClose }) {
   const handleRegen = async () => {
     setRegen(true);
     try {
-      const res = await authFetch(`/api/roles/${role.id}/regenerate-questions`, { method: 'POST', body: JSON.stringify({ questionCount: regenCount }) });
-      setQuestions(res?.data?.questions ?? res?.questions ?? []);
-      toast(`Regenerated ${(res?.data?.questions ?? res?.questions ?? []).length} questions`);
+      const payload = { questionCount: regenCount, mode: regenMode };
+      if (hasFiles) {
+        payload.updatedJdFiles = localJdFiles;
+        payload.updatedSupportingFiles = localSupportingFiles;
+      }
+      const res = await authFetch(`/api/roles/${role.id}/regenerate-questions`, { method: 'POST', body: JSON.stringify(payload) });
+      const newQs = res?.data?.questions ?? res?.questions ?? [];
+      setQuestions(newQs);
+      toast(regenMode === 'ai-only' ? `AI questions regenerated — ${newQs.length} total (manual questions preserved)` : `Regenerated ${newQs.length} questions`);
       setRegenConfirm(false);
     } catch (e) { toast(e.message, 'error'); }
     finally { setRegen(false); }
@@ -487,7 +500,7 @@ function QuestionBankModal({ role, onClose }) {
   const saveEdit = async () => {
     setSaving(true);
     try {
-      const updated = questions.map((q, i) => i === editIdx ? { ...editQ } : q);
+      const updated = questions.map((q, i) => i === editIdx ? { ...editQ, isManual: true } : q);
       await authFetch(`/api/roles/${role.id}/questions`, { method: 'PUT', body: JSON.stringify({ questions: updated }) });
       setQuestions(updated);
       cancelEdit();
@@ -510,7 +523,7 @@ function QuestionBankModal({ role, onClose }) {
     if (!newQ.question.trim()) return toast('Question text required', 'error');
     setSaving(true);
     try {
-      const res = await authFetch(`/api/roles/${role.id}/questions`, { method: 'POST', body: JSON.stringify(newQ) });
+      const res = await authFetch(`/api/roles/${role.id}/questions`, { method: 'POST', body: JSON.stringify({ ...newQ, isManual: true }) });
       setQuestions(p => [...p, res?.data ?? res]);
       setNewQ({ ...EMPTY_Q });
       setAddMode(false);
@@ -531,67 +544,126 @@ function QuestionBankModal({ role, onClose }) {
             <div>
               <h2 className="text-lg font-semibold text-white">Question Bank — {role.roleName}</h2>
               <p className="text-xs text-slate-400 mt-0.5">{questions.length} questions · Easy: {counts.easy} · Medium: {counts.medium} · Hard: {counts.hard}</p>
+              {/* Live count summary */}
+              {(() => {
+                const totalRequested = hasFiles
+                  ? [...localJdFiles, ...localSupportingFiles].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0)
+                  : (role.questionBankCount || regenCount);
+                const manualCount = questions.filter(q => q.isManual).length;
+                const remaining = Math.max(0, totalRequested - questions.length);
+                return (
+                  <div className="flex gap-3 text-xs mt-1 flex-wrap">
+                    <span className="text-slate-500">Requested: <span className="text-indigo-300 font-semibold">{totalRequested}</span></span>
+                    <span className="text-slate-500">Generated: <span className={questions.length >= totalRequested ? 'text-emerald-300 font-semibold' : 'text-amber-300 font-semibold'}>{questions.length}</span></span>
+                    {remaining > 0 && <span className="text-slate-500">Remaining: <span className="text-red-400 font-semibold">{remaining}</span></span>}
+                    {manualCount > 0 && <span className="text-slate-500">Manual: <span className="text-violet-300 font-semibold">{manualCount}</span></span>}
+                  </div>
+                );
+              })()}
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
               <button
-                onClick={() => setRegenConfirm(true)}
+                onClick={() => { setRegenMode('all'); setRegenConfirm(true); }}
                 disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm}
                 className="text-xs px-3 py-1.5 rounded-lg bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/40 disabled:opacity-40 transition-colors"
               >
-                {regen ? '⏳ Generating…' : '✨ Regenerate All'}
+                {regen && regenMode === 'all' ? '⏳ Generating…' : '✨ Regen All'}
+              </button>
+              <button
+                onClick={() => { setRegenMode('ai-only'); setRegenConfirm(true); }}
+                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm}
+                title="Regenerate only AI-generated questions; preserves manually added/edited ones"
+                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40 disabled:opacity-40 transition-colors"
+              >
+                {regen && regenMode === 'ai-only' ? '⏳ Generating…' : '🔄 Regen AI Only'}
               </button>
               <button onClick={onClose} className="text-slate-400 hover:text-white text-xl px-2">✕</button>
             </div>
           </div>
 
           {/* Inline regenerate confirmation panel */}
-          {regenConfirm && (
-            <div className="mx-5 my-3 p-4 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-3">
-              <p className="text-sm text-amber-300 font-medium">
-                This will replace all {questions.length} existing questions. This cannot be undone.
-              </p>
-              {hasFiles ? (
-                <div className="space-y-1">
-                  <p className="text-xs text-slate-400">Questions will be generated per-file:</p>
-                  {[...(role.jdFiles || []), ...(role.supportingFiles || [])].map((f, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs text-slate-400 bg-[#0F172A] rounded px-3 py-1.5 border border-slate-700">
-                      <span className="truncate flex-1">{f.name}</span>
-                      <span className="text-indigo-300 font-semibold ml-2">{f.questionCount} Q</span>
-                    </div>
-                  ))}
-                  <p className="text-xs text-indigo-300 font-semibold pt-1">Total: {regenCount} questions</p>
+          {regenConfirm && (() => {
+            const manualCount = questions.filter(q => q.isManual).length;
+            const localTotal = hasFiles
+              ? [...localJdFiles, ...localSupportingFiles].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0)
+              : regenCount;
+            return (
+              <div className="mx-5 my-3 p-4 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-3">
+                {/* Mode toggle tabs */}
+                <div className="flex gap-1 bg-[#0F172A] p-1 rounded-lg w-fit">
+                  <button
+                    onClick={() => setRegenMode('all')}
+                    className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${regenMode === 'all' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                  >✨ Regenerate All</button>
+                  <button
+                    onClick={() => setRegenMode('ai-only')}
+                    className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${regenMode === 'ai-only' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                  >🔄 AI Questions Only</button>
                 </div>
-              ) : (
-                <div className="flex items-center gap-3">
-                  <label className="text-xs text-slate-400 whitespace-nowrap">Question count:</label>
-                  <input
-                    type="number"
-                    min={5}
-                    max={200}
-                    value={regenCount}
-                    onChange={e => setRegenCount(Math.min(200, Math.max(5, parseInt(e.target.value) || 50)))}
-                    className="w-24 bg-[#0F172A] border border-slate-600 text-slate-100 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500"
-                  />
-                  <span className="text-xs text-slate-500">(5–200)</span>
+
+                <p className="text-sm text-amber-300 font-medium">
+                  {regenMode === 'all'
+                    ? `This will replace all ${questions.length} existing questions. This cannot be undone.`
+                    : manualCount > 0
+                      ? `${manualCount} manually edited question${manualCount > 1 ? 's' : ''} will be preserved. Only AI-generated questions (${questions.length - manualCount}) will be replaced.`
+                      : `No manually edited questions found — all ${questions.length} AI-generated questions will be replaced.`
+                  }
+                </p>
+
+                {hasFiles ? (
+                  <div className="space-y-1">
+                    <p className="text-xs text-slate-400">
+                      {regenMode === 'ai-only' ? 'Questions per file (AI-generated portion):' : 'Questions per file — edit counts before generating:'}
+                    </p>
+                    {localJdFiles.map((f, i) => (
+                      <div key={f.id || i} className="flex items-center gap-2 text-xs bg-[#0F172A] rounded px-3 py-1.5 border border-slate-700">
+                        <span className="truncate flex-1 text-slate-300">{f.name}</span>
+                        <span className="text-indigo-400 shrink-0">JD</span>
+                        <input type="number" min="1" max="200" value={f.questionCount}
+                          onChange={e => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(e.target.value) || 1) } : x))}
+                          className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500" />
+                        <span className="text-slate-500 shrink-0">Q</span>
+                      </div>
+                    ))}
+                    {localSupportingFiles.map((f, i) => (
+                      <div key={f.id || i} className="flex items-center gap-2 text-xs bg-[#0F172A] rounded px-3 py-1.5 border border-slate-700">
+                        <span className="truncate flex-1 text-slate-300">{f.name}</span>
+                        <span className="text-emerald-400 shrink-0">doc</span>
+                        <input type="number" min="1" max="200" value={f.questionCount}
+                          onChange={e => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(e.target.value) || 1) } : x))}
+                          className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500" />
+                        <span className="text-slate-500 shrink-0">Q</span>
+                      </div>
+                    ))}
+                    <p className="text-xs text-indigo-300 font-semibold pt-1">Total: {localTotal} questions</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs text-slate-400 whitespace-nowrap">Question count:</label>
+                    <input
+                      type="number" min={5} max={200} value={regenCount}
+                      onChange={e => setRegenCount(Math.min(200, Math.max(5, parseInt(e.target.value) || 50)))}
+                      className="w-24 bg-[#0F172A] border border-slate-600 text-slate-100 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500"
+                    />
+                    <span className="text-xs text-slate-500">(5–200)</span>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button onClick={() => setRegenConfirm(false)} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs hover:border-slate-400 transition-colors">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleRegen}
+                    disabled={regen}
+                    className={`px-4 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-50 transition-colors ${regenMode === 'ai-only' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-purple-600 hover:bg-purple-700'}`}
+                  >
+                    {regen ? '⏳ Generating…' : regenMode === 'ai-only' ? 'Regenerate AI Questions' : 'Confirm Regenerate All'}
+                  </button>
                 </div>
-              )}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setRegenConfirm(false)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs hover:border-slate-400 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleRegen}
-                  disabled={regen}
-                  className="px-4 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-semibold hover:bg-purple-700 disabled:opacity-50 transition-colors"
-                >
-                  {regen ? '⏳ Generating…' : 'Confirm Regenerate'}
-                </button>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         {/* Filters */}
@@ -639,7 +711,7 @@ function QuestionBankModal({ role, onClose }) {
           {loading && <p className="text-slate-400 text-sm text-center py-8">Loading question bank…</p>}
           {!loading && filtered.length === 0 && (
             <div className="text-center py-10">
-              <p className="text-slate-400 text-sm">{questions.length === 0 ? 'No questions yet. Click "Regenerate All" to auto-generate from the JD.' : `No ${diffFilter} questions.`}</p>
+              <p className="text-slate-400 text-sm">{questions.length === 0 ? 'No questions yet. Click "Regen All" to auto-generate from the JD.' : `No ${diffFilter} questions.`}</p>
             </div>
           )}
 
@@ -751,7 +823,8 @@ function QuestionBankModal({ role, onClose }) {
                   <div>
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-sm text-white font-medium flex-1">{i + 1}. {q.question}</p>
-                      <div className="flex gap-1 flex-shrink-0">
+                      <div className="flex gap-1 flex-shrink-0 items-center">
+                        {q.isManual && <span className="px-1.5 py-0.5 rounded text-xs bg-violet-900/40 text-violet-400 border border-violet-700/50">edited</span>}
                         <span className={`px-2 py-0.5 rounded-full text-xs border capitalize ${DIFF_COLORS[q.difficulty] || DIFF_COLORS.medium}`}>{q.difficulty || 'medium'}</span>
                         <button onClick={() => startEdit(realIdx)} className="text-xs px-2 py-1 rounded bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40">Edit</button>
                         <button onClick={() => deleteQ(realIdx)} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40">Del</button>

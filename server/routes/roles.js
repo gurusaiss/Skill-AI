@@ -778,6 +778,7 @@ router.post('/:id/questions', authenticate, requireRole('admin', 'manager'), asy
       answer: req.body.answer || '',
       explanation: req.body.explanation || '',
       skillArea: req.body.skillArea || 'General',
+      isManual: true,
       createdAt: new Date().toISOString(),
     };
     qbank.push(newQ);
@@ -806,56 +807,99 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
   try {
     const role = await RoleLibrary.getById(req.params.id);
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
-    const fileSources = buildFileSources(role);
+
+    const { questionCount = 50, mode = 'all', updatedJdFiles, updatedSupportingFiles } = req.body;
+
+    // Apply count updates if admin edited them in the regen panel — persist before generating
+    let updatedRole = role;
+    if (updatedJdFiles || updatedSupportingFiles) {
+      const countUpdates = {};
+      if (Array.isArray(updatedJdFiles)) {
+        countUpdates.jdFiles = (role.jdFiles || []).map(f => {
+          const u = updatedJdFiles.find(x => x.id === f.id);
+          return u ? { ...f, questionCount: Math.max(1, parseInt(u.questionCount) || f.questionCount) } : f;
+        });
+      }
+      if (Array.isArray(updatedSupportingFiles)) {
+        countUpdates.supportingFiles = (role.supportingFiles || []).map(f => {
+          const u = updatedSupportingFiles.find(x => x.id === f.id);
+          return u ? { ...f, questionCount: Math.max(1, parseInt(u.questionCount) || f.questionCount) } : f;
+        });
+      }
+      await RoleLibrary.update(req.params.id, { ...countUpdates, updatedAt: new Date().toISOString() });
+      updatedRole = { ...role, ...countUpdates };
+    }
+
+    const fileSources = buildFileSources(updatedRole);
     const hasFiles = fileSources.length > 0;
-    if (!hasFiles && !role.jobDescription) {
+    if (!hasFiles && !updatedRole.jobDescription) {
       return res.status(400).json({ success: false, error: 'Role has no job description or uploaded files — add a JD first' });
     }
-    const { questionCount = 50 } = req.body;
-    // When files are present, always honour their stored per-file counts
-    const num = hasFiles ? filesTotalCount(role) : Math.min(Math.max(parseInt(questionCount) || 50, 5), 200);
-    const mcqCount = Math.ceil(num * 0.50);
-    const fillCount = Math.round(num * 0.25);
-    const subjCount = num - mcqCount - fillCount;
-    const typeSequence = [
-      ...Array(mcqCount).fill('mcq'),
-      ...Array(fillCount).fill('fill_blank'),
-      ...Array(subjCount).fill('subjective'),
-    ];
-    let questions;
+
+    // Preserve manually edited questions for ai-only mode
+    const existingBank = role.questionBank || [];
+    const manualQuestions = mode === 'ai-only' ? existingBank.filter(q => q.isManual === true) : [];
+
+    const totalTarget = hasFiles ? filesTotalCount(updatedRole) : Math.min(Math.max(parseInt(questionCount) || 50, 5), 200);
+    const aiTarget = mode === 'ai-only' ? Math.max(0, totalTarget - manualQuestions.length) : totalTarget;
+
+    // Edge case: all slots already filled by manual questions
+    if (aiTarget === 0) {
+      const bank = manualQuestions.slice(0, totalTarget).map((q, i) => ({ ...q, order: i }));
+      await RoleLibrary.update(req.params.id, { questionBank: bank, questionBankCount: bank.length, questionBankGeneratedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      return res.json({ success: true, data: { count: bank.length, questions: bank } });
+    }
+
+    let aiQuestions;
     if (hasFiles) {
-      questions = await generateQuestionsFromFiles(fileSources, {
-        jobRole: role.roleName, skills: role.skills || [], seed: `qbank-${role.id}-regen-${Date.now()}`,
+      let genSources = fileSources;
+      // Scale per-file counts proportionally when preserving manual questions
+      if (mode === 'ai-only' && manualQuestions.length > 0) {
+        const ratio = aiTarget / totalTarget;
+        genSources = fileSources.map(s => ({ ...s, questionCount: Math.max(1, Math.round(s.questionCount * ratio)) }));
+      }
+      aiQuestions = await generateQuestionsFromFiles(genSources, {
+        jobRole: updatedRole.roleName, skills: updatedRole.skills || [], seed: `qbank-${updatedRole.id}-regen-${Date.now()}`,
       });
     } else {
-      questions = await generateQuestionsFromJD({
-        jobRole: role.roleName,
-        jobDescription: role.jobDescription,
-        jdSkills: role.skills || [],
-        questionCount: num,
-        questionTypes: typeSequence,
-        employeeSeed: `qbank-${role.id}-regen-${Date.now()}`,
-        supportingDocs: role.supportingDocs || [],
+      const mcqCount = Math.ceil(aiTarget * 0.50);
+      const fillCount = Math.round(aiTarget * 0.25);
+      const subjCount = aiTarget - mcqCount - fillCount;
+      aiQuestions = await generateQuestionsFromJD({
+        jobRole: updatedRole.roleName,
+        jobDescription: updatedRole.jobDescription,
+        jdSkills: updatedRole.skills || [],
+        questionCount: aiTarget,
+        questionTypes: [...Array(mcqCount).fill('mcq'), ...Array(fillCount).fill('fill_blank'), ...Array(subjCount).fill('subjective')],
+        employeeSeed: `qbank-${updatedRole.id}-regen-${Date.now()}`,
+        supportingDocs: updatedRole.supportingDocs || [],
       });
     }
-    // Validate before saving — never overwrite existing bank with a bad set
-    if (!Array.isArray(questions) || questions.length !== num) {
-      console.error(`[regenerate-questions] Generated ${questions?.length ?? 0}/${num} — aborting save, existing bank preserved.`);
-      return res.status(500).json({ success: false, error: `Question generation returned ${questions?.length ?? 0} of ${num} requested questions. Existing question bank was not modified — please retry.` });
+
+    if (!Array.isArray(aiQuestions)) {
+      return res.status(500).json({ success: false, error: 'Question generation failed. Existing bank preserved.' });
     }
-    const { valid, errors: valErrors } = validateQuestionBank(questions, num);
-    if (!valid) {
-      // Log all validation issues; only hard-block on count mismatch (already checked above).
-      // Soft issues (distribution skew, isolated near-duplicate) are logged but don't block save
-      // since the LLM-generated content is still vastly better than no update at all.
-      const hardErrors = valErrors.filter(e => e.startsWith('Count:') || e.startsWith('Question') && e.includes('missing'));
-      if (hardErrors.length > 0) {
-        console.error(`[regenerate-questions] Validation hard errors — aborting save:`, hardErrors);
-        return res.status(500).json({ success: false, error: 'Generated question bank failed validation. Existing bank preserved. Please retry.' });
+
+    // Count validation: strict for 'all' mode, lenient for 'ai-only'
+    if (mode === 'all' && aiQuestions.length !== aiTarget) {
+      console.error(`[regenerate-questions] Generated ${aiQuestions.length}/${aiTarget} — aborting save, existing bank preserved.`);
+      return res.status(500).json({ success: false, error: `Question generation returned ${aiQuestions.length} of ${aiTarget} requested questions. Existing question bank was not modified — please retry.` });
+    }
+
+    if (mode === 'all') {
+      const { valid, errors: valErrors } = validateQuestionBank(aiQuestions, aiTarget);
+      if (valid === false) {
+        const hardErrors = valErrors.filter(e => e.startsWith('Count:') || (e.startsWith('Question') && e.includes('missing')));
+        if (hardErrors.length > 0) {
+          console.error(`[regenerate-questions] Validation hard errors — aborting save:`, hardErrors);
+          return res.status(500).json({ success: false, error: 'Generated question bank failed validation. Existing bank preserved. Please retry.' });
+        }
+        console.warn(`[regenerate-questions] Validation soft warnings (proceeding with save):`, valErrors);
       }
-      console.warn(`[regenerate-questions] Validation soft warnings (proceeding with save):`, valErrors);
     }
-    const bank = questions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
+
+    const finalQuestions = mode === 'ai-only' ? [...manualQuestions, ...aiQuestions] : aiQuestions;
+    const bank = finalQuestions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
     const updated = await RoleLibrary.update(req.params.id, {
       questionBank: bank,
       questionBankGeneratedAt: new Date().toISOString(),
