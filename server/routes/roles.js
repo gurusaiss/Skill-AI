@@ -147,11 +147,9 @@ router.post('/parse-jd', authenticate, requireRole('admin', 'manager'), upload.s
     let text = '';
 
     if (ext === 'pdf') {
-      // pdf-parse is CJS; use _require for reliable ESM interop (.default can be non-callable)
+      // pdf-parse v1.x exports a single callable function via module.exports
       const pdfParse = _require('pdf-parse');
-      const fn = typeof pdfParse === 'function' ? pdfParse : pdfParse.default;
-      if (typeof fn !== 'function') throw new Error('pdf-parse module did not export a callable function');
-      const result = await fn(req.file.buffer);
+      const result = await pdfParse(req.file.buffer);
       text = result.text || '';
     } else if (ext === 'docx' || ext === 'doc') {
       const mammoth = _require('mammoth');
