@@ -5,6 +5,8 @@ import UserStore from '../services/UserStore.js';
 import EmailService from '../services/EmailService.js';
 import { authenticate, rateLimitLogin, rateLimitOTP, rateLimitPasswordReset } from '../middleware/auth.js';
 import { Companies, RoleLibrary, UserJDProfiles, Assessments, GeneratedContent, AccessCodes } from '../services/DataStore.js';
+import { addToBlocklist } from '../security/tokenBlocklist.js';
+import { isLocked, getLockoutMinutes, remainingAttempts, recordFailure, clearRecord } from '../security/loginProtection.js';
 
 // Pick balanced questions from pre-generated bank (40% easy, 40% medium, 20% hard)
 function pickFromBank(bank, target = 10) {
@@ -455,10 +457,25 @@ router.post('/login', rateLimitLogin, async (req, res) => {
       });
     }
 
+    // Account lockout check — per-email, independent of IP rate limit
+    if (isLocked(email)) {
+      const minutes = getLockoutMinutes(email);
+      await UserStore.logAuthEvent('login_failed', null, { email, reason: 'account_locked', ipAddress: req.ip }).catch(() => {});
+      return res.status(429).json({
+        success: false,
+        data: null,
+        error: {
+          code: 'AUTH_ACCOUNT_LOCKED',
+          message: `Account temporarily locked due to too many failed attempts. Try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.`,
+        },
+      });
+    }
+
     // Get user
     const user = await UserStore.getUserByEmail(email);
     if (!user) {
-      // Log failed login attempt
+      // Record failure against email to prevent user-enumeration via timing attacks
+      recordFailure(email);
       await UserStore.logAuthEvent('login_failed', null, {
         email,
         reason: 'user_not_found',
@@ -478,6 +495,7 @@ router.post('/login', rateLimitLogin, async (req, res) => {
     // Verify password
     const isPasswordValid = await AuthService.comparePassword(password, user.passwordHash);
     if (!isPasswordValid) {
+      recordFailure(email);
       // Log failed login attempt
       await UserStore.logAuthEvent('login_failed', user.userId, {
         email,
@@ -485,12 +503,15 @@ router.post('/login', rateLimitLogin, async (req, res) => {
         ipAddress: req.ip
       });
 
+      // Warn user how many attempts remain before lockout
+      const remaining = remainingAttempts(email);
+      const extra = remaining !== null ? ` ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining before lockout.` : '';
       return res.status(401).json({
         success: false,
         data: null,
         error: {
           code: 'AUTH_INVALID_CREDENTIALS',
-          message: 'Invalid email or password'
+          message: `Invalid email or password.${extra}`
         }
       });
     }
@@ -520,6 +541,9 @@ router.post('/login', rateLimitLogin, async (req, res) => {
         error: null,
       });
     }
+
+    // Clear any lockout record on successful login
+    clearRecord(email);
 
     // Generate JWT token
     const token = AuthService.generateJWT(user.userId, user.email, user.role);
@@ -587,8 +611,12 @@ router.post('/complete-password-change', rateLimitLogin, async (req, res) => {
     if (!email || !currentPassword || !newPassword) {
       return res.status(400).json({ success: false, data: null, error: { code: 'AUTH_INVALID_INPUT', message: 'Email, current password, and new password are required' } });
     }
-    if (newPassword.length < 8) {
-      return res.status(400).json({ success: false, data: null, error: { code: 'AUTH_WEAK_PASSWORD', message: 'New password must be at least 8 characters' } });
+    const pwStrength = AuthService.validatePasswordStrength(newPassword);
+    if (!pwStrength.valid) {
+      return res.status(400).json({ success: false, data: null, error: { code: 'AUTH_WEAK_PASSWORD', message: pwStrength.errors.join(' ') } });
+    }
+    if (newPassword === currentPassword) {
+      return res.status(400).json({ success: false, data: null, error: { code: 'AUTH_PASSWORD_REUSE', message: 'New password must be different from the current password' } });
     }
 
     const user = await UserStore.getUserByEmail(email);
@@ -646,6 +674,12 @@ router.post('/complete-password-change', rateLimitLogin, async (req, res) => {
  */
 router.post('/logout', authenticate, async (req, res) => {
   try {
+    // Invalidate the current token server-side so it cannot be reused
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      addToBlocklist(authHeader.substring(7));
+    }
+
     // Log logout event
     await UserStore.logAuthEvent('logout', req.user.userId, {
       email: req.user.email,

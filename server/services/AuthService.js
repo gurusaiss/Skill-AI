@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
+import crypto, { randomInt } from 'crypto';
 
 /**
  * AuthService - Handles authentication operations
@@ -12,7 +12,16 @@ import crypto from 'crypto';
 class AuthService {
   constructor() {
     this.saltRounds = 10;
-    this.jwtSecret = process.env.JWT_SECRET || 'default-secret-change-in-production';
+    const secret = process.env.JWT_SECRET;
+    const INSECURE_DEFAULT = 'default-secret-change-in-production';
+    if (!secret || secret === INSECURE_DEFAULT) {
+      if (process.env.NODE_ENV === 'production') {
+        // Hard-fail in production — never allow a guessable JWT secret
+        throw new Error('[SECURITY] JWT_SECRET env var is not set or uses the insecure default. Refusing to start in production.');
+      }
+      console.warn('\n⚠️  [SECURITY WARNING] JWT_SECRET is not set — using insecure default. THIS MUST BE CHANGED BEFORE GOING TO PRODUCTION.\n');
+    }
+    this.jwtSecret = secret || INSECURE_DEFAULT;
     this.jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
     this.otpExpiration = 10 * 60 * 1000; // 10 minutes in milliseconds
     this.resetTokenExpiration = 60 * 60 * 1000; // 1 hour in milliseconds
@@ -64,6 +73,10 @@ class AuthService {
 
     if (!/[0-9]/.test(password)) {
       errors.push('Password must contain at least one number');
+    }
+
+    if (!/[!@#$%^&*()\-_=+\[\]{};:'",.<>/?\\|`~]/.test(password)) {
+      errors.push('Password must contain at least one special character (e.g. !@#$%^&*)');
     }
 
     return {
@@ -131,7 +144,8 @@ class AuthService {
    * @returns {string} 6-digit OTP
    */
   generateOTP() {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    // crypto.randomInt is cryptographically secure, unlike Math.random()
+    return randomInt(100000, 1000000).toString();
   }
 
   /**

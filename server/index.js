@@ -15,6 +15,9 @@ import { dirname, join } from 'path';
 import { loadEnv } from './config/loadEnv.js';
 import { swaggerSpec } from './swagger.js';
 
+import AuthService from './services/AuthService.js';
+import { authenticate, requireRole } from './middleware/auth.js';
+
 import goalRouter from './routes/goal.js';
 import diagnosticRouter from './routes/diagnostic.js';
 import sessionRouter from './routes/session.js';
@@ -119,10 +122,16 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
-// Security headers (relaxed for API + Socket.io compatibility)
+// Security headers
 app.use(helmet({
-  contentSecurityPolicy: false,   // frontend manages its own CSP
-  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false,        // frontend Vite app manages its own CSP
+  crossOriginEmbedderPolicy: false,    // needed for Socket.io compatibility
+  // Enforce HTTPS in production (1 year max-age, includes subdomains)
+  strictTransportSecurity: process.env.NODE_ENV === 'production'
+    ? { maxAge: 31536000, includeSubDomains: true }
+    : false,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  permittedCrossDomainPolicies: false,
 }));
 
 // Compress all JSON/text responses — reduces payload 70-85%
@@ -163,8 +172,8 @@ app.use(cors({
     // Allow requests with no origin (mobile apps, curl, Render health checks)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    // Allow any vercel.app preview deploy for this project
-    if (origin.endsWith('.vercel.app')) return callback(null, true);
+    // Allow preview deploys for THIS project only — not all .vercel.app subdomains
+    if (origin.endsWith('.vercel.app') && origin.toLowerCase().includes('skillforge')) return callback(null, true);
     callback(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
@@ -227,8 +236,8 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ── DB health endpoint (admin use) ────────────────────────────────────────────
-app.get('/api/health/db', async (req, res) => {
+// ── DB health endpoint (admin use — requires authentication) ─────────────────
+app.get('/api/health/db', authenticate, requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const { createClient } = await import('@supabase/supabase-js');
     const url = process.env.SUPABASE_URL;
@@ -290,9 +299,16 @@ app.use('/api/agent-control', agentControlRouter);
 app.use('/api/recommendations', recommendationsRouter);
 app.use('/api/roles', rolesRouter);
 
-// ── Autonomous Agent Brief routes ──────────────────────────────────────────
-app.get('/api/brief/:userId', (req, res) => {
-  const brief = autonomousScheduler.getBrief(req.params.userId);
+// ── Autonomous Agent Brief routes (authenticated — own data only) ───────────
+app.get('/api/brief/:userId', authenticate, (req, res) => {
+  const { userId } = req.params;
+  // Users can only read their own brief; admins/managers can read any
+  const isSelf = req.user.userId === userId;
+  const isPrivileged = req.user.role === 'admin' || req.user.role === 'manager' || req.user.role === 'superadmin';
+  if (!isSelf && !isPrivileged) {
+    return res.status(403).json({ success: false, error: 'Access denied' });
+  }
+  const brief = autonomousScheduler.getBrief(userId);
   if (brief) {
     res.json(brief);
   } else {
@@ -309,7 +325,7 @@ app.get('/api/brief/:userId', (req, res) => {
     });
   }
 });
-app.get('/api/scheduler/status', (req, res) => res.json(autonomousScheduler.getStatus()));
+app.get('/api/scheduler/status', authenticate, requireRole('admin', 'superadmin'), (req, res) => res.json(autonomousScheduler.getStatus()));
 
 // ── Serve React frontend in production ────────────────────────────────────────
 // The Dockerfile copies client/dist next to server/ so the path resolves to
@@ -326,7 +342,7 @@ if (existsSync(clientDist)) {
   console.log('[static] Serving React build from', clientDist);
 }
 
-// Global error handler
+// Global error handler — never leak internal details (stack, DB errors) for 5xx
 app.use((err, req, res, _next) => {
   const status = err.status || err.statusCode || 500;
   console.error(`[error] ${req.method} ${req.path} → ${status}:`, err.message);
@@ -335,7 +351,8 @@ app.use((err, req, res, _next) => {
   res.status(status).json({
     success: false,
     data: null,
-    error: err.message || 'Internal server error',
+    // 5xx: opaque message to client; 4xx: pass the message through (validation errors etc.)
+    error: status >= 500 ? 'Internal server error' : (err.message || 'An error occurred'),
   });
 });
 
@@ -351,8 +368,23 @@ export const io = new SocketServer(httpServer, {
   connectTimeout: 10000,  // 10s to complete handshake
 });
 
+// Verify JWT on every Socket.io connection — prevents clients from joining
+// arbitrary user rooms by spoofing the userId in the handshake auth payload.
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (token) {
+    const decoded = AuthService.verifyJWT(token);
+    if (decoded) {
+      socket.authenticatedUserId = decoded.userId;
+    }
+    // Invalid/expired token — still allow connection but without authenticated room
+  }
+  next();
+});
+
 io.on('connection', (socket) => {
-  const userId = socket.handshake.auth?.userId;
+  // Use only server-verified userId, never the client-supplied one
+  const userId = socket.authenticatedUserId;
   if (userId) socket.join(`user:${userId}`);
 
   socket.on('subscribe:session', (sessionId) => socket.join(`session:${sessionId}`));

@@ -1,6 +1,7 @@
 import AuthService from '../services/AuthService.js';
 import UserStore from '../services/UserStore.js';
 import rateLimit from 'express-rate-limit';
+import { isBlocklisted } from '../security/tokenBlocklist.js';
 
 /**
  * Authentication middleware - Verify JWT token
@@ -27,7 +28,7 @@ export const authenticate = async (req, res, next) => {
 
     // Verify JWT token
     const decoded = AuthService.verifyJWT(token);
-    
+
     if (!decoded) {
       return res.status(401).json({
         success: false,
@@ -35,6 +36,18 @@ export const authenticate = async (req, res, next) => {
         error: {
           code: 'AUTH_TOKEN_INVALID',
           message: 'Invalid or expired authentication token'
+        }
+      });
+    }
+
+    // Reject tokens that were explicitly revoked on logout
+    if (isBlocklisted(token)) {
+      return res.status(401).json({
+        success: false,
+        data: null,
+        error: {
+          code: 'AUTH_TOKEN_REVOKED',
+          message: 'Session has been invalidated. Please log in again.'
         }
       });
     }
@@ -146,7 +159,7 @@ export const requireSuperAdmin = (req, res, next) => {
  */
 export const rateLimitLogin = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // 50 requests per window — generous for dev/demo, still protects prod
+  max: 10, // 10 requests per IP per window — brute-force protection
   message: {
     success: false,
     data: null,
