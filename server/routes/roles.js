@@ -15,10 +15,14 @@
 import express from 'express';
 import multer from 'multer';
 import { randomUUID } from 'crypto';
+import { createRequire } from 'module';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { RoleLibrary, EmployeeChecklists, Assessments, GeneratedContent } from '../services/DataStore.js';
 import { generateQuestionsFromJD, validateQuestionBank } from '../services/AssessmentGenerator.js';
 import UserStore from '../services/UserStore.js';
+
+// Use createRequire so CJS packages (pdf-parse, mammoth) load correctly from ESM
+const _require = createRequire(import.meta.url);
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -134,7 +138,8 @@ async function parseFile(buffer, mimetype, originalname) {
 }
 
 // ── POST /api/roles/parse-jd — extract text from uploaded JD file ─────────────
-// File is processed in-memory and immediately discarded — only extracted text is returned
+// Supports: PDF, DOCX, DOC, TXT, RTF, CSV, XLS, XLSX
+// File is processed in-memory and immediately discarded — only extracted text returned
 router.post('/parse-jd', authenticate, requireRole('admin', 'manager'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
@@ -142,21 +147,32 @@ router.post('/parse-jd', authenticate, requireRole('admin', 'manager'), upload.s
     let text = '';
 
     if (ext === 'pdf') {
-      const pdfParse = (await import('pdf-parse')).default;
-      const result = await pdfParse(req.file.buffer);
+      // pdf-parse is CJS; use _require for reliable ESM interop (.default can be non-callable)
+      const pdfParse = _require('pdf-parse');
+      const fn = typeof pdfParse === 'function' ? pdfParse : pdfParse.default;
+      if (typeof fn !== 'function') throw new Error('pdf-parse module did not export a callable function');
+      const result = await fn(req.file.buffer);
       text = result.text || '';
     } else if (ext === 'docx' || ext === 'doc') {
-      const mammoth = (await import('mammoth')).default;
+      const mammoth = _require('mammoth');
       const result = await mammoth.extractRawText({ buffer: req.file.buffer });
       text = result.value || '';
+    } else if (ext === 'xls' || ext === 'xlsx') {
+      const { read, utils } = await import('xlsx');
+      const wb = read(req.file.buffer, { type: 'buffer' });
+      // Convert all sheets to text
+      text = wb.SheetNames.map(name => {
+        const ws = wb.Sheets[name];
+        return utils.sheet_to_csv(ws);
+      }).join('\n\n');
     } else {
-      // txt, rtf, csv and any other text-based format
+      // txt, rtf, csv, and any other text-based format
       text = req.file.buffer.toString('utf-8');
     }
 
-    // Preserve structure: collapse excessive blank lines but keep headings/bullets
+    // Normalise line endings and collapse excessive blank lines
     text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-    if (!text) return res.status(400).json({ success: false, error: 'Could not extract text from file' });
+    if (!text) return res.status(400).json({ success: false, error: 'Could not extract text from this file — make sure the file contains readable text' });
 
     res.json({ success: true, data: { text, length: text.length, ext } });
   } catch (e) {
