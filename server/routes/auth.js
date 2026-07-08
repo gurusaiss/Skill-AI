@@ -5,8 +5,10 @@ import UserStore from '../services/UserStore.js';
 import EmailService from '../services/EmailService.js';
 import { authenticate, rateLimitLogin, rateLimitOTP, rateLimitPasswordReset } from '../middleware/auth.js';
 import { Companies, RoleLibrary, UserJDProfiles, Assessments, GeneratedContent, AccessCodes } from '../services/DataStore.js';
+import { sanitizeText, sanitizeEmail, sanitizePhone, sanitizeId } from '../utils/sanitize.js';
 import { addToBlocklist } from '../security/tokenBlocklist.js';
 import { isLocked, getLockoutMinutes, remainingAttempts, recordFailure, clearRecord } from '../security/loginProtection.js';
+import { generateRefreshToken, verifyRefreshToken, revokeRefreshToken, revokeAllForUser } from '../security/refreshTokenStore.js';
 
 // Pick balanced questions from pre-generated bank (40% easy, 40% medium, 20% hard)
 function pickFromBank(bank, target = 10) {
@@ -86,7 +88,14 @@ router.get('/validate-company-code', async (req, res) => {
  */
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, name, companyCode, jobRole, employeeId, phone } = req.body;
+    const rawBody = req.body;
+    const email       = sanitizeEmail(rawBody.email);
+    const password    = rawBody.password;
+    const name        = sanitizeText(rawBody.name, 200);
+    const companyCode = sanitizeId(rawBody.companyCode, 50);
+    const jobRole     = sanitizeText(rawBody.jobRole, 200);
+    const employeeId  = sanitizeId(rawBody.employeeId, 100);
+    const phone       = sanitizePhone(rawBody.phone);
 
     // Validate input
     if (!email || !password) {
@@ -545,8 +554,9 @@ router.post('/login', rateLimitLogin, async (req, res) => {
     // Clear any lockout record on successful login
     clearRecord(email);
 
-    // Generate JWT token
+    // Generate JWT token + rotating refresh token
     const token = AuthService.generateJWT(user.userId, user.email, user.role);
+    const refreshToken = generateRefreshToken(user.userId);
 
     // Update last login
     await UserStore.updateUser(user.userId, {
@@ -571,6 +581,7 @@ router.post('/login', rateLimitLogin, async (req, res) => {
       success: true,
       data: {
         token,
+        refreshToken,
         user: {
           userId: user.userId,
           email: user.email,
@@ -637,6 +648,7 @@ router.post('/complete-password-change', rateLimitLogin, async (req, res) => {
     await UserStore.logAuthEvent('password_change_completed', user.userId, { email, ipAddress: req.ip });
 
     const token = AuthService.generateJWT(user.userId, user.email, user.role);
+    const refreshToken = generateRefreshToken(user.userId);
     const storedAccesses = user.accesses || [];
     let effectiveAccesses = storedAccesses;
     if (storedAccesses.length === 0) {
@@ -648,6 +660,7 @@ router.post('/complete-password-change', rateLimitLogin, async (req, res) => {
       success: true,
       data: {
         token,
+        refreshToken,
         user: {
           userId: user.userId,
           email: user.email,
@@ -674,10 +687,16 @@ router.post('/complete-password-change', rateLimitLogin, async (req, res) => {
  */
 router.post('/logout', authenticate, async (req, res) => {
   try {
-    // Invalidate the current token server-side so it cannot be reused
+    // Invalidate the current JWT so it cannot be reused
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
       addToBlocklist(authHeader.substring(7));
+    }
+
+    // Revoke the refresh token sent by the client (if any)
+    const { refreshToken: clientRefreshToken } = req.body || {};
+    if (clientRefreshToken) {
+      revokeRefreshToken(clientRefreshToken);
     }
 
     // Log logout event
@@ -1051,10 +1070,65 @@ router.post('/activate', async (req, res) => {
     await ActivationTokens.delete(token);
 
     const authToken = AuthService.generateJWT(user.userId, user.email, user.role);
-    res.json({ success: true, data: { token: authToken, user: { userId: user.userId, email: user.email, name: user.name, role: user.role } } });
+    const authRefreshToken = generateRefreshToken(user.userId);
+    res.json({ success: true, data: { token: authToken, refreshToken: authRefreshToken, user: { userId: user.userId, email: user.email, name: user.name, role: user.role } } });
   } catch (e) {
     console.error('[auth/activate]', e.message);
     res.status(500).json({ success: false, error: { message: 'Activation failed' } });
+  }
+});
+
+/**
+ * POST /api/auth/refresh
+ * Exchange a valid refresh token for a new access + refresh token pair (rotation).
+ * Old refresh token is revoked immediately.  Reuse of a revoked token triggers
+ * full revocation of all tokens for that user.
+ */
+router.post('/refresh', rateLimitLogin, async (req, res) => {
+  try {
+    const { refreshToken } = req.body || {};
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false, data: null,
+        error: { code: 'AUTH_REFRESH_MISSING', message: 'Refresh token required' },
+      });
+    }
+
+    const userId = verifyRefreshToken(refreshToken);
+    if (!userId) {
+      return res.status(401).json({
+        success: false, data: null,
+        error: { code: 'AUTH_REFRESH_INVALID', message: 'Invalid or expired refresh token. Please log in again.' },
+      });
+    }
+
+    const user = await UserStore.getUserById(userId);
+    if (!user) {
+      revokeRefreshToken(refreshToken);
+      return res.status(401).json({
+        success: false, data: null,
+        error: { code: 'AUTH_USER_NOT_FOUND', message: 'User not found' },
+      });
+    }
+
+    // Rotate: revoke old, issue new pair
+    revokeRefreshToken(refreshToken);
+    const newAccessToken  = AuthService.generateJWT(user.userId, user.email, user.role);
+    const newRefreshToken = generateRefreshToken(user.userId);
+
+    await UserStore.logAuthEvent('token_refreshed', userId, { ipAddress: req.ip }).catch(() => {});
+
+    res.json({
+      success: true,
+      data: { token: newAccessToken, refreshToken: newRefreshToken },
+      error: null,
+    });
+  } catch (error) {
+    console.error('[Auth Routes] Token refresh error:', error.message);
+    res.status(500).json({
+      success: false, data: null,
+      error: { code: 'AUTH_ERROR', message: 'Token refresh failed' },
+    });
   }
 });
 

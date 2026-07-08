@@ -38,21 +38,99 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+// Module-level dedup guard: prevents multiple concurrent 401s from each
+// triggering an independent refresh call.
+let _refreshPromise = null;
+
 // Auth Provider Component
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Helper function to make authenticated API requests
+  // ── Refresh token helpers ────────────────────────────────────────────────────
+
+  const storeTokens = (accessToken, refreshToken, userData) => {
+    localStorage.setItem('auth_token', accessToken);
+    if (refreshToken) localStorage.setItem('auth_refresh_token', refreshToken);
+    if (userData?.learningUUID) {
+      localStorage.setItem('skillforge:userId', userData.learningUUID);
+    } else if (userData?.userId) {
+      localStorage.setItem('skillforge:userId', userData.userId);
+    }
+    setToken(accessToken);
+    if (userData) setUser(userData);
+  };
+
+  const clearTokens = () => {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_refresh_token');
+    localStorage.removeItem('skillforge:userId');
+    localStorage.removeItem('active_role');
+    setToken(null);
+    setUser(null);
+  };
+
+  // Silently exchange the stored refresh token for a new access + refresh pair.
+  // Deduplicates: concurrent callers get the same promise.
+  // Returns the new access token string, or null on failure.
+  const refreshAccessToken = () => {
+    if (_refreshPromise) return _refreshPromise;
+
+    _refreshPromise = (async () => {
+      try {
+        const storedRefresh = localStorage.getItem('auth_refresh_token');
+        if (!storedRefresh) {
+          handleTokenExpiration();
+          return null;
+        }
+
+        const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: storedRefresh }),
+        });
+
+        if (!res.ok) {
+          handleTokenExpiration();
+          return null;
+        }
+
+        const data = await res.json();
+        if (!data?.success || !data?.data?.token) {
+          handleTokenExpiration();
+          return null;
+        }
+
+        const { token: newAccess, refreshToken: newRefresh } = data.data;
+        localStorage.setItem('auth_token', newAccess);
+        if (newRefresh) localStorage.setItem('auth_refresh_token', newRefresh);
+        setToken(newAccess);
+        return newAccess;
+      } catch {
+        handleTokenExpiration();
+        return null;
+      } finally {
+        _refreshPromise = null;
+      }
+    })();
+
+    return _refreshPromise;
+  };
+
+  // ── authRequest ──────────────────────────────────────────────────────────────
+
+  // Helper function to make authenticated API requests.
+  // On 401: silently tries refresh once; if that fails, clears session.
   const authRequest = async (path, options = {}) => {
     const fullUrl = `${API_BASE_URL}${path}`;
-    
-    try {
+    const currentToken = localStorage.getItem('auth_token') || token;
+
+    const makeRequest = async (bearerToken) => {
       const response = await fetch(fullUrl, {
         headers: {
           'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
+          ...(bearerToken && { Authorization: `Bearer ${bearerToken}` }),
           ...(options.headers || {}),
         },
         ...options,
@@ -60,25 +138,55 @@ export const AuthProvider = ({ children }) => {
 
       const rawBody = await response.text();
       let payload = null;
-
       if (rawBody) {
         try {
           payload = JSON.parse(rawBody);
-        } catch (error) {
+        } catch {
           throw new Error(`Server returned a non-JSON response (${response.status})`);
         }
       }
+      return { response, payload };
+    };
+
+    try {
+      let { response, payload } = await makeRequest(currentToken);
 
       if (!response.ok) {
-        // Handle token expiration
-        if (response.status === 401 && token) {
+        // On 401: attempt a silent token refresh before giving up.
+        // Skip for auth endpoints themselves to avoid infinite loops.
+        const isAuthEndpoint =
+          path.includes('/api/auth/refresh') ||
+          path.includes('/api/auth/login') ||
+          path.includes('/api/auth/logout');
+
+        if (response.status === 401 && currentToken && !isAuthEndpoint) {
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            // Retry the original request with the fresh access token
+            const retry = await makeRequest(newToken);
+            if (!retry.response.ok) {
+              const retryErr = retry.payload?.error;
+              const retryMsg =
+                typeof retryErr === 'string'
+                  ? retryErr
+                  : retryErr?.message || `Request failed with status ${retry.response.status}`;
+              throw new Error(retryMsg);
+            }
+            return retry.payload;
+          }
+          // refreshAccessToken already called handleTokenExpiration
+          throw new Error('Session expired. Please log in again.');
+        }
+
+        if (response.status === 401 && currentToken) {
           handleTokenExpiration();
         }
 
         const errorBody = payload?.error;
-        const errorMessage = typeof errorBody === 'string'
-          ? errorBody
-          : (errorBody?.message || errorBody?.detail || `Request failed with status ${response.status}`);
+        const errorMessage =
+          typeof errorBody === 'string'
+            ? errorBody
+            : errorBody?.message || errorBody?.detail || `Request failed with status ${response.status}`;
         throw new Error(errorMessage);
       }
 
@@ -88,19 +196,15 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Handle token expiration
+  // Handle token expiration — clear all auth state and go to landing
   const handleTokenExpiration = () => {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('active_role'); // prevent stale switched-role leaking to next login
-    setToken(null);
-    setUser(null);
-    // Redirect to login page
+    clearTokens();
     window.location.href = '/';
   };
 
-  // Initialize auth state from localStorage on mount
+  // ── Initialize auth state from localStorage on mount ────────────────────────
   // Retries up to 4 times (covers Render ~30s cold-start) before giving up.
-  // IMPORTANT: never clears the token on a network error — only on a 401/403.
+  // IMPORTANT: never clears the token on a network error — only on a definitive 401/403.
   useEffect(() => {
     const initializeAuth = async () => {
       const storedToken = localStorage.getItem('auth_token');
@@ -133,9 +237,37 @@ export const AuthProvider = ({ children }) => {
             break;
           }
 
-          // 401 / 403 → token is genuinely invalid; clear it and stop retrying
+          // 401 / 403 → JWT is invalid or expired; try refresh before giving up
           if (response.status === 401 || response.status === 403) {
+            const storedRefresh = localStorage.getItem('auth_refresh_token');
+            if (storedRefresh) {
+              const refreshRes = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken: storedRefresh }),
+              });
+              if (refreshRes.ok) {
+                const refreshData = await refreshRes.json();
+                if (refreshData?.success && refreshData?.data?.token) {
+                  const { token: newAccess, refreshToken: newRefresh } = refreshData.data;
+                  localStorage.setItem('auth_token', newAccess);
+                  if (newRefresh) localStorage.setItem('auth_refresh_token', newRefresh);
+                  setToken(newAccess);
+                  // Retry /me with the fresh token
+                  const meRetry = await fetch(`${API_BASE_URL}/api/auth/me`, {
+                    headers: { Authorization: `Bearer ${newAccess}` },
+                  });
+                  if (meRetry.ok) {
+                    const mePayload = await meRetry.json();
+                    setUser(mePayload.data ?? mePayload);
+                  }
+                  break;
+                }
+              }
+            }
+            // No refresh token or refresh failed — clear everything
             localStorage.removeItem('auth_token');
+            localStorage.removeItem('auth_refresh_token');
             setToken(null);
             break;
           }
@@ -156,7 +288,8 @@ export const AuthProvider = ({ children }) => {
     initializeAuth();
   }, []);
 
-  // Login with email and password
+  // ── Login ────────────────────────────────────────────────────────────────────
+
   const login = async (email, password) => {
     try {
       const response = await authRequest('/api/auth/login', {
@@ -170,18 +303,8 @@ export const AuthProvider = ({ children }) => {
           return { success: true, requiresPasswordChange: true, email: response.data.email };
         }
 
-        const { token: newToken, user: userData } = response.data;
-
-        // Store token and learning user ID in localStorage
-        localStorage.setItem('auth_token', newToken);
-        if (userData?.learningUUID) {
-          localStorage.setItem('skillforge:userId', userData.learningUUID);
-        } else if (userData?.userId) {
-          localStorage.setItem('skillforge:userId', userData.userId);
-        }
-        setToken(newToken);
-        setUser(userData);
-
+        const { token: newToken, refreshToken, user: userData } = response.data;
+        storeTokens(newToken, refreshToken, userData);
         return { success: true, data: userData };
       } else {
         throw new Error(response.error?.message || 'Login failed');
@@ -191,8 +314,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Completes the forced-password-change flow (see login() above), then
-  // establishes a normal session identical to a regular login.
+  // Completes the forced-password-change flow, then establishes a normal session.
   const completePasswordChange = async (email, currentPassword, newPassword) => {
     try {
       const response = await authRequest('/api/auth/complete-password-change', {
@@ -201,15 +323,8 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (response.success && response.data) {
-        const { token: newToken, user: userData } = response.data;
-        localStorage.setItem('auth_token', newToken);
-        if (userData?.learningUUID) {
-          localStorage.setItem('skillforge:userId', userData.learningUUID);
-        } else if (userData?.userId) {
-          localStorage.setItem('skillforge:userId', userData.userId);
-        }
-        setToken(newToken);
-        setUser(userData);
+        const { token: newToken, refreshToken, user: userData } = response.data;
+        storeTokens(newToken, refreshToken, userData);
         return { success: true, data: userData };
       }
       throw new Error(response.error?.message || 'Failed to update password');
@@ -227,18 +342,8 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (response.success && response.data) {
-        const { token: newToken, user: userData } = response.data;
-        
-        // Store token and learning user ID in localStorage
-        localStorage.setItem('auth_token', newToken);
-        if (userData?.learningUUID) {
-          localStorage.setItem('skillforge:userId', userData.learningUUID);
-        } else if (userData?.userId) {
-          localStorage.setItem('skillforge:userId', userData.userId);
-        }
-        setToken(newToken);
-        setUser(userData);
-        
+        const { token: newToken, refreshToken, user: userData } = response.data;
+        storeTokens(newToken, refreshToken, userData);
         return { success: true, data: userData };
       } else {
         throw new Error(response.error?.message || 'Google login failed');
@@ -248,20 +353,31 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Logout
+  // ── Logout ───────────────────────────────────────────────────────────────────
+
   const logout = () => {
-    // Remove auth state from localStorage
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('skillforge:userId');
-    localStorage.removeItem('active_role');
-    setToken(null);
-    setUser(null);
-    
-    // Redirect to landing page
+    const currentToken   = localStorage.getItem('auth_token');
+    const currentRefresh = localStorage.getItem('auth_refresh_token');
+
+    // Fire-and-forget: notify server to blocklist the JWT and revoke the refresh token.
+    // Client-side cleanup always proceeds regardless of network outcome.
+    if (currentToken) {
+      fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${currentToken}`,
+        },
+        body: JSON.stringify({ refreshToken: currentRefresh || '' }),
+      }).catch(() => {});
+    }
+
+    clearTokens();
     window.location.href = '/';
   };
 
-  // Register new user
+  // ── Register ─────────────────────────────────────────────────────────────────
+
   const register = async (email, password, name, extras = {}) => {
     try {
       const response = await authRequest('/api/auth/register', {
@@ -279,12 +395,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Verify OTP
+  // ── OTP ──────────────────────────────────────────────────────────────────────
+
   const verifyOTP = async (otp, email) => {
     try {
-      // Get email from session storage if not provided
       const verificationEmail = email || sessionStorage.getItem('pendingVerificationEmail');
-      
       if (!verificationEmail) {
         throw new Error('Email address is required for verification');
       }
@@ -304,19 +419,14 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Set auth from token (for OAuth callback)
-  const setAuthFromToken = (newToken, userData) => {
-    localStorage.setItem('auth_token', newToken);
-    if (userData?.learningUUID) {
-      localStorage.setItem('skillforge:userId', userData.learningUUID);
-    } else if (userData?.userId) {
-      localStorage.setItem('skillforge:userId', userData.userId);
-    }
-    setToken(newToken);
-    setUser(userData);
+  // ── Set auth from token (OAuth callback) ────────────────────────────────────
+
+  const setAuthFromToken = (newToken, userData, newRefreshToken) => {
+    storeTokens(newToken, newRefreshToken || null, userData);
   };
 
-  // Request password reset
+  // ── Password management ──────────────────────────────────────────────────────
+
   const requestPasswordReset = async (email) => {
     try {
       const response = await authRequest('/api/auth/forgot-password', {
@@ -334,7 +444,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Reset password with token
   const resetPassword = async (resetToken, newPassword) => {
     try {
       const response = await authRequest('/api/auth/reset-password', {
@@ -352,12 +461,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Update user profile
+  // ── Profile ──────────────────────────────────────────────────────────────────
+
   const updateProfile = async (updates) => {
     try {
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
+      if (!user) throw new Error('User not authenticated');
 
       const response = await authRequest(`/api/users/${user.userId}`, {
         method: 'PUT',
@@ -375,12 +483,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Active role — persisted in localStorage so it survives refresh
+  // ── Active role ──────────────────────────────────────────────────────────────
+
   const [activeRole, setActiveRoleState] = useState(() => {
     return localStorage.getItem('active_role') || null;
   });
 
-  // Compute the effective active role: stored preference if valid, else user.role
   const getEffectiveRole = () => {
     if (!user) return null;
     const all = [user.role, ...(user.accesses || [])];
@@ -396,78 +504,40 @@ export const AuthProvider = ({ children }) => {
     setActiveRoleState(role);
   };
 
-  // Check if user has a specific role (checks primary role AND granted accesses AND active/switched role)
+  // ── Role / permission helpers ────────────────────────────────────────────────
+
   const hasRole = (role) => {
     if (!user) return false;
-
-    // superadmin has access to all roles
     if (user.role === 'superadmin') return true;
-
-    const effectiveRole = getEffectiveRole(); // includes switched role
+    const effectiveRole = getEffectiveRole();
     const all = [...new Set([user.role, effectiveRole, ...(user.accesses || [])].filter(Boolean))];
-
-    // Support multiple role checks (array or single role)
-    if (Array.isArray(role)) {
-      return role.some(r => all.includes(r));
-    }
-
+    if (Array.isArray(role)) return role.some(r => all.includes(r));
     return all.includes(role);
   };
 
-  // Check if user has a specific permission
   const hasPermission = (permission) => {
     if (!user) return false;
 
-    // Define role-based permissions
     const rolePermissions = {
       superadmin: [
-        'manage_platform',
-        'manage_companies',
-        'manage_admins',
-        'view_all',
-        'create_companies',
-        // inherits all admin permissions too
+        'manage_platform', 'manage_companies', 'manage_admins', 'view_all', 'create_companies',
         'manage_users', 'create_content', 'assign_managers',
         'manage_employees', 'view_all_reports', 'manage_modules',
-        // also inherits standard admin permissions
-        'create_tasks',
-        'create_plans',
-        'view_all_users',
-        'modify_roles',
-        'view_all_data',
-        'access_learning',
-        'manage_assessments',
-        'view_analytics',
+        'create_tasks', 'create_plans', 'view_all_users', 'modify_roles', 'view_all_data',
+        'access_learning', 'manage_assessments', 'view_analytics',
       ],
       admin: [
-        'create_content',
-        'create_tasks',
-        'create_plans',
-        'assign_managers',
-        'view_all_users',
-        'modify_roles',
-        'view_all_data',
-        'manage_employees',
-        'access_learning',
-        'manage_assessments',
-        'view_analytics',
+        'create_content', 'create_tasks', 'create_plans', 'assign_managers', 'view_all_users',
+        'modify_roles', 'view_all_data', 'manage_employees', 'access_learning',
+        'manage_assessments', 'view_analytics',
       ],
       manager: [
-        'view_assigned_employees',
-        'create_content_for_employees',
-        'view_employee_progress',
-        'create_tasks_for_employees',
-        'access_learning',
-        'manage_assessments',
-        'view_team_analytics',
+        'view_assigned_employees', 'create_content_for_employees', 'view_employee_progress',
+        'create_tasks_for_employees', 'access_learning', 'manage_assessments', 'view_team_analytics',
       ],
       employee: [
-        'access_learning',
-        'view_own_progress',
-        'submit_sessions',
-        'view_own_reports',
-        'view_own_skill_tree',
-        'take_assessments',
+        'access_learning', 'view_own_progress', 'submit_sessions', 'view_own_reports',
+        'view_own_skill_tree', 'take_assessments',
       ],
     };
 
@@ -475,7 +545,6 @@ export const AuthProvider = ({ children }) => {
     return userPermissions.includes(permission);
   };
 
-  // Get dashboard route based on effective role
   const getDashboardRoute = () => {
     if (!user) return '/';
     const role = getEffectiveRole();
@@ -487,11 +556,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Auto-redirect based on role after login
   const redirectToDashboard = () => {
     const route = getDashboardRoute();
     window.location.href = route;
   };
+
+  // ── Context value ────────────────────────────────────────────────────────────
 
   const value = {
     user,

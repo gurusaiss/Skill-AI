@@ -22,7 +22,7 @@ class AuthService {
       console.warn('\n⚠️  [SECURITY WARNING] JWT_SECRET is not set — using insecure default. THIS MUST BE CHANGED BEFORE GOING TO PRODUCTION.\n');
     }
     this.jwtSecret = secret || INSECURE_DEFAULT;
-    this.jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
+    this.jwtExpiresIn = process.env.JWT_EXPIRES_IN || '24h';
     this.otpExpiration = 10 * 60 * 1000; // 10 minutes in milliseconds
     this.resetTokenExpiration = 60 * 60 * 1000; // 1 hour in milliseconds
   }

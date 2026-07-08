@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { sanitizeText, sanitizeEmail, sanitizePhone, sanitizeId } from '../utils/sanitize.js';
 import UserStore from '../services/UserStore.js';
 import AuthService from '../services/AuthService.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -316,7 +317,15 @@ router.get('/', authenticate, async (req, res) => {
  */
 router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
-    const { email, name, role, jobRole, department, jobDescription, companyName, password } = req.body;
+    const raw = req.body;
+    const email       = sanitizeEmail(raw.email);
+    const name        = sanitizeText(raw.name, 200);
+    const role        = raw.role;
+    const jobRole     = sanitizeText(raw.jobRole, 200);
+    const department  = sanitizeText(raw.department, 200);
+    const jobDescription = sanitizeText(raw.jobDescription, 5000);
+    const companyName = sanitizeText(raw.companyName, 200);
+    const password    = raw.password; // passwords must not be stripped
 
     if (!email || !name) {
       return res.status(400).json({ success: false, data: null, error: { code: 'USER_INVALID_INPUT', message: 'Email and name are required' } });

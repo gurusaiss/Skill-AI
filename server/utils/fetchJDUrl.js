@@ -12,6 +12,79 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 
+// ── SSRF protection ────────────────────────────────────────────────────────────
+// Cloud-provider hosts we unconditionally trust for file downloads.
+const TRUSTED_CLOUD_HOSTS = new Set([
+  'drive.usercontent.google.com',
+  'docs.google.com',
+  'dl.dropboxusercontent.com',
+  'www.dropbox.com',
+  '1drv.ms',
+  'onedrive.live.com',
+]);
+
+// Private / loopback IPv4 ranges.
+const PRIVATE_IPV4_RE = [
+  /^127\./,                               // loopback
+  /^10\./,                                // RFC 1918
+  /^192\.168\./,                          // RFC 1918
+  /^172\.(1[6-9]|2\d|3[01])\./,          // RFC 1918
+  /^169\.254\./,                          // link-local / cloud metadata
+  /^0\./,                                 // "this" network
+  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./, // CGNAT (RFC 6598)
+];
+
+// Hostnames that should never be reachable.
+const BLOCKED_HOSTNAMES = new Set([
+  'localhost',
+  'metadata.google.internal',
+  'instance-data',
+  '169.254.169.254',  // AWS / Azure / GCP instance-metadata endpoint
+]);
+
+/**
+ * Throw if `urlString` resolves to a private / internal host.
+ * Cloud-provider sources are always allowed.
+ * @param {string} urlString
+ * @param {string} source — from resolveDownloadUrl()
+ */
+function assertNotSsrf(urlString, source) {
+  // Trusted cloud providers are always safe regardless of domain
+  const CLOUD_SOURCES = new Set(['google_drive', 'google_docs', 'google_sheets', 'dropbox', 'onedrive']);
+  if (CLOUD_SOURCES.has(source)) return;
+
+  let parsed;
+  try {
+    parsed = new URL(urlString);
+  } catch {
+    throw new Error('Invalid URL');
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`Unsupported URL protocol: ${parsed.protocol}`);
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // Block explicit blocked hostnames
+  if (BLOCKED_HOSTNAMES.has(hostname)) {
+    throw new Error('Access to this URL is not allowed');
+  }
+
+  // Block if hostname looks like a private IPv4 address
+  if (PRIVATE_IPV4_RE.some(re => re.test(hostname))) {
+    throw new Error('Access to internal/private network addresses is not allowed');
+  }
+
+  // Block IPv6 loopback / ULA
+  if (hostname === '::1' || /^fc[0-9a-f]{2}:/i.test(hostname) || /^fd[0-9a-f]{2}:/i.test(hostname)) {
+    throw new Error('Access to internal/private network addresses is not allowed');
+  }
+
+  // Must be a domain name or public IP — allow only if not in trusted-cloud set
+  // (for any source other than those above, we've already passed all checks)
+}
+
 /**
  * Convert a share link to a direct-download URL.
  * Returns the resolved URL and the guessed file extension.
@@ -102,6 +175,9 @@ export async function fetchJDFromUrl(rawUrl) {
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30_000); // 30s timeout
+
+  // SSRF guard — must run before any network I/O
+  assertNotSsrf(downloadUrl, source);
 
   let response;
   try {
