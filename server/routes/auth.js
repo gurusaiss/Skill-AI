@@ -926,6 +926,9 @@ router.post('/reset-password', async (req, res) => {
       resetTokenExpires: null
     });
 
+    // Invalidate ALL existing sessions — anyone who had access is now locked out
+    revokeAllForUser(user.userId);
+
     // Log password reset
     await UserStore.logAuthEvent('password_reset_completed', user.userId, {
       email: user.email,
@@ -1018,6 +1021,9 @@ router.post('/change-password', authenticate, async (req, res) => {
     await UserStore.updateUser(user.userId, {
       passwordHash
     });
+
+    // Revoke all refresh tokens for this user — all other devices are logged out
+    revokeAllForUser(req.user.userId);
 
     // Log password change
     await UserStore.logAuthEvent('password_changed', user.userId, {

@@ -184,6 +184,42 @@ const jdUpload = multer({
   },
 });
 
+// ── File MIME magic-number check (blocklist approach) ─────────────────────────
+// Only blocks clearly dangerous types (executables, scripts). Never rejects
+// legitimate document formats like PDF, DOCX, CSV, PNG — even if file-type
+// cannot identify them (returns null for plain text, which is fine).
+const BLOCKED_MIMES = new Set([
+  'application/x-executable',
+  'application/x-msdownload',       // Windows PE / DLL
+  'application/x-sh',
+  'application/x-shellscript',
+  'application/javascript',
+  'text/javascript',
+  'application/x-php',
+  'text/x-php',
+  'application/x-httpd-php',
+  'application/x-perl',
+  'application/x-python',
+  'application/x-python-code',
+  'application/x-ruby',
+  'application/x-msdos-program',
+  'application/x-dosexec',
+  'application/x-elf',
+]);
+
+async function checkFileMime(filePath) {
+  try {
+    const { fileTypeFromFile } = await import('file-type');
+    const ft = await fileTypeFromFile(filePath);
+    if (ft && BLOCKED_MIMES.has(ft.mime)) {
+      return { blocked: true, mime: ft.mime };
+    }
+  } catch {
+    // file-type unavailable or unreadable — skip check silently
+  }
+  return { blocked: false };
+}
+
 // ── Sanitize user for response (include all profile fields) ───────────────────
 function sanitizeUser(user) {
   return {
@@ -643,6 +679,12 @@ router.post('/:userId/jd-upload', authenticate, jdUpload.single('jd'), async (re
       return res.status(400).json({ success: false, data: null, error: { code: 'NO_FILE', message: 'No file uploaded' } });
     }
 
+    // MIME magic-number check — blocks executables/scripts disguised as documents
+    const mimeCheck = await checkFileMime(req.file.path);
+    if (mimeCheck.blocked) {
+      return res.status(400).json({ success: false, data: null, error: { code: 'FILE_TYPE_BLOCKED', message: 'File type not allowed' } });
+    }
+
     // Extract full text from the uploaded file — no character limit
     const { parseJDFile, extractSkillsFromJDText } = await import('../utils/parseJDFile.js');
     const extractedText = await parseJDFile(req.file.path, req.file.originalname);
@@ -1056,6 +1098,14 @@ router.post('/bulk-import/preview', authenticate, requireRole('admin', 'manager'
     if (!filePath) {
       return res.status(400).json({ success: false, error: 'No file uploaded. Supported: CSV, XLS, XLSX' });
     }
+
+    // MIME magic-number check — blocks executables/scripts disguised as spreadsheets
+    const mimeCheck = await checkFileMime(filePath);
+    if (mimeCheck.blocked) {
+      if (filePath) { try { unlinkSync(filePath); } catch {} }
+      return res.status(400).json({ success: false, error: 'File type not allowed' });
+    }
+
     const rawRows = await parseImportFile(filePath);
     if (!rawRows.length) {
       return res.status(400).json({ success: false, error: 'File is empty or has no data rows' });
