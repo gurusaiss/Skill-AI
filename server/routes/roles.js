@@ -160,6 +160,26 @@ async function parseFile(buffer, mimetype, originalname) {
   return utils.sheet_to_json(ws, { defval: '' });
 }
 
+// Convert mammoth HTML output to structured plain text preserving headings/bullets/tables
+function htmlToStructuredText(html) {
+  if (!html) return '';
+  return html
+    .replace(/<h1[^>]*>/gi, '\n\n# ').replace(/<h2[^>]*>/gi, '\n\n## ').replace(/<h3[^>]*>/gi, '\n\n### ')
+    .replace(/<h[456][^>]*>/gi, '\n\n#### ')
+    .replace(/<\/h[1-6]>/gi, '\n')
+    .replace(/<p[^>]*>/gi, '\n').replace(/<\/p>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '\n• ').replace(/<\/li>/gi, '')
+    .replace(/<ul[^>]*>|<\/ul>|<ol[^>]*>|<\/ol>/gi, '\n')
+    .replace(/<tr[^>]*>/gi, '\n').replace(/<\/tr>/gi, '')
+    .replace(/<td[^>]*>|<th[^>]*>/gi, '\t').replace(/<\/td>|<\/th>/gi, '')
+    .replace(/<strong[^>]*>|<b[^>]*>/gi, '**').replace(/<\/strong>|<\/b>/gi, '**')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // Extract plain text from a file buffer — shared by parse-jd and supporting-doc endpoints
 async function extractTextFromBuffer(buffer, originalname) {
   const ext = (originalname?.split('.').pop() || '').toLowerCase();
@@ -170,7 +190,13 @@ async function extractTextFromBuffer(buffer, originalname) {
     return result.text || '';
   }
 
-  if (ext === 'docx' || ext === 'doc') {
+  if (ext === 'docx') {
+    const mammoth = _require('mammoth');
+    const result = await mammoth.convertToHtml({ buffer });
+    return htmlToStructuredText(result.value || '');
+  }
+
+  if (ext === 'doc') {
     const mammoth = _require('mammoth');
     const result = await mammoth.extractRawText({ buffer });
     return result.value || '';
@@ -250,7 +276,7 @@ router.post('/parse-jd', authenticate, requireRole('admin', 'manager'), upload.s
     text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
     if (!text) return res.status(400).json({ success: false, error: 'Could not extract text from this file — make sure the file contains readable text' });
 
-    res.json({ success: true, data: { text, length: text.length, ext } });
+    res.json({ success: true, data: { text, length: text.length, ext, uploadedBy: req.user.userId, uploadedByEmail: req.user.email } });
   } catch (e) {
     console.error('[POST /api/roles/parse-jd]', e);
     res.status(500).json({ success: false, error: `Failed to parse file: ${e.message}` });
@@ -375,6 +401,48 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
       });
     }
   } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── PUT /api/roles/:id/document-text — save edited parsed text for one file ───
+router.put('/:id/document-text', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+
+    const { fileId, text, fileType } = req.body;
+    if (!fileId || typeof text !== 'string' || !['jd', 'supporting'].includes(fileType)) {
+      return res.status(400).json({ success: false, error: 'fileId, text (string), and fileType (jd|supporting) are required' });
+    }
+
+    const trimmed = text.trim();
+    const now = new Date().toISOString();
+    let updates;
+
+    if (fileType === 'jd') {
+      if (!(role.jdFiles || []).some(f => f.id === fileId)) {
+        return res.status(404).json({ success: false, error: 'File not found in jdFiles' });
+      }
+      const jdFiles = role.jdFiles.map(f =>
+        f.id === fileId ? { ...f, text: trimmed, chars: trimmed.length, lastUpdatedBy: req.user.userId, lastUpdatedAt: now } : f
+      );
+      const jobDescription = jdFiles.map(f => f.text).filter(Boolean).join('\n\n');
+      updates = { jdFiles, jobDescription, updatedAt: now };
+    } else {
+      if (!(role.supportingFiles || []).some(f => f.id === fileId)) {
+        return res.status(404).json({ success: false, error: 'File not found in supportingFiles' });
+      }
+      const supportingFiles = role.supportingFiles.map(f =>
+        f.id === fileId ? { ...f, text: trimmed, chars: trimmed.length, lastUpdatedBy: req.user.userId, lastUpdatedAt: now } : f
+      );
+      updates = { supportingFiles, updatedAt: now };
+    }
+
+    const updated = await RoleLibrary.update(req.params.id, updates);
+    res.json({ success: true, data: updated });
+  } catch (e) {
+    console.error('[PUT /api/roles/:id/document-text]', e);
     res.status(500).json({ success: false, error: e.message });
   }
 });

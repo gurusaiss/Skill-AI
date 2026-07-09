@@ -6,6 +6,239 @@ import { useNotification } from '../../contexts/NotificationContext.jsx';
 const inputCls = 'w-full bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500';
 const labelCls = 'block text-xs font-medium text-slate-400 mb-1';
 
+// ── TextPreview — renders a text snippet with optional search highlighting ─────
+function TextPreview({ text, searchTerm, maxChars = 500 }) {
+  if (!text) return <p className="text-xs text-slate-500 italic">No extracted text available.</p>;
+
+  let display = text;
+  let prefix = '';
+  let suffix = '';
+
+  if (searchTerm) {
+    const lo = text.toLowerCase();
+    const loTerm = searchTerm.toLowerCase();
+    const idx = lo.indexOf(loTerm);
+    if (idx === -1) {
+      return (
+        <div>
+          <p className="text-xs text-amber-400 mb-1">"{searchTerm}" not found in this document.</p>
+          <pre className="text-xs text-slate-400 whitespace-pre-wrap leading-relaxed font-mono max-h-40 overflow-y-auto">
+            {text.slice(0, maxChars)}{text.length > maxChars ? '…' : ''}
+          </pre>
+        </div>
+      );
+    }
+    const ctx = 180;
+    const start = Math.max(0, idx - ctx);
+    const end = Math.min(text.length, idx + searchTerm.length + ctx);
+    display = text.slice(start, end);
+    prefix = start > 0 ? '…' : '';
+    suffix = end < text.length ? '…' : '';
+  } else {
+    display = text.slice(0, maxChars);
+    suffix = text.length > maxChars ? '…' : '';
+  }
+
+  if (!searchTerm) {
+    return (
+      <pre className="text-xs text-slate-400 whitespace-pre-wrap leading-relaxed font-mono max-h-40 overflow-y-auto">
+        {display}{suffix}
+      </pre>
+    );
+  }
+
+  const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = display.split(new RegExp(`(${escaped})`, 'gi'));
+  return (
+    <pre className="text-xs text-slate-400 whitespace-pre-wrap leading-relaxed font-mono max-h-40 overflow-y-auto">
+      {prefix}{parts.map((part, i) =>
+        i % 2 === 1
+          ? <mark key={i} className="bg-yellow-400/30 text-yellow-200 rounded px-0.5 not-italic">{part}</mark>
+          : part
+      )}{suffix}
+    </pre>
+  );
+}
+
+// ── FullTextModal — overlay for reading/searching a document's full text ───────
+function FullTextModal({ title, text, accent = 'indigo', onClose }) {
+  const [search, setSearch] = useState('');
+  const accentText  = accent === 'emerald' ? 'text-emerald-400'    : 'text-indigo-400';
+  const accentBdr   = accent === 'emerald' ? 'border-emerald-500/30' : 'border-indigo-500/30';
+
+  const matchCount = useMemo(() => {
+    if (!search || !text) return 0;
+    try {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return (text.match(new RegExp(escaped, 'gi')) || []).length;
+    } catch { return 0; }
+  }, [text, search]);
+
+  const renderedText = useMemo(() => {
+    if (!search || !text) return null;
+    try {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+      return parts.map((part, i) =>
+        i % 2 === 1
+          ? <mark key={i} className="bg-yellow-400/30 text-yellow-200 rounded px-0.5">{part}</mark>
+          : part
+      );
+    } catch { return text; }
+  }, [text, search]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
+        <div className="flex items-center gap-3 p-4 border-b border-slate-700 shrink-0">
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-semibold ${accentText} truncate`}>📄 {title}</p>
+            <p className="text-xs text-slate-500">{text.length.toLocaleString()} characters</p>
+          </div>
+          <button type="button" onClick={() => navigator.clipboard.writeText(text)}
+            className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 shrink-0">
+            📋 Copy All
+          </button>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-white text-xl shrink-0">✕</button>
+        </div>
+        <div className="p-4 border-b border-slate-700 shrink-0">
+          <input type="text" placeholder="Search within document…"
+            value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full bg-[#0F172A] border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+            autoFocus
+          />
+          {search && (
+            <p className="text-xs mt-1">
+              {matchCount > 0
+                ? <span className="text-emerald-400">{matchCount} match{matchCount !== 1 ? 'es' : ''}</span>
+                : <span className="text-amber-400">No matches</span>}
+            </p>
+          )}
+        </div>
+        <div className={`flex-1 overflow-y-auto p-4 border-l-2 ${accentBdr} mx-4 my-4`}>
+          <pre className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed font-mono">
+            {renderedText || text}
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── FileRow — enhanced file row with preview, search, copy, and text editing ───
+function FileRow({ file, idx, onCountChange, onRemove, onTextEdit, accent = 'indigo', isEditMode = false }) {
+  const [expanded, setExpanded] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showFull, setShowFull] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const accentText = accent === 'emerald' ? 'text-emerald-400'    : 'text-indigo-400';
+  const accentBg   = accent === 'emerald' ? 'bg-emerald-600/20'   : 'bg-indigo-600/20';
+  const accentBdr  = accent === 'emerald' ? 'border-emerald-500/30' : 'border-indigo-500/30';
+  const charCount  = file.chars || file.text?.length || 0;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(file.text || '').then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  };
+
+  const startEdit = () => {
+    setEditText(file.text || '');
+    setEditing(true);
+    setExpanded(true);
+  };
+
+  const handleSaveText = () => {
+    if (onTextEdit) onTextEdit(idx, editText);
+    setEditing(false);
+  };
+
+  return (
+    <div className={`bg-[#0F172A] rounded-lg border ${accentBdr} overflow-hidden`}>
+      {/* Header row */}
+      <div className="flex items-center gap-2 px-3 py-2">
+        <span className={`text-xs shrink-0 ${accentText}`}>📄</span>
+        <span className="text-xs text-slate-300 flex-1 truncate min-w-0" title={file.name}>{file.name}</span>
+        <span className="text-xs text-slate-500 shrink-0">{charCount.toLocaleString()}c</span>
+        <label className="text-xs text-slate-500 shrink-0">Q:</label>
+        <input
+          type="number" min="1" max="200" value={file.questionCount}
+          onChange={e => onCountChange(idx, e.target.value)}
+          className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-xs text-center focus:outline-none focus:border-indigo-500"
+        />
+        <button type="button" onClick={() => setExpanded(v => !v)}
+          title={expanded ? 'Collapse' : 'Preview extracted text'}
+          className={`text-xs px-1.5 py-0.5 rounded ${accentBg} ${accentText} shrink-0 transition-colors`}>
+          {expanded ? '▲' : '▼'}
+        </button>
+        <button type="button" onClick={() => onRemove(idx)} className="text-slate-500 hover:text-red-400 text-xs shrink-0">✕</button>
+      </div>
+
+      {/* Expanded panel */}
+      {expanded && (
+        <div className="border-t border-slate-700/50 px-3 py-2.5 space-y-2">
+          <div className="flex items-center gap-2">
+            <input type="text" placeholder="Search within text…"
+              value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+              className="flex-1 bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 min-w-0"
+            />
+            <button type="button" onClick={handleCopy} title="Copy full text"
+              className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 shrink-0 transition-colors">
+              {copied ? '✓' : '📋'}
+            </button>
+            {(file.text?.length || 0) > 500 && !editing && (
+              <button type="button" onClick={() => setShowFull(true)}
+                className={`text-xs px-2 py-1 rounded ${accentBg} ${accentText} shrink-0 transition-colors`}>
+                ↗ Full
+              </button>
+            )}
+          </div>
+
+          {editing ? (
+            <div className="space-y-1.5">
+              <textarea
+                value={editText} onChange={e => setEditText(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded px-2 py-2 text-xs leading-relaxed font-mono focus:outline-none focus:border-indigo-500 resize-y"
+                rows={10}
+              />
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={handleSaveText}
+                  className="px-3 py-1 rounded bg-indigo-600 text-white text-xs hover:bg-indigo-700">
+                  Save Text
+                </button>
+                <button type="button" onClick={() => setEditing(false)}
+                  className="px-3 py-1 rounded bg-slate-700 text-slate-300 text-xs hover:bg-slate-600">
+                  Cancel
+                </button>
+                <span className="text-xs text-slate-500 ml-1">{editText.length.toLocaleString()} chars</span>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <TextPreview text={file.text || ''} searchTerm={searchTerm} maxChars={500} />
+              {isEditMode && onTextEdit && (
+                <button type="button" onClick={startEdit}
+                  className="mt-1.5 text-xs text-amber-400 hover:text-amber-300 underline">
+                  ✏️ Edit text
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {showFull && (
+        <FullTextModal title={file.name} text={file.text || ''} accent={accent} onClose={() => setShowFull(false)} />
+      )}
+    </div>
+  );
+}
+
 // ── CSV template ──────────────────────────────────────────────────────────────
 const TEMPLATE_CSV = `role_name,department,job_description,skills,status
 Frontend Developer,Engineering,"Responsible for building user interfaces using React and modern web technologies.","React,JavaScript,CSS,HTML",active
@@ -47,9 +280,14 @@ function RoleModal({ role, onClose, onSaved }) {
       const fd = new FormData();
       fd.append('file', file);
       const res = await authFetch('/api/roles/parse-jd', { method: 'POST', body: fd });
-      const text = res?.data?.text ?? res?.text ?? '';
+      const data = res?.data ?? res;
+      const text = data?.text ?? '';
       if (!text) throw new Error('No text extracted from file');
-      setJdFiles(p => [...p, { id: genId(), name: file.name, text, chars: text.length, questionCount: 10, uploadedAt: new Date().toISOString() }]);
+      setJdFiles(p => [...p, {
+        id: genId(), name: file.name, text, chars: text.length, questionCount: 10,
+        ext: data?.ext || file.name.split('.').pop()?.toLowerCase() || '',
+        uploadedBy: data?.uploadedBy || '', uploadedAt: new Date().toISOString(),
+      }]);
       toast(`JD added: ${file.name} (${text.length.toLocaleString()} chars)`);
     } catch (e) {
       toast(e.message || 'Failed to extract text', 'error');
@@ -66,9 +304,14 @@ function RoleModal({ role, onClose, onSaved }) {
       const fd = new FormData();
       fd.append('file', file);
       const res = await authFetch('/api/roles/parse-jd', { method: 'POST', body: fd });
-      const text = res?.data?.text ?? res?.text ?? '';
+      const data = res?.data ?? res;
+      const text = data?.text ?? '';
       if (!text) throw new Error('No text extracted from file');
-      setSupportingFiles(p => [...p, { id: genId(), name: file.name, text, chars: text.length, questionCount: 5, uploadedAt: new Date().toISOString() }]);
+      setSupportingFiles(p => [...p, {
+        id: genId(), name: file.name, text, chars: text.length, questionCount: 5,
+        ext: data?.ext || file.name.split('.').pop()?.toLowerCase() || '',
+        uploadedBy: data?.uploadedBy || '', uploadedAt: new Date().toISOString(),
+      }]);
       toast(`Supporting doc added: ${file.name} (${text.length.toLocaleString()} chars)`);
     } catch (e) {
       toast(e.message || 'Failed to extract text', 'error');
@@ -84,6 +327,32 @@ function RoleModal({ role, onClose, onSaved }) {
     setSupportingFiles(p => p.map((f, i) => i === idx ? { ...f, questionCount: Math.max(1, parseInt(val) || 1) } : f));
   const removeJdFile = idx => setJdFiles(p => p.filter((_, i) => i !== idx));
   const removeSupportingFile = idx => setSupportingFiles(p => p.filter((_, i) => i !== idx));
+
+  const updateJdText = async (idx, newText) => {
+    const fileId = jdFiles[idx]?.id;
+    setJdFiles(p => p.map((f, i) => i === idx ? { ...f, text: newText, chars: newText.length } : f));
+    if (isEdit && role?.id && fileId) {
+      try {
+        await authFetch(`/api/roles/${role.id}/document-text`, {
+          method: 'PUT', body: JSON.stringify({ fileId, text: newText, fileType: 'jd' }),
+        });
+        toast('Document text saved');
+      } catch (e) { toast(e.message || 'Failed to save text', 'error'); }
+    }
+  };
+
+  const updateSupportingText = async (idx, newText) => {
+    const fileId = supportingFiles[idx]?.id;
+    setSupportingFiles(p => p.map((f, i) => i === idx ? { ...f, text: newText, chars: newText.length } : f));
+    if (isEdit && role?.id && fileId) {
+      try {
+        await authFetch(`/api/roles/${role.id}/document-text`, {
+          method: 'PUT', body: JSON.stringify({ fileId, text: newText, fileType: 'supporting' }),
+        });
+        toast('Document text saved');
+      } catch (e) { toast(e.message || 'Failed to save text', 'error'); }
+    }
+  };
 
   const totalQuestions = [...jdFiles, ...supportingFiles].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0);
 
@@ -128,22 +397,6 @@ function RoleModal({ role, onClose, onSaved }) {
       setSaving(false);
     }
   };
-
-  // Per-file row component (shared by JD and supporting sections)
-  const FileRow = ({ file, idx, onCountChange, onRemove, accent = 'indigo' }) => (
-    <div className="flex items-center gap-2 bg-[#0F172A] rounded-lg px-3 py-2 border border-slate-700">
-      <span className={`text-xs shrink-0 ${accent === 'emerald' ? 'text-emerald-400' : 'text-indigo-400'}`}>📄</span>
-      <span className="text-xs text-slate-300 flex-1 truncate min-w-0" title={file.name}>{file.name}</span>
-      <span className="text-xs text-slate-500 shrink-0">{file.chars.toLocaleString()}c</span>
-      <label className="text-xs text-slate-500 shrink-0">Q:</label>
-      <input
-        type="number" min="1" max="200" value={file.questionCount}
-        onChange={e => onCountChange(idx, e.target.value)}
-        className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-xs text-center focus:outline-none focus:border-indigo-500"
-      />
-      <button type="button" onClick={() => onRemove(idx)} className="text-slate-500 hover:text-red-400 text-xs ml-1 shrink-0">✕</button>
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -210,7 +463,7 @@ function RoleModal({ role, onClose, onSaved }) {
             ) : (
               <div className="space-y-1.5">
                 {jdFiles.map((file, i) => (
-                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateJdCount} onRemove={removeJdFile} accent="indigo" />
+                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateJdCount} onRemove={removeJdFile} onTextEdit={updateJdText} accent="indigo" isEditMode={isEdit} />
                 ))}
                 <button type="button" onClick={() => jdFileRef.current?.click()} disabled={jdUploading}
                   className="text-xs text-indigo-400 hover:text-indigo-300 underline ml-1">
@@ -245,7 +498,7 @@ function RoleModal({ role, onClose, onSaved }) {
             ) : (
               <div className="space-y-1.5">
                 {supportingFiles.map((file, i) => (
-                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateSupportingCount} onRemove={removeSupportingFile} accent="emerald" />
+                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateSupportingCount} onRemove={removeSupportingFile} onTextEdit={updateSupportingText} accent="emerald" isEditMode={isEdit} />
                 ))}
               </div>
             )}
@@ -303,6 +556,66 @@ function RoleModal({ role, onClose, onSaved }) {
   );
 }
 
+// ── ViewDocRow — read-only expandable document row used in ViewModal ──────────
+function ViewDocRow({ file, accent = 'indigo' }) {
+  const [expanded, setExpanded] = useState(false);
+  const [showFull, setShowFull] = useState(false);
+  const [search, setSearch] = useState('');
+  const [copied, setCopied] = useState(false);
+  const accentText = accent === 'emerald' ? 'text-emerald-400'    : 'text-indigo-400';
+  const accentBg   = accent === 'emerald' ? 'bg-emerald-600/20'   : 'bg-indigo-600/20';
+  const accentBdr  = accent === 'emerald' ? 'border-emerald-500/30' : 'border-indigo-500/30';
+  const charCount  = file.chars || file.text?.length || 0;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(file.text || '').then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  };
+
+  return (
+    <div className={`bg-[#0F172A] rounded-lg border ${accentBdr} overflow-hidden`}>
+      <div className="flex items-center gap-2 px-3 py-2">
+        <span className={`text-xs shrink-0 ${accentText}`}>📄</span>
+        <span className="text-xs text-slate-300 flex-1 truncate min-w-0" title={file.name}>{file.name}</span>
+        <span className="text-xs text-slate-500 shrink-0">{charCount.toLocaleString()} chars</span>
+        {file.questionCount && <span className={`text-xs font-semibold shrink-0 ${accentText}`}>{file.questionCount} Q</span>}
+        {file.text && (
+          <button type="button" onClick={() => setExpanded(v => !v)}
+            className={`text-xs px-1.5 py-0.5 rounded ${accentBg} ${accentText} shrink-0`}>
+            {expanded ? '▲' : '▼'}
+          </button>
+        )}
+      </div>
+      {expanded && file.text && (
+        <div className="border-t border-slate-700/50 px-3 py-2.5 space-y-2">
+          <div className="flex items-center gap-2">
+            <input type="text" placeholder="Search within text…"
+              value={search} onChange={e => setSearch(e.target.value)}
+              className="flex-1 bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 min-w-0"
+            />
+            <button type="button" onClick={handleCopy}
+              className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 shrink-0">
+              {copied ? '✓' : '📋'}
+            </button>
+            {file.text.length > 500 && (
+              <button type="button" onClick={() => setShowFull(true)}
+                className={`text-xs px-2 py-1 rounded ${accentBg} ${accentText} shrink-0`}>
+                ↗ Full
+              </button>
+            )}
+          </div>
+          <TextPreview text={file.text} searchTerm={search} maxChars={500} />
+        </div>
+      )}
+      {showFull && (
+        <FullTextModal title={file.name} text={file.text || ''} accent={accent} onClose={() => setShowFull(false)} />
+      )}
+    </div>
+  );
+}
+
 // ── View modal ────────────────────────────────────────────────────────────────
 function ViewModal({ role, onClose, onEdit }) {
   return (
@@ -327,15 +640,8 @@ function ViewModal({ role, onClose, onEdit }) {
           {(role.jdFiles || []).length > 0 ? (
             <div>
               <p className="text-xs font-medium text-slate-400 mb-2">JD FILES ({role.jdFiles.length})</p>
-              <div className="space-y-1">
-                {role.jdFiles.map((f, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-[#0F172A] rounded px-3 py-2 border border-slate-700">
-                    <span className="text-indigo-400 text-xs">📄</span>
-                    <span className="text-xs text-slate-300 flex-1 truncate">{f.name}</span>
-                    <span className="text-xs text-slate-500">{(f.chars || f.text?.length || 0).toLocaleString()} chars</span>
-                    <span className="text-xs font-semibold text-indigo-300">{f.questionCount} Q</span>
-                  </div>
-                ))}
+              <div className="space-y-1.5">
+                {role.jdFiles.map((f, i) => <ViewDocRow key={f.id || i} file={f} accent="indigo" />)}
               </div>
             </div>
           ) : role.jobDescription ? (
@@ -344,20 +650,13 @@ function ViewModal({ role, onClose, onEdit }) {
               <pre className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed bg-[#0F172A] rounded-lg p-4 border border-slate-700">{role.jobDescription}</pre>
             </div>
           ) : null}
-          {(role.supportingFiles || role.supportingDocs || []).length > 0 && (() => {
+          {(role.supportingFiles?.length > 0 || role.supportingDocs?.length > 0) && (() => {
             const docs = role.supportingFiles?.length > 0 ? role.supportingFiles : (role.supportingDocs || []);
             return (
               <div>
                 <p className="text-xs font-medium text-slate-400 mb-2">SUPPORTING DOCUMENTS ({docs.length})</p>
-                <div className="space-y-1">
-                  {docs.map((doc, i) => (
-                    <div key={i} className="flex items-center gap-2 bg-[#0F172A] rounded px-3 py-2 border border-slate-700">
-                      <span className="text-emerald-400 text-xs">📄</span>
-                      <span className="text-xs text-slate-300 flex-1 truncate">{doc.name}</span>
-                      <span className="text-xs text-slate-500">{(doc.chars || doc.text?.length || 0).toLocaleString()} chars</span>
-                      {doc.questionCount && <span className="text-xs font-semibold text-emerald-300">{doc.questionCount} Q</span>}
-                    </div>
-                  ))}
+                <div className="space-y-1.5">
+                  {docs.map((doc, i) => <ViewDocRow key={doc.id || i} file={doc} accent="emerald" />)}
                 </div>
               </div>
             );
