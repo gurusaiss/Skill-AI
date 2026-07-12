@@ -175,12 +175,12 @@ function FileRow({ file, idx, onCountChange, onRemove, onTextEdit, onStakeholder
           <button type="button"
             onClick={() => onStakeholderChange(idx, !file.stakeholder)}
             title={file.stakeholder ? 'Stakeholder questions enabled — click to disable' : 'Stakeholder questions disabled — click to enable'}
-            className={`text-xs px-1.5 py-0.5 rounded shrink-0 transition-colors border ${
+            className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium transition-colors border ${
               file.stakeholder
-                ? 'bg-amber-600/20 text-amber-400 border-amber-500/40 hover:bg-amber-600/30'
-                : 'bg-slate-700/40 text-slate-500 border-slate-600/40 hover:bg-slate-700/60'
+                ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40'
+                : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'
             }`}>
-            Stk:{file.stakeholder ? 'Y' : 'N'}
+            Stakeholder: {file.stakeholder ? 'Yes' : 'No'}
           </button>
         )}
         <button type="button" onClick={() => setExpanded(v => !v)}
@@ -601,7 +601,7 @@ function ViewDocRow({ file, accent = 'indigo' }) {
         <span className="text-xs text-slate-500 shrink-0">{charCount.toLocaleString()} chars</span>
         {file.questionCount && <span className={`text-xs font-semibold shrink-0 ${accentText}`}>{file.questionCount} Q</span>}
         {file.stakeholder && (
-          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-600/20 text-amber-400 border border-amber-500/40 shrink-0">Stk:Y</span>
+          <span className="text-xs px-2.5 py-1 rounded-md bg-amber-600/25 text-amber-300 border border-amber-500/50 font-medium shrink-0">Stakeholder: Yes</span>
         )}
         {file.text && (
           <button type="button" onClick={() => setExpanded(v => !v)}
@@ -971,8 +971,8 @@ function QuestionBankModal({ role, onClose }) {
                         <button type="button"
                           onClick={() => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, stakeholder: !x.stakeholder } : x))}
                           title={f.stakeholder ? 'Stakeholder questions ON — click to disable' : 'Stakeholder questions OFF — click to enable'}
-                          className={`text-xs px-1.5 py-0.5 rounded shrink-0 border transition-colors ${f.stakeholder ? 'bg-amber-600/20 text-amber-400 border-amber-500/40' : 'bg-slate-700/40 text-slate-500 border-slate-600/40'}`}>
-                          Stk:{f.stakeholder ? 'Y' : 'N'}
+                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          Stakeholder: {f.stakeholder ? 'Yes' : 'No'}
                         </button>
                       </div>
                     ))}
@@ -987,8 +987,8 @@ function QuestionBankModal({ role, onClose }) {
                         <button type="button"
                           onClick={() => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, stakeholder: !x.stakeholder } : x))}
                           title={f.stakeholder ? 'Stakeholder questions ON — click to disable' : 'Stakeholder questions OFF — click to enable'}
-                          className={`text-xs px-1.5 py-0.5 rounded shrink-0 border transition-colors ${f.stakeholder ? 'bg-amber-600/20 text-amber-400 border-amber-500/40' : 'bg-slate-700/40 text-slate-500 border-slate-600/40'}`}>
-                          Stk:{f.stakeholder ? 'Y' : 'N'}
+                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          Stakeholder: {f.stakeholder ? 'Yes' : 'No'}
                         </button>
                       </div>
                     ))}
