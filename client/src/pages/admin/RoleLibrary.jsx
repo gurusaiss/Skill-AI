@@ -764,14 +764,38 @@ function QuestionBankModal({ role, onClose }) {
   const [qTypePicker, setQTypePicker] = useState(false);
   const [newQ, setNewQ] = useState({ ...EMPTY_Q });
   const [diffFilter, setDiffFilter] = useState('all');
+  const [generating, setGenerating] = useState(false);
+  const pollRef = useRef(null);
 
-  useEffect(() => { loadBank(); }, []);
+  useEffect(() => {
+    loadBank();
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
 
   const loadBank = async () => {
     setLoading(true);
     try {
       const res = await authFetch(`/api/roles/${role.id}/questions`);
-      setQuestions(Array.isArray(res) ? res : (res?.data ?? []));
+      const qs = Array.isArray(res) ? res : (res?.data ?? []);
+      setQuestions(qs);
+      // If empty and role has JD/docs, background generation is in progress — poll
+      if (qs.length === 0 && (hasFiles || role.jobDescription)) {
+        setGenerating(true);
+        let polls = 0;
+        pollRef.current = setInterval(async () => {
+          polls++;
+          if (polls > 20) { clearInterval(pollRef.current); setGenerating(false); return; }
+          try {
+            const r = await authFetch(`/api/roles/${role.id}/questions`);
+            const q2 = Array.isArray(r) ? r : (r?.data ?? []);
+            if (q2.length > 0) {
+              setQuestions(q2);
+              setGenerating(false);
+              clearInterval(pollRef.current);
+            }
+          } catch (_) {}
+        }, 3000);
+      }
     } catch (e) { toast(e.message, 'error'); }
     finally { setLoading(false); }
   };
@@ -1008,7 +1032,16 @@ function QuestionBankModal({ role, onClose }) {
         {/* Body */}
         <div className="overflow-y-auto flex-1 p-4 space-y-3">
           {loading && <p className="text-slate-400 text-sm text-center py-8">Loading question bank…</p>}
-          {!loading && filtered.length === 0 && (
+          {!loading && generating && questions.length === 0 && (
+            <div className="text-center py-10 space-y-3">
+              <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600/10 border border-indigo-500/30">
+                <span className="text-indigo-400 text-sm">⏳</span>
+                <p className="text-indigo-300 text-sm font-medium">Generating questions from your documents…</p>
+              </div>
+              <p className="text-slate-500 text-xs">This usually takes 15–45 seconds. This page will update automatically.</p>
+            </div>
+          )}
+          {!loading && !generating && filtered.length === 0 && (
             <div className="text-center py-10">
               <p className="text-slate-400 text-sm">{questions.length === 0 ? 'No questions yet. Click "Regen All" to auto-generate from the JD.' : `No ${diffFilter} questions.`}</p>
             </div>

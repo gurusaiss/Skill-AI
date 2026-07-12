@@ -259,6 +259,111 @@ ${hasProcessDocs ? '✓ Process-doc questions reference actual procedures from t
 }`;
 }
 
+// ── Document-focused prompt builders ─────────────────────────────────────────
+// Used by generateQuestionsFromDocument (file-based path).
+// Unlike the JD path, these enforce 100% document-sourced questions and remove
+// generic corporate styles that cause irrelevant output for process documents.
+
+function buildDocumentSystemPrompt() {
+  return `You are an expert assessment designer who creates precise, document-specific questions for employee capability assessments.
+
+ABSOLUTE RULES:
+1. Every question MUST derive directly from content EXPLICITLY STATED in the SOURCE DOCUMENT provided.
+2. Use the exact terminology, step names, system names, thresholds, codes, and decision rules found in the document. If the document says "Step 3: Validate the TR field", reference that exact step.
+3. DO NOT introduce generic business concepts (stakeholder management, change management, leadership, strategic thinking, continuous improvement) UNLESS the document explicitly covers them.
+4. Each question must be answerable using ONLY information from the document. No external knowledge, general best practices, or assumed industry norms.
+5. Test actual operational knowledge: specific steps, rules, exception conditions, validation criteria, approval thresholds, system actions, decision points.
+6. If the document describes a payment process → ask about payment steps, error codes, and thresholds. If it describes data validation → ask about validation rules, error types, correction steps.
+7. Always return valid JSON with exactly a "questions" array.
+8. NO DUPLICATE QUESTIONS: Every question must test a DIFFERENT specific item from the document.
+9. NO REPEATED MCQ OPTION SETS: Every MCQ must have unique answer choices derived from document content.
+10. MAX 1 question in 10 may begin with "As a [role]" opener — all others open naturally with the scenario.`;
+}
+
+function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourceType, types, seed, skillsContext = [] }) {
+  const easyCount   = Math.round(count * 0.35);
+  const mediumCount = Math.round(count * 0.45);
+  const hardCount   = Math.max(1, count - easyCount - mediumCount);
+  const docLabel    = sourceType === 'jd' ? 'Job Description' : 'Process Document / Internal Reference';
+  const skillsLine  = skillsContext.length > 0
+    ? `\nRole Skills (context only — do NOT use as question source): ${skillsContext.join(', ')}`
+    : '';
+
+  return `Generate exactly ${count} assessment questions derived EXCLUSIVELY from the source document below.
+
+=== CONTEXT ===
+Role: ${jobRole || 'Professional'}
+Document: ${sourceName || 'Source Document'}
+Document Type: ${docLabel}
+Generation Seed: ${seed}${skillsLine}
+
+=== SOURCE DOCUMENT ===
+${sourceText}
+
+=== MANDATORY PRE-GENERATION STEPS ===
+
+STEP 1 — READ THE DOCUMENT AND EXTRACT (do this before writing any question):
+• Every specific procedure, step sequence, and workflow described
+• Every rule, threshold, condition, and validation criterion stated
+• Every system, form, field, tool, or platform mentioned
+• Every exception case, error condition, or escalation path defined
+• Every definition, formula, or calculation method provided
+• Domain-specific terminology unique to this document
+
+STEP 2 — PLAN ${count} DISTINCT TEST ITEMS (one per question slot):
+Each item covers a DIFFERENT specific piece of content from Step 1.
+CRITICAL: If the document does not explicitly cover a topic, do NOT generate questions about it.
+• Easy (${easyCount}): Direct recall — a specific step, rule, definition, or fact stated verbatim in the document
+• Medium (${mediumCount}): Application — apply a multi-step procedure or decision rule from the document
+• Hard (${hardCount}): Exception handling — edge case, error condition, or complex judgment described in the document
+
+STEP 3 — WRITE QUESTIONS FROM YOUR PLANNED ITEMS:
+Question type cycle: ${types.join(', ')}
+• MCQ: All 4 options grounded in the document — correct answer explicitly supported, distractors are plausible but incorrect interpretations of document content
+• Fill-in-blank: The correct answer must be a specific term, value, or phrase from the document
+• Subjective: The model answer must cite specific document content (step numbers, rule names, thresholds, field names, etc.)
+
+STEP 4 — SELF-CHECK:
+✓ Every question traces to a specific section/step/rule in the document
+✓ No question requires knowledge NOT found in the document
+✓ No generic "stakeholder management" or "process management" questions unless document explicitly covers them
+✓ Exactly ${count} questions (${easyCount} easy, ${mediumCount} medium, ${hardCount} hard)
+
+=== OUTPUT FORMAT — return only this JSON ===
+{
+  "questions": [
+    {
+      "type": "mcq|fill_blank|subjective",
+      "question": "question text using document terminology",
+      "difficulty": "easy|medium|hard",
+      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+      "answer": "A/B/C/D for mcq | exact phrase from document for fill_blank | model answer citing document content for subjective",
+      "explanation": "which specific section, step, or rule in the document this question tests",
+      "skillArea": "specific procedure, system, rule, or concept from the document"
+    }
+  ]
+}`;
+}
+
+// Extract high-frequency content words from a document — used as fallback skill list
+// so template questions reference actual document vocabulary instead of generic terms.
+function extractDocKeywords(text, maxTerms = 8) {
+  if (!text) return [];
+  const STOP = new Set(['the','and','for','that','this','with','from','they','have','their','will','been','more','when','what','each','then','than','also','into','over','your','which','about','after','before','during','between','through','should','would','could','where','there','these','those','other','every','under','above','using','being','while','whether','without','against','following','according','includes','required','provide','ensure','review']);
+  const freq = {};
+  text.replace(/[^a-zA-Z0-9\s]/g, ' ').split(/\s+/).forEach(w => {
+    if (w.length > 4 && !STOP.has(w.toLowerCase())) {
+      const lw = w.toLowerCase();
+      freq[lw] = (freq[lw] || 0) + 1;
+    }
+  });
+  return Object.entries(freq)
+    .filter(([, c]) => c >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxTerms)
+    .map(([w]) => w);
+}
+
 async function callGroq(system, prompt, { temperature = 0.85, maxTokens = 16000, timeoutMs = 30000 } = {}) {
   const groqKey = process.env.GROQ_API_KEY;
   if (!(groqKey?.length > 10)) return null;
@@ -645,6 +750,77 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
   return rebalanced;
 }
 
+// ── Document-focused question generation ─────────────────────────────────────
+// Used by generateQuestionsFromFiles — generates questions grounded exclusively
+// in the source document's content. Skills from the role are passed as context
+// only (so the LLM understands the employee profile) but are NOT used as a
+// question source. This prevents role skills from overriding document content.
+async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, sourceType, questionCount, questionTypes, seed, skillsContext = [] } = {}) {
+  const num   = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
+  const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
+  const baseSeed = seed || randomUUID().slice(0, 8);
+  const text  = (sourceText || '').trim();
+  if (!text) return [];
+
+  const system = buildDocumentSystemPrompt();
+  let pool = [];
+  const MAX_ATTEMPTS = 5;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS && pool.length < num; attempt++) {
+    const stillNeeded = num - pool.length;
+    const bufferMultiplier = 1.4 + attempt * 0.3;
+    const askFor = Math.min(100, Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
+    const attemptSeed = attempt === 0 ? baseSeed : `${baseSeed}-retry${attempt}-${randomUUID().slice(0, 6)}`;
+    const prompt = buildDocumentUserPrompt({
+      count: askFor, jobRole, sourceText: text.slice(0, 20000), sourceName, sourceType, types, seed: attemptSeed, skillsContext,
+    });
+
+    let batch = await callGroq(system, prompt);
+    if (!batch || batch.length === 0) batch = await callGemini(system, prompt);
+    if (batch && batch.length > 0) pool = mergeUnique(pool, batch);
+  }
+
+  if (pool.length < num) {
+    const shortage = num - pool.length;
+    console.warn(`[generateQuestionsFromDocument] "${sourceName}": LLM gave ${pool.length}/${num} — padding ${shortage} with templates`);
+    const docKeywords = extractDocKeywords(text, 8);
+    const fallbackSkills = docKeywords.length > 0 ? docKeywords : [sourceName || 'process documentation'];
+    const targetEasy   = Math.round(num * 0.35);
+    const targetMedium = Math.round(num * 0.45);
+    const targetHard   = Math.max(1, num - targetEasy - targetMedium);
+    const comboCounters = { easy: 0, medium: 0, hard: 0 };
+    let att = 0;
+    while (pool.length < num && att < 30) {
+      const remaining = num - pool.length;
+      const fb = buildFallbackQuestions(remaining, {
+        types, skillsList: fallbackSkills, jobRole,
+        difficultyDeficit: {
+          easy:   Math.max(0, targetEasy   - pool.filter(q => q.difficulty === 'easy').length),
+          medium: Math.max(0, targetMedium - pool.filter(q => q.difficulty === 'medium').length),
+          hard:   Math.max(0, targetHard   - pool.filter(q => q.difficulty === 'hard').length),
+        },
+        comboCounters,
+      });
+      pool = mergeFallbackUnique(pool, fb);
+      att++;
+    }
+  }
+
+  const trimmed   = trimToTarget(pool, num, types);
+  const rebalanced = rebalanceDifficulty(trimmed);
+
+  if (rebalanced.length !== num) {
+    if (rebalanced.length > num) return rebalanced.slice(0, num);
+    const gap = num - rebalanced.length;
+    const emergency = buildFallbackQuestions(gap, {
+      types, skillsList: [sourceName || 'this process'], jobRole,
+      comboCounters: { easy: 9999, medium: 9999, hard: 9999 },
+    });
+    return [...rebalanced, ...emergency].slice(0, num);
+  }
+  return rebalanced;
+}
+
 // ── Per-file multi-source generation ─────────────────────────────────────────
 // Generates exactly the requested number of questions from EACH source file
 // independently, tags every question with sourceFile + sourceType, then merges
@@ -676,14 +852,18 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
     const srcSkills  = source.skills  || skills;
     const srcSeed    = `${baseSeed || 'fs'}-${(source.name || 'file').replace(/\W/g, '').slice(0, 20)}-${Date.now()}`;
 
-    // Generate exactly `count` unique questions from this source file
-    const batch = await generateQuestionsFromJD({
-      jobRole:        srcJobRole,
-      jobDescription: text,
-      jdSkills:       srcSkills,
-      questionCount:  count,
-      questionTypes:  buildTypeSeqLocal(count),
-      employeeSeed:   srcSeed,
+    // Generate exactly `count` unique questions from this source file.
+    // Uses generateQuestionsFromDocument (not generateQuestionsFromJD) so the
+    // prompt is framed around document content, not JD roles/responsibilities.
+    // srcSkills is passed as context-only — it does not drive question topics.
+    const batch = await generateQuestionsFromDocument(text, {
+      jobRole:       srcJobRole,
+      sourceName:    source.name,
+      sourceType:    source.sourceType || 'supporting',
+      questionCount: count,
+      questionTypes: buildTypeSeqLocal(count),
+      seed:          srcSeed,
+      skillsContext: srcSkills,
     });
 
     // Accept non-duplicates up to `count`
