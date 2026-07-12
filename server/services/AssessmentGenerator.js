@@ -280,7 +280,7 @@ ABSOLUTE RULES:
 10. MAX 1 question in 10 may begin with "As a [role]" opener — all others open naturally with the scenario.`;
 }
 
-function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourceType, types, seed, skillsContext = [] }) {
+function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourceType, types, seed, skillsContext = [], stakeholder = false }) {
   const easyCount   = Math.round(count * 0.35);
   const mediumCount = Math.round(count * 0.45);
   const hardCount   = Math.max(1, count - easyCount - mediumCount);
@@ -288,6 +288,9 @@ function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourc
   const skillsLine  = skillsContext.length > 0
     ? `\nRole Skills (context only — do NOT use as question source): ${skillsContext.join(', ')}`
     : '';
+  const stakeholderDirective = stakeholder
+    ? `\nSTAKEHOLDER CONTENT — ENABLED: Where the document describes interactions with stakeholders (clients, teams, managers, vendors, customers), you MAY generate questions that test the specific communication steps, escalation paths, or approval flows explicitly described. These must still use the document's exact terminology — no generic "stakeholder management" questions.`
+    : `\nSTAKEHOLDER CONTENT — DISABLED: Do NOT generate any questions about stakeholder communication, client relationships, team interactions, escalation, or interpersonal scenarios. Focus exclusively on functional steps, technical rules, validation criteria, operational decisions, and system-specific actions described in the document.`;
 
   return `Generate exactly ${count} assessment questions derived EXCLUSIVELY from the source document below.
 
@@ -295,7 +298,7 @@ function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourc
 Role: ${jobRole || 'Professional'}
 Document: ${sourceName || 'Source Document'}
 Document Type: ${docLabel}
-Generation Seed: ${seed}${skillsLine}
+Generation Seed: ${seed}${skillsLine}${stakeholderDirective}
 
 === SOURCE DOCUMENT ===
 ${sourceText}
@@ -755,7 +758,7 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
 // in the source document's content. Skills from the role are passed as context
 // only (so the LLM understands the employee profile) but are NOT used as a
 // question source. This prevents role skills from overriding document content.
-async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, sourceType, questionCount, questionTypes, seed, skillsContext = [] } = {}) {
+async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, sourceType, questionCount, questionTypes, seed, skillsContext = [], stakeholder = false } = {}) {
   const num   = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const baseSeed = seed || randomUUID().slice(0, 8);
@@ -772,7 +775,7 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
     const askFor = Math.min(100, Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
     const attemptSeed = attempt === 0 ? baseSeed : `${baseSeed}-retry${attempt}-${randomUUID().slice(0, 6)}`;
     const prompt = buildDocumentUserPrompt({
-      count: askFor, jobRole, sourceText: text.slice(0, 20000), sourceName, sourceType, types, seed: attemptSeed, skillsContext,
+      count: askFor, jobRole, sourceText: text.slice(0, 20000), sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder,
     });
 
     let batch = await callGroq(system, prompt);
@@ -864,6 +867,7 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
       questionTypes: buildTypeSeqLocal(count),
       seed:          srcSeed,
       skillsContext: srcSkills,
+      stakeholder:   !!source.stakeholder,
     });
 
     // Accept non-duplicates up to `count`

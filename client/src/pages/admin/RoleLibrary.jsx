@@ -127,7 +127,7 @@ function FullTextModal({ title, text, accent = 'indigo', onClose }) {
 }
 
 // ── FileRow — enhanced file row with preview, search, copy, and text editing ───
-function FileRow({ file, idx, onCountChange, onRemove, onTextEdit, accent = 'indigo', isEditMode = false }) {
+function FileRow({ file, idx, onCountChange, onRemove, onTextEdit, onStakeholderChange, accent = 'indigo', isEditMode = false }) {
   const [expanded, setExpanded] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showFull, setShowFull] = useState(false);
@@ -171,6 +171,18 @@ function FileRow({ file, idx, onCountChange, onRemove, onTextEdit, accent = 'ind
           onChange={e => onCountChange(idx, e.target.value)}
           className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-xs text-center focus:outline-none focus:border-indigo-500"
         />
+        {onStakeholderChange && (
+          <button type="button"
+            onClick={() => onStakeholderChange(idx, !file.stakeholder)}
+            title={file.stakeholder ? 'Stakeholder questions enabled — click to disable' : 'Stakeholder questions disabled — click to enable'}
+            className={`text-xs px-1.5 py-0.5 rounded shrink-0 transition-colors border ${
+              file.stakeholder
+                ? 'bg-amber-600/20 text-amber-400 border-amber-500/40 hover:bg-amber-600/30'
+                : 'bg-slate-700/40 text-slate-500 border-slate-600/40 hover:bg-slate-700/60'
+            }`}>
+            Stk:{file.stakeholder ? 'Y' : 'N'}
+          </button>
+        )}
         <button type="button" onClick={() => setExpanded(v => !v)}
           title={expanded ? 'Collapse' : 'Preview extracted text'}
           className={`text-xs px-1.5 py-0.5 rounded ${accentBg} ${accentText} shrink-0 transition-colors`}>
@@ -287,6 +299,7 @@ function RoleModal({ role, onClose, onSaved }) {
         id: genId(), name: file.name, text, chars: text.length, questionCount: 10,
         ext: data?.ext || file.name.split('.').pop()?.toLowerCase() || '',
         uploadedBy: data?.uploadedBy || '', uploadedAt: new Date().toISOString(),
+        stakeholder: false,
       }]);
       toast(`JD added: ${file.name} (${text.length.toLocaleString()} chars)`);
     } catch (e) {
@@ -311,6 +324,7 @@ function RoleModal({ role, onClose, onSaved }) {
         id: genId(), name: file.name, text, chars: text.length, questionCount: 5,
         ext: data?.ext || file.name.split('.').pop()?.toLowerCase() || '',
         uploadedBy: data?.uploadedBy || '', uploadedAt: new Date().toISOString(),
+        stakeholder: false,
       }]);
       toast(`Supporting doc added: ${file.name} (${text.length.toLocaleString()} chars)`);
     } catch (e) {
@@ -353,6 +367,11 @@ function RoleModal({ role, onClose, onSaved }) {
       } catch (e) { toast(e.message || 'Failed to save text', 'error'); }
     }
   };
+
+  const updateJdStakeholder = (idx, val) =>
+    setJdFiles(p => p.map((f, i) => i === idx ? { ...f, stakeholder: !!val } : f));
+  const updateSupportingStakeholder = (idx, val) =>
+    setSupportingFiles(p => p.map((f, i) => i === idx ? { ...f, stakeholder: !!val } : f));
 
   const totalQuestions = [...jdFiles, ...supportingFiles].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0);
 
@@ -463,7 +482,7 @@ function RoleModal({ role, onClose, onSaved }) {
             ) : (
               <div className="space-y-1.5">
                 {jdFiles.map((file, i) => (
-                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateJdCount} onRemove={removeJdFile} onTextEdit={updateJdText} accent="indigo" isEditMode={isEdit} />
+                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateJdCount} onRemove={removeJdFile} onTextEdit={updateJdText} onStakeholderChange={updateJdStakeholder} accent="indigo" isEditMode={isEdit} />
                 ))}
                 <button type="button" onClick={() => jdFileRef.current?.click()} disabled={jdUploading}
                   className="text-xs text-indigo-400 hover:text-indigo-300 underline ml-1">
@@ -498,7 +517,7 @@ function RoleModal({ role, onClose, onSaved }) {
             ) : (
               <div className="space-y-1.5">
                 {supportingFiles.map((file, i) => (
-                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateSupportingCount} onRemove={removeSupportingFile} onTextEdit={updateSupportingText} accent="emerald" isEditMode={isEdit} />
+                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateSupportingCount} onRemove={removeSupportingFile} onTextEdit={updateSupportingText} onStakeholderChange={updateSupportingStakeholder} accent="emerald" isEditMode={isEdit} />
                 ))}
               </div>
             )}
@@ -581,6 +600,9 @@ function ViewDocRow({ file, accent = 'indigo' }) {
         <span className="text-xs text-slate-300 flex-1 truncate min-w-0" title={file.name}>{file.name}</span>
         <span className="text-xs text-slate-500 shrink-0">{charCount.toLocaleString()} chars</span>
         {file.questionCount && <span className={`text-xs font-semibold shrink-0 ${accentText}`}>{file.questionCount} Q</span>}
+        {file.stakeholder && (
+          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-600/20 text-amber-400 border border-amber-500/40 shrink-0">Stk:Y</span>
+        )}
         {file.text && (
           <button type="button" onClick={() => setExpanded(v => !v)}
             className={`text-xs px-1.5 py-0.5 rounded ${accentBg} ${accentText} shrink-0`}>
@@ -752,10 +774,10 @@ function QuestionBankModal({ role, onClose }) {
   const [regenCount, setRegenCount] = useState(fileTotal || role.questionBankCount || 50);
   const [regenMode, setRegenMode] = useState('all');
   const [localJdFiles, setLocalJdFiles] = useState(
-    (role.jdFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5 }))
+    (role.jdFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5, stakeholder: !!f.stakeholder }))
   );
   const [localSupportingFiles, setLocalSupportingFiles] = useState(
-    (role.supportingFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5 }))
+    (role.supportingFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5, stakeholder: !!f.stakeholder }))
   );
   const [saving, setSaving] = useState(false);
   const [editIdx, setEditIdx] = useState(null);
@@ -946,6 +968,12 @@ function QuestionBankModal({ role, onClose }) {
                           onChange={e => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(e.target.value) || 1) } : x))}
                           className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500" />
                         <span className="text-slate-500 shrink-0">Q</span>
+                        <button type="button"
+                          onClick={() => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, stakeholder: !x.stakeholder } : x))}
+                          title={f.stakeholder ? 'Stakeholder questions ON — click to disable' : 'Stakeholder questions OFF — click to enable'}
+                          className={`text-xs px-1.5 py-0.5 rounded shrink-0 border transition-colors ${f.stakeholder ? 'bg-amber-600/20 text-amber-400 border-amber-500/40' : 'bg-slate-700/40 text-slate-500 border-slate-600/40'}`}>
+                          Stk:{f.stakeholder ? 'Y' : 'N'}
+                        </button>
                       </div>
                     ))}
                     {localSupportingFiles.map((f, i) => (
@@ -956,6 +984,12 @@ function QuestionBankModal({ role, onClose }) {
                           onChange={e => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(e.target.value) || 1) } : x))}
                           className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500" />
                         <span className="text-slate-500 shrink-0">Q</span>
+                        <button type="button"
+                          onClick={() => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, stakeholder: !x.stakeholder } : x))}
+                          title={f.stakeholder ? 'Stakeholder questions ON — click to disable' : 'Stakeholder questions OFF — click to enable'}
+                          className={`text-xs px-1.5 py-0.5 rounded shrink-0 border transition-colors ${f.stakeholder ? 'bg-amber-600/20 text-amber-400 border-amber-500/40' : 'bg-slate-700/40 text-slate-500 border-slate-600/40'}`}>
+                          Stk:{f.stakeholder ? 'Y' : 'N'}
+                        </button>
                       </div>
                     ))}
                     <p className="text-xs text-indigo-300 font-semibold pt-1">Total: {localTotal} questions</p>

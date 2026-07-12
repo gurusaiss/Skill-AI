@@ -55,12 +55,12 @@ function buildFileSources(role) {
   const sources = [];
   for (const f of (role.jdFiles || [])) {
     if (f.text?.trim()) {
-      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [] });
+      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder });
     }
   }
   for (const f of (role.supportingFiles || [])) {
     if (f.text?.trim()) {
-      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [] });
+      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder });
     }
   }
   return sources;
@@ -885,13 +885,19 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
       if (Array.isArray(updatedJdFiles)) {
         countUpdates.jdFiles = (role.jdFiles || []).map(f => {
           const u = updatedJdFiles.find(x => x.id === f.id);
-          return u ? { ...f, questionCount: Math.max(1, parseInt(u.questionCount) || f.questionCount) } : f;
+          if (!u) return f;
+          const updated = { ...f, questionCount: Math.max(1, parseInt(u.questionCount) || f.questionCount) };
+          if (u.stakeholder !== undefined) updated.stakeholder = !!u.stakeholder;
+          return updated;
         });
       }
       if (Array.isArray(updatedSupportingFiles)) {
         countUpdates.supportingFiles = (role.supportingFiles || []).map(f => {
           const u = updatedSupportingFiles.find(x => x.id === f.id);
-          return u ? { ...f, questionCount: Math.max(1, parseInt(u.questionCount) || f.questionCount) } : f;
+          if (!u) return f;
+          const updated = { ...f, questionCount: Math.max(1, parseInt(u.questionCount) || f.questionCount) };
+          if (u.stakeholder !== undefined) updated.stakeholder = !!u.stakeholder;
+          return updated;
         });
       }
       await RoleLibrary.update(req.params.id, { ...countUpdates, updatedAt: new Date().toISOString() });
