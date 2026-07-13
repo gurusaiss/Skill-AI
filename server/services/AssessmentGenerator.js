@@ -270,14 +270,24 @@ function buildDocumentSystemPrompt() {
 ABSOLUTE RULES:
 1. Every question MUST derive directly from content EXPLICITLY STATED in the SOURCE DOCUMENT provided.
 2. Use the exact terminology, step names, system names, thresholds, codes, and decision rules found in the document. If the document says "Step 3: Validate the TR field", reference that exact step.
-3. DO NOT introduce generic business concepts (stakeholder management, change management, leadership, strategic thinking, continuous improvement) UNLESS the document explicitly covers them.
+3. DO NOT introduce generic business concepts UNLESS the document explicitly covers them by name.
 4. Each question must be answerable using ONLY information from the document. No external knowledge, general best practices, or assumed industry norms.
 5. Test actual operational knowledge: specific steps, rules, exception conditions, validation criteria, approval thresholds, system actions, decision points.
 6. If the document describes a payment process → ask about payment steps, error codes, and thresholds. If it describes data validation → ask about validation rules, error types, correction steps.
 7. Always return valid JSON with exactly a "questions" array.
 8. NO DUPLICATE QUESTIONS: Every question must test a DIFFERENT specific item from the document.
 9. NO REPEATED MCQ OPTION SETS: Every MCQ must have unique answer choices derived from document content.
-10. MAX 1 question in 10 may begin with "As a [role]" opener — all others open naturally with the scenario.`;
+10. MAX 1 question in 10 may begin with "As a [role]" opener — all others open naturally with the scenario.
+
+STRICTLY BANNED — these phrases MUST NOT appear in any question, option, or explanation unless they are quoted verbatim from the source document:
+- "stakeholder management", "stakeholder communication", "stakeholder engagement"
+- "process management", "change management", "change control"
+- "leadership", "leadership style", "leadership qualities"
+- "strategic thinking", "strategic alignment", "strategic objectives"
+- "performance delivery", "performance management" (unless the document is about performance reviews)
+- "continuous improvement", "best practices", "industry standards"
+- "professional context", "organizational goals", "team collaboration" (as standalone concepts)
+Any question containing these phrases without a direct quote from the source document will be REJECTED. Generate document-grounded alternatives instead.`;
 }
 
 function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourceType, types, seed, skillsContext = [], stakeholder = false }) {
@@ -326,11 +336,13 @@ Question type cycle: ${types.join(', ')}
 • Fill-in-blank: The correct answer must be a specific term, value, or phrase from the document
 • Subjective: The model answer must cite specific document content (step numbers, rule names, thresholds, field names, etc.)
 
-STEP 4 — SELF-CHECK:
-✓ Every question traces to a specific section/step/rule in the document
-✓ No question requires knowledge NOT found in the document
-✓ No generic "stakeholder management" or "process management" questions unless document explicitly covers them
+STEP 4 — SELF-CHECK (reject and replace any question that fails):
+✓ Every question uses at least one specific term, value, name, or phrase from the source document
+✓ Every question is answerable using ONLY information stated in the source document
+✓ No question contains "stakeholder management", "process management", "change management", "leadership", "strategic thinking", "performance delivery", "continuous improvement", or "best practices" unless those exact phrases appear in the document
+✓ No question could be asked for ANY other role or company — it is specific to THIS document's content
 ✓ Exactly ${count} questions (${easyCount} easy, ${mediumCount} medium, ${hardCount} hard)
+✓ sourceSection field is filled with the actual section name or step identifier from the document
 
 === OUTPUT FORMAT — return only this JSON ===
 {
@@ -342,7 +354,8 @@ STEP 4 — SELF-CHECK:
       "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
       "answer": "A/B/C/D for mcq | exact phrase from document for fill_blank | model answer citing document content for subjective",
       "explanation": "which specific section, step, or rule in the document this question tests",
-      "skillArea": "specific procedure, system, rule, or concept from the document"
+      "skillArea": "specific procedure, system, rule, or concept from the document",
+      "sourceSection": "exact section heading, step number, or paragraph identifier from the source document (e.g. 'Section 3.2', 'Step 4 — Payment Validation', 'Escalation Criteria')"
     }
   ]
 }`;
@@ -365,6 +378,24 @@ function extractDocKeywords(text, maxTerms = 8) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, maxTerms)
     .map(([w]) => w);
+}
+
+// Filter questions that are NOT grounded in the source document.
+// Rejects any question whose text, skillArea, and explanation contain zero
+// document-specific content words. This is the primary guard against generic
+// corporate questions (process management, stakeholder communication, etc.)
+// slipping through from the LLM.
+// Safe to call even when the doc is short — returns all questions unchanged if
+// fewer than 5 unique content words can be extracted (validation impossible).
+function filterDocumentGrounded(questions, docText) {
+  if (!Array.isArray(questions) || questions.length === 0) return questions;
+  const keywords = extractDocKeywords(docText, 50);
+  if (keywords.length < 5) return questions; // too short to validate reliably
+  return questions.filter(q => {
+    const haystack = [q.question, q.skillArea, q.explanation]
+      .filter(Boolean).join(' ').toLowerCase();
+    return keywords.some(kw => haystack.includes(kw));
+  });
 }
 
 async function callGroq(system, prompt, { temperature = 0.85, maxTokens = 16000, timeoutMs = 30000 } = {}) {
@@ -500,8 +531,10 @@ function pickCombo(templates, skills, comboIdx) {
 // fallback questions for near-duplicates.
 function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyDeficit, comboCounters = { easy: 0, medium: 0, hard: 0 } }) {
   const role = jobRole || 'Professional';
-  const fallbackSkills = skillsList.length > 0 ? skillsList
-    : ['core responsibilities', 'stakeholder communication', 'process management', 'performance delivery', 'problem solving'];
+  // NEVER default to generic corporate terms — caller must supply meaningful skills
+  // or document keywords. Defaulting to 'process management' / 'stakeholder communication'
+  // is the root cause of the generic-question problem.
+  const fallbackSkills = skillsList.length > 0 ? skillsList : ['the documented role responsibilities and requirements'];
 
   // Build a difficulty sequence honoring the deficit (falls back to even 35/45/20 split if not provided)
   let difficultySeq;
@@ -775,12 +808,19 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
     const askFor = Math.min(100, Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
     const attemptSeed = attempt === 0 ? baseSeed : `${baseSeed}-retry${attempt}-${randomUUID().slice(0, 6)}`;
     const prompt = buildDocumentUserPrompt({
-      count: askFor, jobRole, sourceText: text.slice(0, 20000), sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder,
+      count: askFor, jobRole, sourceText: text.slice(0, 40000), sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder,
     });
 
     let batch = await callGroq(system, prompt);
     if (!batch || batch.length === 0) batch = await callGemini(system, prompt);
-    if (batch && batch.length > 0) pool = mergeUnique(pool, batch);
+    if (batch && batch.length > 0) {
+      // RC-4 fix: reject questions not grounded in document vocabulary
+      const grounded = filterDocumentGrounded(batch, text);
+      if (grounded.length < batch.length) {
+        console.warn(`[generateQuestionsFromDocument] "${sourceName}" attempt ${attempt}: grounding filter removed ${batch.length - grounded.length}/${batch.length} generic questions`);
+      }
+      pool = mergeUnique(pool, grounded);
+    }
   }
 
   if (pool.length < num) {
@@ -882,17 +922,24 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
         id: q.id || randomUUID(),
         sourceFile: source.name || 'Unknown',
         sourceType: source.sourceType || 'jd',
+        sourceSection: q.sourceSection || null,
       });
       accepted++;
     }
 
-    // Pad with fallback templates if the LLM came up short
+    // Pad with fallback templates if the LLM came up short after cross-file dedup.
+    // RC-2 fix: use document keywords (not role skills) so fallback content stays
+    // grounded in this document's vocabulary rather than generic corporate terms.
     const gap = count - accepted;
     if (gap > 0) {
-      console.warn(`[generateQuestionsFromFiles] "${source.name}": got ${accepted}/${count} — padding ${gap} with templates`);
+      console.warn(`[generateQuestionsFromFiles] "${source.name}": got ${accepted}/${count} after cross-file dedup — padding ${gap} with doc-keyword templates`);
+      const docKeywordsForPad = extractDocKeywords(text, 12);
+      const paddingSkills = docKeywordsForPad.length > 0
+        ? docKeywordsForPad
+        : (srcSkills.length > 0 ? srcSkills : [source.name || 'process documentation']);
       const padding = buildFallbackQuestions(gap, {
         types:         buildTypeSeqLocal(gap),
-        skillsList:    srcSkills,
+        skillsList:    paddingSkills,
         jobRole:       srcJobRole,
         comboCounters: { easy: 99999, medium: 99999, hard: 99999 },
       });
