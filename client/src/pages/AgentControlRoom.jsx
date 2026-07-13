@@ -342,7 +342,10 @@ export default function AgentControlRoom() {
 
   // Fetch agent stats from API (falls back to NODES data)
   useEffect(() => {
-    fetch('/api/agent-control/stats')
+    const token = localStorage.getItem('auth_token');
+    fetch('/api/agent-control/stats', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
       .then(r => r.json())
       .then(data => {
         const agents = data.agents || data.data?.agents;

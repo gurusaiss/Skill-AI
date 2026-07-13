@@ -108,7 +108,10 @@ export default function DailyBrief() {
     const seen = sessionStorage.getItem('brief:seen');
     setCollapsed(!!seen);
 
-    fetch(`${API_BASE}/api/brief/${userId}`)
+    const token = localStorage.getItem('auth_token');
+    fetch(`${API_BASE}/api/brief/${userId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
       .then(r => r.json())
       .then(data => {
         setBrief(data);

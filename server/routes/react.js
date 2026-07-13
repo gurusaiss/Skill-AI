@@ -1,5 +1,6 @@
 import express from 'express';
 import reactChain from '../agent/ReactChain.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -7,7 +8,7 @@ const router = express.Router();
  * POST /api/react/run
  * Run a ReAct chain for a given goal and learner context
  */
-router.post('/run', async (req, res) => {
+router.post('/run', authenticate, async (req, res) => {
   try {
     const { goal, sessions = [], skills = [], planDay = 1 } = req.body;
 

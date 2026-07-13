@@ -1,7 +1,8 @@
 import express from 'express';
+import { authenticate } from '../middleware/auth.js';
 const router = express.Router();
 
-router.get('/stats', (req, res) => {
+router.get('/stats', authenticate, (req, res) => {
   res.json({
     totalCalls: 247,
     agentsActive: 9,

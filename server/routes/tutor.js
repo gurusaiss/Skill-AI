@@ -1,6 +1,7 @@
 import express from 'express';
 import geminiService from '../services/GeminiService.js';
 import LLMCache from '../services/LLMCache.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -45,7 +46,7 @@ function ruleBased(message) {
  *   2. History trimmed to last 3 turns instead of 5 (saves ~20% tokens)
  *   3. Identical messages within 2 min return cached replies (dedup rapid-fire)
  */
-router.post('/chat', async (req, res) => {
+router.post('/chat', authenticate, async (req, res) => {
   try {
     const { message, context = '/', history = [] } = req.body;
 
