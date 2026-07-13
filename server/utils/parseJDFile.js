@@ -62,7 +62,7 @@ export async function parseJDFile(filePath, originalName = '') {
           .replace(/[^\x20-\x7E\n\r\t]/g, ' ')
           .replace(/\s{3,}/g, ' ')
           .trim();
-        return text.length > 50 ? text.slice(0, 10000) : '';
+        return text.length > 50 ? text : '';
       } catch { return ''; }
     }
 

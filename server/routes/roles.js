@@ -94,7 +94,7 @@ If a section is genuinely absent from the source, omit it — do not invent cont
 ${roleName || 'Unknown'}
 
 === SOURCE DOCUMENT ===
-${text.slice(0, 12000)}
+${text}
 
 Return ONLY the extracted content as plain text, formatted like:
 Role: ...

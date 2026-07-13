@@ -694,20 +694,14 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
   const skillsList = Array.isArray(jdSkills) && jdSkills.length ? jdSkills : [];
   const system = buildSystemPrompt();
 
-  // Build supporting docs text (cap at 8000 chars to avoid token overflow)
-  const MAX_SUPPORTING_CHARS = 8000;
+  // Build supporting docs text — no arbitrary cap; full text from each doc is included.
+  // Combined text is bounded only by LLM context window (Groq 128k tokens, Gemini 1M tokens).
   let supportingDocsText = '';
   if (Array.isArray(supportingDocs) && supportingDocs.length > 0) {
     const parts = [];
-    let used = 0;
     for (const doc of supportingDocs) {
       if (!doc?.text) continue;
-      const header = `--- Document: ${doc.name || 'Untitled'} ---\n`;
-      const remaining = MAX_SUPPORTING_CHARS - used - parts.length * 2;
-      if (remaining <= 0) break;
-      const chunk = doc.text.slice(0, remaining);
-      parts.push(header + chunk);
-      used += header.length + chunk.length;
+      parts.push(`--- Document: ${doc.name || 'Untitled'} ---\n${doc.text}`);
     }
     supportingDocsText = parts.join('\n\n');
   }
@@ -799,33 +793,70 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
   if (!text) return [];
 
   const system = buildDocumentSystemPrompt();
-  let pool = [];
-  const MAX_ATTEMPTS = 5;
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS && pool.length < num; attempt++) {
-    const stillNeeded = num - pool.length;
-    const bufferMultiplier = 1.4 + attempt * 0.3;
-    const askFor = Math.min(100, Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
-    const attemptSeed = attempt === 0 ? baseSeed : `${baseSeed}-retry${attempt}-${randomUUID().slice(0, 6)}`;
-    const prompt = buildDocumentUserPrompt({
-      count: askFor, jobRole, sourceText: text.slice(0, 40000), sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder,
-    });
-
-    let batch = await callGroq(system, prompt);
-    if (!batch || batch.length === 0) batch = await callGemini(system, prompt);
-    if (batch && batch.length > 0) {
-      // RC-4 fix: reject questions not grounded in document vocabulary
-      const grounded = filterDocumentGrounded(batch, text);
-      if (grounded.length < batch.length) {
-        console.warn(`[generateQuestionsFromDocument] "${sourceName}" attempt ${attempt}: grounding filter removed ${batch.length - grounded.length}/${batch.length} generic questions`);
+  // Split document into chunks so ALL content contributes to question generation,
+  // regardless of document size. 80,000 chars (~20k tokens) per chunk is safe for
+  // both Groq (128k token window) and Gemini (1M token window) after accounting for
+  // system/user prompt overhead and output space.
+  // Chunks overlap by 1,500 chars to avoid missing content at section boundaries.
+  const CHUNK_SIZE = 80000;
+  const CHUNK_OVERLAP = 1500;
+  const chunks = [];
+  if (text.length <= CHUNK_SIZE) {
+    chunks.push(text);
+  } else {
+    let pos = 0;
+    while (pos < text.length) {
+      // Prefer to break at a paragraph boundary near the chunk end
+      let end = Math.min(pos + CHUNK_SIZE, text.length);
+      if (end < text.length) {
+        const boundary = text.lastIndexOf('\n\n', end);
+        if (boundary > pos + CHUNK_SIZE / 2) end = boundary;
       }
-      pool = mergeUnique(pool, grounded);
+      chunks.push(text.slice(pos, end));
+      if (end >= text.length) break;
+      pos = Math.max(pos + 1, end - CHUNK_OVERLAP);
+    }
+    console.log(`[generateQuestionsFromDocument] "${sourceName}": ${text.length} chars split into ${chunks.length} chunks for full-document coverage`);
+  }
+
+  // Per-chunk: how many questions to aim for before moving to the next chunk.
+  // Proportional to chunk share of total text length, with a 1.4x buffer for dedup.
+  const totalChunkLen = chunks.reduce((s, c) => s + c.length, 0);
+  const chunkTargets  = chunks.map(c => Math.max(2, Math.ceil(num * (c.length / totalChunkLen) * 1.4)));
+
+  let pool = [];
+  const MAX_ATTEMPTS = 4; // per chunk
+
+  for (let ci = 0; ci < chunks.length; ci++) {
+    if (pool.length >= num) break; // already have enough from earlier chunks
+    const chunk    = chunks[ci];
+    const chunkTarget = chunkTargets[ci];
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS && pool.length < num; attempt++) {
+      const stillNeeded = Math.max(chunkTarget - pool.length, num - pool.length);
+      const bufferMultiplier = 1.4 + attempt * 0.3;
+      const askFor = Math.min(100, Math.max(1, Math.ceil(stillNeeded * bufferMultiplier)));
+      const attemptSeed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 4)}`;
+      const prompt = buildDocumentUserPrompt({
+        count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder,
+      });
+
+      let batch = await callGroq(system, prompt);
+      if (!batch || batch.length === 0) batch = await callGemini(system, prompt);
+      if (batch && batch.length > 0) {
+        const grounded = filterDocumentGrounded(batch, chunk);
+        if (grounded.length < batch.length) {
+          console.warn(`[generateQuestionsFromDocument] "${sourceName}" chunk${ci} attempt${attempt}: grounding filter removed ${batch.length - grounded.length}/${batch.length} generic questions`);
+        }
+        pool = mergeUnique(pool, grounded);
+      }
     }
   }
 
   if (pool.length < num) {
     const shortage = num - pool.length;
-    console.warn(`[generateQuestionsFromDocument] "${sourceName}": LLM gave ${pool.length}/${num} — padding ${shortage} with templates`);
+    console.warn(`[generateQuestionsFromDocument] "${sourceName}": LLM gave ${pool.length}/${num} across all chunks — padding ${shortage} with doc-keyword templates`);
     const docKeywords = extractDocKeywords(text, 8);
     const fallbackSkills = docKeywords.length > 0 ? docKeywords : [sourceName || 'process documentation'];
     const targetEasy   = Math.round(num * 0.35);
