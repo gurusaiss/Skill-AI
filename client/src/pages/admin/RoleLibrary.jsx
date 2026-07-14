@@ -127,7 +127,7 @@ function FullTextModal({ title, text, accent = 'indigo', onClose }) {
 }
 
 // ── FileRow — enhanced file row with preview, search, copy, and text editing ───
-function FileRow({ file, idx, onCountChange, onRemove, onTextEdit, onStakeholderChange, accent = 'indigo', isEditMode = false }) {
+function FileRow({ file, idx, onCountChange, onCountBlur, onRemove, onTextEdit, onStakeholderChange, onProcessDeliveryChange, accent = 'indigo', isEditMode = false }) {
   const [expanded, setExpanded] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showFull, setShowFull] = useState(false);
@@ -169,6 +169,7 @@ function FileRow({ file, idx, onCountChange, onRemove, onTextEdit, onStakeholder
         <input
           type="number" min="1" max="200" value={file.questionCount}
           onChange={e => onCountChange(idx, e.target.value)}
+          onBlur={() => onCountBlur && onCountBlur(idx)}
           className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-xs text-center focus:outline-none focus:border-indigo-500"
         />
         {onStakeholderChange && (
@@ -181,6 +182,18 @@ function FileRow({ file, idx, onCountChange, onRemove, onTextEdit, onStakeholder
                 : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'
             }`}>
             Stakeholder: {file.stakeholder ? 'Yes' : 'No'}
+          </button>
+        )}
+        {onProcessDeliveryChange && (
+          <button type="button"
+            onClick={() => onProcessDeliveryChange(idx, !file.processDelivery)}
+            title={file.processDelivery ? 'Process Delivery questions enabled — click to disable' : 'Process Delivery questions disabled — click to enable'}
+            className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium transition-colors border ${
+              file.processDelivery
+                ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40'
+                : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'
+            }`}>
+            Process Delivery: {file.processDelivery ? 'Yes' : 'No'}
           </button>
         )}
         <button type="button" onClick={() => setExpanded(v => !v)}
@@ -291,7 +304,7 @@ function RoleModal({ role, onClose, onSaved }) {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await authFetch('/api/roles/parse-jd', { method: 'POST', body: fd });
+      const res = await authFetch('/api/roles/parse-jd?type=jd', { method: 'POST', body: fd });
       const data = res?.data ?? res;
       const text = data?.text ?? '';
       if (!text) throw new Error('No text extracted from file');
@@ -299,7 +312,7 @@ function RoleModal({ role, onClose, onSaved }) {
         id: genId(), name: file.name, text, chars: text.length, questionCount: 10,
         ext: data?.ext || file.name.split('.').pop()?.toLowerCase() || '',
         uploadedBy: data?.uploadedBy || '', uploadedAt: new Date().toISOString(),
-        stakeholder: false,
+        stakeholder: false, processDelivery: false,
       }]);
       toast(`JD added: ${file.name} (${text.length.toLocaleString()} chars)`);
     } catch (e) {
@@ -324,7 +337,7 @@ function RoleModal({ role, onClose, onSaved }) {
         id: genId(), name: file.name, text, chars: text.length, questionCount: 5,
         ext: data?.ext || file.name.split('.').pop()?.toLowerCase() || '',
         uploadedBy: data?.uploadedBy || '', uploadedAt: new Date().toISOString(),
-        stakeholder: false,
+        stakeholder: false, processDelivery: false,
       }]);
       toast(`Supporting doc added: ${file.name} (${text.length.toLocaleString()} chars)`);
     } catch (e) {
@@ -335,10 +348,15 @@ function RoleModal({ role, onClose, onSaved }) {
     }
   };
 
+  // Allow raw string while typing; validation happens on blur
   const updateJdCount = (idx, val) =>
-    setJdFiles(p => p.map((f, i) => i === idx ? { ...f, questionCount: Math.max(1, parseInt(val) || 1) } : f));
+    setJdFiles(p => p.map((f, i) => i === idx ? { ...f, questionCount: val } : f));
+  const updateJdCountBlur = (idx) =>
+    setJdFiles(p => p.map((f, i) => i === idx ? { ...f, questionCount: Math.max(1, parseInt(f.questionCount) || 1) } : f));
   const updateSupportingCount = (idx, val) =>
-    setSupportingFiles(p => p.map((f, i) => i === idx ? { ...f, questionCount: Math.max(1, parseInt(val) || 1) } : f));
+    setSupportingFiles(p => p.map((f, i) => i === idx ? { ...f, questionCount: val } : f));
+  const updateSupportingCountBlur = (idx) =>
+    setSupportingFiles(p => p.map((f, i) => i === idx ? { ...f, questionCount: Math.max(1, parseInt(f.questionCount) || 1) } : f));
   const removeJdFile = idx => setJdFiles(p => p.filter((_, i) => i !== idx));
   const removeSupportingFile = idx => setSupportingFiles(p => p.filter((_, i) => i !== idx));
 
@@ -372,6 +390,10 @@ function RoleModal({ role, onClose, onSaved }) {
     setJdFiles(p => p.map((f, i) => i === idx ? { ...f, stakeholder: !!val } : f));
   const updateSupportingStakeholder = (idx, val) =>
     setSupportingFiles(p => p.map((f, i) => i === idx ? { ...f, stakeholder: !!val } : f));
+  const updateJdProcessDelivery = (idx, val) =>
+    setJdFiles(p => p.map((f, i) => i === idx ? { ...f, processDelivery: !!val } : f));
+  const updateSupportingProcessDelivery = (idx, val) =>
+    setSupportingFiles(p => p.map((f, i) => i === idx ? { ...f, processDelivery: !!val } : f));
 
   const totalQuestions = [...jdFiles, ...supportingFiles].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0);
 
@@ -482,7 +504,7 @@ function RoleModal({ role, onClose, onSaved }) {
             ) : (
               <div className="space-y-1.5">
                 {jdFiles.map((file, i) => (
-                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateJdCount} onRemove={removeJdFile} onTextEdit={updateJdText} onStakeholderChange={updateJdStakeholder} accent="indigo" isEditMode={isEdit} />
+                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateJdCount} onCountBlur={updateJdCountBlur} onRemove={removeJdFile} onTextEdit={updateJdText} onStakeholderChange={updateJdStakeholder} onProcessDeliveryChange={updateJdProcessDelivery} accent="indigo" isEditMode={isEdit} />
                 ))}
                 <button type="button" onClick={() => jdFileRef.current?.click()} disabled={jdUploading}
                   className="text-xs text-indigo-400 hover:text-indigo-300 underline ml-1">
@@ -517,7 +539,7 @@ function RoleModal({ role, onClose, onSaved }) {
             ) : (
               <div className="space-y-1.5">
                 {supportingFiles.map((file, i) => (
-                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateSupportingCount} onRemove={removeSupportingFile} onTextEdit={updateSupportingText} onStakeholderChange={updateSupportingStakeholder} accent="emerald" isEditMode={isEdit} />
+                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateSupportingCount} onCountBlur={updateSupportingCountBlur} onRemove={removeSupportingFile} onTextEdit={updateSupportingText} onStakeholderChange={updateSupportingStakeholder} onProcessDeliveryChange={updateSupportingProcessDelivery} accent="emerald" isEditMode={isEdit} />
                 ))}
               </div>
             )}
@@ -774,10 +796,10 @@ function QuestionBankModal({ role, onClose }) {
   const [regenCount, setRegenCount] = useState(fileTotal || role.questionBankCount || 50);
   const [regenMode, setRegenMode] = useState('all');
   const [localJdFiles, setLocalJdFiles] = useState(
-    (role.jdFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5, stakeholder: !!f.stakeholder }))
+    (role.jdFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5, stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery }))
   );
   const [localSupportingFiles, setLocalSupportingFiles] = useState(
-    (role.supportingFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5, stakeholder: !!f.stakeholder }))
+    (role.supportingFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5, stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery }))
   );
   const [saving, setSaving] = useState(false);
   const [editIdx, setEditIdx] = useState(null);
@@ -965,7 +987,8 @@ function QuestionBankModal({ role, onClose }) {
                         <span className="truncate flex-1 text-slate-300">{f.name}</span>
                         <span className="text-indigo-400 shrink-0">JD</span>
                         <input type="number" min="1" max="200" value={f.questionCount}
-                          onChange={e => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(e.target.value) || 1) } : x))}
+                          onChange={e => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: e.target.value } : x))}
+                          onBlur={() => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(x.questionCount) || 1) } : x))}
                           className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500" />
                         <span className="text-slate-500 shrink-0">Q</span>
                         <button type="button"
@@ -974,6 +997,12 @@ function QuestionBankModal({ role, onClose }) {
                           className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
                           Stakeholder: {f.stakeholder ? 'Yes' : 'No'}
                         </button>
+                        <button type="button"
+                          onClick={() => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, processDelivery: !x.processDelivery } : x))}
+                          title={f.processDelivery ? 'Process Delivery questions ON — click to disable' : 'Process Delivery questions OFF — click to enable'}
+                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors ${f.processDelivery ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          Process Delivery: {f.processDelivery ? 'Yes' : 'No'}
+                        </button>
                       </div>
                     ))}
                     {localSupportingFiles.map((f, i) => (
@@ -981,7 +1010,8 @@ function QuestionBankModal({ role, onClose }) {
                         <span className="truncate flex-1 text-slate-300">{f.name}</span>
                         <span className="text-emerald-400 shrink-0">doc</span>
                         <input type="number" min="1" max="200" value={f.questionCount}
-                          onChange={e => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(e.target.value) || 1) } : x))}
+                          onChange={e => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: e.target.value } : x))}
+                          onBlur={() => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(x.questionCount) || 1) } : x))}
                           className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500" />
                         <span className="text-slate-500 shrink-0">Q</span>
                         <button type="button"
@@ -989,6 +1019,12 @@ function QuestionBankModal({ role, onClose }) {
                           title={f.stakeholder ? 'Stakeholder questions ON — click to disable' : 'Stakeholder questions OFF — click to enable'}
                           className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
                           Stakeholder: {f.stakeholder ? 'Yes' : 'No'}
+                        </button>
+                        <button type="button"
+                          onClick={() => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, processDelivery: !x.processDelivery } : x))}
+                          title={f.processDelivery ? 'Process Delivery questions ON — click to disable' : 'Process Delivery questions OFF — click to enable'}
+                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors ${f.processDelivery ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          Process Delivery: {f.processDelivery ? 'Yes' : 'No'}
                         </button>
                       </div>
                     ))}

@@ -278,19 +278,26 @@ ABSOLUTE RULES:
 8. NO DUPLICATE QUESTIONS: Every question must test a DIFFERENT specific item from the document.
 9. NO REPEATED MCQ OPTION SETS: Every MCQ must have unique answer choices derived from document content.
 10. MAX 1 question in 10 may begin with "As a [role]" opener — all others open naturally with the scenario.
+11. NEVER generate questions about: headings, section titles, document titles, author names, reviewer names, version numbers, page numbers, file names, dates, confidentiality labels, or any document metadata. Generate questions ONLY from the main body content: procedures, steps, rules, tables, criteria, thresholds, and decision logic.
+12. CONTENT PRIORITY (highest to lowest): (1) numbered/lettered procedure steps, (2) tables and data grids, (3) decision rules and conditions, (4) exception/error handling, (5) body paragraphs, (6) examples and case descriptions. NEVER from headings alone.
 
 STRICTLY BANNED — these phrases MUST NOT appear in any question, option, or explanation unless they are quoted verbatim from the source document:
 - "stakeholder management", "stakeholder communication", "stakeholder engagement"
-- "process management", "change management", "change control"
+- "change management", "change control"
 - "leadership", "leadership style", "leadership qualities"
 - "strategic thinking", "strategic alignment", "strategic objectives"
-- "performance delivery", "performance management" (unless the document is about performance reviews)
 - "continuous improvement", "best practices", "industry standards"
 - "professional context", "organizational goals", "team collaboration" (as standalone concepts)
-Any question containing these phrases without a direct quote from the source document will be REJECTED. Generate document-grounded alternatives instead.`;
+- ANY document metadata: author names, reviewer names, version numbers, file names, dates, page numbers
+Any question containing these phrases without a direct quote from the source document will be REJECTED. Generate document-grounded alternatives instead.
+
+ANSWER FORMAT RULES (strictly enforced):
+- fill_blank answers: Single word, short phrase (2–5 words maximum), or a specific value/code/number from the document. NEVER a full sentence.
+- subjective answers: Exactly 2–3 concise bullet points. Each point under 20 words. No paragraphs. No essays. Format: "• Point 1 | • Point 2 | • Point 3"
+- mcq answers: Letter only (A, B, C, or D).`;
 }
 
-function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourceType, types, seed, skillsContext = [], stakeholder = false }) {
+function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourceType, types, seed, skillsContext = [], stakeholder = false, processDelivery = false }) {
   const easyCount   = Math.round(count * 0.35);
   const mediumCount = Math.round(count * 0.45);
   const hardCount   = Math.max(1, count - easyCount - mediumCount);
@@ -302,13 +309,17 @@ function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourc
     ? `\nSTAKEHOLDER CONTENT — ENABLED: Where the document describes interactions with stakeholders (clients, teams, managers, vendors, customers), you MAY generate questions that test the specific communication steps, escalation paths, or approval flows explicitly described. These must still use the document's exact terminology — no generic "stakeholder management" questions.`
     : `\nSTAKEHOLDER CONTENT — DISABLED: Do NOT generate any questions about stakeholder communication, client relationships, team interactions, escalation, or interpersonal scenarios. Focus exclusively on functional steps, technical rules, validation criteria, operational decisions, and system-specific actions described in the document.`;
 
+  const processDeliveryDirective = processDelivery
+    ? `\nPROCESS DELIVERY/MANAGEMENT — ENABLED: Where the document explicitly describes governance, SLA/KPI targets, reporting cycles, escalation frameworks, or operational management controls, you MAY generate questions testing those specific delivery mechanisms. Reference the document's exact SLA thresholds, KPI names, escalation paths, and reporting formats — no generic management questions.`
+    : `\nPROCESS DELIVERY/MANAGEMENT — DISABLED: Do NOT generate any questions about process governance, SLA management, KPI tracking, reporting, escalation management, operational management, or delivery management unless these exact topics are the entire subject of the document. Focus on execution-level procedural knowledge: steps, rules, validations, and system actions.`;
+
   return `Generate exactly ${count} assessment questions derived EXCLUSIVELY from the source document below.
 
 === CONTEXT ===
 Role: ${jobRole || 'Professional'}
 Document: ${sourceName || 'Source Document'}
 Document Type: ${docLabel}
-Generation Seed: ${seed}${skillsLine}${stakeholderDirective}
+Generation Seed: ${seed}${skillsLine}${stakeholderDirective}${processDeliveryDirective}
 
 === SOURCE DOCUMENT ===
 ${sourceText}
@@ -316,11 +327,14 @@ ${sourceText}
 === MANDATORY PRE-GENERATION STEPS ===
 
 STEP 1 — READ THE DOCUMENT AND EXTRACT (do this before writing any question):
-• Every specific procedure, step sequence, and workflow described
+EXTRACT ONLY FROM: paragraphs, numbered/lettered steps, tables, decision criteria, examples, exception conditions, formulas, and definitions stated in the document body.
+IGNORE COMPLETELY: document title, section headings used alone (only use their body content), author/reviewer names, version numbers, dates, page numbers, file name, confidentiality labels, copyright text, watermarks, and any metadata.
+• Every specific procedure, step sequence, and workflow described in the body
 • Every rule, threshold, condition, and validation criterion stated
-• Every system, form, field, tool, or platform mentioned
+• Every system, form, field, tool, code, or platform mentioned in the content
 • Every exception case, error condition, or escalation path defined
-• Every definition, formula, or calculation method provided
+• Every definition, formula, calculation method, or data validation rule provided
+• Specific values, codes, percentages, timeframes, and thresholds found in the document
 • Domain-specific terminology unique to this document
 
 STEP 2 — PLAN ${count} DISTINCT TEST ITEMS (one per question slot):
@@ -337,10 +351,13 @@ Question type cycle: ${types.join(', ')}
 • Subjective: The model answer must cite specific document content (step numbers, rule names, thresholds, field names, etc.)
 
 STEP 4 — SELF-CHECK (reject and replace any question that fails):
-✓ Every question uses at least one specific term, value, name, or phrase from the source document
+✓ Every question uses at least one specific term, value, name, code, or step from the source document BODY (not the heading)
 ✓ Every question is answerable using ONLY information stated in the source document
-✓ No question contains "stakeholder management", "process management", "change management", "leadership", "strategic thinking", "performance delivery", "continuous improvement", or "best practices" unless those exact phrases appear in the document
-✓ No question could be asked for ANY other role or company — it is specific to THIS document's content
+✓ No question was generated from a heading, author name, version number, date, filename, page number, or metadata
+✓ No question contains banned phrases unless quoted verbatim from document
+✓ No question could be asked for ANY other role or company — it is specific to THIS document's exact content
+✓ fill_blank answers are 2–5 words max (a specific term/value/code from the document)
+✓ subjective answers are exactly 2–3 bullet points, each under 20 words
 ✓ Exactly ${count} questions (${easyCount} easy, ${mediumCount} medium, ${hardCount} hard)
 ✓ sourceSection field is filled with the actual section name or step identifier from the document
 
@@ -352,7 +369,7 @@ STEP 4 — SELF-CHECK (reject and replace any question that fails):
       "question": "question text using document terminology",
       "difficulty": "easy|medium|hard",
       "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
-      "answer": "A/B/C/D for mcq | exact phrase from document for fill_blank | model answer citing document content for subjective",
+      "answer": "A/B/C/D for mcq | 2–5 word phrase/value from document for fill_blank | '• point1 | • point2 | • point3' (2–3 bullet points, each ≤20 words) for subjective",
       "explanation": "which specific section, step, or rule in the document this question tests",
       "skillArea": "specific procedure, system, rule, or concept from the document",
       "sourceSection": "exact section heading, step number, or paragraph identifier from the source document (e.g. 'Section 3.2', 'Step 4 — Payment Validation', 'Escalation Criteria')"
@@ -785,7 +802,7 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
 // in the source document's content. Skills from the role are passed as context
 // only (so the LLM understands the employee profile) but are NOT used as a
 // question source. This prevents role skills from overriding document content.
-async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, sourceType, questionCount, questionTypes, seed, skillsContext = [], stakeholder = false } = {}) {
+async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, sourceType, questionCount, questionTypes, seed, skillsContext = [], stakeholder = false, processDelivery = false } = {}) {
   const num   = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const baseSeed = seed || randomUUID().slice(0, 8);
@@ -839,7 +856,7 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
       const askFor = Math.min(100, Math.max(1, Math.ceil(stillNeeded * bufferMultiplier)));
       const attemptSeed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 4)}`;
       const prompt = buildDocumentUserPrompt({
-        count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder,
+        count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder, processDelivery,
       });
 
       let batch = await callGroq(system, prompt);
@@ -931,14 +948,15 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
     // prompt is framed around document content, not JD roles/responsibilities.
     // srcSkills is passed as context-only — it does not drive question topics.
     const batch = await generateQuestionsFromDocument(text, {
-      jobRole:       srcJobRole,
-      sourceName:    source.name,
-      sourceType:    source.sourceType || 'supporting',
-      questionCount: count,
-      questionTypes: buildTypeSeqLocal(count),
-      seed:          srcSeed,
-      skillsContext: srcSkills,
-      stakeholder:   !!source.stakeholder,
+      jobRole:         srcJobRole,
+      sourceName:      source.name,
+      sourceType:      source.sourceType || 'supporting',
+      questionCount:   count,
+      questionTypes:   buildTypeSeqLocal(count),
+      seed:            srcSeed,
+      skillsContext:   srcSkills,
+      stakeholder:     !!source.stakeholder,
+      processDelivery: !!source.processDelivery,
     });
 
     // Accept non-duplicates up to `count`

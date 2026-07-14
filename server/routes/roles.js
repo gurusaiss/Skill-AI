@@ -20,6 +20,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { RoleLibrary, EmployeeChecklists, Assessments, GeneratedContent } from '../services/DataStore.js';
 import { generateQuestionsFromJD, validateQuestionBank, generateQuestionsFromFiles } from '../services/AssessmentGenerator.js';
 import UserStore from '../services/UserStore.js';
+import { preprocessDocumentText, extractJDCoreContent, removeFilenameFromText } from '../utils/textPreprocessor.js';
 
 // Use createRequire so CJS packages (pdf-parse, mammoth) load correctly from ESM
 const _require = createRequire(import.meta.url);
@@ -55,12 +56,12 @@ function buildFileSources(role) {
   const sources = [];
   for (const f of (role.jdFiles || [])) {
     if (f.text?.trim()) {
-      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder });
+      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
     }
   }
   for (const f of (role.supportingFiles || [])) {
     if (f.text?.trim()) {
-      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder });
+      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
     }
   }
   return sources;
@@ -269,12 +270,27 @@ router.post('/parse-jd', authenticate, requireRole('admin', 'manager'), upload.s
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
     const ext = (req.file.originalname?.split('.').pop() || '').toLowerCase();
+    const fileType = req.query.type || req.body.fileType || 'supporting'; // 'jd' or 'supporting'
 
     let text = await extractTextFromBuffer(req.file.buffer, req.file.originalname);
 
     // Normalise line endings and collapse excessive blank lines
     text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
     if (!text) return res.status(400).json({ success: false, error: 'Could not extract text from this file — make sure the file contains readable text' });
+
+    // Remove filename from text (some parsers include it as the first line)
+    text = removeFilenameFromText(text, req.file.originalname);
+
+    // Apply document-type-specific preprocessing
+    if (fileType === 'jd') {
+      // JD: extract only roles/responsibilities/skills; strip everything else
+      text = extractJDCoreContent(text);
+    } else {
+      // Supporting docs: remove headers/footers/metadata, keep all learning content
+      text = preprocessDocumentText(text);
+    }
+
+    if (!text) return res.status(400).json({ success: false, error: 'Could not extract usable content from this file' });
 
     res.json({ success: true, data: { text, length: text.length, ext, uploadedBy: req.user.userId, uploadedByEmail: req.user.email } });
   } catch (e) {
@@ -888,6 +904,7 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
           if (!u) return f;
           const updated = { ...f, questionCount: Math.max(1, parseInt(u.questionCount) || f.questionCount) };
           if (u.stakeholder !== undefined) updated.stakeholder = !!u.stakeholder;
+          if (u.processDelivery !== undefined) updated.processDelivery = !!u.processDelivery;
           return updated;
         });
       }
@@ -897,6 +914,7 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
           if (!u) return f;
           const updated = { ...f, questionCount: Math.max(1, parseInt(u.questionCount) || f.questionCount) };
           if (u.stakeholder !== undefined) updated.stakeholder = !!u.stakeholder;
+          if (u.processDelivery !== undefined) updated.processDelivery = !!u.processDelivery;
           return updated;
         });
       }
