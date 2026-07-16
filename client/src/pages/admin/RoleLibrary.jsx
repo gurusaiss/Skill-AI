@@ -598,7 +598,7 @@ function RoleModal({ role, onClose, onSaved }) {
 }
 
 // ── ViewDocRow — read-only expandable document row used in ViewModal ──────────
-function ViewDocRow({ file, accent = 'indigo' }) {
+function ViewDocRow({ file, accent = 'indigo', onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const [showFull, setShowFull] = useState(false);
   const [search, setSearch] = useState('');
@@ -631,6 +631,11 @@ function ViewDocRow({ file, accent = 'indigo' }) {
             {expanded ? '▲' : '▼'}
           </button>
         )}
+        {onDelete && (
+          <button type="button" onClick={() => onDelete(file)}
+            title="Delete this document"
+            className="text-slate-500 hover:text-red-400 text-xs shrink-0 transition-colors">✕</button>
+        )}
       </div>
       {expanded && file.text && (
         <div className="border-t border-slate-700/50 px-3 py-2.5 space-y-2">
@@ -661,7 +666,24 @@ function ViewDocRow({ file, accent = 'indigo' }) {
 }
 
 // ── View modal ────────────────────────────────────────────────────────────────
-function ViewModal({ role, onClose, onEdit }) {
+function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
+  const { notify: toast } = useNotification();
+  const [role, setRole] = useState(initialRole);
+
+  const handleDeleteDoc = async (file) => {
+    if (!file?.id) return toast('This document has no id — remove it via Edit Role instead', 'error');
+    if (!window.confirm(`Delete "${file.name}"? This cannot be undone.`)) return;
+    try {
+      const res = await authFetch(`/api/roles/${role.id}/documents/${file.id}`, { method: 'DELETE' });
+      const updated = res?.data ?? res;
+      setRole(updated);
+      if (onRoleUpdated) onRoleUpdated(updated);
+      toast(`Deleted: ${file.name}`);
+    } catch (e) {
+      toast(e.message || 'Failed to delete document', 'error');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
@@ -685,7 +707,7 @@ function ViewModal({ role, onClose, onEdit }) {
             <div>
               <p className="text-xs font-medium text-slate-400 mb-2">JD FILES ({role.jdFiles.length})</p>
               <div className="space-y-1.5">
-                {role.jdFiles.map((f, i) => <ViewDocRow key={f.id || i} file={f} accent="indigo" />)}
+                {role.jdFiles.map((f, i) => <ViewDocRow key={f.id || i} file={f} accent="indigo" onDelete={handleDeleteDoc} />)}
               </div>
             </div>
           ) : role.jobDescription ? (
@@ -700,7 +722,7 @@ function ViewModal({ role, onClose, onEdit }) {
               <div>
                 <p className="text-xs font-medium text-slate-400 mb-2">SUPPORTING DOCUMENTS ({docs.length})</p>
                 <div className="space-y-1.5">
-                  {docs.map((doc, i) => <ViewDocRow key={doc.id || i} file={doc} accent="emerald" />)}
+                  {docs.map((doc, i) => <ViewDocRow key={doc.id || i} file={doc} accent="emerald" onDelete={handleDeleteDoc} />)}
                 </div>
               </div>
             );
@@ -1504,6 +1526,10 @@ export default function RoleLibrary() {
           role={modal.role}
           onClose={() => setModal(null)}
           onEdit={() => setModal({ type: 'edit', role: modal.role })}
+          onRoleUpdated={updated => {
+            setRoles(prev => prev.map(r => r.id === updated.id ? updated : r));
+            setModal(m => (m?.type === 'view' ? { ...m, role: updated } : m));
+          }}
         />
       )}
       {modal?.type === 'import' && (

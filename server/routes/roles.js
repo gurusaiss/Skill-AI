@@ -463,6 +463,35 @@ router.put('/:id/document-text', authenticate, requireRole('admin', 'manager'), 
   }
 });
 
+// ── DELETE /api/roles/:id/documents/:fileId — remove one uploaded file ────────
+router.delete('/:id/documents/:fileId', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+
+    const { fileId } = req.params;
+    const now = new Date().toISOString();
+    let updates = null;
+
+    if ((role.jdFiles || []).some(f => f.id === fileId)) {
+      const jdFiles = role.jdFiles.filter(f => f.id !== fileId);
+      const jobDescription = jdFiles.map(f => f.text).filter(Boolean).join('\n\n');
+      updates = { jdFiles, jobDescription, updatedAt: now };
+    } else if ((role.supportingFiles || []).some(f => f.id === fileId)) {
+      const supportingFiles = role.supportingFiles.filter(f => f.id !== fileId);
+      updates = { supportingFiles, updatedAt: now };
+    } else {
+      return res.status(404).json({ success: false, error: 'File not found in this role' });
+    }
+
+    const updated = await RoleLibrary.update(req.params.id, updates);
+    res.json({ success: true, data: updated });
+  } catch (e) {
+    console.error('[DELETE /api/roles/:id/documents/:fileId]', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ── PUT /api/roles/:id — update ───────────────────────────────────────────────
 router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
   try {
