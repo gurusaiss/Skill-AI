@@ -15,6 +15,7 @@ import { createClient } from '@supabase/supabase-js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
 import ws from 'ws';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -889,4 +890,167 @@ export const GeneratedModules = {
   },
 };
 
-export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds, AccessCodes, GeneratedModules };
+// ── QUESTION BANK VERSIONS ────────────────────────────────────────────────────
+// Real (non-JSONB-blob) table: version-controlled, frozen-once-approved
+// question banks for a job role. A bank is never mutated in place — every
+// regenerate/approve creates a new row. See sql/assessment_engine_v2.sql.
+const QBV_FILE = 'question_bank_versions.json';
+
+export const QuestionBankVersions = {
+  async getByRole(roleId) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('question_bank_versions').select('*').eq('role_id', roleId).order('version', { ascending: true });
+      if (!error) return data || [];
+      console.warn('[DataStore] question_bank_versions.getByRole:', error.message);
+    }
+    return readFileRecords(QBV_FILE).filter(r => r.role_id === roleId).sort((a, b) => a.version - b.version);
+  },
+  async getApproved(roleId) {
+    const all = await this.getByRole(roleId);
+    return all.find(r => r.status === 'approved') || null;
+  },
+  async getById(id) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('question_bank_versions').select('*').eq('id', id).maybeSingle();
+      if (!error) return data || null;
+      console.warn('[DataStore] question_bank_versions.getById:', error.message);
+    }
+    return readFileRecords(QBV_FILE).find(r => r.id === id) || null;
+  },
+  async getNextVersion(roleId) {
+    const all = await this.getByRole(roleId);
+    return all.length ? Math.max(...all.map(r => r.version)) + 1 : 1;
+  },
+  async create({ roleId, version, questions, questionCount, generationConfig, validationReport }) {
+    const row = {
+      id: `qbv-${roleId}-v${version}-${randomUUID()}`,
+      role_id: roleId,
+      version,
+      status: 'draft',
+      questions,
+      question_count: questionCount,
+      generation_config: generationConfig || {},
+      validation_report: validationReport || null,
+      approved_by: null,
+      approved_at: null,
+      created_at: new Date().toISOString(),
+    };
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('question_bank_versions').insert(row).select('*').maybeSingle();
+      if (!error) return data || row;
+      console.warn('[DataStore] question_bank_versions.create:', error.message);
+    }
+    const all = readFileRecords(QBV_FILE);
+    all.push(row);
+    writeFile(QBV_FILE, all);
+    return row;
+  },
+  // Approves one version and archives (never deletes) any prior approved
+  // version for the same role, so historical assignments keep resolving.
+  async approve(id, approvedBy) {
+    const version = await this.getById(id);
+    if (!version) return null;
+    const prevApproved = await this.getApproved(version.role_id);
+    if (prevApproved && prevApproved.id !== id) {
+      await this._setStatus(prevApproved.id, 'archived');
+    }
+    return this._setStatus(id, 'approved', { approved_by: approvedBy, approved_at: new Date().toISOString() });
+  },
+  async _setStatus(id, status, extra = {}) {
+    const updates = { status, ...extra };
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('question_bank_versions').update(updates).eq('id', id).select('*').maybeSingle();
+      if (!error) return data;
+      console.warn('[DataStore] question_bank_versions._setStatus:', error.message);
+    }
+    const all = readFileRecords(QBV_FILE);
+    const idx = all.findIndex(r => r.id === id);
+    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile(QBV_FILE, all); return all[idx]; }
+    return null;
+  },
+};
+
+// ── EMPLOYEE ASSESSMENT ASSIGNMENTS ───────────────────────────────────────────
+// One row per (assessment, employee): references a frozen question_bank_version
+// plus a per-employee shuffled question order. No question text is duplicated.
+const EAA_FILE = 'employee_assessment_assignments.json';
+
+export const EmployeeAssessmentAssignments = {
+  async getByAssessment(assessmentId) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('employee_assessment_assignments').select('*').eq('assessment_id', assessmentId);
+      if (!error) return data || [];
+      console.warn('[DataStore] employee_assessment_assignments.getByAssessment:', error.message);
+    }
+    return readFileRecords(EAA_FILE).filter(r => r.assessment_id === assessmentId);
+  },
+  async getByUser(userId) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('employee_assessment_assignments').select('*').eq('user_id', userId);
+      if (!error) return data || [];
+      console.warn('[DataStore] employee_assessment_assignments.getByUser:', error.message);
+    }
+    return readFileRecords(EAA_FILE).filter(r => r.user_id === userId);
+  },
+  async getOne(assessmentId, userId) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('employee_assessment_assignments').select('*').eq('assessment_id', assessmentId).eq('user_id', userId).maybeSingle();
+      if (!error) return data || null;
+      console.warn('[DataStore] employee_assessment_assignments.getOne:', error.message);
+    }
+    return readFileRecords(EAA_FILE).find(r => r.assessment_id === assessmentId && r.user_id === userId) || null;
+  },
+  async bulkCreate(rows) {
+    const prepared = rows.map(r => ({
+      id: r.id || `eaa-${randomUUID()}`,
+      assessment_id: r.assessmentId,
+      user_id: r.userId,
+      question_bank_version_id: r.questionBankVersionId,
+      question_order: r.questionOrder,
+      status: r.status || 'assigned',
+      assigned_at: r.assignedAt || new Date().toISOString(),
+      submitted_at: null,
+      scoring: null,
+    }));
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('employee_assessment_assignments')
+        .upsert(prepared, { onConflict: 'assessment_id,user_id' })
+        .select('*');
+      if (!error) return data || prepared;
+      console.warn('[DataStore] employee_assessment_assignments.bulkCreate:', error.message);
+    }
+    const all = readFileRecords(EAA_FILE);
+    for (const row of prepared) {
+      const idx = all.findIndex(r => r.assessment_id === row.assessment_id && r.user_id === row.user_id);
+      if (idx >= 0) all[idx] = row; else all.push(row);
+    }
+    writeFile(EAA_FILE, all);
+    return prepared;
+  },
+  async updateSubmission(id, updates) {
+    const payload = {};
+    if (updates.status !== undefined) payload.status = updates.status;
+    if (updates.submittedAt !== undefined) payload.submitted_at = updates.submittedAt;
+    if (updates.scoring !== undefined) payload.scoring = updates.scoring;
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('employee_assessment_assignments').update(payload).eq('id', id).select('*').maybeSingle();
+      if (!error) return data;
+      console.warn('[DataStore] employee_assessment_assignments.updateSubmission:', error.message);
+    }
+    const all = readFileRecords(EAA_FILE);
+    const idx = all.findIndex(r => r.id === id);
+    if (idx >= 0) { all[idx] = { ...all[idx], ...payload }; writeFile(EAA_FILE, all); return all[idx]; }
+    return null;
+  },
+};
+
+export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds, AccessCodes, GeneratedModules, QuestionBankVersions, EmployeeAssessmentAssignments };

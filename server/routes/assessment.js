@@ -18,10 +18,11 @@ import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import multer from 'multer';
 import UserStore from '../services/UserStore.js';
-import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds, Groups } from '../services/DataStore.js';
+import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds, Groups, QuestionBankVersions, EmployeeAssessmentAssignments } from '../services/DataStore.js';
 import LLMQueue from '../services/LLMQueue.js';
 import * as db from '../db/store.js';
 import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
+import { getApprovedBankCached } from '../services/QuestionBankCache.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -30,6 +31,49 @@ const __dirname = dirname(__filename);
 const DATA_DIR = join(__dirname, '../data');
 
 const router = express.Router();
+
+// Unbiased Fisher-Yates shuffle — reorders only, never drops/adds items.
+// Replaces the biased `sort(() => Math.random() - 0.5)` pattern previously
+// used to both reorder AND (bug) resample per-employee question subsets.
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Strips internal provenance/generation metadata that must be stored (Issue
+// 10) but never shown to the employee taking the assessment.
+function stripInternalMetadata(q) {
+  const { sourceFile, sourceSection, sourceType, generatedFrom, stakeholderFlag, processDeliveryFlag, createdAt, regenerationVersion, isManual, ...safe } = q || {};
+  return safe;
+}
+
+// Version-backed assessments (Role Library approve-assessment flow) no longer
+// embed question text on employeeAssignments — only a roster entry. Admin/
+// manager-facing views (question preview/edit panels, exports) still expect
+// `employeeAssignments[i].questions` to be populated, so this hydrates it back
+// on read for privileged callers, without ever writing it back to storage.
+async function hydrateAssignmentsForAdmin(assessment) {
+  if (!assessment?.questionBankVersionId || !Array.isArray(assessment.employeeAssignments)) return assessment;
+  const needsHydration = assessment.employeeAssignments.some(ea => !Array.isArray(ea.questions));
+  if (!needsHydration) return assessment;
+  const version = await getApprovedBankCached(assessment.questionBankVersionId);
+  if (!version) return assessment;
+  const byId = new Map(version.questions.map(q => [q.id, q]));
+  const eaaRows = await EmployeeAssessmentAssignments.getByAssessment(assessment.id);
+  const orderByUser = new Map(eaaRows.map(r => [r.user_id, r.question_order]));
+  return {
+    ...assessment,
+    employeeAssignments: assessment.employeeAssignments.map(ea => {
+      if (Array.isArray(ea.questions)) return ea;
+      const order = orderByUser.get(ea.userId) || version.questions.map(q => q.id);
+      return { ...ea, questions: order.map(qid => byId.get(qid)).filter(Boolean) };
+    }),
+  };
+}
 
 // ── AI question generation ────────────────────────────────────────────────────
 
@@ -420,7 +464,7 @@ router.get('/', authenticate, async (req, res) => {
             a.employeeAssignments?.some(ea => myEmpIds.has(ea.userId)) ||
             a.targetUsers?.some(uid => myEmpIds.has(uid))
           );
-      return res.json({ success: true, data: result, error: null });
+      return res.json({ success: true, data: await Promise.all(result.map(hydrateAssignmentsForAdmin)), error: null });
     }
 
     const result = ['admin', 'superadmin'].includes(req.user.role)
@@ -430,7 +474,8 @@ router.get('/', authenticate, async (req, res) => {
           a.targetUsers?.includes(req.user.userId)
         );
 
-    res.json({ success: true, data: result, error: null });
+    const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
+    res.json({ success: true, data: isPrivileged ? await Promise.all(result.map(hydrateAssignmentsForAdmin)) : result, error: null });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
   }
@@ -518,6 +563,44 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
 
     // Generate per-employee assignments — parallel LLM calls via LLMQueue (concurrency-capped)
     const assignedAt = new Date().toISOString();
+
+    // Bank-derived subset is picked ONCE per job role (not per employee) so
+    // every employee sharing a job role gets the identical question set —
+    // only the delivery ORDER is randomized per employee. Picking a fresh
+    // subset per employee (the old behavior) was the root cause of employees
+    // on the same role receiving different questions/counts.
+    const bankSubsetByRole = new Map();
+    async function getBankSubsetForRole(jobRole, companyId) {
+      const key = `${jobRole}::${companyId}`;
+      if (bankSubsetByRole.has(key)) return bankSubsetByRole.get(key);
+      let result = null;
+      try {
+        const roleForBank = await RoleLibrary.findByName(jobRole, companyId);
+        const fullBank = roleForBank?.questionBank || [];
+        if (fullBank.length > 0) {
+          const pctEasy   = easyPct   != null ? Number(easyPct)   : 34;
+          const pctMedium = mediumPct != null ? Number(mediumPct) : 33;
+          const target    = Math.min(questionCount, fullBank.length);
+          const nEasy   = Math.round(target * pctEasy   / 100);
+          const nMedium = Math.round(target * pctMedium / 100);
+          const nHard   = target - nEasy - nMedium;
+          const pickN = (diff, n) => shuffle(fullBank.filter(q => q.difficulty === diff)).slice(0, n);
+          const picked = [...pickN('easy', nEasy), ...pickN('medium', nMedium), ...pickN('hard', Math.max(0, nHard))];
+          if (picked.length > 0) {
+            if (picked.length < target) {
+              const usedIds = new Set(picked.map(q => q.id));
+              const extras = shuffle(fullBank.filter(q => !usedIds.has(q.id)));
+              result = [...picked, ...extras].slice(0, target);
+            } else {
+              result = picked.slice(0, target);
+            }
+          }
+        }
+      } catch (e) { console.warn('[assessment] Bank lookup failed:', e.message); }
+      bankSubsetByRole.set(key, result);
+      return result;
+    }
+
     const employeeAssignments = (await Promise.all(
       validUsers.map(async (user) => {
         const userId = user.userId || user.id;
@@ -535,32 +618,12 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
           } catch {}
         }
 
-        // Bank-only priority: if role has any approved questions, use ONLY bank
+        // Bank-only priority: if role has any approved questions, use ONLY the
+        // shared per-role subset (same content for everyone), reordered per employee.
         let questions = null;
         if (user.jobRole) {
-          try {
-            const roleForBank = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
-            const fullBank = roleForBank?.questionBank || [];
-            if (fullBank.length > 0) {
-              const pctEasy   = easyPct   != null ? Number(easyPct)   : 34;
-              const pctMedium = mediumPct != null ? Number(mediumPct) : 33;
-              const target    = Math.min(questionCount, fullBank.length);
-              const nEasy   = Math.round(target * pctEasy   / 100);
-              const nMedium = Math.round(target * pctMedium / 100);
-              const nHard   = target - nEasy - nMedium;
-              const pickN = (diff, n) => [...fullBank.filter(q => q.difficulty === diff)].sort(() => Math.random() - 0.5).slice(0, n);
-              const picked = [...pickN('easy', nEasy), ...pickN('medium', nMedium), ...pickN('hard', Math.max(0, nHard))];
-              if (picked.length > 0) {
-                if (picked.length < target) {
-                  const usedIds = new Set(picked.map(q => q.id));
-                  const extras = fullBank.filter(q => !usedIds.has(q.id)).sort(() => Math.random() - 0.5);
-                  questions = [...picked, ...extras].slice(0, target);
-                } else {
-                  questions = picked.slice(0, target);
-                }
-              }
-            }
-          } catch (e) { console.warn('[assessment] Bank lookup failed:', e.message); }
+          const sharedSubset = await getBankSubsetForRole(user.jobRole, user.companyId || 'default');
+          if (sharedSubset) questions = shuffle(sharedSubset);
         }
         if (!questions) {
           questions = await generateQuestionsFromJD({
@@ -1485,37 +1548,60 @@ router.get('/my', authenticate, async (req, res) => {
     const assessments = await Assessments.getAll() || [];
     const now = new Date();
 
-    const myAssessments = assessments
-      .filter(a =>
-        a.employeeAssignments?.some(ea => ea.userId === req.user.userId) ||
-        a.targetUsers?.includes(req.user.userId)
-      )
-      .map(a => {
-        const myAssignment = a.employeeAssignments?.find(ea => ea.userId === req.user.userId);
+    const mine = assessments.filter(a =>
+      a.employeeAssignments?.some(ea => ea.userId === req.user.userId) ||
+      a.targetUsers?.includes(req.user.userId)
+    );
 
-        const assessmentDate = a.assessmentDate ? new Date(a.assessmentDate) : null;
-        const deadline = a.deadline ? new Date(a.deadline) : null;
+    const myAssessments = await Promise.all(mine.map(async (a) => {
+      const myAssignment = a.employeeAssignments?.find(ea => ea.userId === req.user.userId);
 
-        const isVisible = !assessmentDate || now >= assessmentDate;
-        const isExpired = deadline ? now > deadline : false;
+      const assessmentDate = a.assessmentDate ? new Date(a.assessmentDate) : null;
+      const deadline = a.deadline ? new Date(a.deadline) : null;
 
-        const assignmentStatus = myAssignment?.status || 'assigned';
-        return {
-          id: a.id,
-          title: a.title,
-          assessmentDate: a.assessmentDate,
-          deadline: a.deadline || null,
-          duration: a.duration,
-          status: isExpired && assignmentStatus !== 'submitted' ? 'expired' : assignmentStatus,
-          questions: (isVisible && myAssignment) ? myAssignment.questions : null,
-          assignedAt: myAssignment?.assignedAt || a.createdAt,
-          submittedAt: myAssignment?.submittedAt || null,
-          jobRole: myAssignment?.jobRole || '',
-          isVisible,
-          isExpired,
-          scoring: assignmentStatus === 'submitted' ? myAssignment?.scoring : null,
-        };
-      });
+      const isVisible = !assessmentDate || now >= assessmentDate;
+      const isExpired = deadline ? now > deadline : false;
+
+      const assignmentStatus = myAssignment?.status || 'assigned';
+
+      // Resolve questions: assessments approved via the versioned Role Library
+      // flow (Issues 1/2/7/8/9) store no question text on employeeAssignments —
+      // only a roster entry. The frozen bank + this employee's shuffle order
+      // live in employee_assessment_assignments / question_bank_versions and
+      // are resolved here, at delivery time, never regenerated.
+      // Legacy/ad-hoc assessments (POST /api/assessments) still embed
+      // `questions` directly on the assignment — read straight through for
+      // backward compatibility.
+      let questions = null;
+      if (isVisible && myAssignment) {
+        if (Array.isArray(myAssignment.questions)) {
+          questions = myAssignment.questions.map(stripInternalMetadata);
+        } else if (a.questionBankVersionId) {
+          const eaa = await EmployeeAssessmentAssignments.getOne(a.id, req.user.userId);
+          const version = await getApprovedBankCached(a.questionBankVersionId);
+          if (eaa && version) {
+            const byId = new Map(version.questions.map(q => [q.id, q]));
+            questions = eaa.question_order.map(qid => byId.get(qid)).filter(Boolean).map(stripInternalMetadata);
+          }
+        }
+      }
+
+      return {
+        id: a.id,
+        title: a.title,
+        assessmentDate: a.assessmentDate,
+        deadline: a.deadline || null,
+        duration: a.duration,
+        status: isExpired && assignmentStatus !== 'submitted' ? 'expired' : assignmentStatus,
+        questions,
+        assignedAt: myAssignment?.assignedAt || a.createdAt,
+        submittedAt: myAssignment?.submittedAt || null,
+        jobRole: myAssignment?.jobRole || '',
+        isVisible,
+        isExpired,
+        scoring: assignmentStatus === 'submitted' ? myAssignment?.scoring : null,
+      };
+    }));
 
     res.json({ success: true, data: myAssessments, error: null });
   } catch (e) {
@@ -1849,10 +1935,19 @@ router.get('/:id', authenticate, async (req, res) => {
     if (!isPrivileged) {
       const myAssignment = assessment.employeeAssignments?.find(ea => ea.userId === req.user.userId);
       if (!myAssignment) return res.status(403).json({ success: false, data: null, error: 'Access denied' });
-      return res.json({ success: true, data: { ...assessment, employeeAssignments: [myAssignment] }, error: null });
+      let resolved = myAssignment;
+      if (!Array.isArray(myAssignment.questions) && assessment.questionBankVersionId) {
+        const eaa = await EmployeeAssessmentAssignments.getOne(assessment.id, req.user.userId);
+        const version = await getApprovedBankCached(assessment.questionBankVersionId);
+        if (eaa && version) {
+          const byId = new Map(version.questions.map(q => [q.id, q]));
+          resolved = { ...myAssignment, questions: eaa.question_order.map(qid => byId.get(qid)).filter(Boolean).map(stripInternalMetadata) };
+        }
+      }
+      return res.json({ success: true, data: { ...assessment, employeeAssignments: [resolved] }, error: null });
     }
 
-    res.json({ success: true, data: assessment, error: null });
+    res.json({ success: true, data: await hydrateAssignmentsForAdmin(assessment), error: null });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
   }
@@ -1885,7 +1980,19 @@ router.post('/:id/submit', authenticate, async (req, res) => {
       return res.status(403).json({ success: false, data: null, error: 'Submission deadline has passed' });
     }
 
-    const questions = assignment.questions || [];
+    // Resolve questions the same way GET /my does: embedded (legacy/ad-hoc
+    // assessments) or version+order-derived (Role Library approved-bank flow).
+    let questions = Array.isArray(assignment.questions) ? assignment.questions : null;
+    let eaaRow = null;
+    if (!questions && assessment.questionBankVersionId) {
+      eaaRow = await EmployeeAssessmentAssignments.getOne(assessment.id, req.user.userId);
+      const version = await getApprovedBankCached(assessment.questionBankVersionId);
+      if (eaaRow && version) {
+        const byId = new Map(version.questions.map(q => [q.id, q]));
+        questions = eaaRow.question_order.map(qid => byId.get(qid)).filter(Boolean);
+      }
+    }
+    questions = (questions || []).map(stripInternalMetadata);
 
     // Normalise answers into dense array: responses[i] = { answer: string }
     const responses = normaliseResponses(answers, rawResponses, questions.length);
@@ -1910,6 +2017,17 @@ router.post('/:id/submit', authenticate, async (req, res) => {
       employeeAssignments: updatedAssignments,
       updatedAt: new Date().toISOString(),
     });
+
+    // Version-backed assignments also update their own row — this is the
+    // record that keeps a completed assessment tied to the exact bank version
+    // the employee was tested on, independent of any later regenerate/approve.
+    if (eaaRow) {
+      await EmployeeAssessmentAssignments.updateSubmission(eaaRow.id, {
+        status: 'submitted',
+        submittedAt: new Date().toISOString(),
+        scoring,
+      });
+    }
 
     // Generate and persist full report
     const report = {

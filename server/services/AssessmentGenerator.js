@@ -397,21 +397,48 @@ function extractDocKeywords(text, maxTerms = 8) {
     .map(([w]) => w);
 }
 
-// Filter questions that are NOT grounded in the source document.
+// Filter questions that are NOT grounded in the source text (JD, supporting
+// docs, or a single process document — same check, different source text).
 // Rejects any question whose text, skillArea, and explanation contain zero
-// document-specific content words. This is the primary guard against generic
+// source-specific content words. This is the primary guard against generic
 // corporate questions (process management, stakeholder communication, etc.)
-// slipping through from the LLM.
-// Safe to call even when the doc is short — returns all questions unchanged if
-// fewer than 5 unique content words can be extracted (validation impossible).
-function filterDocumentGrounded(questions, docText) {
+// slipping through from the LLM, and is applied to BOTH the JD generation
+// path and the document generation path — previously only the document path
+// was filtered, which was the root cause of poor first-generation quality
+// for JD-only roles.
+// Safe to call even when the source is short — returns all questions
+// unchanged if fewer than 5 unique content words can be extracted (validation
+// impossible).
+function filterGrounded(questions, sourceText) {
   if (!Array.isArray(questions) || questions.length === 0) return questions;
-  const keywords = extractDocKeywords(docText, 50);
+  const keywords = extractDocKeywords(sourceText, 50);
   if (keywords.length < 5) return questions; // too short to validate reliably
   return questions.filter(q => {
     const haystack = [q.question, q.skillArea, q.explanation]
       .filter(Boolean).join(' ').toLowerCase();
     return keywords.some(kw => haystack.includes(kw));
+  });
+}
+
+// Reject questions built from known-generic phrasing patterns (Issue 5 /
+// Issue 13's "no generic filler questions" requirement) — applied as an
+// automated filter within the same first-pass attempt loop, no extra LLM
+// call needed. Complements filterGrounded (keyword presence) by catching
+// generic *shapes* of question even when they happen to mention a real term.
+const GENERIC_PHRASE_PATTERNS = [
+  /^what is the (primary )?purpose of (a |an |the )?process\??$/i,
+  /^what is the primary objective of documentation\??$/i,
+  /^what is stakeholder management\??$/i,
+  /^what is change management\??$/i,
+  /^which of the following best describes [a-z\s]{0,25}\??$/i, // bare definitional, no scenario
+  /^what is a key indicator of effective [a-z\s]{0,25}\??$/i,
+];
+function filterGenericPhrasing(questions) {
+  if (!Array.isArray(questions) || questions.length === 0) return questions;
+  return questions.filter(q => {
+    const text = (q.question || '').trim();
+    if (!text) return false;
+    return !GENERIC_PHRASE_PATTERNS.some(re => re.test(text));
   });
 }
 
@@ -472,9 +499,9 @@ async function callGemini(system, prompt, { temperature = 0.85, maxTokens = 1638
 // so the similarity-based deduplicator treats each combo as genuinely distinct.
 const FALLBACK_TEMPLATES = {
   easy: [
-    (s) => `What is the primary purpose of ${s} in a professional context?`,
-    (s) => `Which of the following best describes ${s}?`,
-    (s) => `What is a key indicator of effective ${s}?`,
+    (s) => `When starting a task involving ${s}, which action should be completed first?`,
+    (s) => `A colleague asks for the standard first step in ${s} — which response is correct?`,
+    (s) => `Which observable outcome signals that ${s} was completed correctly?`,
     (s) => `Which practice most directly supports ${s}?`,
     (s) => `What foundational knowledge is required to carry out ${s} correctly?`,
     (s) => `Which tool or method is most commonly used when handling ${s}?`,
@@ -623,34 +650,57 @@ function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyD
   });
 }
 
+// Phrases/patterns that indicate a question was derived from document
+// metadata (title/heading/filename/author/etc.) rather than actual body
+// content, or names a specific person rather than a role/process (Issue 13).
+const HEADER_FOOTER_PATTERNS = [
+  /\bpage \d+\b/i, /\bversion \d+(\.\d+)*\b/i, /\bconfidential\b/i, /\bcopyright\b/i,
+  /\bfile ?name\b/i, /\.(docx?|pdf|xlsx?|pptx?)\b/i, /\bauthor(ed)? by\b/i, /\breviewed by\b/i,
+];
+const PERSON_NAME_PATTERNS = [/\bmr\.\s|\bmrs\.\s|\bms\.\s|\bdr\.\s/i];
+
 /**
- * Validates a question bank before persisting it.
- * Returns { valid: boolean, errors: string[] }
- * Used by routes to gate DB saves — never overwrites an existing bank if validation fails.
+ * Validates a question bank before persisting/approving it.
+ * Returns a structured report:
+ *   { passed: bool, hardFailures: string[], warnings: string[], checks: {...} }
+ * `hardFailures` MUST block approval; `warnings` are informational only.
+ * Legacy `valid`/`errors` fields are kept for backward compatibility with any
+ * caller still reading the old shape (valid === passed, errors === hardFailures).
  */
-export function validateQuestionBank(questions, target) {
-  const errors = [];
+export function validateQuestionBank(questions, target, config = {}) {
+  const hardFailures = [];
+  const warnings = [];
+  const checks = {};
 
-  // 1. Count
   if (!Array.isArray(questions)) {
-    return { valid: false, errors: ['questions must be an array'] };
-  }
-  if (questions.length !== target) {
-    errors.push(`Count: got ${questions.length}, expected ${target}`);
+    return { valid: false, passed: false, errors: ['questions must be an array'], hardFailures: ['questions must be an array'], warnings: [], checks: {} };
   }
 
-  // 2. Duplicate question text (>70% token overlap)
+  // 1. Count — hard fail
+  checks.count = { expected: target, actual: questions.length };
+  if (questions.length !== target) {
+    hardFailures.push(`Count: got ${questions.length}, expected ${target}`);
+  }
+
   const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean);
   const seenText = [];
   const seenOptionSets = new Set();
   const seenFillAnswers = new Set();
-  const seenScenarios = new Set();
+  checks.duplicateQuestions = [];
+  checks.duplicateOptions = [];
+  checks.duplicateAnswers = [];
+  checks.malformedMcq = [];
+  checks.emptyAnswers = [];
+  checks.genericPhrasing = [];
+  checks.headerFooterDerived = [];
+  checks.groundedness = [];
 
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
-    if (!q || !q.question) { errors.push(`Question ${i}: missing question text`); continue; }
+    if (!q || !q.question) { hardFailures.push(`Question ${i}: missing question text`); continue; }
+    if (!q.answer || !String(q.answer).trim()) { hardFailures.push(`Question ${i}: empty answer`); checks.emptyAnswers.push(i); }
 
-    // Duplicate question text
+    // Duplicate question text (>70% token overlap) — hard fail
     const tokens = new Set(normalize(q.question));
     for (let j = 0; j < seenText.length; j++) {
       const prev = seenText[j];
@@ -658,49 +708,85 @@ export function validateQuestionBank(questions, target) {
       const inter = [...tokens].filter(t => prevTokens.has(t)).length;
       const union = new Set([...tokens, ...prevTokens]).size;
       if (union > 0 && inter / union > 0.70) {
-        errors.push(`Duplicate question: [${i}] is >70% similar to [${j}]`);
+        hardFailures.push(`Duplicate question: [${i}] is >70% similar to [${j}]`);
+        checks.duplicateQuestions.push([j, i]);
       }
     }
     seenText.push({ text: q.question, idx: i });
 
-    // Duplicate MCQ option sets
+    // MCQ shape + duplicate options — hard fail
+    if (q.type === 'mcq') {
+      if (!Array.isArray(q.options) || q.options.length !== 4 || !/^[A-D]$/i.test(String(q.answer).trim())) {
+        hardFailures.push(`Question ${i}: malformed MCQ (must have 4 options and an A-D answer)`);
+        checks.malformedMcq.push(i);
+      }
+    }
     if (Array.isArray(q.options) && q.options.length) {
       const key = q.options.map(o => (o || '').toLowerCase().replace(/^[a-d]\)\s*/i, '').trim()).sort().join('|');
-      if (key && seenOptionSets.has(key)) errors.push(`Duplicate MCQ options at question ${i}`);
+      if (key && seenOptionSets.has(key)) { hardFailures.push(`Duplicate MCQ options at question ${i}`); checks.duplicateOptions.push(i); }
       seenOptionSets.add(key);
-      // Internal duplicates within same question
       if (new Set(q.options.map(o => (o || '').toLowerCase().trim())).size !== q.options.length) {
-        errors.push(`Question ${i} has duplicate options within itself`);
+        hardFailures.push(`Question ${i} has duplicate options within itself`);
+        checks.malformedMcq.push(i);
       }
     }
 
-    // Duplicate fill_blank / subjective answers
+    // Duplicate fill_blank / subjective answers — hard fail
     if ((q.type === 'fill_blank' || q.type === 'subjective') && q.answer) {
       const ansKey = q.answer.toLowerCase().trim();
-      if (seenFillAnswers.has(ansKey)) errors.push(`Duplicate answer at question ${i}`);
+      if (seenFillAnswers.has(ansKey)) { hardFailures.push(`Duplicate answer at question ${i}`); checks.duplicateAnswers.push(i); }
       seenFillAnswers.add(ansKey);
     }
 
-    // Difficulty value check
+    // Difficulty/type value checks — hard fail (previously computed but never
+    // actually blocked a save due to a string-matching bug in the caller)
     if (!['easy', 'medium', 'hard'].includes(q.difficulty)) {
-      errors.push(`Question ${i}: invalid difficulty "${q.difficulty}"`);
+      hardFailures.push(`Question ${i}: invalid difficulty "${q.difficulty}"`);
+    }
+    if (!['mcq', 'fill_blank', 'subjective'].includes(q.type)) {
+      hardFailures.push(`Question ${i}: invalid type "${q.type}"`);
     }
 
-    // Type value check
-    if (!['mcq', 'fill_blank', 'subjective'].includes(q.type)) {
-      errors.push(`Question ${i}: invalid type "${q.type}"`);
+    // Generic phrasing — hard fail
+    if (GENERIC_PHRASE_PATTERNS.some(re => re.test((q.question || '').trim()))) {
+      hardFailures.push(`Question ${i}: generic/filler phrasing`);
+      checks.genericPhrasing.push(i);
+    }
+
+    // Header/footer/filename/person-name derived — hard fail
+    const qText = [q.question, q.explanation, q.skillArea].filter(Boolean).join(' ');
+    if (HEADER_FOOTER_PATTERNS.some(re => re.test(qText)) || PERSON_NAME_PATTERNS.some(re => re.test(qText))) {
+      hardFailures.push(`Question ${i}: derived from document metadata or a person's name, not body content`);
+      checks.headerFooterDerived.push(i);
     }
   }
 
-  // 3. Difficulty distribution check (warn if more than 20% off target)
+  // 2. Difficulty distribution (soft warning only — minor skew is tolerable)
   const easy   = questions.filter(q => q.difficulty === 'easy').length;
-  const medium  = questions.filter(q => q.difficulty === 'medium').length;
+  const medium = questions.filter(q => q.difficulty === 'medium').length;
   const hard   = questions.filter(q => q.difficulty === 'hard').length;
   const n = questions.length || 1;
-  if (Math.abs(easy / n - 0.35) > 0.20) errors.push(`Difficulty distribution: easy=${easy} (${Math.round(easy/n*100)}%) is far from target 35%`);
-  if (Math.abs(medium / n - 0.45) > 0.20) errors.push(`Difficulty distribution: medium=${medium} (${Math.round(medium/n*100)}%) is far from target 45%`);
+  checks.difficultyDistribution = { easy, medium, hard, easyPct: easy / n, mediumPct: medium / n, hardPct: hard / n };
+  if (Math.abs(easy / n - 0.35) > 0.20) warnings.push(`Difficulty distribution: easy=${easy} (${Math.round(easy/n*100)}%) is far from target 35%`);
+  if (Math.abs(medium / n - 0.45) > 0.20) warnings.push(`Difficulty distribution: medium=${medium} (${Math.round(medium/n*100)}%) is far from target 45%`);
 
-  return { valid: errors.length === 0, errors };
+  // 3. Type distribution — hard fail if requested distribution supplied and missed by >15%
+  if (config.typeDist) {
+    const mcq = questions.filter(q => q.type === 'mcq').length;
+    const fill = questions.filter(q => q.type === 'fill_blank').length;
+    const subj = questions.filter(q => q.type === 'subjective').length;
+    checks.typeDistribution = { mcq, fill_blank: fill, subjective: subj };
+    for (const [type, count] of [['mcq', mcq], ['fill_blank', fill], ['subjective', subj]]) {
+      const expectedPct = config.typeDist[type];
+      if (expectedPct === undefined) continue;
+      if (Math.abs(count / n - expectedPct) > 0.15) {
+        hardFailures.push(`Type distribution: ${type}=${count} (${Math.round(count/n*100)}%) is far from target ${Math.round(expectedPct*100)}%`);
+      }
+    }
+  }
+
+  const passed = hardFailures.length === 0;
+  return { valid: passed, passed, errors: hardFailures, hardFailures, warnings, checks };
 }
 
 export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed, supportingDocs }) {
@@ -738,7 +824,13 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     let batch = await callGroq(system, prompt);
     if (!batch || batch.length === 0) batch = await callGemini(system, prompt);
     if (batch && batch.length > 0) {
-      pool = mergeUnique(pool, batch);
+      const combinedSource = `${jdText}\n${supportingDocsText}`;
+      const noGeneric = filterGenericPhrasing(batch);
+      const grounded = filterGrounded(noGeneric, combinedSource);
+      if (grounded.length < batch.length) {
+        console.warn(`[generateQuestionsFromJD] attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded questions`);
+      }
+      pool = mergeUnique(pool, grounded);
     }
   }
 
@@ -791,10 +883,27 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     const emergencyComboCounters = { easy: 9999, medium: 9999, hard: 9999 };
     const gap = num - rebalanced.length;
     const emergency = buildFallbackQuestions(gap, { types, skillsList, jobRole, comboCounters: emergencyComboCounters });
-    return [...rebalanced, ...emergency].slice(0, num);
+    return tagMetadata([...rebalanced, ...emergency].slice(0, num), { generatedFrom: 'jd' });
   }
 
-  return rebalanced;
+  return tagMetadata(rebalanced, { generatedFrom: 'jd' });
+}
+
+// Stamps every question with the metadata fields required for provenance
+// tracking (Issue 10): id, generatedFrom, stakeholder/processDelivery flags,
+// createdAt. Stored on the question but never shown to employees — the
+// employee-facing serializer in the assessment routes strips these before
+// returning a question to the client.
+function tagMetadata(questions, { generatedFrom, stakeholderFlag = false, processDeliveryFlag = false } = {}) {
+  const now = new Date().toISOString();
+  return questions.map(q => ({
+    ...q,
+    id: q.id || randomUUID(),
+    generatedFrom,
+    stakeholderFlag: q.stakeholderFlag ?? stakeholderFlag,
+    processDeliveryFlag: q.processDeliveryFlag ?? processDeliveryFlag,
+    createdAt: q.createdAt || now,
+  }));
 }
 
 // ── Document-focused question generation ─────────────────────────────────────
@@ -862,9 +971,10 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
       let batch = await callGroq(system, prompt);
       if (!batch || batch.length === 0) batch = await callGemini(system, prompt);
       if (batch && batch.length > 0) {
-        const grounded = filterDocumentGrounded(batch, chunk);
+        const noGeneric = filterGenericPhrasing(batch);
+        const grounded = filterGrounded(noGeneric, chunk);
         if (grounded.length < batch.length) {
-          console.warn(`[generateQuestionsFromDocument] "${sourceName}" chunk${ci} attempt${attempt}: grounding filter removed ${batch.length - grounded.length}/${batch.length} generic questions`);
+          console.warn(`[generateQuestionsFromDocument] "${sourceName}" chunk${ci} attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded questions`);
         }
         pool = mergeUnique(pool, grounded);
       }
@@ -900,16 +1010,18 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
   const trimmed   = trimToTarget(pool, num, types);
   const rebalanced = rebalanceDifficulty(trimmed);
 
+  const meta = { generatedFrom: sourceType === 'jd' ? 'jd' : 'document', stakeholderFlag: stakeholder, processDeliveryFlag: processDelivery };
+
   if (rebalanced.length !== num) {
-    if (rebalanced.length > num) return rebalanced.slice(0, num);
+    if (rebalanced.length > num) return tagMetadata(rebalanced.slice(0, num), meta);
     const gap = num - rebalanced.length;
     const emergency = buildFallbackQuestions(gap, {
       types, skillsList: [sourceName || 'this process'], jobRole,
       comboCounters: { easy: 9999, medium: 9999, hard: 9999 },
     });
-    return [...rebalanced, ...emergency].slice(0, num);
+    return tagMetadata([...rebalanced, ...emergency].slice(0, num), meta);
   }
-  return rebalanced;
+  return tagMetadata(rebalanced, meta);
 }
 
 // ── Per-file multi-source generation ─────────────────────────────────────────
