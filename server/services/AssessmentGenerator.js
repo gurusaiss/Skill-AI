@@ -572,28 +572,46 @@ const FALLBACK_SUBJECTIVE_TEMPLATES = [
 // Given a global combo index, deterministically pick a skill/template pairing.
 // For indices beyond the primary skill x template grid, falls back to compound
 // skill pairs ("skillA and skillB") to generate combinatorially more unique content.
+// Also returns `tplIdx` — the exact template-array index chosen — so callers
+// that need a SECOND parallel choice synchronized to the same combo (like
+// which MCQ option bank to use) can index by tplIdx directly instead of
+// re-deriving their own modulo of the raw comboIdx. Two independently-moduloed
+// cycles (question template vs option bank) can realign and repeat an
+// identical (skill, option-bank) pairing well before either cycle is
+// individually exhausted — that was a real bug (duplicate MCQ option sets on
+// two questions with different wording but identical options).
 function pickCombo(templates, skills, comboIdx) {
   const n = Math.max(1, skills.length);
   const primaryCombos = n * templates.length;
   if (comboIdx < primaryCombos || n < 2) {
     const skill = skills[comboIdx % n];
-    const tpl = templates[Math.floor(comboIdx / n) % templates.length];
-    return { skill, tpl };
+    const tplIdx = Math.floor(comboIdx / n) % templates.length;
+    return { skill, tpl: templates[tplIdx], tplIdx };
   }
   const secondaryIdx = comboIdx - primaryCombos;
   const skillA = skills[secondaryIdx % n];
   const skillB = skills[(secondaryIdx + 1 + Math.floor(secondaryIdx / n)) % n];
   const skill = skillA === skillB ? skillA : `${skillA} and ${skillB}`;
-  const tpl = templates[Math.floor(secondaryIdx / n) % templates.length];
-  return { skill, tpl };
+  const tplIdx = Math.floor(secondaryIdx / n) % templates.length;
+  return { skill, tpl: templates[tplIdx], tplIdx };
 }
+
+// Never let a raw uploaded filename become a fallback "skill" substituted
+// into generated question text (e.g. "...involving Employee_Handbook_v2.docx...").
+// A filename is document metadata by definition — Issue 13 explicitly bans
+// filename-derived questions, and a raw filename commonly contains an
+// extension (.docx) and/or a version-like suffix (v2, _final_v3) that also
+// trips the header/footer/metadata validation check. This is the actual,
+// generic-safe fallback used whenever no real doc keywords or configured
+// skills are available — never the filename itself.
+const SAFE_FALLBACK_TOPIC = 'the uploaded document\'s stated responsibilities and procedures';
 
 // Deterministic, template-based fill used ONLY to close any residual gap after
 // LLM attempts are exhausted — guarantees the exact requested count is always met.
 // Uses real combinatorial variety (skill x template, then skill-pair x template)
 // rather than cosmetic numbering, so the dedup step never mistakes distinct
 // fallback questions for near-duplicates.
-function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyDeficit, comboCounters = { easy: 0, medium: 0, hard: 0 } }) {
+function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyDeficit, typeDeficit, comboCounters = { easy: 0, medium: 0, hard: 0 } }) {
   const role = jobRole || 'Professional';
   // NEVER default to generic corporate terms — caller must supply meaningful skills
   // or document keywords. Defaulting to 'process management' / 'stakeholder communication'
@@ -616,9 +634,29 @@ function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyD
   }
   while (difficultySeq.length < count) difficultySeq.push(['easy', 'medium', 'hard'][difficultySeq.length % 3]);
 
+  // Build a type sequence honoring the actual remaining deficit per type when
+  // the caller supplies one, instead of cycling `types[i % types.length]` from
+  // index 0 every call. The naive cycle was the root cause of a real bug:
+  // `types` is typically the FULL target sequence (e.g. 10 mcq, then 5
+  // fill_blank, then 5 subjective), and when only a small `count` needs
+  // padding, `i % types.length` for small i just re-samples the front of that
+  // array — almost always "mcq" — regardless of how many mcq/fill/subjective
+  // questions are already sitting in the pool. That produced banks skewed
+  // 80%+ toward mcq. Deficit-tracking fixes it by padding whichever types are
+  // actually still short, the same way difficultyDeficit already does.
+  let typeSeq = null;
+  if (typeDeficit && (typeDeficit.mcq || typeDeficit.fill_blank || typeDeficit.subjective)) {
+    typeSeq = [
+      ...Array(Math.max(0, typeDeficit.mcq || 0)).fill('mcq'),
+      ...Array(Math.max(0, typeDeficit.fill_blank || 0)).fill('fill_blank'),
+      ...Array(Math.max(0, typeDeficit.subjective || 0)).fill('subjective'),
+    ];
+    while (typeSeq.length < count) typeSeq.push(['mcq', 'fill_blank', 'subjective'][typeSeq.length % 3]);
+  }
+
   return Array.from({ length: count }, (_, i) => {
     const difficulty = difficultySeq[i] || 'medium';
-    const t = types[i % types.length];
+    const t = typeSeq ? typeSeq[i] : types[i % types.length];
     const comboIdx = comboCounters[difficulty]++;
 
     let questionText, answer, skill, options;
@@ -631,12 +669,19 @@ function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyD
       const [text, ans] = tpl(s);
       questionText = text; answer = ans; skill = s;
     } else {
-      const { skill: s, tpl } = pickCombo(FALLBACK_TEMPLATES[difficulty], fallbackSkills, comboIdx);
-      questionText = tpl(s);
+      const { skill: s, tplIdx } = pickCombo(FALLBACK_TEMPLATES[difficulty], fallbackSkills, comboIdx);
+      questionText = FALLBACK_TEMPLATES[difficulty][tplIdx](s);
       answer = 'A';
       skill = s;
-      // Options are skill + phrasing-bank specific so no two MCQs share an identical
-      // option set, even when the same skill recurs across difficulty tiers.
+      // 8 option banks — matching FALLBACK_TEMPLATES[difficulty].length exactly —
+      // indexed by tplIdx (the SAME index used to pick the question wording),
+      // not a separately-cycling comboIdx. Two independent cycles of different
+      // lengths (previously: 8 templates vs 4 option banks) realign every
+      // LCM(8,4)=8 steps and reuse an identical (skill, option-bank) pairing —
+      // producing two different-worded questions with byte-identical options,
+      // which the validator correctly flags as a duplicate MCQ option set.
+      // Keeping both cycles the same length means every (skill, template)
+      // combo gets its own distinct option bank within the primary grid.
       const OPTION_BANKS = [
         (sk) => [`A) Assess the ${sk} situation, identify the root cause, and develop a structured plan`,
                  `B) Escalate the ${sk} issue immediately without gathering information`,
@@ -654,8 +699,24 @@ function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyD
                  `B) Prioritize speed over accuracy when handling ${sk}`,
                  `C) Avoid ${sk} decisions that require cross-team input`,
                  `D) Handle ${sk} in isolation without documenting the rationale`],
+        (sk) => [`A) Validate the ${sk} inputs against requirements before proceeding`,
+                 `B) Skip validation on ${sk} to save time`,
+                 `C) Defer the ${sk} decision to whoever is available later`,
+                 `D) Apply the same ${sk} approach regardless of context`],
+        (sk) => [`A) Document the ${sk} decision and the reasoning behind it`,
+                 `B) Make the ${sk} call verbally with no record`,
+                 `C) Leave the ${sk} outcome ambiguous for others to interpret`,
+                 `D) Copy a prior unrelated decision for ${sk} without review`],
+        (sk) => [`A) Escalate ${sk} only after confirming it meets the defined threshold`,
+                 `B) Escalate every ${sk} issue regardless of severity`,
+                 `C) Never escalate ${sk} issues to avoid overhead`,
+                 `D) Let the requester decide if ${sk} should be escalated`],
+        (sk) => [`A) Re-check the ${sk} outcome against the original objective`,
+                 `B) Assume the ${sk} outcome is correct without re-checking`,
+                 `C) Move on from ${sk} without confirming the outcome`,
+                 `D) Ask someone else to confirm ${sk} without reviewing it yourself`],
       ];
-      options = OPTION_BANKS[comboIdx % OPTION_BANKS.length](s);
+      options = OPTION_BANKS[tplIdx % OPTION_BANKS.length](s);
     }
 
     return {
@@ -773,8 +834,18 @@ export function validateQuestionBank(questions, target, config = {}) {
       checks.genericPhrasing.push(i);
     }
 
-    // Header/footer/filename/person-name derived — hard fail
-    const qText = [q.question, q.explanation, q.skillArea].filter(Boolean).join(' ');
+    // Header/footer/filename/person-name derived — hard fail.
+    // Scoped to q.question ONLY (not explanation/skillArea): those two fields
+    // are our OWN internal labels, and fallback padding legitimately uses the
+    // source filename there as a last-resort topic tag when no real
+    // keywords/skills were available (e.g. skillArea: "Handbook_v2.docx") —
+    // that's not a question "derived from metadata," it's just a label, and
+    // scanning it here was a false-positive (a real uploaded filename
+    // containing "v2" or ".docx" would fail every fallback question that used
+    // it as its topic). The actual requirement is that the QUESTION ITSELF
+    // must not be about a page number/version/filename/author — not that our
+    // internal bookkeeping fields must avoid ever mentioning one.
+    const qText = q.question || '';
     if (HEADER_FOOTER_PATTERNS.some(re => re.test(qText)) || PERSON_NAME_PATTERNS.some(re => re.test(qText))) {
       hardFailures.push(`Question ${i}: derived from document metadata or a person's name, not body content`);
       checks.headerFooterDerived.push(i);
@@ -864,14 +935,25 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     const targetEasy = Math.round(num * 0.35);
     const targetMedium = Math.round(num * 0.45);
     const targetHard = Math.max(1, num - targetEasy - targetMedium);
-    const curEasy = pool.filter(q => (q.difficulty || 'medium') === 'easy').length;
-    const curMedium = pool.filter(q => (q.difficulty || 'medium') === 'medium').length;
-    const curHard = pool.filter(q => (q.difficulty || 'medium') === 'hard').length;
+    const targetMcqCount  = Math.ceil(num * 0.50);
+    const targetFillCount = Math.round(num * 0.25);
+    const targetSubjCount = Math.max(0, num - targetMcqCount - targetFillCount);
 
     const comboCounters = { easy: 0, medium: 0, hard: 0 };
     let attempt = 0;
     while (pool.length < num && attempt < 30) {
       const remaining = num - pool.length;
+      // Recomputed every round (unlike a fixed deficit) so type balance
+      // converges toward target even as padding rounds add content —
+      // this is what fixes banks that ended up 80%+ mcq: the type mix
+      // still needed is measured against what's ACTUALLY in the pool right
+      // now, not a snapshot from before any padding was added.
+      const curEasy   = pool.filter(q => (q.difficulty || 'medium') === 'easy').length;
+      const curMedium = pool.filter(q => (q.difficulty || 'medium') === 'medium').length;
+      const curHard   = pool.filter(q => (q.difficulty || 'medium') === 'hard').length;
+      const curMcq  = pool.filter(q => !q.type || q.type === 'mcq').length;
+      const curFill = pool.filter(q => q.type === 'fill_blank').length;
+      const curSubj = pool.filter(q => q.type === 'subjective').length;
       const fallbackBatch = buildFallbackQuestions(remaining, {
         types,
         skillsList,
@@ -880,6 +962,11 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
           easy: Math.max(0, targetEasy - curEasy),
           medium: Math.max(0, targetMedium - curMedium),
           hard: Math.max(0, targetHard - curHard),
+        },
+        typeDeficit: {
+          mcq: Math.max(0, targetMcqCount - curMcq),
+          fill_blank: Math.max(0, targetFillCount - curFill),
+          subjective: Math.max(0, targetSubjCount - curSubj),
         },
         comboCounters, // shared & mutated across rounds so no combo repeats
       });
@@ -902,7 +989,17 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     // Still short — generate emergency fallback for the remaining gap
     const emergencyComboCounters = { easy: 9999, medium: 9999, hard: 9999 };
     const gap = num - rebalanced.length;
-    const emergency = buildFallbackQuestions(gap, { types, skillsList, jobRole, comboCounters: emergencyComboCounters });
+    const emCurMcq  = rebalanced.filter(q => !q.type || q.type === 'mcq').length;
+    const emCurFill = rebalanced.filter(q => q.type === 'fill_blank').length;
+    const emCurSubj = rebalanced.filter(q => q.type === 'subjective').length;
+    const emergency = buildFallbackQuestions(gap, {
+      types, skillsList, jobRole, comboCounters: emergencyComboCounters,
+      typeDeficit: {
+        mcq: Math.max(0, Math.ceil(num * 0.50) - emCurMcq),
+        fill_blank: Math.max(0, Math.round(num * 0.25) - emCurFill),
+        subjective: Math.max(0, num - Math.ceil(num * 0.50) - Math.round(num * 0.25) - emCurSubj),
+      },
+    });
     return tagMetadata([...rebalanced, ...emergency].slice(0, num), { generatedFrom: 'jd' });
   }
 
@@ -1005,10 +1102,13 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
     const shortage = num - pool.length;
     console.warn(`[generateQuestionsFromDocument] "${sourceName}": LLM gave ${pool.length}/${num} across all chunks — padding ${shortage} with doc-keyword templates`);
     const docKeywords = extractDocKeywords(text, 8);
-    const fallbackSkills = docKeywords.length > 0 ? docKeywords : [sourceName || 'process documentation'];
+    const fallbackSkills = docKeywords.length > 0 ? docKeywords : [SAFE_FALLBACK_TOPIC];
     const targetEasy   = Math.round(num * 0.35);
     const targetMedium = Math.round(num * 0.45);
     const targetHard   = Math.max(1, num - targetEasy - targetMedium);
+    const targetMcqCount  = Math.ceil(num * 0.50);
+    const targetFillCount = Math.round(num * 0.25);
+    const targetSubjCount = Math.max(0, num - targetMcqCount - targetFillCount);
     const comboCounters = { easy: 0, medium: 0, hard: 0 };
     let att = 0;
     while (pool.length < num && att < 30) {
@@ -1019,6 +1119,11 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
           easy:   Math.max(0, targetEasy   - pool.filter(q => q.difficulty === 'easy').length),
           medium: Math.max(0, targetMedium - pool.filter(q => q.difficulty === 'medium').length),
           hard:   Math.max(0, targetHard   - pool.filter(q => q.difficulty === 'hard').length),
+        },
+        typeDeficit: {
+          mcq:        Math.max(0, targetMcqCount  - pool.filter(q => !q.type || q.type === 'mcq').length),
+          fill_blank: Math.max(0, targetFillCount - pool.filter(q => q.type === 'fill_blank').length),
+          subjective: Math.max(0, targetSubjCount - pool.filter(q => q.type === 'subjective').length),
         },
         comboCounters,
       });
@@ -1036,8 +1141,13 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
     if (rebalanced.length > num) return tagMetadata(rebalanced.slice(0, num), meta);
     const gap = num - rebalanced.length;
     const emergency = buildFallbackQuestions(gap, {
-      types, skillsList: [sourceName || 'this process'], jobRole,
+      types, skillsList: [SAFE_FALLBACK_TOPIC], jobRole,
       comboCounters: { easy: 9999, medium: 9999, hard: 9999 },
+      typeDeficit: {
+        mcq:        Math.max(0, Math.ceil(num * 0.50) - rebalanced.filter(q => !q.type || q.type === 'mcq').length),
+        fill_blank: Math.max(0, Math.round(num * 0.25) - rebalanced.filter(q => q.type === 'fill_blank').length),
+        subjective: Math.max(0, num - Math.ceil(num * 0.50) - Math.round(num * 0.25) - rebalanced.filter(q => q.type === 'subjective').length),
+      },
     });
     return tagMetadata([...rebalanced, ...emergency].slice(0, num), meta);
   }
@@ -1091,38 +1201,53 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
       processDelivery: !!source.processDelivery,
     });
 
-    // Accept non-duplicates up to `count`
-    let accepted = 0;
+    // Accept non-duplicates up to `count` — tracked in a per-source array
+    // (not just a count) so the padding step below can measure the actual
+    // type mix already accepted for THIS source, not just how many are short.
+    const acceptedForSource = [];
     for (const q of (batch || [])) {
-      if (accepted >= count) break;
+      if (acceptedForSource.length >= count) break;
       const key = dedupeKey(q);
       if (!key || seenKeys.has(key)) continue;
       seenKeys.add(key);
-      allQuestions.push({
+      const tagged = {
         ...q,
         id: q.id || randomUUID(),
         sourceFile: source.name || 'Unknown',
         sourceType: source.sourceType || 'jd',
         sourceSection: q.sourceSection || null,
-      });
-      accepted++;
+      };
+      allQuestions.push(tagged);
+      acceptedForSource.push(tagged);
     }
 
     // Pad with fallback templates if the LLM came up short after cross-file dedup.
     // RC-2 fix: use document keywords (not role skills) so fallback content stays
     // grounded in this document's vocabulary rather than generic corporate terms.
-    const gap = count - accepted;
+    const gap = count - acceptedForSource.length;
     if (gap > 0) {
-      console.warn(`[generateQuestionsFromFiles] "${source.name}": got ${accepted}/${count} after cross-file dedup — padding ${gap} with doc-keyword templates`);
+      console.warn(`[generateQuestionsFromFiles] "${source.name}": got ${acceptedForSource.length}/${count} after cross-file dedup — padding ${gap} with doc-keyword templates`);
       const docKeywordsForPad = extractDocKeywords(text, 12);
       const paddingSkills = docKeywordsForPad.length > 0
         ? docKeywordsForPad
-        : (srcSkills.length > 0 ? srcSkills : [source.name || 'process documentation']);
+        : (srcSkills.length > 0 ? srcSkills : [SAFE_FALLBACK_TOPIC]);
+      const targetMcqCount  = Math.ceil(count * 0.50);
+      const targetFillCount = Math.round(count * 0.25);
+      const targetSubjCount = Math.max(0, count - targetMcqCount - targetFillCount);
       const padding = buildFallbackQuestions(gap, {
         types:         buildTypeSeqLocal(gap),
         skillsList:    paddingSkills,
         jobRole:       srcJobRole,
         comboCounters: { easy: 99999, medium: 99999, hard: 99999 },
+        // Deficit measured against THIS source's own target count and what's
+        // actually accepted for it — not a fresh 50/25/25 split of just the
+        // gap, which was the root cause of banks skewing 80%+ toward mcq
+        // (padding never "knew" the accepted set was already mcq-heavy).
+        typeDeficit: {
+          mcq:        Math.max(0, targetMcqCount  - acceptedForSource.filter(q => !q.type || q.type === 'mcq').length),
+          fill_blank: Math.max(0, targetFillCount - acceptedForSource.filter(q => q.type === 'fill_blank').length),
+          subjective: Math.max(0, targetSubjCount - acceptedForSource.filter(q => q.type === 'subjective').length),
+        },
       });
       for (const q of padding) {
         const key = dedupeKey(q);
