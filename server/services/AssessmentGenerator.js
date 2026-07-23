@@ -49,26 +49,46 @@ function mergeUnique(pool, batch) {
   return combined;
 }
 
-// Merge deterministic fallback content using exact-text matching rather than the
-// fuzzy 70%-overlap check: fallback questions deliberately reuse a fixed sentence
-// template with only the skill substituted, so most tokens are always shared by
-// design — the fuzzy check would (incorrectly) flag them as near-duplicates even
-// though each combo targets a distinct skill/scenario. Uniqueness here is already
-// guaranteed by the skill x template combo index, so exact-match is sufficient.
+// Merge deterministic fallback content into the pool.
+//
+// Originally this used ONLY exact-text matching, on the assumption that each
+// skill x template combo is inherently distinct enough that the fuzzy
+// 70%-overlap check (used everywhere else, including the final
+// validateQuestionBank gate) would incorrectly flag them as near-duplicates.
+// That assumption breaks down whenever the skill/keyword pool feeding the
+// templates is small relative to the requested count: pickCombo() then has
+// to reuse the same skill across many slots, and two short questions that
+// share the skill name plus a few common template words can genuinely cross
+// 70% token overlap even with different template wording. Since
+// validateQuestionBank enforces the SAME fuzzy threshold on the final bank
+// regardless of where a question came from, letting fallback content bypass
+// it here only defers the rejection — it doesn't prevent it. So fallback
+// content is now held to the identical fuzzy standard as LLM-generated
+// content, via the same normalize/overlap logic as deduplicateQuestions().
 function mergeFallbackUnique(pool, batch) {
   if (!Array.isArray(batch) || batch.length === 0) return pool;
+  const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean);
+  const seenTokens = pool.map(q => new Set(normalize(q.question)));
   const seen = new Set(pool.map(q => (q.question || '').trim().toLowerCase()));
   const seenOptionSets = new Set(pool.filter(q => q.options?.length).map(q => q.options.map(o => o.toLowerCase()).sort().join('|')));
   const additions = [];
   for (const q of batch) {
     const key = (q.question || '').trim().toLowerCase();
     if (!key || seen.has(key)) continue;
+    const tokens = new Set(normalize(q.question));
+    const isNearDup = seenTokens.some(prevTokens => {
+      const intersection = [...tokens].filter(t => prevTokens.has(t)).length;
+      const union = new Set([...tokens, ...prevTokens]).size;
+      return union > 0 && intersection / union > 0.70;
+    });
+    if (isNearDup) continue;
     if (q.options?.length) {
       const optKey = q.options.map(o => o.toLowerCase()).sort().join('|');
       if (seenOptionSets.has(optKey)) continue; // reject — identical option set already used
       seenOptionSets.add(optKey);
     }
     seen.add(key);
+    seenTokens.push(tokens);
     additions.push(q);
   }
   return [...pool, ...additions];
