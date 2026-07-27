@@ -741,6 +741,23 @@ export const RoleLibrary = {
     }
     return best;
   },
+  // Exact-duplicate check for ROLE CREATION ONLY — completely separate from
+  // findByName's intentional fuzzy matching (contains/word-overlap tiers),
+  // which is correct and must stay unchanged for its actual use cases
+  // (matching an employee's loosely-typed job title to the right role in
+  // auth.js/users.js/assessment.js and this file's own /search endpoint).
+  // Using findByName for duplicate-prevention was the bug: "Quality Analyst –
+  // IT Infra" and "Quality Analyst – LPO" share enough words to trip
+  // findByName's word-overlap tier even though they are different, legitimate
+  // roles. This checks case-insensitive, whitespace/punctuation-normalized
+  // EXACT equality only — same normalization as findByName's own tier 1, but
+  // with no contains/overlap fallback.
+  async findExactDuplicate(roleName, companyId) {
+    const all = await this.getByCompany(companyId);
+    if (!roleName?.trim() || !all?.length) return null;
+    const q = roleName.toLowerCase().trim().replace(/[-_/]+/g, ' ');
+    return all.find(r => r.roleName?.toLowerCase().trim().replace(/[-_/]+/g, ' ') === q) || null;
+  },
   async create(doc) {
     const sb = getSB();
     if (sb) { const r = await sbInsert('role_library', doc.id, doc); if (r) return r; }

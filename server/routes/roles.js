@@ -53,16 +53,23 @@ function buildTypeSequence(num) {
 // Build the per-file source list used by generateQuestionsFromFiles.
 // Combines jdFiles + supportingFiles stored on the role document.
 function buildFileSources(role) {
+  const validJdFiles = (role.jdFiles || []).filter(f => f.text?.trim());
+  const validSupportingFiles = (role.supportingFiles || []).filter(f => f.text?.trim());
+  const totalFileCount = validJdFiles.length + validSupportingFiles.length;
+  // Default per-file count when the admin didn't explicitly configure one:
+  // an even share of a 50-question pool across all uploaded files (min 10
+  // each), not a flat 5. A flat 5-per-file default meant a role with 2-3
+  // files never reached anywhere near "50 questions by default," starving
+  // regeneration/randomization of enough distinct content to draw from.
+  // Files WITH an explicit questionCount are completely unaffected.
+  const defaultPerFile = totalFileCount > 0 ? Math.max(10, Math.floor(50 / totalFileCount)) : 10;
+
   const sources = [];
-  for (const f of (role.jdFiles || [])) {
-    if (f.text?.trim()) {
-      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
-    }
+  for (const f of validJdFiles) {
+    sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
   }
-  for (const f of (role.supportingFiles || [])) {
-    if (f.text?.trim()) {
-      sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || 5, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
-    }
+  for (const f of validSupportingFiles) {
+    sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
   }
   return sources;
 }
@@ -387,8 +394,11 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
     const { roleName, department, jobDescription, skills, status, jdFiles, supportingFiles, jdSources, supportingDocs } = req.body;
     if (!roleName?.trim()) return res.status(400).json({ success: false, error: 'Role name is required' });
 
-    // Prevent duplicates within company
-    const existing = await RoleLibrary.findByName(roleName, companyId);
+    // Prevent EXACT duplicates only — findByName is intentionally fuzzy
+    // (used elsewhere for JD/job-title auto-matching) and must not be used
+    // here, since "Quality Analyst – IT Infra" and "Quality Analyst – LPO"
+    // are legitimately different roles that happen to share words.
+    const existing = await RoleLibrary.findExactDuplicate(roleName, companyId);
     if (existing) return res.status(409).json({ success: false, error: `Role "${roleName}" already exists in your company` });
 
     // Derive combined JD text: prefer jdFiles content, fall back to plain jobDescription
@@ -990,8 +1000,25 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
     // legacy role.questionBank field for roles created before versioning existed.
     const existingVersions = await QuestionBankVersions.getByRole(req.params.id);
     const latestVersion = existingVersions[existingVersions.length - 1];
+    const approvedVersion = existingVersions.find(v => v.status === 'approved');
     const existingBank = latestVersion?.questions || role.questionBank || [];
     const manualQuestions = mode === 'ai-only' ? existingBank.filter(q => q.isManual === true) : [];
+
+    // Cross-version diversity: bounded avoid-set (approved + latest draft
+    // only — never full history) fed to the generator so a regenerate
+    // rejects near-duplicates of what employees already saw, instead of
+    // regenerating near-identical content for content that hasn't changed.
+    // Deduped by id in case latest === approved.
+    const avoidById = new Map();
+    for (const q of (approvedVersion?.questions || [])) if (q?.id) avoidById.set(q.id, q);
+    for (const q of (latestVersion?.questions || [])) if (q?.id) avoidById.set(q.id, q);
+    const avoidQuestions = avoidById.size > 0 ? [...avoidById.values()] : existingBank;
+
+    // Fallback-padding combo high-water-mark from the previous generation, so
+    // deterministic template content doesn't reproduce the same (skill,
+    // template) pairing every regenerate — see AssessmentGenerator.js's
+    // withFinalCombo/startingComboCounters for the full explanation.
+    const priorComboCounters = latestVersion?.generationConfig?.finalComboCounters || null;
 
     const totalTarget = hasFiles ? filesTotalCount(updatedRole) : Math.min(Math.max(parseInt(questionCount) || 50, 5), 200);
     const aiTarget = mode === 'ai-only' ? Math.max(0, totalTarget - manualQuestions.length) : totalTarget;
@@ -1022,6 +1049,8 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
       }
       aiQuestions = await generateQuestionsFromFiles(genSources, {
         jobRole: updatedRole.roleName, skills: updatedRole.skills || [], seed: `qbank-${updatedRole.id}-regen-${Date.now()}`,
+        avoidQuestions,
+        startingComboCountersBySource: (priorComboCounters && typeof priorComboCounters === 'object' && !('easy' in priorComboCounters)) ? priorComboCounters : {},
       });
     } else {
       const mcqCount = Math.ceil(aiTarget * 0.50);
@@ -1035,12 +1064,18 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
         questionTypes: [...Array(mcqCount).fill('mcq'), ...Array(fillCount).fill('fill_blank'), ...Array(subjCount).fill('subjective')],
         employeeSeed: `qbank-${updatedRole.id}-regen-${Date.now()}`,
         supportingDocs: updatedRole.supportingDocs || [],
+        avoidQuestions,
+        startingComboCounters: (priorComboCounters && 'easy' in priorComboCounters) ? priorComboCounters : null,
       });
     }
 
     if (!Array.isArray(aiQuestions)) {
       return res.status(500).json({ success: false, error: 'Question generation failed. Existing approved bank (if any) is untouched.' });
     }
+
+    // Captured before any array spreading below — spreading an array into a
+    // new one drops non-index own properties like this.
+    const finalComboCounters = aiQuestions.finalComboCounters || null;
 
     // Count validation: strict for 'all' mode, lenient for 'ai-only'
     if (mode === 'all' && aiQuestions.length !== aiTarget) {
@@ -1068,7 +1103,7 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
       version: await QuestionBankVersions.getNextVersion(req.params.id),
       questions: bank,
       questionCount: bank.length,
-      generationConfig: { questionCount, mode, difficultyDist: { easy: 0.35, medium: 0.45, hard: 0.20 }, typeDist, fileSources: fileSources.map(f => ({ name: f.name, questionCount: f.questionCount, stakeholder: f.stakeholder, processDelivery: f.processDelivery })) },
+      generationConfig: { questionCount, mode, difficultyDist: { easy: 0.35, medium: 0.45, hard: 0.20 }, typeDist, fileSources: fileSources.map(f => ({ name: f.name, questionCount: f.questionCount, stakeholder: f.stakeholder, processDelivery: f.processDelivery })), finalComboCounters },
       validationReport: validation,
     });
 

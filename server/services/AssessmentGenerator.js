@@ -5,90 +5,117 @@
  */
 import { randomUUID } from 'crypto';
 
-// Deduplicate questions by meaning: remove questions whose text is >70% similar
-// to any already-seen question (simple normalized-token overlap check)
-function deduplicateQuestions(questions) {
-  const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean);
-  const normOpt = (o) => (o || '').toLowerCase().replace(/^[a-d]\)\s*/i, '').trim();
-  const seen = [];
-  const seenOptionSets = new Set(); // catches identical MCQ option sets reused across different questions
-  const seenAnswers = new Set();    // catches identical fill_blank/subjective answers reused verbatim
-  return questions.filter(q => {
-    if (!q || !q.question) return false;
-    const tokens = new Set(normalize(q.question));
-    for (const prev of seen) {
-      const prevTokens = new Set(normalize(prev.question));
-      const intersection = [...tokens].filter(t => prevTokens.has(t)).length;
-      const union = new Set([...tokens, ...prevTokens]).size;
-      if (union > 0 && intersection / union > 0.70) return false; // too similar
-    }
+// ── Shared near-duplicate / seen-content tracking ────────────────────────────
+// Single source of truth for "have we already produced this question" —
+// previously this logic was independently copy-pasted across
+// deduplicateQuestions and mergeFallbackUnique (two implementations that
+// could silently drift). Consolidated into one tracker so there is exactly
+// ONE normalize/overlap implementation in the file, and so it can be
+// pre-seeded with EXTERNAL content (e.g. a prior version's questions) —
+// which is what the cross-version regeneration-diversity filter needs,
+// without adding a third copy of this logic.
+function normalizeTokens(s) {
+  return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean);
+}
+function normalizeOption(o) {
+  return (o || '').toLowerCase().replace(/^[a-d]\)\s*/i, '').trim();
+}
+function isNearDuplicateTokens(tokensA, tokensB, threshold = 0.70) {
+  const intersection = [...tokensA].filter(t => tokensB.has(t)).length;
+  const union = new Set([...tokensA, ...tokensB]).size;
+  return union > 0 && intersection / union > threshold;
+}
+
+// Tracks question-text token sets (fuzzy, >70% overlap = duplicate), MCQ
+// option sets (exact, order-independent), and fill_blank/subjective answers
+// (exact) across a growing set of questions. `preSeededQuestions` lets a
+// caller seed the tracker with content it should treat as "already used"
+// without those questions being part of the batch actually being built.
+function createSeenTracker(preSeededQuestions = []) {
+  const tokenSets = [];
+  const optionSets = new Set();
+  const answers = new Set();
+  const texts = new Set();
+
+  function add(q) {
+    if (!q || !q.question) return;
+    tokenSets.push(new Set(normalizeTokens(q.question)));
+    texts.add((q.question || '').trim().toLowerCase());
     if (Array.isArray(q.options) && q.options.length) {
-      const normOpts = q.options.map(normOpt);
-      // Reject duplicate options within the same question
-      if (new Set(normOpts).size !== normOpts.length) return false;
-      // Reject if this exact option set has already appeared on a different question
-      // (guards against templated fallback content reusing the same generic choices)
-      const optionSetKey = [...normOpts].sort().join('|');
-      if (optionSetKey && seenOptionSets.has(optionSetKey)) return false;
-      seenOptionSets.add(optionSetKey);
+      const key = q.options.map(normalizeOption).sort().join('|');
+      if (key) optionSets.add(key);
     } else if (q.answer && (q.type === 'fill_blank' || q.type === 'subjective')) {
-      const answerKey = (q.answer || '').toLowerCase().trim();
-      if (answerKey && seenAnswers.has(answerKey)) return false;
-      seenAnswers.add(answerKey);
+      const key = q.answer.toLowerCase().trim();
+      if (key) answers.add(key);
     }
-    seen.push(q);
+  }
+  preSeededQuestions.forEach(add);
+
+  return {
+    add,
+    isDuplicate(q) {
+      if (!q || !q.question) return true; // no text = always reject
+      const key = (q.question || '').trim().toLowerCase();
+      if (texts.has(key)) return true;
+      const tokens = new Set(normalizeTokens(q.question));
+      if (tokenSets.some(prev => isNearDuplicateTokens(tokens, prev))) return true;
+      if (Array.isArray(q.options) && q.options.length) {
+        const normOpts = q.options.map(normalizeOption);
+        if (new Set(normOpts).size !== normOpts.length) return true; // dup within itself
+        const optKey = normOpts.sort().join('|');
+        if (optKey && optionSets.has(optKey)) return true;
+      } else if (q.answer && (q.type === 'fill_blank' || q.type === 'subjective')) {
+        const ansKey = q.answer.toLowerCase().trim();
+        if (ansKey && answers.has(ansKey)) return true;
+      }
+      return false;
+    },
+  };
+}
+
+// Deduplicate questions by meaning: remove questions whose text is >70% similar
+// to any already-seen question. `avoidSet` (optional) pre-seeds the tracker
+// with external content (e.g. a prior approved version's questions) so
+// regeneration can reject near-duplicates of what employees already saw, not
+// just duplicates within the current batch.
+function deduplicateQuestions(questions, avoidSet = []) {
+  const tracker = createSeenTracker(avoidSet);
+  return questions.filter(q => {
+    if (tracker.isDuplicate(q)) return false;
+    tracker.add(q);
     return true;
   });
 }
 
 // Merge a new batch into an existing (already-deduplicated) pool, keeping only
-// questions that are unique against the pool AND against each other.
-function mergeUnique(pool, batch) {
+// questions that are unique against the pool, each other, AND (if supplied)
+// an external avoid-set.
+function mergeUnique(pool, batch, avoidSet = []) {
   if (!Array.isArray(batch) || batch.length === 0) return pool;
-  const combined = deduplicateQuestions([...pool, ...batch]);
-  return combined;
+  return deduplicateQuestions([...pool, ...batch], avoidSet);
 }
 
 // Merge deterministic fallback content into the pool.
 //
-// Originally this used ONLY exact-text matching, on the assumption that each
-// skill x template combo is inherently distinct enough that the fuzzy
-// 70%-overlap check (used everywhere else, including the final
-// validateQuestionBank gate) would incorrectly flag them as near-duplicates.
-// That assumption breaks down whenever the skill/keyword pool feeding the
-// templates is small relative to the requested count: pickCombo() then has
-// to reuse the same skill across many slots, and two short questions that
-// share the skill name plus a few common template words can genuinely cross
-// 70% token overlap even with different template wording. Since
-// validateQuestionBank enforces the SAME fuzzy threshold on the final bank
-// regardless of where a question came from, letting fallback content bypass
-// it here only defers the rejection — it doesn't prevent it. So fallback
-// content is now held to the identical fuzzy standard as LLM-generated
-// content, via the same normalize/overlap logic as deduplicateQuestions().
-function mergeFallbackUnique(pool, batch) {
+// Fallback content is held to the SAME fuzzy standard as LLM-generated
+// content (via the shared tracker above) — a prior version of this function
+// used only exact-text matching, on the assumption that each skill x template
+// combo is inherently distinct enough that fuzzy overlap would incorrectly
+// flag them as near-duplicates. That assumption breaks down whenever the
+// skill/keyword pool feeding the templates is small relative to the
+// requested count. Since validateQuestionBank enforces the same fuzzy
+// threshold on the final bank regardless of where a question came from,
+// letting fallback content bypass it here only defers the rejection.
+// `avoidSet` (optional) additionally rejects fallback content that repeats a
+// prior version's questions — the same cross-version diversity guarantee
+// applied to the LLM path.
+function mergeFallbackUnique(pool, batch, avoidSet = []) {
   if (!Array.isArray(batch) || batch.length === 0) return pool;
-  const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean);
-  const seenTokens = pool.map(q => new Set(normalize(q.question)));
-  const seen = new Set(pool.map(q => (q.question || '').trim().toLowerCase()));
-  const seenOptionSets = new Set(pool.filter(q => q.options?.length).map(q => q.options.map(o => o.toLowerCase()).sort().join('|')));
+  const tracker = createSeenTracker([...avoidSet, ...pool]);
   const additions = [];
   for (const q of batch) {
-    const key = (q.question || '').trim().toLowerCase();
-    if (!key || seen.has(key)) continue;
-    const tokens = new Set(normalize(q.question));
-    const isNearDup = seenTokens.some(prevTokens => {
-      const intersection = [...tokens].filter(t => prevTokens.has(t)).length;
-      const union = new Set([...tokens, ...prevTokens]).size;
-      return union > 0 && intersection / union > 0.70;
-    });
-    if (isNearDup) continue;
-    if (q.options?.length) {
-      const optKey = q.options.map(o => o.toLowerCase()).sort().join('|');
-      if (seenOptionSets.has(optKey)) continue; // reject — identical option set already used
-      seenOptionSets.add(optKey);
-    }
-    seen.add(key);
-    seenTokens.push(tokens);
+    if (tracker.isDuplicate(q)) continue;
+    tracker.add(q);
     additions.push(q);
   }
   return [...pool, ...additions];
@@ -161,7 +188,29 @@ ABSOLUTE RULES:
 13. OPTION QUALITY: MCQ distractors must be plausible but clearly distinguishable from the correct answer. Avoid "all of the above", "none of the above", and trick options. Each wrong option should represent a genuinely mistaken approach, not an obviously silly one.`;
 }
 
-function buildUserPrompt({ count, jobRole, jdText, skillsList, types, seed, supportingDocsText }) {
+// Builds a capped "these were already used, produce different scenarios"
+// prompt section for regeneration — sourced from the SAME avoid-set the
+// post-hoc cross-version reject filter uses (see mergeUnique/mergeFallbackUnique
+// callers), so the LLM's own attempt to diverge and the reject filter never
+// disagree on what counts as "already used". Capped at ~40 prior questions,
+// first ~12 words each — enough to nudge divergence without the token/latency
+// cost of injecting full prior question text on every regenerate call.
+function buildAvoidSection(avoidQuestions) {
+  if (!Array.isArray(avoidQuestions) || avoidQuestions.length === 0) return '';
+  const capped = avoidQuestions.slice(0, 40).map(q => {
+    const text = (q?.question || q || '').toString().trim();
+    const words = text.split(/\s+/).slice(0, 12).join(' ');
+    return `- ${words}${text.split(/\s+/).length > 12 ? '...' : ''}`;
+  }).filter(Boolean);
+  if (capped.length === 0) return '';
+  return `
+=== ALREADY USED — DO NOT REPEAT (from the previous version) ===
+This is a REGENERATION. The scenarios, wording, and examples below were already used in a prior version and already seen by employees. Every new question must cover DIFFERENT scenarios, wording, and examples — testing the same underlying knowledge is fine, repeating how it was asked is not.
+${capped.join('\n')}
+`;
+}
+
+function buildUserPrompt({ count, jobRole, jdText, skillsList, types, seed, supportingDocsText, avoidQuestions = [] }) {
   const easyCount   = Math.round(count * 0.35);
   const mediumCount = Math.round(count * 0.45);
   const hardCount   = Math.max(1, count - easyCount - mediumCount);
@@ -214,7 +263,7 @@ ${skillsList.length ? `Skills from JD: ${skillsList.join(', ')}` : ''}
 
 === JOB DESCRIPTION ===
 ${jdText || '(No JD provided — infer responsibilities from the job role)'}
-${processDocsSection}
+${processDocsSection}${buildAvoidSection(avoidQuestions)}
 === MANDATORY PRE-GENERATION STEPS ===
 
 STEP 1 — EXTRACT ROLE PROFILE (do this before writing any question):
@@ -317,7 +366,7 @@ ANSWER FORMAT RULES (strictly enforced):
 - mcq answers: Letter only (A, B, C, or D).`;
 }
 
-function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourceType, types, seed, skillsContext = [], stakeholder = false, processDelivery = false }) {
+function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourceType, types, seed, skillsContext = [], stakeholder = false, processDelivery = false, avoidQuestions = [] }) {
   const easyCount   = Math.round(count * 0.35);
   const mediumCount = Math.round(count * 0.45);
   const hardCount   = Math.max(1, count - easyCount - mediumCount);
@@ -343,7 +392,7 @@ Generation Seed: ${seed}${skillsLine}${stakeholderDirective}${processDeliveryDir
 
 === SOURCE DOCUMENT ===
 ${sourceText}
-
+${buildAvoidSection(avoidQuestions)}
 === MANDATORY PRE-GENERATION STEPS ===
 
 STEP 1 — READ THE DOCUMENT AND EXTRACT (do this before writing any question):
@@ -880,7 +929,70 @@ export function validateQuestionBank(questions, target, config = {}) {
   return { valid: passed, passed, errors: hardFailures, hardFailures, warnings, checks };
 }
 
-export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed, supportingDocs }) {
+// Attaches the final combo-counter high-water-mark reached during generation
+// as a property on the returned array (arrays are objects in JS — this
+// doesn't affect Array.isArray/.length/.map/spread for any existing caller).
+// The next regeneration for the same role reads this back and starts its
+// fallback combo cycling from here instead of index 0, so deterministic
+// template padding never repeats a (skill, template) pairing that was
+// already used in a prior version — the root cause of "90% of regenerated
+// questions are identical" when a bank leans on fallback content.
+function withFinalCombo(questions, comboCounters) {
+  questions.finalComboCounters = { ...comboCounters };
+  return questions;
+}
+
+// True last-resort count guarantee: generates enough MORE fallback questions
+// to close the exact gap, deduplicated against `existing` and against each
+// other via mergeFallbackUnique (NOT just concatenated) — a plain
+// `[...existing, ...emergencyBatch]` previously let the emergency batch
+// contain duplicates of itself, since buildFallbackQuestions alone doesn't
+// dedupe. That was always a latent bug; it surfaces more often now that the
+// cross-version avoid-set can exhaust the primary padding loop's budget
+// (small skill pool + a regenerate) and fall through to this branch more
+// frequently than before. Bounded at 10 rounds with an escalating combo
+// offset each round — this is the ONE place that deliberately does NOT take
+// an avoidSet, by design (see call sites), to protect the exact-count
+// guarantee above all else.
+function fillEmergencyGap(existing, num, { types, skillsList, jobRole }) {
+  let combined = existing;
+  let comboCounters = { easy: 9999, medium: 9999, hard: 9999 };
+  let round = 0;
+  while (combined.length < num && round < 10) {
+    const gap = num - combined.length;
+    const curMcq  = combined.filter(q => !q.type || q.type === 'mcq').length;
+    const curFill = combined.filter(q => q.type === 'fill_blank').length;
+    const curSubj = combined.filter(q => q.type === 'subjective').length;
+    const batch = buildFallbackQuestions(gap, {
+      types, skillsList, jobRole, comboCounters,
+      typeDeficit: {
+        mcq: Math.max(0, Math.ceil(num * 0.50) - curMcq),
+        fill_blank: Math.max(0, Math.round(num * 0.25) - curFill),
+        subjective: Math.max(0, num - Math.ceil(num * 0.50) - Math.round(num * 0.25) - curSubj),
+      },
+    });
+    combined = mergeFallbackUnique(combined, batch);
+    comboCounters = { easy: comboCounters.easy + 1000, medium: comboCounters.medium + 1000, hard: comboCounters.hard + 1000 };
+    round++;
+  }
+  // Absolute final guarantee: count must NEVER come up short, even if it
+  // means accepting a rare duplicate. This only triggers when the
+  // skill/template combo space is nearly exhausted (very small skill pools,
+  // e.g. 3 skills) — a real, bounded ceiling of the deterministic system, not
+  // a bug (the design review flagged this explicitly). An undercount is a
+  // strictly worse failure than a rare repeat: every downstream consumer
+  // (validateQuestionBank, employee assignment) assumes the exact requested
+  // count, and that contract is more important than avoiding one duplicate
+  // in the rare case a role has almost no extractable skills/keywords.
+  if (combined.length < num) {
+    const stillNeeded = num - combined.length;
+    const forced = buildFallbackQuestions(stillNeeded, { types, skillsList, jobRole, comboCounters });
+    combined = [...combined, ...forced];
+  }
+  return combined.slice(0, num);
+}
+
+export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed, supportingDocs, avoidQuestions = [], startingComboCounters = null }) {
   const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const baseSeed = employeeSeed || randomUUID().slice(0, 8);
@@ -910,7 +1022,7 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     const bufferMultiplier = 1.4 + attempt * 0.3;
     const askFor = Math.min(100, Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
     const seed = attempt === 0 ? baseSeed : `${baseSeed}-retry${attempt}-${randomUUID().slice(0, 6)}`;
-    const prompt = buildUserPrompt({ count: askFor, jobRole, jdText, skillsList, types, seed, supportingDocsText });
+    const prompt = buildUserPrompt({ count: askFor, jobRole, jdText, skillsList, types, seed, supportingDocsText, avoidQuestions });
 
     let batch = await callGroq(system, prompt);
     if (!batch || batch.length === 0) batch = await callGemini(system, prompt);
@@ -921,9 +1033,20 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
       if (grounded.length < batch.length) {
         console.warn(`[generateQuestionsFromJD] attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded questions`);
       }
-      pool = mergeUnique(pool, grounded);
+      pool = mergeUnique(pool, grounded, avoidQuestions);
     }
   }
+
+  // Starting combo counters seed fallback padding's position in the
+  // skill x template grid. Defaults to {0,0,0} for a fresh generation, but a
+  // regenerate call passes in the previous version's finalComboCounters
+  // (via withFinalCombo) so it starts from where the last version left off —
+  // guaranteeing no (skill, template) pairing repeats until the grid is
+  // actually exhausted, instead of every regenerate deterministically
+  // reproducing the same fallback content from index 0.
+  const comboCounters = startingComboCounters
+    ? { ...startingComboCounters }
+    : { easy: 0, medium: 0, hard: 0 };
 
   // Absolute last resort: deterministic template padding to guarantee the exact count.
   // Combos (skill x template, then skill-pair x template) are combinatorially large,
@@ -939,7 +1062,6 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     const targetFillCount = Math.round(num * 0.25);
     const targetSubjCount = Math.max(0, num - targetMcqCount - targetFillCount);
 
-    const comboCounters = { easy: 0, medium: 0, hard: 0 };
     let attempt = 0;
     while (pool.length < num && attempt < 30) {
       const remaining = num - pool.length;
@@ -970,7 +1092,7 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
         },
         comboCounters, // shared & mutated across rounds so no combo repeats
       });
-      pool = mergeFallbackUnique(pool, fallbackBatch);
+      pool = mergeFallbackUnique(pool, fallbackBatch, avoidQuestions);
       attempt++;
     }
   }
@@ -984,26 +1106,20 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
   if (rebalanced.length !== num) {
     console.warn(`[AssessmentGenerator] Post-rebalance count mismatch: ${rebalanced.length}/${num} — applying emergency fix`);
     if (rebalanced.length > num) {
-      return rebalanced.slice(0, num);
+      return withFinalCombo(rebalanced.slice(0, num), comboCounters);
     }
-    // Still short — generate emergency fallback for the remaining gap
-    const emergencyComboCounters = { easy: 9999, medium: 9999, hard: 9999 };
-    const gap = num - rebalanced.length;
-    const emCurMcq  = rebalanced.filter(q => !q.type || q.type === 'mcq').length;
-    const emCurFill = rebalanced.filter(q => q.type === 'fill_blank').length;
-    const emCurSubj = rebalanced.filter(q => q.type === 'subjective').length;
-    const emergency = buildFallbackQuestions(gap, {
-      types, skillsList, jobRole, comboCounters: emergencyComboCounters,
-      typeDeficit: {
-        mcq: Math.max(0, Math.ceil(num * 0.50) - emCurMcq),
-        fill_blank: Math.max(0, Math.round(num * 0.25) - emCurFill),
-        subjective: Math.max(0, num - Math.ceil(num * 0.50) - Math.round(num * 0.25) - emCurSubj),
-      },
-    });
-    return tagMetadata([...rebalanced, ...emergency].slice(0, num), { generatedFrom: 'jd' });
+    // Still short — generate emergency fallback for the remaining gap.
+    // Deliberately NOT seeded from avoidQuestions: this is the true
+    // last-resort guarantee that the exact count is always met, and applying
+    // cross-version rejection here risks that guarantee for roles with a
+    // small skill pool (design review recommendation) — better a rare repeat
+    // of a prior version's content than a broken count. It IS still
+    // deduplicated against the current bank and against itself (fillEmergencyGap).
+    const final = fillEmergencyGap(rebalanced, num, { types, skillsList, jobRole });
+    return withFinalCombo(tagMetadata(final, { generatedFrom: 'jd' }), comboCounters);
   }
 
-  return tagMetadata(rebalanced, { generatedFrom: 'jd' });
+  return withFinalCombo(tagMetadata(rebalanced, { generatedFrom: 'jd' }), comboCounters);
 }
 
 // Stamps every question with the metadata fields required for provenance
@@ -1028,7 +1144,7 @@ function tagMetadata(questions, { generatedFrom, stakeholderFlag = false, proces
 // in the source document's content. Skills from the role are passed as context
 // only (so the LLM understands the employee profile) but are NOT used as a
 // question source. This prevents role skills from overriding document content.
-async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, sourceType, questionCount, questionTypes, seed, skillsContext = [], stakeholder = false, processDelivery = false } = {}) {
+async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, sourceType, questionCount, questionTypes, seed, skillsContext = [], stakeholder = false, processDelivery = false, avoidQuestions = [], startingComboCounters = null } = {}) {
   const num   = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const baseSeed = seed || randomUUID().slice(0, 8);
@@ -1082,7 +1198,7 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
       const askFor = Math.min(100, Math.max(1, Math.ceil(stillNeeded * bufferMultiplier)));
       const attemptSeed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 4)}`;
       const prompt = buildDocumentUserPrompt({
-        count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder, processDelivery,
+        count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder, processDelivery, avoidQuestions,
       });
 
       let batch = await callGroq(system, prompt);
@@ -1093,10 +1209,16 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
         if (grounded.length < batch.length) {
           console.warn(`[generateQuestionsFromDocument] "${sourceName}" chunk${ci} attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded questions`);
         }
-        pool = mergeUnique(pool, grounded);
+        pool = mergeUnique(pool, grounded, avoidQuestions);
       }
     }
   }
+
+  // See generateQuestionsFromJD for why this is seeded from the previous
+  // version instead of always starting at {0,0,0}.
+  const comboCounters = startingComboCounters
+    ? { ...startingComboCounters }
+    : { easy: 0, medium: 0, hard: 0 };
 
   if (pool.length < num) {
     const shortage = num - pool.length;
@@ -1109,7 +1231,6 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
     const targetMcqCount  = Math.ceil(num * 0.50);
     const targetFillCount = Math.round(num * 0.25);
     const targetSubjCount = Math.max(0, num - targetMcqCount - targetFillCount);
-    const comboCounters = { easy: 0, medium: 0, hard: 0 };
     let att = 0;
     while (pool.length < num && att < 30) {
       const remaining = num - pool.length;
@@ -1127,7 +1248,7 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
         },
         comboCounters,
       });
-      pool = mergeFallbackUnique(pool, fb);
+      pool = mergeFallbackUnique(pool, fb, avoidQuestions);
       att++;
     }
   }
@@ -1138,20 +1259,14 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
   const meta = { generatedFrom: sourceType === 'jd' ? 'jd' : 'document', stakeholderFlag: stakeholder, processDeliveryFlag: processDelivery };
 
   if (rebalanced.length !== num) {
-    if (rebalanced.length > num) return tagMetadata(rebalanced.slice(0, num), meta);
-    const gap = num - rebalanced.length;
-    const emergency = buildFallbackQuestions(gap, {
-      types, skillsList: [SAFE_FALLBACK_TOPIC], jobRole,
-      comboCounters: { easy: 9999, medium: 9999, hard: 9999 },
-      typeDeficit: {
-        mcq:        Math.max(0, Math.ceil(num * 0.50) - rebalanced.filter(q => !q.type || q.type === 'mcq').length),
-        fill_blank: Math.max(0, Math.round(num * 0.25) - rebalanced.filter(q => q.type === 'fill_blank').length),
-        subjective: Math.max(0, num - Math.ceil(num * 0.50) - Math.round(num * 0.25) - rebalanced.filter(q => q.type === 'subjective').length),
-      },
-    });
-    return tagMetadata([...rebalanced, ...emergency].slice(0, num), meta);
+    if (rebalanced.length > num) return withFinalCombo(rebalanced.slice(0, num), comboCounters);
+    // True last-resort guarantee — not seeded from avoidQuestions, same
+    // reasoning as generateQuestionsFromJD's emergency path. Deduplicated
+    // against the current bank and against itself via fillEmergencyGap.
+    const final = fillEmergencyGap(rebalanced, num, { types, skillsList: [SAFE_FALLBACK_TOPIC], jobRole });
+    return withFinalCombo(tagMetadata(final, meta), comboCounters);
   }
-  return tagMetadata(rebalanced, meta);
+  return withFinalCombo(tagMetadata(rebalanced, meta), comboCounters);
 }
 
 // ── Per-file multi-source generation ─────────────────────────────────────────
@@ -1169,14 +1284,25 @@ function buildTypeSeqLocal(num) {
 export async function generateQuestionsFromFiles(fileSources, globalContext = {}) {
   if (!Array.isArray(fileSources) || fileSources.length === 0) return [];
 
-  const { jobRole = 'Professional', skills = [], seed: baseSeed = '' } = globalContext;
+  const {
+    jobRole = 'Professional', skills = [], seed: baseSeed = '',
+    avoidQuestions = [],                  // cross-version "don't repeat these" set, applied per-source
+    startingComboCountersBySource = {},   // { [sourceName]: {easy,medium,hard} } from the previous version
+  } = globalContext;
   const allQuestions = [];
-  const seenKeys = new Set();
+  // Shared fuzzy tracker across ALL files (upgraded from exact-text-only
+  // matching) — two different uploaded documents that thematically overlap
+  // (e.g. an Order Processing SOP and an Escalation Handling guide that both
+  // mention "vendor coordination") can produce genuinely near-duplicate
+  // questions across files even though neither file duplicates itself.
+  // Exact-text matching never caught this; the same 70%-overlap standard
+  // used everywhere else in this file now applies here too. Pre-seeded with
+  // avoidQuestions so cross-version diversity is enforced at this level too,
+  // not just inside each per-source generateQuestionsFromDocument call.
+  const tracker = createSeenTracker(avoidQuestions);
+  const finalComboCountersBySource = {};
 
-  const dedupeKey = q =>
-    (q.question || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
-
-  for (const source of fileSources) {
+  for (const [sourceIdx, source] of fileSources.entries()) {
     const text = (source.text || '').trim();
     const count = Math.min(100, Math.max(1, parseInt(source.questionCount) || 5));
     if (!text) continue;
@@ -1199,7 +1325,10 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
       skillsContext:   srcSkills,
       stakeholder:     !!source.stakeholder,
       processDelivery: !!source.processDelivery,
+      avoidQuestions,
+      startingComboCounters: startingComboCountersBySource[source.name] || null,
     });
+    if (batch?.finalComboCounters) finalComboCountersBySource[source.name] = batch.finalComboCounters;
 
     // Accept non-duplicates up to `count` — tracked in a per-source array
     // (not just a count) so the padding step below can measure the actual
@@ -1207,9 +1336,8 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
     const acceptedForSource = [];
     for (const q of (batch || [])) {
       if (acceptedForSource.length >= count) break;
-      const key = dedupeKey(q);
-      if (!key || seenKeys.has(key)) continue;
-      seenKeys.add(key);
+      if (tracker.isDuplicate(q)) continue;
+      tracker.add(q);
       const tagged = {
         ...q,
         id: q.id || randomUUID(),
@@ -1224,6 +1352,19 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
     // Pad with fallback templates if the LLM came up short after cross-file dedup.
     // RC-2 fix: use document keywords (not role skills) so fallback content stays
     // grounded in this document's vocabulary rather than generic corporate terms.
+    //
+    // This is a bounded LOOP with a per-source starting combo offset and a
+    // forced final top-up — a single non-looping attempt here was a real bug:
+    // if two files happen to extract overlapping keywords (common — e.g. two
+    // SOPs both mentioning "escalation" and "vendor coordination"), they
+    // previously started padding from the SAME flat {99999,99999,99999}
+    // combo counters, producing byte-IDENTICAL fallback questions across
+    // files. Those then collided in the shared cross-file `seenKeys` set and
+    // were silently dropped with no retry — causing the whole bank to come
+    // up short of the requested total (observed: 40/50, then 25/50 on a
+    // second regenerate). The per-source hash offset below prevents two
+    // files from ever starting at the same combo point, and the loop +
+    // forced top-up guarantees this source's slice always reaches `count`.
     const gap = count - acceptedForSource.length;
     if (gap > 0) {
       console.warn(`[generateQuestionsFromFiles] "${source.name}": got ${acceptedForSource.length}/${count} after cross-file dedup — padding ${gap} with doc-keyword templates`);
@@ -1234,34 +1375,66 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
       const targetMcqCount  = Math.ceil(count * 0.50);
       const targetFillCount = Math.round(count * 0.25);
       const targetSubjCount = Math.max(0, count - targetMcqCount - targetFillCount);
-      const padding = buildFallbackQuestions(gap, {
-        types:         buildTypeSeqLocal(gap),
-        skillsList:    paddingSkills,
-        jobRole:       srcJobRole,
-        comboCounters: { easy: 99999, medium: 99999, hard: 99999 },
-        // Deficit measured against THIS source's own target count and what's
-        // actually accepted for it — not a fresh 50/25/25 split of just the
-        // gap, which was the root cause of banks skewing 80%+ toward mcq
-        // (padding never "knew" the accepted set was already mcq-heavy).
-        typeDeficit: {
-          mcq:        Math.max(0, targetMcqCount  - acceptedForSource.filter(q => !q.type || q.type === 'mcq').length),
-          fill_blank: Math.max(0, targetFillCount - acceptedForSource.filter(q => q.type === 'fill_blank').length),
-          subjective: Math.max(0, targetSubjCount - acceptedForSource.filter(q => q.type === 'subjective').length),
-        },
-      });
-      for (const q of padding) {
-        const key = dedupeKey(q);
-        if (!key || seenKeys.has(key)) continue;
-        seenKeys.add(key);
-        allQuestions.push({
-          ...q,
-          id: q.id || randomUUID(),
-          sourceFile: source.name || 'Unknown',
-          sourceType: source.sourceType || 'jd',
+
+      let hash = 0;
+      const hashSeed = `${source.name || ''}-${sourceIdx}`;
+      for (let i = 0; i < hashSeed.length; i++) hash = (hash * 31 + hashSeed.charCodeAt(i)) >>> 0;
+      let padComboCounters = {
+        easy: 50000 + (hash % 10000) + sourceIdx * 10000,
+        medium: 50000 + (hash % 10000) + sourceIdx * 10000,
+        hard: 50000 + (hash % 10000) + sourceIdx * 10000,
+      };
+
+      let round = 0;
+      while (acceptedForSource.length < count && round < 10) {
+        const remaining = count - acceptedForSource.length;
+        const padding = buildFallbackQuestions(remaining, {
+          types:         buildTypeSeqLocal(remaining),
+          skillsList:    paddingSkills,
+          jobRole:       srcJobRole,
+          comboCounters: padComboCounters,
+          // Deficit measured against THIS source's own target count and what's
+          // actually accepted for it — not a fresh 50/25/25 split of just the
+          // gap, which was the root cause of banks skewing 80%+ toward mcq.
+          typeDeficit: {
+            mcq:        Math.max(0, targetMcqCount  - acceptedForSource.filter(q => !q.type || q.type === 'mcq').length),
+            fill_blank: Math.max(0, targetFillCount - acceptedForSource.filter(q => q.type === 'fill_blank').length),
+            subjective: Math.max(0, targetSubjCount - acceptedForSource.filter(q => q.type === 'subjective').length),
+          },
         });
+        for (const q of padding) {
+          if (acceptedForSource.length >= count) break;
+          if (tracker.isDuplicate(q)) continue;
+          tracker.add(q);
+          const tagged = { ...q, id: q.id || randomUUID(), sourceFile: source.name || 'Unknown', sourceType: source.sourceType || 'jd' };
+          allQuestions.push(tagged);
+          acceptedForSource.push(tagged);
+        }
+        padComboCounters = { easy: padComboCounters.easy + 1000, medium: padComboCounters.medium + 1000, hard: padComboCounters.hard + 1000 };
+        round++;
+      }
+
+      // Absolute final guarantee for this source: force-fill any residual
+      // shortfall without dedup — count must never come up short, same
+      // philosophy as fillEmergencyGap.
+      if (acceptedForSource.length < count) {
+        const stillNeeded = count - acceptedForSource.length;
+        const forced = buildFallbackQuestions(stillNeeded, {
+          types: buildTypeSeqLocal(stillNeeded), skillsList: paddingSkills, jobRole: srcJobRole, comboCounters: padComboCounters,
+        });
+        for (const q of forced) {
+          const tagged = { ...q, id: q.id || randomUUID(), sourceFile: source.name || 'Unknown', sourceType: source.sourceType || 'jd' };
+          tracker.add(tagged); // still recorded so later sources avoid repeating it, even though it wasn't itself checked
+          allQuestions.push(tagged);
+          acceptedForSource.push(tagged);
+        }
       }
     }
   }
 
+  // Per-source combo high-water-marks — the next regenerate call reads this
+  // back and passes it as startingComboCountersBySource so each file's
+  // fallback padding continues from where it left off, not from index 0.
+  allQuestions.finalComboCounters = finalComboCountersBySource;
   return allQuestions;
 }
