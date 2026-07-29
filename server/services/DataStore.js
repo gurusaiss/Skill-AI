@@ -940,7 +940,7 @@ export const QuestionBankVersions = {
     const all = await this.getByRole(roleId);
     return all.length ? Math.max(...all.map(r => r.version)) + 1 : 1;
   },
-  async create({ roleId, version, questions, questionCount, generationConfig, validationReport }) {
+  async create({ roleId, version, questions, questionCount, generationConfig, validationReport, unlockedAt = null, unlockedBy = null }) {
     const row = {
       id: `qbv-${roleId}-v${version}-${randomUUID()}`,
       role_id: roleId,
@@ -952,6 +952,11 @@ export const QuestionBankVersions = {
       validation_report: validationReport || null,
       approved_by: null,
       approved_at: null,
+      // Set only when this draft was created via the "unlock & regenerate"
+      // flow on a role that had a previously-locked (approved) version — a
+      // fresh draft on a never-locked role leaves these null.
+      unlocked_at: unlockedAt,
+      unlocked_by: unlockedBy,
       created_at: new Date().toISOString(),
     };
     const sb = getSB();
@@ -983,6 +988,24 @@ export const QuestionBankVersions = {
       const { data, error } = await sb.from('question_bank_versions').update(updates).eq('id', id).select('*').maybeSingle();
       if (!error) return data;
       console.warn('[DataStore] question_bank_versions._setStatus:', error.message);
+    }
+    const all = readFileRecords(QBV_FILE);
+    const idx = all.findIndex(r => r.id === id);
+    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile(QBV_FILE, all); return all[idx]; }
+    return null;
+  },
+  // Generic questions-array updater for an EDITABLE (draft) version — used by
+  // the question CRUD endpoints (add/edit/delete a single question, or
+  // replace the whole set) while a role is unlocked for review. Never called
+  // on an approved/locked version — callers must check status first (see
+  // roles.js question CRUD routes), since this has no lock check of its own.
+  async updateQuestions(id, questions, extra = {}) {
+    const updates = { questions, question_count: questions.length, ...extra };
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('question_bank_versions').update(updates).eq('id', id).select('*').maybeSingle();
+      if (!error) return data;
+      console.warn('[DataStore] question_bank_versions.updateQuestions:', error.message);
     }
     const all = readFileRecords(QBV_FILE);
     const idx = all.findIndex(r => r.id === id);

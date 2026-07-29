@@ -812,6 +812,9 @@ function QuestionBankModal({ role, onClose }) {
   const [loading, setLoading] = useState(true);
   const [regen, setRegen] = useState(false);
   const [regenConfirm, setRegenConfirm] = useState(false);
+  const [unlockConfirm, setUnlockConfirm] = useState(false);
+  const [pendingRegenMode, setPendingRegenMode] = useState('all');
+  const isLocked = !!role.approved;
   // Compute total from per-file configs when files are present
   const fileTotal = [...(role.jdFiles || []), ...(role.supportingFiles || [])].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0);
   const hasFiles = (role.jdFiles?.length || 0) + (role.supportingFiles?.length || 0) > 0;
@@ -869,7 +872,10 @@ function QuestionBankModal({ role, onClose }) {
   const handleRegen = async () => {
     setRegen(true);
     try {
-      const payload = { questionCount: regenCount, mode: regenMode };
+      // confirmUnlock is a no-op server-side when the role isn't locked —
+      // always including it means this component never has to special-case
+      // the two request shapes.
+      const payload = { questionCount: regenCount, mode: regenMode, confirmUnlock: true };
       if (hasFiles) {
         payload.updatedJdFiles = localJdFiles;
         payload.updatedSupportingFiles = localSupportingFiles;
@@ -931,7 +937,14 @@ function QuestionBankModal({ role, onClose }) {
         <div className="flex-shrink-0">
           <div className="flex items-center justify-between p-5 border-b border-slate-700">
             <div>
-              <h2 className="text-lg font-semibold text-white">Question Bank — {role.roleName}</h2>
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                Question Bank — {role.roleName}
+                {isLocked && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 border border-emerald-700/50" title="Assessment is locked. Regenerate to unlock and modify.">
+                    🔒 Locked
+                  </span>
+                )}
+              </h2>
               <p className="text-xs text-slate-400 mt-0.5">{questions.length} questions · Easy: {counts.easy} · Medium: {counts.medium} · Hard: {counts.hard}</p>
               {/* Live count summary */}
               {(() => {
@@ -952,15 +965,21 @@ function QuestionBankModal({ role, onClose }) {
             </div>
             <div className="flex gap-2 items-center">
               <button
-                onClick={() => { setRegenMode('all'); setRegenConfirm(true); }}
-                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm}
+                onClick={() => {
+                  if (isLocked) { setPendingRegenMode('all'); setUnlockConfirm(true); }
+                  else { setRegenMode('all'); setRegenConfirm(true); }
+                }}
+                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm || unlockConfirm}
                 className="text-xs px-3 py-1.5 rounded-lg bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/40 disabled:opacity-40 transition-colors"
               >
                 {regen && regenMode === 'all' ? '⏳ Generating…' : '✨ Regen All'}
               </button>
               <button
-                onClick={() => { setRegenMode('ai-only'); setRegenConfirm(true); }}
-                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm}
+                onClick={() => {
+                  if (isLocked) { setPendingRegenMode('ai-only'); setUnlockConfirm(true); }
+                  else { setRegenMode('ai-only'); setRegenConfirm(true); }
+                }}
+                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm || unlockConfirm}
                 title="Regenerate only AI-generated questions; preserves manually added/edited ones"
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40 disabled:opacity-40 transition-colors"
               >
@@ -969,6 +988,30 @@ function QuestionBankModal({ role, onClose }) {
               <button onClick={onClose} className="text-slate-400 hover:text-white text-xl px-2">✕</button>
             </div>
           </div>
+
+          {/* Unlock confirmation — shown FIRST when the assessment is locked,
+              before the regenerate config panel. Backend enforces this too
+              (409 requiresUnlockConfirmation) — this dialog is the UX for it. */}
+          {unlockConfirm && (
+            <div className="mx-5 my-3 p-4 bg-red-500/10 border border-red-500/40 rounded-xl space-y-3">
+              <p className="text-sm text-red-300 font-semibold">🔒 Assessment is currently locked.</p>
+              <p className="text-sm text-slate-300">
+                Regenerating questions requires unlocking this assessment. This will create a new version after regeneration. Existing completed assessments and reports will remain unchanged.
+              </p>
+              <p className="text-sm text-slate-300 font-medium">Do you want to continue?</p>
+              <div className="flex gap-2">
+                <button onClick={() => setUnlockConfirm(false)} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs hover:border-slate-400 transition-colors">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => { setRegenMode(pendingRegenMode); setUnlockConfirm(false); setRegenConfirm(true); }}
+                  className="px-4 py-1.5 rounded-lg text-white text-xs font-semibold bg-red-600 hover:bg-red-700 transition-colors"
+                >
+                  🔓 Unlock & Regenerate
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Inline regenerate confirmation panel */}
           {regenConfirm && (() => {
@@ -1090,7 +1133,12 @@ function QuestionBankModal({ role, onClose }) {
             </button>
           ))}
           <div className="ml-auto relative">
-            <button onClick={() => { setQTypePicker(v => !v); setAddMode(false); }} className="text-xs px-3 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 transition-colors">
+            <button
+              onClick={() => { setQTypePicker(v => !v); setAddMode(false); }}
+              disabled={isLocked}
+              title={isLocked ? 'Assessment is locked. Regenerate to unlock and modify.' : undefined}
+              className="text-xs px-3 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
               + Add Question
             </button>
             {qTypePicker && (
@@ -1250,8 +1298,8 @@ function QuestionBankModal({ role, onClose }) {
                       <div className="flex gap-1 flex-shrink-0 items-center">
                         {q.isManual && <span className="px-1.5 py-0.5 rounded text-xs bg-violet-900/40 text-violet-400 border border-violet-700/50">edited</span>}
                         <span className={`px-2 py-0.5 rounded-full text-xs border capitalize ${DIFF_COLORS[q.difficulty] || DIFF_COLORS.medium}`}>{q.difficulty || 'medium'}</span>
-                        <button onClick={() => startEdit(realIdx)} className="text-xs px-2 py-1 rounded bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40">Edit</button>
-                        <button onClick={() => deleteQ(realIdx)} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40">Del</button>
+                        <button onClick={() => startEdit(realIdx)} disabled={isLocked} title={isLocked ? 'Assessment is locked. Regenerate to unlock and modify.' : undefined} className="text-xs px-2 py-1 rounded bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 disabled:opacity-40 disabled:cursor-not-allowed">Edit</button>
+                        <button onClick={() => deleteQ(realIdx)} disabled={isLocked} title={isLocked ? 'Assessment is locked. Regenerate to unlock and modify.' : undefined} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40 disabled:opacity-40 disabled:cursor-not-allowed">Del</button>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
@@ -1289,26 +1337,25 @@ function QuestionBankModal({ role, onClose }) {
 // ── Approve Assessment Modal ──────────────────────────────────────────────────
 function ApproveModal({ role, onClose }) {
   const { notify: toast } = useNotification();
-  const [questionCount, setQuestionCount] = useState(10);
   const [assessmentDate, setAssessmentDate] = useState('');
-  const [approving, setApproving] = useState(false);
+  const [locking, setLocking] = useState(false);
 
-  const handleApprove = async () => {
-    setApproving(true);
+  const handleLock = async () => {
+    setLocking(true);
     try {
-      const payload = { questionCount: parseInt(questionCount) || 10 };
+      const payload = {};
       if (assessmentDate) payload.assessmentDate = new Date(assessmentDate).toISOString();
-      const res = await authFetch(`/api/roles/${role.id}/approve-assessment`, {
+      const res = await authFetch(`/api/roles/${role.id}/lock`, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
       const count = res?.employeeCount ?? res?.data?.employeeAssignments?.length ?? 0;
-      toast(`Assessment approved & assigned to ${count} employee${count !== 1 ? 's' : ''}`);
+      toast(`Assessment locked & assigned to ${count} employee${count !== 1 ? 's' : ''}`);
       onClose(res?.roleApproval || true);
     } catch (e) {
-      toast(e.message || 'Failed to approve assessment', 'error');
+      toast(e.message || 'Failed to lock assessment', 'error');
     } finally {
-      setApproving(false);
+      setLocking(false);
     }
   };
 
@@ -1319,7 +1366,7 @@ function ApproveModal({ role, onClose }) {
       <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between p-5 border-b border-slate-700">
           <div>
-            <h2 className="text-lg font-semibold text-white">Approve & Auto-Assign</h2>
+            <h2 className="text-lg font-semibold text-white">🔒 Lock Assessment</h2>
             <p className="text-sm text-slate-400 mt-0.5">{role.roleName}</p>
           </div>
           <button onClick={() => onClose(false)} className="text-slate-400 hover:text-white text-xl">✕</button>
@@ -1327,17 +1374,8 @@ function ApproveModal({ role, onClose }) {
         <div className="p-5 space-y-4">
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3">
             <p className="text-xs text-emerald-300">
-              This will create an assessment from the <strong>{maxQ}-question bank</strong> and auto-assign it to all employees with the role <strong>"{role.roleName}"</strong>.
+              This freezes the full <strong>{maxQ}-question bank</strong> exactly as-is and assigns it to every employee with the role <strong>"{role.roleName}"</strong>. Once locked, nothing can change it — including this admin panel — until you click Regenerate, confirm Unlock &amp; Regenerate, review the new draft, and lock it again.
             </p>
-          </div>
-          <div>
-            <label className={labelCls}>Questions per employee <span className="text-slate-500">(max {maxQ})</span></label>
-            <input
-              type="number" min={5} max={maxQ}
-              className={inputCls}
-              value={questionCount}
-              onChange={e => setQuestionCount(e.target.value)}
-            />
           </div>
           <div>
             <label className={labelCls}>Assessment date <span className="text-slate-500">(optional)</span></label>
@@ -1352,8 +1390,8 @@ function ApproveModal({ role, onClose }) {
             <button onClick={() => onClose(false)} className="flex-1 px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-slate-400">
               Cancel
             </button>
-            <button onClick={handleApprove} disabled={approving} className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
-              {approving ? 'Assigning…' : '✓ Approve & Assign'}
+            <button onClick={handleLock} disabled={locking} className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
+              {locking ? 'Locking…' : '🔒 Lock & Assign'}
             </button>
           </div>
         </div>
@@ -1472,10 +1510,10 @@ export default function RoleLibrary() {
             </thead>
             <tbody>
               {filtered.map((role, i) => (
-                <tr key={role.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${role.approved ? 'bg-emerald-900/15 border-l-4 border-l-emerald-500' : (i % 2 === 0 ? '' : 'bg-slate-800/20')}`} title={role.approved && role.approvedAt ? `Approved ${new Date(role.approvedAt).toLocaleString()}` : undefined}>
+                <tr key={role.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${role.approved ? 'bg-emerald-900/15 border-l-4 border-l-emerald-500' : (i % 2 === 0 ? '' : 'bg-slate-800/20')}`} title={role.approved && role.approvedAt ? `Locked ${new Date(role.approvedAt).toLocaleString()} — Regenerate to unlock and modify` : undefined}>
                   <td className="px-4 py-3 font-medium text-white">
                     <span className="flex items-center gap-2">
-                      {role.approved && <span className="text-emerald-400" title="Approved">✓</span>}
+                      {role.approved && <span className="text-emerald-400" title="Assessment is locked. Regenerate to unlock and modify.">🔒</span>}
                       {role.roleName}
                     </span>
                   </td>
@@ -1492,10 +1530,15 @@ export default function RoleLibrary() {
                       <button onClick={() => setQBankRole(role)} className="text-xs px-2 py-1 rounded bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 whitespace-nowrap">
                         📚 Questions{role.questionBankCount ? ` (${role.questionBankCount})` : ''}
                       </button>
-                      {role.questionBankCount > 0 && (
+                      {role.questionBankCount > 0 && !role.approved && (
                         <button onClick={() => setApproveRole(role)} className="text-xs px-2 py-1 rounded bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 whitespace-nowrap border border-emerald-500/30">
-                          ✓ Approve
+                          🔒 Lock Assessment
                         </button>
+                      )}
+                      {role.approved && (
+                        <span className="text-xs px-2 py-1 rounded bg-emerald-900/30 text-emerald-400 whitespace-nowrap border border-emerald-700/40" title="Assessment is locked. Regenerate to unlock and modify.">
+                          🔒 Locked
+                        </span>
                       )}
                       <button onClick={() => setDelId(role.id)} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40">Delete</button>
                     </div>
