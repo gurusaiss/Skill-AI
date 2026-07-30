@@ -236,13 +236,52 @@ function htmlToStructuredText(html) {
 }
 
 // Extract plain text from a file buffer — shared by parse-jd and supporting-doc endpoints
+// Thrown for uploads that fail for a reason the USER can act on (wrong
+// format, scanned/image-only, unsupported legacy format) — distinct from an
+// unexpected server error, so the route can return a clear 400 with an
+// actionable message instead of a generic 500 (previously every failure here
+// landed on the same "Failed to parse file: ..." 500 response regardless of
+// cause).
+class UnsupportedFileError extends Error {
+  constructor(message) { super(message); this.name = 'UnsupportedFileError'; this.statusCode = 400; }
+}
+
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'tif', 'webp', 'heic', 'heif', 'svg']);
+
+// Heuristic: legitimate extracted text should never contain NUL bytes, and
+// should have very few other control characters. A buffer that decodes to
+// mostly control/null bytes as "UTF-8 text" is actually binary content
+// (an unrecognized image format, a corrupt file, etc.) that the catch-all
+// text decode silently mangled into garbage rather than genuine text.
+function looksLikeBinaryGarbage(buffer) {
+  const sample = buffer.subarray(0, Math.min(buffer.length, 8000));
+  if (sample.length === 0) return false;
+  let nullCount = 0, controlCount = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const b = sample[i];
+    if (b === 0) nullCount++;
+    else if (b < 9 || (b > 13 && b < 32)) controlCount++;
+  }
+  return nullCount > 0 || (controlCount / sample.length) > 0.05;
+}
+
 async function extractTextFromBuffer(buffer, originalname) {
   const ext = (originalname?.split('.').pop() || '').toLowerCase();
+
+  if (IMAGE_EXTENSIONS.has(ext)) {
+    throw new UnsupportedFileError('This is an image file — text extraction from images (OCR) isn\'t supported yet. Please upload a text-based PDF, DOCX, or paste the content directly.');
+  }
 
   if (ext === 'pdf') {
     const pdfParse = _require('pdf-parse');
     const result = await pdfParse(buffer);
-    return result.text || '';
+    const text = result.text || '';
+    if (!text.trim() && buffer.length > 5000) {
+      // A substantial PDF with zero extractable text is almost always a
+      // scanned/image-only PDF, not a genuinely empty document.
+      throw new UnsupportedFileError('This PDF appears to be scanned/image-based with no extractable text (OCR isn\'t supported yet). Please upload a text-based PDF or DOCX, or paste the content directly.');
+    }
+    return text;
   }
 
   if (ext === 'docx') {
@@ -258,9 +297,20 @@ async function extractTextFromBuffer(buffer, originalname) {
   }
 
   if (ext === 'pptx' || ext === 'ppt') {
-    // PPTX is a ZIP — extract text from ppt/slides/slide*.xml <a:t> tags
+    // PPTX is a ZIP — extract text from ppt/slides/slide*.xml <a:t> tags.
+    // Legacy .ppt (pre-2007) is an OLE/CFB binary, NOT a ZIP — AdmZip throws
+    // when given one. Catch that specific failure and reject clearly instead
+    // of letting it crash through to a generic 500.
     const AdmZip = _require('adm-zip');
-    const zip = new AdmZip(buffer);
+    let zip;
+    try {
+      zip = new AdmZip(buffer);
+    } catch (zipErr) {
+      if (ext === 'ppt') {
+        throw new UnsupportedFileError('Legacy .ppt format isn\'t supported — please save this file as .pptx (PowerPoint 2007+) and re-upload.');
+      }
+      throw zipErr;
+    }
     // Normalize to forward slashes (adm-zip can use backslashes on Windows)
     const normName = e => e.entryName.replace(/\\/g, '/');
     const slideEntries = zip.getEntries().filter(e => /ppt\/slides\/slide\d+\.xml$/i.test(normName(e)));
@@ -313,7 +363,13 @@ async function extractTextFromBuffer(buffer, originalname) {
     return parts.join('\n\n');
   }
 
-  // txt, rtf, csv and anything else text-based
+  // txt, rtf, csv, and any other/unrecognized extension — treated as plain
+  // text. If the raw bytes actually look like binary content (an
+  // unrecognized image format, a corrupt/unsupported file), reject clearly
+  // instead of silently returning mangled garbage as if it were real text.
+  if (looksLikeBinaryGarbage(buffer)) {
+    throw new UnsupportedFileError('This file doesn\'t appear to contain readable text (it looks like a binary/image format that isn\'t supported yet). Please upload a text-based PDF, DOCX, or paste the content directly.');
+  }
   return buffer.toString('utf-8');
 }
 
@@ -348,6 +404,13 @@ router.post('/parse-jd', authenticate, requireRole('admin', 'manager'), upload.s
 
     res.json({ success: true, data: { text, length: text.length, ext, uploadedBy: req.user.userId, uploadedByEmail: req.user.email } });
   } catch (e) {
+    // UnsupportedFileError = the user needs to fix their upload (scanned
+    // PDF, image, legacy .ppt) — a clear 400 with the actionable message,
+    // not a generic 500 implying something broke on our end.
+    if (e.statusCode === 400) {
+      console.warn('[POST /api/roles/parse-jd] rejected:', e.message);
+      return res.status(400).json({ success: false, error: e.message });
+    }
     console.error('[POST /api/roles/parse-jd]', e);
     res.status(500).json({ success: false, error: `Failed to parse file: ${e.message}` });
   }

@@ -181,6 +181,94 @@ export function extractJDCoreContent(rawText) {
   return extracted;
 }
 
+// Section headings that signal PROCESS/SOP-like content — distinct from
+// JD_KEEP_SECTION_PATTERNS (responsibilities/skills), used to detect the
+// "one uploaded file contains both a JD and a full process/SOP" case so
+// question generation can split proportionally between the two instead of
+// treating the whole file as one undifferentiated blob with a single
+// sourceType label.
+const PROCESS_SECTION_PATTERNS = [
+  /\b(standard\s+operating\s+procedure|sop|process\s+(flow|steps?|overview|description))\b/i,
+  /\b(procedure|workflow|work\s+instructions?|runbook|playbook)\b/i,
+  /\b(escalation\s+(matrix|process|procedure|path)|escalation\s+criteria)\b/i,
+  /\b(step[s]?\s*\d|step[- ]by[- ]step)\b/i,
+  /\b(business\s+rules?|validation\s+rules?|decision\s+(rules?|criteria|matrix))\b/i,
+  /\b(exception\s+handling|error\s+handling|troubleshooting)\b/i,
+  /\b(sla|kpi|service\s+level|quality\s+check(s|list)?)\b/i,
+  /\b(tools?\s+and\s+systems?|applications?\s+used|required\s+systems?)\b/i,
+];
+
+// Same heading-detection heuristic used by extractJDCoreContent, generalized
+// so it can be reused outside the JD-only path.
+function isSectionHeading(line) {
+  const t = line.trim();
+  if (!t || t.length > 80 || t.length < 3) return false;
+  return (
+    /^[A-Z][A-Z\s&/,()-]{4,}$/.test(t) ||
+    /^[A-Z][a-zA-Z\s&/,()-]+:?\s*$/.test(t) ||
+    t.endsWith(':')
+  );
+}
+
+/**
+ * Splits a single document's text into a JD-like portion and a
+ * process/SOP-like portion, when the document contains a genuine mix of
+ * both (e.g. a role master doc with "Job Description" and "Standard
+ * Operating Procedure" sections back to back). Used so a role with only ONE
+ * uploaded file that mixes JD and process content still gets a proportional
+ * question split, instead of the whole file being generated from as a
+ * single undifferentiated blob under one sourceType.
+ *
+ * Returns { jdText, processText, hasMeaningfulSplit }. When no recognizable
+ * section structure exists, or only one content type is present, or either
+ * portion would be too small to be worth a separate generation pass (<15%
+ * of the total), `hasMeaningfulSplit` is false and callers should fall back
+ * to their existing single-blob behavior — this only activates for the
+ * specific "one file, two real content types" case, never changes behavior
+ * for a normal single-purpose JD or single-purpose SOP upload.
+ */
+export function classifyJDVsProcessSections(rawText) {
+  const text = (rawText || '').trim();
+  const fallback = { jdText: text, processText: '', hasMeaningfulSplit: false };
+  if (!text || text.length < 200) return fallback;
+
+  const lines = text.split('\n');
+  const jdLines = [];
+  const processLines = [];
+  let currentBucket = 'unknown'; // 'jd' | 'process' | 'unknown' — unknown content goes to whichever bucket is currently active, defaulting to jd for text before the first heading
+
+  let sawJdHeading = false, sawProcessHeading = false;
+  for (const line of lines) {
+    if (isSectionHeading(line)) {
+      const isJd = JD_KEEP_SECTION_PATTERNS.some(p => p.test(line));
+      const isProcess = PROCESS_SECTION_PATTERNS.some(p => p.test(line));
+      if (isJd) { currentBucket = 'jd'; sawJdHeading = true; jdLines.push(line); continue; }
+      if (isProcess) { currentBucket = 'process'; sawProcessHeading = true; processLines.push(line); continue; }
+      // Unrecognized heading — keep in whichever bucket is currently active
+      (currentBucket === 'process' ? processLines : jdLines).push(line);
+      continue;
+    }
+    (currentBucket === 'process' ? processLines : jdLines).push(line);
+  }
+
+  // Only a genuine split if BOTH content types were actually detected via
+  // real headings — otherwise this is just a normal single-purpose document.
+  if (!sawJdHeading || !sawProcessHeading) return fallback;
+
+  const jdText = jdLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const processText = processLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const total = jdText.length + processText.length;
+  if (total === 0) return fallback;
+
+  const jdShare = jdText.length / total;
+  // Require each portion to be at least 15% of the total — otherwise the
+  // "split" is noise (e.g. one stray JD-looking heading in an otherwise
+  // pure SOP) and generating two separate passes isn't worth the overhead.
+  if (jdShare < 0.15 || jdShare > 0.85) return fallback;
+
+  return { jdText, processText, hasMeaningfulSplit: true, jdShare };
+}
+
 /**
  * Strip the filename from the beginning of extracted text.
  * Some PDF/DOCX parsers include the filename as the first line.

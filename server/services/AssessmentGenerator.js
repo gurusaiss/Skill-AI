@@ -4,6 +4,7 @@
  * without circular imports.
  */
 import { randomUUID } from 'crypto';
+import { classifyJDVsProcessSections } from '../utils/textPreprocessor.js';
 
 // ── Shared near-duplicate / seen-content tracking ────────────────────────────
 // Single source of truth for "have we already produced this question" —
@@ -311,6 +312,7 @@ STEP 4 — SELF-CHECK BEFORE OUTPUT:
 ✓ No repeated MCQ option sets across questions
 ✓ Question styles are varied — no single style exceeds 20%
 ${hasProcessDocs ? '✓ Process-doc questions reference actual procedures from the uploaded documents' : ''}
+✓ sourceQuote is filled with a real, verbatim excerpt from the JD/process text above for every question — not a paraphrase, not invented
 
 === OUTPUT FORMAT — return only this JSON ===
 {
@@ -322,6 +324,7 @@ ${hasProcessDocs ? '✓ Process-doc questions reference actual procedures from t
       "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
       "answer": "A/B/C/D for mcq | exact phrase for fill_blank | detailed model answer for subjective",
       "explanation": "which JD responsibility, skill, or process document section this tests",
+      "sourceQuote": "a short (5-25 word) excerpt copied VERBATIM, character-for-character, from the JOB DESCRIPTION or INTERNAL PROCESS DOCUMENTS text above — the exact sentence or phrase this question is testing. Do not paraphrase or summarize it. If nothing in the provided text supports this question, do not generate the question at all.",
       "skillArea": "specific competency, tool, process, or SOP from the JD or process docs"
     }
   ]
@@ -429,6 +432,7 @@ STEP 4 — SELF-CHECK (reject and replace any question that fails):
 ✓ subjective answers are exactly 2–3 bullet points, each under 20 words
 ✓ Exactly ${count} questions (${easyCount} easy, ${mediumCount} medium, ${hardCount} hard)
 ✓ sourceSection field is filled with the actual section name or step identifier from the document
+✓ sourceQuote is a real, verbatim excerpt from the document text above — copy it exactly, do not paraphrase
 
 === OUTPUT FORMAT — return only this JSON ===
 {
@@ -441,7 +445,8 @@ STEP 4 — SELF-CHECK (reject and replace any question that fails):
       "answer": "A/B/C/D for mcq | 2–5 word phrase/value from document for fill_blank | '• point1 | • point2 | • point3' (2–3 bullet points, each ≤20 words) for subjective",
       "explanation": "which specific section, step, or rule in the document this question tests",
       "skillArea": "specific procedure, system, rule, or concept from the document",
-      "sourceSection": "exact section heading, step number, or paragraph identifier from the source document (e.g. 'Section 3.2', 'Step 4 — Payment Validation', 'Escalation Criteria')"
+      "sourceSection": "exact section heading, step number, or paragraph identifier from the source document (e.g. 'Section 3.2', 'Step 4 — Payment Validation', 'Escalation Criteria')",
+      "sourceQuote": "a short (5-25 word) excerpt copied VERBATIM, character-for-character, from the SOURCE DOCUMENT text above — the exact sentence or phrase this question is testing. Do not paraphrase, summarize, or invent it — if you cannot find real text to quote, do not generate the question."
     }
   ]
 }`;
@@ -466,6 +471,39 @@ function extractDocKeywords(text, maxTerms = 8) {
     .map(([w]) => w);
 }
 
+// Extracts multi-word proper-noun phrases (tool/system/form names — "Payment
+// Gateway", "Tier 2 Escalation Matrix") and number+unit tokens (thresholds,
+// SLAs, codes — "48 hours", "99.9%", "Level 3") from a document. These are
+// much stronger grounding/fallback seeds than extractDocKeywords' single
+// frequent words: a named system or a specific threshold is unambiguously
+// "this document's actual content," whereas a frequent common word like
+// "process" or "review" just proves topical proximity. Used alongside
+// extractDocKeywords (not instead of it) everywhere fallback content needs a
+// skill/topic seed, so template questions cite the document's real
+// terminology instead of generic role skills.
+function extractDocEntities(text, maxTerms = 12) {
+  if (!text) return [];
+  const entities = new Set();
+
+  // Consecutive-capitalized sequences of 2-4 words, e.g. "Payment Gateway",
+  // "Tier 2 Escalation Matrix" — skips a lone capitalized word at a sentence
+  // start (rarely meaningful alone) by requiring at least 2 words.
+  const properNounRe = /\b([A-Z][a-zA-Z0-9]{2,}(?:\s+(?:[A-Z][a-zA-Z0-9]*|\d+)){1,3})\b/g;
+  let m;
+  while ((m = properNounRe.exec(text)) !== null) {
+    const phrase = m[1].trim();
+    if (phrase.length >= 6 && phrase.length <= 60) entities.add(phrase);
+  }
+
+  // Number + unit tokens — thresholds, SLAs, percentages, tiers/levels/codes.
+  const numberUnitRe = /\b\d+(?:\.\d+)?\s?(?:%|hours?|hrs?|days?|minutes?|mins?|business\s+days?)\b/gi;
+  while ((m = numberUnitRe.exec(text)) !== null) entities.add(m[0].trim());
+  const tierRe = /\b(?:tier|level|priority|severity|step|phase|stage)\s+\d+\b/gi;
+  while ((m = tierRe.exec(text)) !== null) entities.add(m[0].trim());
+
+  return [...entities].slice(0, maxTerms);
+}
+
 // Filter questions that are NOT grounded in the source text (JD, supporting
 // docs, or a single process document — same check, different source text).
 // Rejects any question whose text, skillArea, and explanation contain zero
@@ -480,7 +518,11 @@ function extractDocKeywords(text, maxTerms = 8) {
 // impossible).
 function filterGrounded(questions, sourceText) {
   if (!Array.isArray(questions) || questions.length === 0) return questions;
-  const keywords = extractDocKeywords(sourceText, 50);
+  // Combine frequent single words with real named entities (systems,
+  // thresholds, tiers) — a question mentioning a specific entity is a much
+  // stronger topical signal than a generic frequent word, though this
+  // remains only a cheap pre-check; verifyQuoteGrounded is the real gate.
+  const keywords = [...extractDocKeywords(sourceText, 50), ...extractDocEntities(sourceText, 20).map(e => e.toLowerCase())];
   if (keywords.length < 5) return questions; // too short to validate reliably
   return questions.filter(q => {
     const haystack = [q.question, q.skillArea, q.explanation]
@@ -489,18 +531,74 @@ function filterGrounded(questions, sourceText) {
   });
 }
 
-// Reject questions built from known-generic phrasing patterns (Issue 5 /
-// Issue 13's "no generic filler questions" requirement) — applied as an
-// automated filter within the same first-pass attempt loop, no extra LLM
-// call needed. Complements filterGrounded (keyword presence) by catching
-// generic *shapes* of question even when they happen to mention a real term.
+// Normalizes text for verbatim-quote matching: strips all punctuation and
+// collapses whitespace, so minor differences in quote marks/commas/line
+// breaks don't cause a false rejection, while still requiring the actual
+// words to appear in the same sequence as the source (a real substring
+// match, not just "contains some of these words somewhere").
+function normalizeForQuoteMatch(s) {
+  return (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// THE primary grounding gate (filterGrounded above is now only a cheap
+// pre-check). Requires every question to cite a `sourceQuote` — a short
+// excerpt the prompt instructs the LLM to copy verbatim from the source —
+// and VERIFIES it actually appears in the source text as a real substring.
+// This is what "mentions 1 of 50 frequency keywords" could never catch: a
+// generic question like "What is the purpose of a runbook?" will almost
+// never have a genuine verbatim quote to offer, because it isn't actually
+// testing a specific fact from the document — it's testing a definition the
+// LLM already knew before reading anything. Deterministic, free, no
+// embeddings/LLM-judge call needed.
+function verifyQuoteGrounded(questions, sourceText) {
+  if (!Array.isArray(questions) || questions.length === 0) return questions;
+  const normalizedSource = normalizeForQuoteMatch(sourceText);
+  if (normalizedSource.length < 40) return questions; // too short to enforce reliably
+  return questions.filter(q => {
+    const rawQuote = (q.sourceQuote || '').trim();
+    if (!rawQuote) return false;
+    const wordCount = rawQuote.split(/\s+/).filter(Boolean).length;
+    if (wordCount < 4) return false; // too short to be a meaningful, specific citation
+    const normalizedQuote = normalizeForQuoteMatch(rawQuote);
+    return normalizedQuote.length >= 15 && normalizedSource.includes(normalizedQuote);
+  });
+}
+
+// Reject questions built from generic phrasing SHAPES (Issue 5 / Issue 13's
+// "no generic filler questions" requirement) — applied as an automated
+// filter within the same first-pass attempt loop, no extra LLM call needed.
+//
+// The original version of this list only matched specific literal nouns
+// ("process", "stakeholder management", "change management") — so "What is
+// the purpose of a RUNBOOK?" sailed straight through, since "runbook" was
+// never in the list. That's a losing game: any fixed noun list will always
+// miss the next document's specific jargon. Generalized here to the
+// STRUCTURAL SHAPE instead: "purpose/objective/goal of X", "key indicator of
+// X", "best describes X", "what does X mean", "define X" — these framings
+// structurally request a conceptual/textbook definition regardless of what
+// X is, which is a fundamentally different (and always generic) question
+// shape from a specific-fact recall question.
+//
+// Deliberately NOT included: a fully bare "what is X?" pattern. That would
+// also reject legitimate specific recall questions the prompts are supposed
+// to produce (e.g. "What is the retry limit before an incident escalates?").
+// verifyQuoteGrounded (above) is the primary defense against generic
+// "what is X" content in general — it structurally can't pass a fabricated
+// or absent quote, whereas a fully bare regex here can't distinguish
+// "generic definition" from "specific recall" by shape alone. This list
+// stays narrow and reserved for framings that are unambiguously generic no
+// matter the subject.
 const GENERIC_PHRASE_PATTERNS = [
-  /^what is the (primary )?purpose of (a |an |the )?process\??$/i,
-  /^what is the primary objective of documentation\??$/i,
+  /^what (is|are) the (primary |main |key )?(purpose|objective|goal|aim)s? of (a |an |the )?[a-z][a-z\s]{0,40}\??$/i,
+  /^what is a key (indicator|characteristic|feature|benefit) of (effective |good )?[a-z\s]{0,35}\??$/i,
+  /^which of the following best describes (a |an |the )?[a-z][a-z\s]{2,35}\??$/i,
+  /^what does (a |an |the )?[a-z][a-z\s]{2,40} (mean|refer to|stand for)\??$/i,
+  /^define (a |an |the )?[a-z][a-z\s]{2,35}\.?$/i,
+  // Known offenders kept verbatim from the original list — cheap, zero
+  // false-positive risk, no reason to drop them just because the shape
+  // patterns above now cover the general case too.
   /^what is stakeholder management\??$/i,
   /^what is change management\??$/i,
-  /^which of the following best describes [a-z\s]{0,25}\??$/i, // bare definitional, no scenario
-  /^what is a key indicator of effective [a-z\s]{0,25}\??$/i,
 ];
 function filterGenericPhrasing(questions) {
   if (!Array.isArray(questions) || questions.length === 0) return questions;
@@ -1029,9 +1127,10 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     if (batch && batch.length > 0) {
       const combinedSource = `${jdText}\n${supportingDocsText}`;
       const noGeneric = filterGenericPhrasing(batch);
-      const grounded = filterGrounded(noGeneric, combinedSource);
+      const keywordPrefiltered = filterGrounded(noGeneric, combinedSource);
+      const grounded = verifyQuoteGrounded(keywordPrefiltered, combinedSource);
       if (grounded.length < batch.length) {
-        console.warn(`[generateQuestionsFromJD] attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded questions`);
+        console.warn(`[generateQuestionsFromJD] attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded/unquoted questions`);
       }
       pool = mergeUnique(pool, grounded, avoidQuestions);
     }
@@ -1205,9 +1304,10 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
       if (!batch || batch.length === 0) batch = await callGemini(system, prompt);
       if (batch && batch.length > 0) {
         const noGeneric = filterGenericPhrasing(batch);
-        const grounded = filterGrounded(noGeneric, chunk);
+        const keywordPrefiltered = filterGrounded(noGeneric, chunk);
+        const grounded = verifyQuoteGrounded(keywordPrefiltered, chunk);
         if (grounded.length < batch.length) {
-          console.warn(`[generateQuestionsFromDocument] "${sourceName}" chunk${ci} attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded questions`);
+          console.warn(`[generateQuestionsFromDocument] "${sourceName}" chunk${ci} attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded/unquoted questions`);
         }
         pool = mergeUnique(pool, grounded, avoidQuestions);
       }
@@ -1223,8 +1323,13 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
   if (pool.length < num) {
     const shortage = num - pool.length;
     console.warn(`[generateQuestionsFromDocument] "${sourceName}": LLM gave ${pool.length}/${num} across all chunks — padding ${shortage} with doc-keyword templates`);
+    // Prefer real named entities (systems, forms, thresholds — e.g. "Payment
+    // Gateway", "48 hours") over generic frequent words when available; they
+    // make fallback template questions read as genuinely document-specific
+    // rather than just topically-adjacent.
+    const docEntities = extractDocEntities(text, 8);
     const docKeywords = extractDocKeywords(text, 8);
-    const fallbackSkills = docKeywords.length > 0 ? docKeywords : [SAFE_FALLBACK_TOPIC];
+    const fallbackSkills = docEntities.length > 0 ? docEntities : (docKeywords.length > 0 ? docKeywords : [SAFE_FALLBACK_TOPIC]);
     const targetEasy   = Math.round(num * 0.35);
     const targetMedium = Math.round(num * 0.45);
     const targetHard   = Math.max(1, num - targetEasy - targetMedium);
@@ -1281,6 +1386,28 @@ function buildTypeSeqLocal(num) {
   return [...Array(m).fill('mcq'), ...Array(Math.max(0, f)).fill('fill_blank'), ...Array(Math.max(0, num - m - f)).fill('subjective')];
 }
 
+// When a single uploaded file mixes JD-like content and process/SOP-like
+// content (common for "one PDF has everything" uploads), splits it into two
+// effective sources with proportionally-split question counts, instead of
+// generating the whole file as one undifferentiated blob under a single
+// sourceType. A file that doesn't meaningfully split (the normal case — a
+// single-purpose JD or a single-purpose SOP) passes through unchanged.
+function expandSplitSources(fileSources) {
+  const expanded = [];
+  for (const source of fileSources) {
+    const text = (source.text || '').trim();
+    if (!text) { expanded.push(source); continue; }
+    const split = classifyJDVsProcessSections(text);
+    if (!split.hasMeaningfulSplit) { expanded.push(source); continue; }
+    const totalCount = Math.max(1, parseInt(source.questionCount) || 5);
+    const jdCount = Math.max(1, Math.round(totalCount * split.jdShare));
+    const processCount = Math.max(1, totalCount - jdCount);
+    expanded.push({ ...source, text: split.jdText, sourceType: 'jd', questionCount: jdCount, name: `${source.name || 'file'} (JD section)` });
+    expanded.push({ ...source, text: split.processText, sourceType: 'supporting', questionCount: processCount, name: `${source.name || 'file'} (Process section)` });
+  }
+  return expanded;
+}
+
 export async function generateQuestionsFromFiles(fileSources, globalContext = {}) {
   if (!Array.isArray(fileSources) || fileSources.length === 0) return [];
 
@@ -1289,6 +1416,7 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
     avoidQuestions = [],                  // cross-version "don't repeat these" set, applied per-source
     startingComboCountersBySource = {},   // { [sourceName]: {easy,medium,hard} } from the previous version
   } = globalContext;
+  fileSources = expandSplitSources(fileSources);
   const allQuestions = [];
   // Shared fuzzy tracker across ALL files (upgraded from exact-text-only
   // matching) — two different uploaded documents that thematically overlap
@@ -1368,10 +1496,13 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
     const gap = count - acceptedForSource.length;
     if (gap > 0) {
       console.warn(`[generateQuestionsFromFiles] "${source.name}": got ${acceptedForSource.length}/${count} after cross-file dedup — padding ${gap} with doc-keyword templates`);
+      const docEntitiesForPad = extractDocEntities(text, 12);
       const docKeywordsForPad = extractDocKeywords(text, 12);
-      const paddingSkills = docKeywordsForPad.length > 0
-        ? docKeywordsForPad
-        : (srcSkills.length > 0 ? srcSkills : [SAFE_FALLBACK_TOPIC]);
+      const paddingSkills = docEntitiesForPad.length > 0
+        ? docEntitiesForPad
+        : docKeywordsForPad.length > 0
+          ? docKeywordsForPad
+          : (srcSkills.length > 0 ? srcSkills : [SAFE_FALLBACK_TOPIC]);
       const targetMcqCount  = Math.ceil(count * 0.50);
       const targetFillCount = Math.round(count * 0.25);
       const targetSubjCount = Math.max(0, count - targetMcqCount - targetFillCount);
