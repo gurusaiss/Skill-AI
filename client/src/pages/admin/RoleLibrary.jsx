@@ -812,9 +812,7 @@ function QuestionBankModal({ role, onClose }) {
   const [loading, setLoading] = useState(true);
   const [regen, setRegen] = useState(false);
   const [regenConfirm, setRegenConfirm] = useState(false);
-  const [unlockConfirm, setUnlockConfirm] = useState(false);
-  const [pendingRegenMode, setPendingRegenMode] = useState('all');
-  const isLocked = !!role.approved;
+  const [lockingQid, setLockingQid] = useState(null);
   // Compute total from per-file configs when files are present
   const fileTotal = [...(role.jdFiles || []), ...(role.supportingFiles || [])].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0);
   const hasFiles = (role.jdFiles?.length || 0) + (role.supportingFiles?.length || 0) > 0;
@@ -872,10 +870,10 @@ function QuestionBankModal({ role, onClose }) {
   const handleRegen = async () => {
     setRegen(true);
     try {
-      // confirmUnlock is a no-op server-side when the role isn't locked —
-      // always including it means this component never has to special-case
-      // the two request shapes.
-      const payload = { questionCount: regenCount, mode: regenMode, confirmUnlock: true };
+      // Partial regeneration: locked questions are preserved verbatim by the
+      // server (never regenerated), unlocked ones are replaced — unlimited
+      // times, no confirmation/unlock step needed anymore.
+      const payload = { questionCount: regenCount, mode: regenMode };
       if (hasFiles) {
         payload.updatedJdFiles = localJdFiles;
         payload.updatedSupportingFiles = localSupportingFiles;
@@ -883,10 +881,26 @@ function QuestionBankModal({ role, onClose }) {
       const res = await authFetch(`/api/roles/${role.id}/regenerate-questions`, { method: 'POST', body: JSON.stringify(payload) });
       const newQs = res?.data?.questions ?? res?.questions ?? [];
       setQuestions(newQs);
-      toast(regenMode === 'ai-only' ? `AI questions regenerated — ${newQs.length} total (manual questions preserved)` : `Regenerated ${newQs.length} questions`);
+      const lockedCount = newQs.filter(q => q.locked).length;
+      toast(lockedCount > 0
+        ? `Regenerated ${newQs.length - lockedCount} question${newQs.length - lockedCount !== 1 ? 's' : ''} — ${lockedCount} locked question${lockedCount !== 1 ? 's' : ''} preserved`
+        : `Regenerated ${newQs.length} questions`);
       setRegenConfirm(false);
     } catch (e) { toast(e.message, 'error'); }
     finally { setRegen(false); }
+  };
+
+  const toggleQuestionLock = async (q) => {
+    if (!q.id) return;
+    setLockingQid(q.id);
+    try {
+      const action = q.locked ? 'unlock' : 'lock';
+      const res = await authFetch(`/api/roles/${role.id}/questions/${q.id}/${action}`, { method: 'POST' });
+      const updatedQ = res?.data ?? res;
+      setQuestions(prev => prev.map(x => x.id === q.id ? updatedQ : x));
+      toast(q.locked ? 'Question unlocked' : 'Question locked');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setLockingQid(null); }
   };
 
   const startEdit = (i) => { setEditIdx(i); setEditQ({ ...questions[i] }); };
@@ -939,13 +953,11 @@ function QuestionBankModal({ role, onClose }) {
             <div>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 Question Bank — {role.roleName}
-                {isLocked && (
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 border border-emerald-700/50" title="Assessment is locked. Regenerate to unlock and modify.">
-                    🔒 Locked
-                  </span>
-                )}
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">{questions.length} questions · Easy: {counts.easy} · Medium: {counts.medium} · Hard: {counts.hard}</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {questions.length} questions · Easy: {counts.easy} · Medium: {counts.medium} · Hard: {counts.hard}
+                {questions.some(q => q.locked) && <> · <span className="text-emerald-400 font-semibold">🔒 {questions.filter(q => q.locked).length} locked</span></>}
+              </p>
               {/* Live count summary */}
               {(() => {
                 const totalRequested = hasFiles
@@ -965,22 +977,17 @@ function QuestionBankModal({ role, onClose }) {
             </div>
             <div className="flex gap-2 items-center">
               <button
-                onClick={() => {
-                  if (isLocked) { setPendingRegenMode('all'); setUnlockConfirm(true); }
-                  else { setRegenMode('all'); setRegenConfirm(true); }
-                }}
-                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm || unlockConfirm}
+                onClick={() => { setRegenMode('all'); setRegenConfirm(true); }}
+                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm}
+                title="Unlimited — locked questions are always preserved, only unlocked ones are replaced"
                 className="text-xs px-3 py-1.5 rounded-lg bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/40 disabled:opacity-40 transition-colors"
               >
                 {regen && regenMode === 'all' ? '⏳ Generating…' : '✨ Regen All'}
               </button>
               <button
-                onClick={() => {
-                  if (isLocked) { setPendingRegenMode('ai-only'); setUnlockConfirm(true); }
-                  else { setRegenMode('ai-only'); setRegenConfirm(true); }
-                }}
-                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm || unlockConfirm}
-                title="Regenerate only AI-generated questions; preserves manually added/edited ones"
+                onClick={() => { setRegenMode('ai-only'); setRegenConfirm(true); }}
+                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm}
+                title="Regenerates only unlocked AI-generated questions; locked and manually-edited questions are preserved"
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40 disabled:opacity-40 transition-colors"
               >
                 {regen && regenMode === 'ai-only' ? '⏳ Generating…' : '🔄 Regen AI Only'}
@@ -989,33 +996,11 @@ function QuestionBankModal({ role, onClose }) {
             </div>
           </div>
 
-          {/* Unlock confirmation — shown FIRST when the assessment is locked,
-              before the regenerate config panel. Backend enforces this too
-              (409 requiresUnlockConfirmation) — this dialog is the UX for it. */}
-          {unlockConfirm && (
-            <div className="mx-5 my-3 p-4 bg-red-500/10 border border-red-500/40 rounded-xl space-y-3">
-              <p className="text-sm text-red-300 font-semibold">🔒 Assessment is currently locked.</p>
-              <p className="text-sm text-slate-300">
-                Regenerating questions requires unlocking this assessment. This will create a new version after regeneration. Existing completed assessments and reports will remain unchanged.
-              </p>
-              <p className="text-sm text-slate-300 font-medium">Do you want to continue?</p>
-              <div className="flex gap-2">
-                <button onClick={() => setUnlockConfirm(false)} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs hover:border-slate-400 transition-colors">
-                  Cancel
-                </button>
-                <button
-                  onClick={() => { setRegenMode(pendingRegenMode); setUnlockConfirm(false); setRegenConfirm(true); }}
-                  className="px-4 py-1.5 rounded-lg text-white text-xs font-semibold bg-red-600 hover:bg-red-700 transition-colors"
-                >
-                  🔓 Unlock & Regenerate
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Inline regenerate confirmation panel */}
           {regenConfirm && (() => {
-            const manualCount = questions.filter(q => q.isManual).length;
+            const lockedCount = questions.filter(q => q.locked).length;
+            const manualCount = questions.filter(q => q.isManual && !q.locked).length;
+            const preservedCount = lockedCount + (regenMode === 'ai-only' ? manualCount : 0);
             const localTotal = hasFiles
               ? [...localJdFiles, ...localSupportingFiles].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0)
               : regenCount;
@@ -1034,11 +1019,14 @@ function QuestionBankModal({ role, onClose }) {
                 </div>
 
                 <p className="text-sm text-amber-300 font-medium">
+                  {lockedCount > 0 && (
+                    <>🔒 {lockedCount} locked question{lockedCount !== 1 ? 's' : ''} will be preserved exactly as-is. </>
+                  )}
                   {regenMode === 'all'
-                    ? `This will replace all ${questions.length} existing questions. This cannot be undone.`
+                    ? `${questions.length - preservedCount} unlocked question${questions.length - preservedCount !== 1 ? 's' : ''} will be replaced. This cannot be undone.`
                     : manualCount > 0
-                      ? `${manualCount} manually edited question${manualCount > 1 ? 's' : ''} will be preserved. Only AI-generated questions (${questions.length - manualCount}) will be replaced.`
-                      : `No manually edited questions found — all ${questions.length} AI-generated questions will be replaced.`
+                      ? `${manualCount} manually edited question${manualCount !== 1 ? 's' : ''} will also be preserved. Only unlocked AI-generated questions (${questions.length - preservedCount}) will be replaced.`
+                      : `All unlocked AI-generated questions (${questions.length - preservedCount}) will be replaced.`
                   }
                 </p>
 
@@ -1135,9 +1123,7 @@ function QuestionBankModal({ role, onClose }) {
           <div className="ml-auto relative">
             <button
               onClick={() => { setQTypePicker(v => !v); setAddMode(false); }}
-              disabled={isLocked}
-              title={isLocked ? 'Assessment is locked. Regenerate to unlock and modify.' : undefined}
-              className="text-xs px-3 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="text-xs px-3 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 transition-colors"
             >
               + Add Question
             </button>
@@ -1297,9 +1283,23 @@ function QuestionBankModal({ role, onClose }) {
                       <p className="text-sm text-white font-medium flex-1">{i + 1}. {q.question}</p>
                       <div className="flex gap-1 flex-shrink-0 items-center">
                         {q.isManual && <span className="px-1.5 py-0.5 rounded text-xs bg-violet-900/40 text-violet-400 border border-violet-700/50">edited</span>}
+                        {q.locked && <span className="px-1.5 py-0.5 rounded text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-700/50" title="Locked — preserved exactly as-is on every regenerate, until unlocked">🔒 locked</span>}
                         <span className={`px-2 py-0.5 rounded-full text-xs border capitalize ${DIFF_COLORS[q.difficulty] || DIFF_COLORS.medium}`}>{q.difficulty || 'medium'}</span>
-                        <button onClick={() => startEdit(realIdx)} disabled={isLocked} title={isLocked ? 'Assessment is locked. Regenerate to unlock and modify.' : undefined} className="text-xs px-2 py-1 rounded bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 disabled:opacity-40 disabled:cursor-not-allowed">Edit</button>
-                        <button onClick={() => deleteQ(realIdx)} disabled={isLocked} title={isLocked ? 'Assessment is locked. Regenerate to unlock and modify.' : undefined} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40 disabled:opacity-40 disabled:cursor-not-allowed">Del</button>
+                        <button
+                          onClick={() => startEdit(realIdx)}
+                          disabled={q.locked}
+                          title={q.locked ? 'Unlock to edit' : undefined}
+                          className="text-xs px-2 py-1 rounded bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >Edit</button>
+                        <button
+                          onClick={() => toggleQuestionLock(q)}
+                          disabled={lockingQid === q.id}
+                          title={q.locked ? 'Unlock — this question becomes regeneratable again' : 'Lock — preserve this question exactly as-is on every future regenerate'}
+                          className={`text-xs px-2 py-1 rounded disabled:opacity-40 ${q.locked ? 'bg-amber-600/20 text-amber-300 hover:bg-amber-600/40' : 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40'}`}
+                        >
+                          {lockingQid === q.id ? '…' : q.locked ? '🔓 Unlock' : '🔒 Lock'}
+                        </button>
+                        <button onClick={() => deleteQ(realIdx)} disabled={q.locked} title={q.locked ? 'Unlock to delete' : undefined} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40 disabled:opacity-40 disabled:cursor-not-allowed">Del</button>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
@@ -1350,10 +1350,10 @@ function ApproveModal({ role, onClose }) {
         body: JSON.stringify(payload),
       });
       const count = res?.employeeCount ?? res?.data?.employeeAssignments?.length ?? 0;
-      toast(`Assessment locked & assigned to ${count} employee${count !== 1 ? 's' : ''}`);
+      toast(`Assessment approved & assigned to ${count} employee${count !== 1 ? 's' : ''}`);
       onClose(res?.roleApproval || true);
     } catch (e) {
-      toast(e.message || 'Failed to lock assessment', 'error');
+      toast(e.message || 'Failed to approve assessment', 'error');
     } finally {
       setLocking(false);
     }
@@ -1366,7 +1366,7 @@ function ApproveModal({ role, onClose }) {
       <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between p-5 border-b border-slate-700">
           <div>
-            <h2 className="text-lg font-semibold text-white">🔒 Lock Assessment</h2>
+            <h2 className="text-lg font-semibold text-white">✓ Approve Assessment</h2>
             <p className="text-sm text-slate-400 mt-0.5">{role.roleName}</p>
           </div>
           <button onClick={() => onClose(false)} className="text-slate-400 hover:text-white text-xl">✕</button>
@@ -1374,7 +1374,7 @@ function ApproveModal({ role, onClose }) {
         <div className="p-5 space-y-4">
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3">
             <p className="text-xs text-emerald-300">
-              This freezes the full <strong>{maxQ}-question bank</strong> exactly as-is and assigns it to every employee with the role <strong>"{role.roleName}"</strong>. Once locked, nothing can change it — including this admin panel — until you click Regenerate, confirm Unlock &amp; Regenerate, review the new draft, and lock it again.
+              This publishes the current <strong>{maxQ}-question bank</strong> exactly as-is and assigns it to every employee with the role <strong>"{role.roleName}"</strong>. You can still lock individual questions and regenerate the rest at any time afterward — a future approval creates a new version without affecting employees already assigned to this one.
             </p>
           </div>
           <div>
@@ -1391,7 +1391,7 @@ function ApproveModal({ role, onClose }) {
               Cancel
             </button>
             <button onClick={handleLock} disabled={locking} className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
-              {locking ? 'Locking…' : '🔒 Lock & Assign'}
+              {locking ? 'Approving…' : '✓ Approve & Assign'}
             </button>
           </div>
         </div>
@@ -1510,10 +1510,10 @@ export default function RoleLibrary() {
             </thead>
             <tbody>
               {filtered.map((role, i) => (
-                <tr key={role.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${role.approved ? 'bg-emerald-900/15 border-l-4 border-l-emerald-500' : (i % 2 === 0 ? '' : 'bg-slate-800/20')}`} title={role.approved && role.approvedAt ? `Locked ${new Date(role.approvedAt).toLocaleString()} — Regenerate to unlock and modify` : undefined}>
+                <tr key={role.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${role.approved ? 'bg-emerald-900/15 border-l-4 border-l-emerald-500' : (i % 2 === 0 ? '' : 'bg-slate-800/20')}`} title={role.approved && role.approvedAt ? `Approved ${new Date(role.approvedAt).toLocaleString()}` : undefined}>
                   <td className="px-4 py-3 font-medium text-white">
                     <span className="flex items-center gap-2">
-                      {role.approved && <span className="text-emerald-400" title="Assessment is locked. Regenerate to unlock and modify.">🔒</span>}
+                      {role.approved && <span className="text-emerald-400" title="Approved">✓</span>}
                       {role.roleName}
                     </span>
                   </td>
@@ -1530,15 +1530,10 @@ export default function RoleLibrary() {
                       <button onClick={() => setQBankRole(role)} className="text-xs px-2 py-1 rounded bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 whitespace-nowrap">
                         📚 Questions{role.questionBankCount ? ` (${role.questionBankCount})` : ''}
                       </button>
-                      {role.questionBankCount > 0 && !role.approved && (
+                      {role.questionBankCount > 0 && (
                         <button onClick={() => setApproveRole(role)} className="text-xs px-2 py-1 rounded bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 whitespace-nowrap border border-emerald-500/30">
-                          🔒 Lock Assessment
+                          ✓ Approve
                         </button>
-                      )}
-                      {role.approved && (
-                        <span className="text-xs px-2 py-1 rounded bg-emerald-900/30 text-emerald-400 whitespace-nowrap border border-emerald-700/40" title="Assessment is locked. Regenerate to unlock and modify.">
-                          🔒 Locked
-                        </span>
                       )}
                       <button onClick={() => setDelId(role.id)} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40">Delete</button>
                     </div>

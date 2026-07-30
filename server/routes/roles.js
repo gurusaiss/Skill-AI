@@ -953,6 +953,17 @@ async function requireEditableQuestions(req, res) {
   return { role, target };
 }
 
+// Forces any question that is currently locked=true back to its stored,
+// unchanged form regardless of what the client submitted for that id — a
+// defense-in-depth guarantee that "locked questions must never change unless
+// explicitly unlocked" holds even against a client trying to slip an edit
+// through a bulk PUT, not just against the UI disabling the edit button.
+function enforceLockedQuestions(storedQuestions, incomingQuestions) {
+  const lockedById = new Map((storedQuestions || []).filter(q => q?.locked === true && q?.id).map(q => [q.id, q]));
+  if (lockedById.size === 0) return incomingQuestions;
+  return incomingQuestions.map(q => (q?.id && lockedById.has(q.id)) ? lockedById.get(q.id) : q);
+}
+
 // ── PUT /api/roles/:id/questions — replace entire question bank ───────────────
 router.put('/:id/questions', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
@@ -961,11 +972,14 @@ router.put('/:id/questions', authenticate, requireRole('admin', 'manager'), asyn
     const { questions } = req.body;
     if (!Array.isArray(questions)) return res.status(400).json({ success: false, error: 'questions must be an array' });
     if (ctx.target.mode === 'draft') {
-      await QuestionBankVersions.updateQuestions(ctx.target.version.id, questions);
+      const enforced = enforceLockedQuestions(ctx.target.version.questions, questions);
+      await QuestionBankVersions.updateQuestions(ctx.target.version.id, enforced);
+      return res.json({ success: true, data: enforced });
     } else {
-      await RoleLibrary.update(req.params.id, { questionBank: questions, questionBankCount: questions.length, updatedAt: new Date().toISOString() });
+      const enforced = enforceLockedQuestions(ctx.role.questionBank, questions);
+      await RoleLibrary.update(req.params.id, { questionBank: enforced, questionBankCount: enforced.length, updatedAt: new Date().toISOString() });
+      return res.json({ success: true, data: enforced });
     }
-    res.json({ success: true, data: questions });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -1006,11 +1020,16 @@ router.delete('/:id/questions/:qid', authenticate, requireRole('admin', 'manager
   try {
     const ctx = await requireEditableQuestions(req, res);
     if (!ctx) return;
+    const sourceBank = ctx.target.mode === 'draft' ? (ctx.target.version.questions || []) : (ctx.role.questionBank || []);
+    const target = sourceBank.find(q => q.id === req.params.qid);
+    if (target?.locked === true) {
+      return res.status(409).json({ success: false, error: 'This question is locked. Unlock it before deleting.', locked: true });
+    }
     if (ctx.target.mode === 'draft') {
-      const qbank = (ctx.target.version.questions || []).filter(q => q.id !== req.params.qid);
+      const qbank = sourceBank.filter(q => q.id !== req.params.qid);
       await QuestionBankVersions.updateQuestions(ctx.target.version.id, qbank);
     } else {
-      const qbank = (ctx.role.questionBank || []).filter(q => q.id !== req.params.qid);
+      const qbank = sourceBank.filter(q => q.id !== req.params.qid);
       await RoleLibrary.update(req.params.id, { questionBank: qbank, questionBankCount: qbank.length, updatedAt: new Date().toISOString() });
     }
     res.json({ success: true, data: { id: req.params.qid } });
@@ -1019,40 +1038,71 @@ router.delete('/:id/questions/:qid', authenticate, requireRole('admin', 'manager
   }
 });
 
+// Shared implementation for the lock/unlock toggle endpoints below — locking
+// or unlocking a question is always allowed (it's editing/deleting a
+// question's *content* that a lock should prevent, enforced above), so this
+// does NOT go through requireEditableQuestions' whole-draft lock check; it
+// only needs the same 'legacy' vs 'draft' resolution to know where to write.
+async function setQuestionLock(req, res, locked) {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+    const target = await resolveQuestionEditTarget(req.params.id);
+    const sourceBank = target.mode === 'legacy' ? (role.questionBank || []) : (target.version.questions || []);
+    const idx = sourceBank.findIndex(q => q.id === req.params.qid);
+    if (idx === -1) return res.status(404).json({ success: false, error: 'Question not found' });
+
+    const updated = [...sourceBank];
+    updated[idx] = {
+      ...updated[idx],
+      locked,
+      lockedAt: locked ? new Date().toISOString() : null,
+      lockedBy: locked ? req.user.userId : null,
+    };
+
+    if (target.mode === 'legacy') {
+      await RoleLibrary.update(req.params.id, { questionBank: updated, updatedAt: new Date().toISOString() });
+    } else {
+      await QuestionBankVersions.updateQuestions(target.version.id, updated);
+    }
+
+    await UserStore.logAuthEvent(locked ? 'question_locked' : 'question_unlocked', req.user.userId, {
+      roleId: role.id, roleName: role.roleName, questionId: req.params.qid,
+      versionId: target.mode === 'legacy' ? null : target.version.id,
+    });
+
+    res.json({ success: true, data: updated[idx] });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+}
+
+// ── POST /api/roles/:id/questions/:qid/lock — lock one question ──────────────
+// Locked questions are preserved byte-identical by regenerate-questions
+// (never regenerated, never auto-replaced) until explicitly unlocked. Persists
+// in the question's own object (locked/lockedAt/lockedBy), so it survives
+// refresh/logout/restart/deployment exactly like every other question field.
+router.post('/:id/questions/:qid/lock', authenticate, requireRole('admin', 'manager'), (req, res) => setQuestionLock(req, res, true));
+
+// ── POST /api/roles/:id/questions/:qid/unlock — unlock one question ──────────
+router.post('/:id/questions/:qid/unlock', authenticate, requireRole('admin', 'manager'), (req, res) => setQuestionLock(req, res, false));
+
 // ── POST /api/roles/:id/regenerate-questions — re-generate question bank ──────
 router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const role = await RoleLibrary.getById(req.params.id);
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
 
-    // Locked = role has an approved version AND that approved version IS the
-    // latest one (no newer, distinct draft already exists). Regenerating on
-    // a Locked role is the literal "Unlock & Regenerate" action — it must be
-    // explicitly confirmed. This is REAL backend enforcement (not just a
-    // frontend dialog): a stray/automated call against a locked role without
-    // confirmUnlock is rejected outright, with enough info in the response
-    // for the client to render the confirmation dialog it should have shown.
+    // There is no assessment-level lock gate anymore — locking is per-question
+    // (see POST/:id/questions/:qid/lock below). Regeneration is ALWAYS
+    // available, unlimited, and never blocked by prior lock/approval state;
+    // approved versions are never touched regardless (a regenerate only ever
+    // creates a brand-new draft row), so there was never a real safety reason
+    // to gate this — only a UX one, which is now handled by simply never
+    // touching locked=true questions during regeneration (below).
     const existingVersions = await QuestionBankVersions.getByRole(req.params.id);
     const latestVersion = existingVersions[existingVersions.length - 1];
     const approvedVersion = existingVersions.find(v => v.status === 'approved');
-    const isLocked = !!approvedVersion && latestVersion?.id === approvedVersion.id;
-    if (isLocked && req.body.confirmUnlock !== true) {
-      return res.status(409).json({
-        success: false,
-        error: 'Assessment is locked. Confirm unlock to regenerate.',
-        requiresUnlockConfirmation: true,
-        locked: true,
-        lockedAt: approvedVersion.approved_at,
-        lockedBy: approvedVersion.approved_by,
-      });
-    }
-    if (isLocked && req.body.confirmUnlock === true) {
-      await UserStore.logAuthEvent('assessment_unlocked', req.user.userId, {
-        roleId: role.id, roleName: role.roleName, previousVersionId: approvedVersion.id, previousVersion: approvedVersion.version,
-      });
-    }
-    const unlockedAt = isLocked ? new Date().toISOString() : null;
-    const unlockedBy = isLocked ? req.user.userId : null;
 
     const { questionCount = 50, mode = 'all', updatedJdFiles, updatedSupportingFiles } = req.body;
 
@@ -1090,19 +1140,31 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
       return res.status(400).json({ success: false, error: 'Role has no job description or uploaded files — add a JD first' });
     }
 
-    // Preserve manually edited questions for ai-only mode — read from the latest
-    // known version if one exists (new source of truth), falling back to the
-    // legacy role.questionBank field for roles created before versioning existed.
-    // (existingVersions/latestVersion/approvedVersion already resolved above
-    // for the lock check — reused here, not re-fetched.)
+    // Read from the latest known version if one exists (new source of
+    // truth), falling back to the legacy role.questionBank field for roles
+    // created before versioning existed.
     const existingBank = latestVersion?.questions || role.questionBank || [];
-    const manualQuestions = mode === 'ai-only' ? existingBank.filter(q => q.isManual === true) : [];
+
+    // Partial regeneration: questions individually marked locked=true (via
+    // POST /:id/questions/:qid/lock) are ALWAYS preserved byte-identical,
+    // regardless of mode — this is the primary preservation mechanism now,
+    // replacing the old assessment-level lock. `ai-only` mode additionally
+    // keeps manually-authored (isManual) questions that aren't already
+    // locked, unchanged from its prior behavior. Deduped by id so a question
+    // that's both locked AND manual isn't counted twice.
+    const preservedById = new Map();
+    for (const q of existingBank) if (q?.locked === true && q?.id) preservedById.set(q.id, q);
+    if (mode === 'ai-only') {
+      for (const q of existingBank) if (q?.isManual === true && q?.id && !preservedById.has(q.id)) preservedById.set(q.id, q);
+    }
+    const manualQuestions = [...preservedById.values()];
 
     // Cross-version diversity: bounded avoid-set (approved + latest draft
     // only — never full history) fed to the generator so a regenerate
     // rejects near-duplicates of what employees already saw, instead of
     // regenerating near-identical content for content that hasn't changed.
-    // Deduped by id in case latest === approved.
+    // Deduped by id in case latest === approved. Includes locked questions
+    // too — freshly generated content must not duplicate what's being kept.
     const avoidById = new Map();
     for (const q of (approvedVersion?.questions || [])) if (q?.id) avoidById.set(q.id, q);
     for (const q of (latestVersion?.questions || [])) if (q?.id) avoidById.set(q.id, q);
@@ -1115,31 +1177,28 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
     const priorComboCounters = latestVersion?.generationConfig?.finalComboCounters || null;
 
     const totalTarget = hasFiles ? filesTotalCount(updatedRole) : Math.min(Math.max(parseInt(questionCount) || 50, 5), 200);
-    const aiTarget = mode === 'ai-only' ? Math.max(0, totalTarget - manualQuestions.length) : totalTarget;
+    const aiTarget = Math.max(0, totalTarget - manualQuestions.length);
 
-    // Edge case: all slots already filled by manual questions — still goes
-    // through the same draft-version path, just with no AI generation call.
+    // Edge case: every slot is already preserved (locked and/or, in ai-only
+    // mode, manual) — nothing left to regenerate. Still a legitimate outcome
+    // of "unlimited regeneration cycles," not an error — just nothing to do.
     if (aiTarget === 0) {
-      const bank = manualQuestions.slice(0, totalTarget).map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
-      const version = await QuestionBankVersions.create({
-        roleId: req.params.id,
-        version: await QuestionBankVersions.getNextVersion(req.params.id),
-        questions: bank,
-        questionCount: bank.length,
-        generationConfig: { questionCount, mode, manualOnly: true },
-        validationReport: validateQuestionBank(bank, bank.length),
-        unlockedAt, unlockedBy,
+      return res.json({
+        success: true,
+        data: { count: manualQuestions.length, questions: manualQuestions },
+        message: 'All questions are locked (or manually preserved) — nothing to regenerate.',
+        noOp: true,
       });
-      await RoleLibrary.update(req.params.id, { questionBankGeneratedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-      if (isLocked) await UserStore.logAuthEvent('assessment_regenerated', req.user.userId, { roleId: role.id, roleName: role.roleName, newVersionId: version.id, newVersion: version.version });
-      return res.json({ success: true, data: { versionId: version.id, version: version.version, status: version.status, count: bank.length, questions: bank } });
     }
 
     let aiQuestions;
     if (hasFiles) {
       let genSources = fileSources;
-      // Scale per-file counts proportionally when preserving manual questions
-      if (mode === 'ai-only' && manualQuestions.length > 0) {
+      // Scale per-file counts proportionally whenever anything is being
+      // preserved (locked questions in either mode, or manual questions in
+      // ai-only mode) — not just ai-only+manual as before, since locking is
+      // now the primary preservation mechanism in BOTH modes.
+      if (manualQuestions.length > 0) {
         const ratio = aiTarget / totalTarget;
         genSources = fileSources.map(s => ({ ...s, questionCount: Math.max(1, Math.round(s.questionCount * ratio)) }));
       }
@@ -1173,20 +1232,31 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
     // new one drops non-index own properties like this.
     const finalComboCounters = aiQuestions.finalComboCounters || null;
 
-    // Count validation: strict for 'all' mode, lenient for 'ai-only'
-    if (mode === 'all' && aiQuestions.length !== aiTarget) {
+    // Count validation stays a hard abort regardless of mode — this is a
+    // genuine generation-pipeline bug indicator (the generator promised an
+    // exact count and didn't deliver), not a content-quality tradeoff.
+    if (aiQuestions.length !== aiTarget) {
       console.error(`[regenerate-questions] Generated ${aiQuestions.length}/${aiTarget} — aborting, nothing saved.`);
       return res.status(500).json({ success: false, error: `Question generation returned ${aiQuestions.length} of ${aiTarget} requested questions. No new version was created — please retry.` });
     }
 
-    const finalQuestions = mode === 'ai-only' ? [...manualQuestions, ...aiQuestions] : aiQuestions;
+    // Locked (and, in ai-only mode, manual) questions come first, verbatim —
+    // their id/locked/lockedAt/lockedBy/isManual fields are preserved exactly
+    // as they were; only `order` is reassigned. Freshly generated questions
+    // fill the remaining slots.
+    const finalQuestions = [...manualQuestions, ...aiQuestions];
     const bank = finalQuestions.map((q, i) => ({ ...q, id: q.id || randomUUID(), order: i }));
 
     const typeDist = { mcq: 0.50, fill_blank: 0.25, subjective: 0.25 };
     const validation = validateQuestionBank(bank, bank.length, { typeDist });
+    // Validation NEVER blocks saving a draft anymore — this is exactly what
+    // "unlimited regeneration, must always succeed" requires. A draft is
+    // provisional and reviewable; there's no reason to refuse to create one.
+    // The hard quality gate lives entirely at Approve/version-approve time
+    // (see /versions/:versionId/approve below), where publishing to
+    // production is the actual point something should be blockable.
     if (!validation.passed) {
-      console.error(`[regenerate-questions] Validation hard failures — no version saved:`, validation.hardFailures);
-      return res.status(422).json({ success: false, error: 'Generated question bank failed validation. No new version was created.', validationReport: validation });
+      console.warn(`[regenerate-questions] Validation soft failures (draft saved anyway — gate is at Approve, not here):`, validation.hardFailures);
     }
 
     // Never overwrite anything in place — every regenerate produces a brand new
@@ -1199,16 +1269,18 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
       version: await QuestionBankVersions.getNextVersion(req.params.id),
       questions: bank,
       questionCount: bank.length,
-      generationConfig: { questionCount, mode, difficultyDist: { easy: 0.35, medium: 0.45, hard: 0.20 }, typeDist, fileSources: fileSources.map(f => ({ name: f.name, questionCount: f.questionCount, stakeholder: f.stakeholder, processDelivery: f.processDelivery })), finalComboCounters },
+      generationConfig: { questionCount, mode, difficultyDist: { easy: 0.35, medium: 0.45, hard: 0.20 }, typeDist, fileSources: fileSources.map(f => ({ name: f.name, questionCount: f.questionCount, stakeholder: f.stakeholder, processDelivery: f.processDelivery })), finalComboCounters, lockedCount: manualQuestions.filter(q => q.locked === true).length, freshCount: aiQuestions.length },
       validationReport: validation,
-      unlockedAt, unlockedBy,
     });
 
     // Mirror generation timestamp on the role for legacy UI reads, without
     // touching the legacy `questionBank` field (which still reflects the last
     // *approved* version, not this new draft).
     await RoleLibrary.update(req.params.id, { questionBankGeneratedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-    if (isLocked) await UserStore.logAuthEvent('assessment_regenerated', req.user.userId, { roleId: role.id, roleName: role.roleName, newVersionId: version.id, newVersion: version.version });
+    await UserStore.logAuthEvent(mode === 'ai-only' ? 'assessment_ai_regenerated' : 'assessment_regenerated', req.user.userId, {
+      roleId: role.id, roleName: role.roleName, newVersionId: version.id, newVersion: version.version,
+      lockedCount: manualQuestions.filter(q => q.locked === true).length, freshCount: aiQuestions.length,
+    });
 
     res.json({ success: true, data: { versionId: version.id, version: version.version, status: version.status, count: bank.length, questions: bank, validationReport: validation } });
   } catch (e) {
