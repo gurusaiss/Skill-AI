@@ -265,6 +265,57 @@ function looksLikeBinaryGarbage(buffer) {
   return nullCount > 0 || (controlCount / sample.length) > 0.05;
 }
 
+// RFC 4180-style CSV row splitter — handles quoted fields containing commas,
+// newlines, and escaped ("") quotes, which the previous catch-all's raw
+// `buffer.toString('utf-8')` left as literal unparsed text (usually harmless
+// for simple CSVs, but silently wrong for any field with an embedded comma).
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ',') {
+      row.push(field); field = '';
+    } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.some(f => f.trim() !== '')) rows.push(row);
+      row = [];
+    } else {
+      field += c;
+    }
+  }
+  if (field !== '' || row.length > 0) { row.push(field); if (row.some(f => f.trim() !== '')) rows.push(row); }
+  return rows;
+}
+
+// Reformats parsed CSV rows into "Header: Value" blocks per record instead of
+// raw comma-separated text — much more legible to the LLM than a flat comma
+// soup, especially for wide sheets where positional columns are hard to infer
+// without the header context repeated alongside each value.
+function parseCsvToStructuredText(text) {
+  const rows = parseCsvRows(text);
+  if (rows.length === 0) return '';
+  const header = rows[0];
+  const dataRows = rows.slice(1);
+  if (dataRows.length === 0) return header.join(', ');
+  return dataRows.map((row, i) => {
+    const pairs = header.map((h, colIdx) => `${(h || `Column${colIdx + 1}`).trim()}: ${(row[colIdx] || '').trim()}`).filter(p => !p.endsWith(': '));
+    return `Row ${i + 1} — ${pairs.join(' | ')}`;
+  }).join('\n');
+}
+
 async function extractTextFromBuffer(buffer, originalname) {
   const ext = (originalname?.split('.').pop() || '').toLowerCase();
 
@@ -363,7 +414,11 @@ async function extractTextFromBuffer(buffer, originalname) {
     return parts.join('\n\n');
   }
 
-  // txt, rtf, csv, and any other/unrecognized extension — treated as plain
+  if (ext === 'csv') {
+    return parseCsvToStructuredText(buffer.toString('utf-8'));
+  }
+
+  // txt, rtf, and any other/unrecognized extension — treated as plain
   // text. If the raw bytes actually look like binary content (an
   // unrecognized image format, a corrupt/unsupported file), reject clearly
   // instead of silently returning mangled garbage as if it were real text.
@@ -1396,6 +1451,57 @@ router.get('/:id/versions', authenticate, requireRole('admin', 'manager'), async
   try {
     const versions = await QuestionBankVersions.getByRole(req.params.id);
     res.json({ success: true, data: versions });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── GET /api/roles/:id/history — regeneration/lock/unlock audit timeline ──────
+// Every lock/unlock/regenerate/blocked-modification/question-lock event for
+// this role, newest first. Reuses the existing audit-log infrastructure
+// (UserStore.logAuthEvent, already called from every relevant action in this
+// file) rather than a separate history table — roleId lives in each event's
+// metadata, not a dedicated column.
+router.get('/:id/history', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+    const logs = await UserStore.getAuditLogs({ roleId: req.params.id });
+    res.json({ success: true, data: logs });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── GET /api/roles/:id/assignment-history — who was assigned which version ────
+// Aggregates every Assessment created for this role (one per approve/lock
+// cycle, each tagged fromRoleId + questionBankVersionId) together with its
+// employee_assessment_assignments rows, so an admin can see the full
+// version-by-version assignment timeline, not just the current live one.
+router.get('/:id/assignment-history', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+    const { Assessments: AssessmentsStore } = await import('../services/DataStore.js');
+    const allAssessments = await AssessmentsStore.getAll();
+    const roleAssessments = (allAssessments || [])
+      .filter(a => a.fromRoleId === req.params.id)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const history = await Promise.all(roleAssessments.map(async (a) => {
+      const assignments = await EmployeeAssessmentAssignments.getByAssessment(a.id);
+      return {
+        assessmentId: a.id,
+        questionBankVersionId: a.questionBankVersionId || null,
+        questionCount: a.questionCount,
+        createdAt: a.createdAt,
+        employeeCount: assignments.length,
+        submittedCount: assignments.filter(r => r.status === 'submitted').length,
+        employees: assignments.map(r => ({ userId: r.user_id, status: r.status, assignedAt: r.assigned_at, submittedAt: r.submitted_at })),
+      };
+    }));
+
+    res.json({ success: true, data: history });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }

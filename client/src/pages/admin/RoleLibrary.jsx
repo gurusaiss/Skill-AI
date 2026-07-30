@@ -1284,6 +1284,14 @@ function QuestionBankModal({ role, onClose }) {
                       <div className="flex gap-1 flex-shrink-0 items-center">
                         {q.isManual && <span className="px-1.5 py-0.5 rounded text-xs bg-violet-900/40 text-violet-400 border border-violet-700/50">edited</span>}
                         {q.locked && <span className="px-1.5 py-0.5 rounded text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-700/50" title="Locked — preserved exactly as-is on every regenerate, until unlocked">🔒 locked</span>}
+                        {typeof q.qualityScore === 'number' && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-xs border ${q.qualityScore >= 70 ? 'bg-emerald-900/40 text-emerald-400 border-emerald-700/50' : q.qualityScore >= 50 ? 'bg-amber-900/40 text-amber-400 border-amber-700/50' : 'bg-red-900/40 text-red-400 border-red-700/50'}`}
+                            title="Quality score — groundedness, specificity, non-generic phrasing, and answer completeness"
+                          >
+                            Q {q.qualityScore}
+                          </span>
+                        )}
                         <span className={`px-2 py-0.5 rounded-full text-xs border capitalize ${DIFF_COLORS[q.difficulty] || DIFF_COLORS.medium}`}>{q.difficulty || 'medium'}</span>
                         <button
                           onClick={() => startEdit(realIdx)}
@@ -1324,6 +1332,129 @@ function QuestionBankModal({ role, onClose }) {
               </div>
             );
           })}
+        </div>
+
+        <div className="p-4 border-t border-slate-700 flex-shrink-0">
+          <button onClick={onClose} className="w-full px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-slate-400">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── History Modal (versions, regeneration/lock audit log, assignment history) ─
+const AUDIT_EVENT_LABELS = {
+  assessment_locked: '✓ Approved & assigned',
+  assessment_unlocked: '🔓 Unlocked (legacy assessment-level)',
+  assessment_regenerated: '✨ Regenerated',
+  assessment_ai_regenerated: '🔄 AI-regenerated',
+  assessment_modification_blocked: '🚫 Blocked edit attempt',
+  question_locked: '🔒 Question locked',
+  question_unlocked: '🔓 Question unlocked',
+};
+
+function HistoryModal({ role, onClose }) {
+  const { notify: toast } = useNotification();
+  const [tab, setTab] = useState('versions'); // 'versions' | 'audit' | 'assignments'
+  const [loading, setLoading] = useState(true);
+  const [versions, setVersions] = useState([]);
+  const [auditLog, setAuditLog] = useState([]);
+  const [assignmentHistory, setAssignmentHistory] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [v, a, h] = await Promise.all([
+          authFetch(`/api/roles/${role.id}/versions`),
+          authFetch(`/api/roles/${role.id}/history`),
+          authFetch(`/api/roles/${role.id}/assignment-history`),
+        ]);
+        setVersions((Array.isArray(v) ? v : v?.data ?? []).slice().sort((x, y) => y.version - x.version));
+        setAuditLog(Array.isArray(a) ? a : a?.data ?? []);
+        setAssignmentHistory(Array.isArray(h) ? h : h?.data ?? []);
+      } catch (e) { toast(e.message, 'error'); }
+      finally { setLoading(false); }
+    })();
+  }, [role.id]);
+
+  const statusBadge = (status) => {
+    const cls = status === 'approved' ? 'bg-emerald-900/40 text-emerald-400 border-emerald-700/50'
+      : status === 'draft' ? 'bg-amber-900/40 text-amber-400 border-amber-700/50'
+      : 'bg-slate-700/50 text-slate-400 border-slate-600';
+    return <span className={`px-2 py-0.5 rounded-full text-xs border capitalize ${cls}`}>{status}</span>;
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between p-5 border-b border-slate-700 flex-shrink-0">
+          <div>
+            <h2 className="text-lg font-semibold text-white">📜 History — {role.roleName}</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Version, regeneration, and assignment history</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
+        </div>
+
+        <div className="flex gap-1 px-5 pt-3 flex-shrink-0">
+          {[['versions', `Versions (${versions.length})`], ['audit', `Timeline (${auditLog.length})`], ['assignments', `Assignments (${assignmentHistory.length})`]].map(([key, label]) => (
+            <button key={key} onClick={() => setTab(key)}
+              className={`px-3 py-1.5 rounded-t-lg text-xs font-semibold transition-colors ${tab === key ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 pt-3">
+          {loading ? (
+            <div className="text-center py-10 text-slate-400 text-sm">Loading…</div>
+          ) : tab === 'versions' ? (
+            versions.length === 0 ? <p className="text-sm text-slate-500 text-center py-8">No versions yet.</p> : (
+              <div className="space-y-2">
+                {versions.map(v => (
+                  <div key={v.id} className="bg-[#0F172A] border border-slate-700 rounded-lg p-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm text-white font-medium">Version {v.version} {statusBadge(v.status)}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {v.question_count} questions · created {v.created_at ? new Date(v.created_at).toLocaleString() : '—'}
+                        {v.approved_at && <> · approved {new Date(v.approved_at).toLocaleString()} by {v.approved_by || '—'}</>}
+                        {v.unlocked_at && <> · unlocked {new Date(v.unlocked_at).toLocaleString()} by {v.unlocked_by || '—'}</>}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : tab === 'audit' ? (
+            auditLog.length === 0 ? <p className="text-sm text-slate-500 text-center py-8">No recorded events yet.</p> : (
+              <div className="space-y-2">
+                {auditLog.map(entry => (
+                  <div key={entry.logId} className="bg-[#0F172A] border border-slate-700 rounded-lg p-3">
+                    <p className="text-sm text-white font-medium">{AUDIT_EVENT_LABELS[entry.eventType] || entry.eventType}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {new Date(entry.timestamp).toLocaleString()}
+                      {entry.metadata?.newVersion && <> · version {entry.metadata.newVersion}</>}
+                      {entry.metadata?.lockedCount != null && <> · {entry.metadata.lockedCount} locked, {entry.metadata.freshCount} regenerated</>}
+                      {entry.metadata?.questionId && <> · question {entry.metadata.questionId.slice(0, 12)}…</>}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            assignmentHistory.length === 0 ? <p className="text-sm text-slate-500 text-center py-8">No assignments yet.</p> : (
+              <div className="space-y-2">
+                {assignmentHistory.map(a => (
+                  <div key={a.assessmentId} className="bg-[#0F172A] border border-slate-700 rounded-lg p-3">
+                    <p className="text-sm text-white font-medium">{a.questionCount} questions assigned to {a.employeeCount} employee{a.employeeCount !== 1 ? 's' : ''}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {a.createdAt ? new Date(a.createdAt).toLocaleString() : '—'} · {a.submittedCount}/{a.employeeCount} submitted
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
         </div>
 
         <div className="p-4 border-t border-slate-700 flex-shrink-0">
@@ -1411,6 +1542,7 @@ export default function RoleLibrary() {
   const [delId, setDelId]         = useState(null);
   const [qBankRole, setQBankRole] = useState(null); // role to view question bank for
   const [approveRole, setApproveRole] = useState(null); // role to approve assessment for
+  const [historyRole, setHistoryRole] = useState(null); // role to view version/audit/assignment history for
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1535,6 +1667,9 @@ export default function RoleLibrary() {
                           ✓ Approve
                         </button>
                       )}
+                      <button onClick={() => setHistoryRole(role)} className="text-xs px-2 py-1 rounded bg-sky-600/20 text-sky-300 hover:bg-sky-600/40 whitespace-nowrap" title="Version, regeneration, and assignment history">
+                        📜 History
+                      </button>
                       <button onClick={() => setDelId(role.id)} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40">Delete</button>
                     </div>
                   </td>
@@ -1591,6 +1726,11 @@ export default function RoleLibrary() {
             setApproveRole(null);
           }}
         />
+      )}
+
+      {/* History Modal (versions, regeneration audit, assignment history) */}
+      {historyRole && (
+        <HistoryModal role={historyRole} onClose={() => setHistoryRole(null)} />
       )}
 
       {/* Delete confirmation */}

@@ -5,6 +5,7 @@
  */
 import { randomUUID } from 'crypto';
 import { classifyJDVsProcessSections } from '../utils/textPreprocessor.js';
+import GeminiService from './GeminiService.js';
 
 // ── Shared near-duplicate / seen-content tracking ────────────────────────────
 // Single source of truth for "have we already produced this question" —
@@ -564,6 +565,49 @@ function verifyQuoteGrounded(questions, sourceText) {
   });
 }
 
+// Per-question numeric quality score (0-100), informational only — never a
+// pass/fail gate (that's validateQuestionBank's job). Reuses the same signals
+// the hard gates already check (quote groundedness, generic-shape detection)
+// as scoring inputs instead of inventing a second quality mechanism:
+//  - groundedness (0-40): a verified, real, longer verbatim quote scores higher
+//  - specificity (0-30): presence of numbers, multi-word proper nouns, and
+//    question length — proxies for "testing a concrete fact" vs. a vague stem
+//  - non-generic shape (0-20): fails to 0 if it matches a known generic pattern
+//  - answer completeness (0-10): a non-empty answer is present
+function computeQuestionQualityScore(q, sourceText) {
+  const qText = (q?.question || '').trim();
+  const normalizedSource = normalizeForQuoteMatch(sourceText || '');
+
+  let groundedness = 0;
+  const rawQuote = (q?.sourceQuote || '').trim();
+  if (rawQuote && normalizedSource.length >= 40) {
+    const normalizedQuote = normalizeForQuoteMatch(rawQuote);
+    const wordCount = rawQuote.split(/\s+/).filter(Boolean).length;
+    if (normalizedQuote.length >= 15 && normalizedSource.includes(normalizedQuote)) {
+      groundedness = Math.min(40, 20 + wordCount);
+    }
+  }
+
+  let specificity = 0;
+  if (/\d/.test(qText)) specificity += 10;
+  if (/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+/.test(qText)) specificity += 10;
+  if (qText.split(/\s+/).filter(Boolean).length >= 8) specificity += 10;
+
+  const nonGeneric = GENERIC_PHRASE_PATTERNS.some(re => re.test(qText)) ? 0 : 20;
+  const answerQuality = (q?.answer && String(q.answer).trim()) ? 10 : 0;
+
+  return Math.max(0, Math.min(100, Math.round(groundedness + specificity + nonGeneric + answerQuality)));
+}
+
+// Attaches `qualityScore` to every question in a bank. Called once at the end
+// of each generation path (after grounding/generic filters, on the final
+// exact-count bank) — not inside the retry loops, since it's informational
+// metadata on the finished product, not a filter condition itself.
+function attachQualityScores(questions, sourceText) {
+  if (!Array.isArray(questions)) return questions;
+  return questions.map(q => ({ ...q, qualityScore: computeQuestionQualityScore(q, sourceText) }));
+}
+
 // Reject questions built from generic phrasing SHAPES (Issue 5 / Issue 13's
 // "no generic filler questions" requirement) — applied as an automated
 // filter within the same first-pass attempt loop, no extra LLM call needed.
@@ -607,59 +651,6 @@ function filterGenericPhrasing(questions) {
     if (!text) return false;
     return !GENERIC_PHRASE_PATTERNS.some(re => re.test(text));
   });
-}
-
-async function callGroq(system, prompt, { temperature = 0.85, maxTokens = 16000, timeoutMs = 30000 } = {}) {
-  const groqKey = process.env.GROQ_API_KEY;
-  if (!(groqKey?.length > 10)) return null;
-  try {
-    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-        temperature,
-        max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!r.ok) return null;
-    const d = await r.json();
-    const parsed = JSON.parse(d.choices?.[0]?.message?.content || '{}');
-    return Array.isArray(parsed.questions) ? parsed.questions : null;
-  } catch (e) {
-    console.warn('[AssessmentGenerator] Groq batch failed:', e.message);
-    return null;
-  }
-}
-
-async function callGemini(system, prompt, { temperature = 0.85, maxTokens = 16384, timeoutMs = 30000 } = {}) {
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-  if (!(geminiKey?.length > 10)) return null;
-  try {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: system + '\n\n' + prompt }] }],
-          generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
-        }),
-        signal: AbortSignal.timeout(timeoutMs),
-      }
-    );
-    if (!r.ok) return null;
-    const d = await r.json();
-    const parsed = JSON.parse(d.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
-    return Array.isArray(parsed.questions) ? parsed.questions : null;
-  } catch (e) {
-    console.warn('[AssessmentGenerator] Gemini batch failed:', e.message);
-    return null;
-  }
 }
 
 // Fallback phrasing banks — kept deliberately varied (not just a number suffix)
@@ -1023,6 +1014,16 @@ export function validateQuestionBank(questions, target, config = {}) {
     }
   }
 
+  // 4. Aggregate quality score (informational only — never a gate). Only
+  // questions carrying a qualityScore (freshly generated ones; manually
+  // added/edited questions won't have one) are averaged.
+  const scored = questions.map(q => q.qualityScore).filter(s => typeof s === 'number');
+  if (scored.length > 0) {
+    const avg = Math.round(scored.reduce((a, b) => a + b, 0) / scored.length);
+    checks.qualityScore = { avg, min: Math.min(...scored), max: Math.max(...scored), scoredCount: scored.length };
+    if (avg < 50) warnings.push(`Average question quality score is low (${avg}/100) — consider regenerating`);
+  }
+
   const passed = hardFailures.length === 0;
   return { valid: passed, passed, errors: hardFailures, hardFailures, warnings, checks };
 }
@@ -1122,8 +1123,7 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     const seed = attempt === 0 ? baseSeed : `${baseSeed}-retry${attempt}-${randomUUID().slice(0, 6)}`;
     const prompt = buildUserPrompt({ count: askFor, jobRole, jdText, skillsList, types, seed, supportingDocsText, avoidQuestions });
 
-    let batch = await callGroq(system, prompt);
-    if (!batch || batch.length === 0) batch = await callGemini(system, prompt);
+    let batch = await GeminiService.generateQuestionsBatch(prompt, system);
     if (batch && batch.length > 0) {
       const combinedSource = `${jdText}\n${supportingDocsText}`;
       const noGeneric = filterGenericPhrasing(batch);
@@ -1202,10 +1202,12 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
 
   // Post-generation safety net: if count is still off (should never happen after the
   // fallback loop, but guard against any future edge case), force to exact count.
+  const scoringSource = `${jdText}\n${supportingDocsText}`;
+
   if (rebalanced.length !== num) {
     console.warn(`[AssessmentGenerator] Post-rebalance count mismatch: ${rebalanced.length}/${num} — applying emergency fix`);
     if (rebalanced.length > num) {
-      return withFinalCombo(rebalanced.slice(0, num), comboCounters);
+      return withFinalCombo(attachQualityScores(rebalanced.slice(0, num), scoringSource), comboCounters);
     }
     // Still short — generate emergency fallback for the remaining gap.
     // Deliberately NOT seeded from avoidQuestions: this is the true
@@ -1215,10 +1217,10 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     // of a prior version's content than a broken count. It IS still
     // deduplicated against the current bank and against itself (fillEmergencyGap).
     const final = fillEmergencyGap(rebalanced, num, { types, skillsList, jobRole });
-    return withFinalCombo(tagMetadata(final, { generatedFrom: 'jd' }), comboCounters);
+    return withFinalCombo(attachQualityScores(tagMetadata(final, { generatedFrom: 'jd' }), scoringSource), comboCounters);
   }
 
-  return withFinalCombo(tagMetadata(rebalanced, { generatedFrom: 'jd' }), comboCounters);
+  return withFinalCombo(attachQualityScores(tagMetadata(rebalanced, { generatedFrom: 'jd' }), scoringSource), comboCounters);
 }
 
 // Stamps every question with the metadata fields required for provenance
@@ -1300,8 +1302,7 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
         count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder, processDelivery, avoidQuestions,
       });
 
-      let batch = await callGroq(system, prompt);
-      if (!batch || batch.length === 0) batch = await callGemini(system, prompt);
+      let batch = await GeminiService.generateQuestionsBatch(prompt, system);
       if (batch && batch.length > 0) {
         const noGeneric = filterGenericPhrasing(batch);
         const keywordPrefiltered = filterGrounded(noGeneric, chunk);
@@ -1364,14 +1365,14 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
   const meta = { generatedFrom: sourceType === 'jd' ? 'jd' : 'document', stakeholderFlag: stakeholder, processDeliveryFlag: processDelivery };
 
   if (rebalanced.length !== num) {
-    if (rebalanced.length > num) return withFinalCombo(rebalanced.slice(0, num), comboCounters);
+    if (rebalanced.length > num) return withFinalCombo(attachQualityScores(rebalanced.slice(0, num), sourceText), comboCounters);
     // True last-resort guarantee — not seeded from avoidQuestions, same
     // reasoning as generateQuestionsFromJD's emergency path. Deduplicated
     // against the current bank and against itself via fillEmergencyGap.
     const final = fillEmergencyGap(rebalanced, num, { types, skillsList: [SAFE_FALLBACK_TOPIC], jobRole });
-    return withFinalCombo(tagMetadata(final, meta), comboCounters);
+    return withFinalCombo(attachQualityScores(tagMetadata(final, meta), sourceText), comboCounters);
   }
-  return withFinalCombo(tagMetadata(rebalanced, meta), comboCounters);
+  return withFinalCombo(attachQualityScores(tagMetadata(rebalanced, meta), sourceText), comboCounters);
 }
 
 // ── Per-file multi-source generation ─────────────────────────────────────────
@@ -1537,7 +1538,7 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
           if (acceptedForSource.length >= count) break;
           if (tracker.isDuplicate(q)) continue;
           tracker.add(q);
-          const tagged = { ...q, id: q.id || randomUUID(), sourceFile: source.name || 'Unknown', sourceType: source.sourceType || 'jd' };
+          const tagged = { ...q, id: q.id || randomUUID(), sourceFile: source.name || 'Unknown', sourceType: source.sourceType || 'jd', qualityScore: computeQuestionQualityScore(q, text) };
           allQuestions.push(tagged);
           acceptedForSource.push(tagged);
         }
@@ -1554,7 +1555,7 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
           types: buildTypeSeqLocal(stillNeeded), skillsList: paddingSkills, jobRole: srcJobRole, comboCounters: padComboCounters,
         });
         for (const q of forced) {
-          const tagged = { ...q, id: q.id || randomUUID(), sourceFile: source.name || 'Unknown', sourceType: source.sourceType || 'jd' };
+          const tagged = { ...q, id: q.id || randomUUID(), sourceFile: source.name || 'Unknown', sourceType: source.sourceType || 'jd', qualityScore: computeQuestionQualityScore(q, text) };
           tracker.add(tagged); // still recorded so later sources avoid repeating it, even though it wasn't itself checked
           allQuestions.push(tagged);
           acceptedForSource.push(tagged);

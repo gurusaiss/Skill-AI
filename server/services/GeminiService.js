@@ -46,7 +46,7 @@ class GeminiService {
   }
 
   // ── Groq: generate JSON ───────────────────────────────────────────────────
-  async _groqJSON(prompt, system = '') {
+  async _groqJSON(prompt, system = '', { temperature = 0.7, maxTokens = 2048, timeoutMs = 30000, model = 'llama-3.3-70b-versatile' } = {}) {
     if (!this.groqEnabled) return null;
     try {
       const messages = [];
@@ -60,13 +60,13 @@ class GeminiService {
           'Authorization': `Bearer ${this.groqApiKey}`,
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model,
           messages,
-          temperature: 0.7,
-          max_tokens: 2048,
+          temperature,
+          max_tokens: maxTokens,
           response_format: { type: 'json_object' },
         }),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(timeoutMs),
       }));
 
       if (!res.ok) {
@@ -190,6 +190,61 @@ class GeminiService {
     } catch {
       return null;
     }
+  }
+
+  // ── Gemini: single-attempt JSON (no retry) ───────────────────────────────
+  // Distinct from generateJSON's retrying Gemini path below: callers that
+  // already run their own outer retry loop (e.g. bulk question generation)
+  // want one attempt per call, not 3 retries nested inside each attempt.
+  async _geminiJSONOnce(prompt, system = '', { temperature = 0.85, maxTokens = 16384, timeoutMs = 30000 } = {}) {
+    if (!this.isEnabled()) return null;
+    try {
+      const body = {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
+      };
+      if (system) body.systemInstruction = { parts: [{ text: system }] };
+
+      const res = await LLMQueue.run(() => fetch(`${this.endpoint}?key=${this.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      }));
+      if (!res.ok) return null;
+
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) return null;
+
+      const clean = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+      const parsed = JSON.parse(clean);
+      this.callCount++;
+      return parsed;
+    } catch (err) {
+      console.warn(`[Gemini] single-attempt JSON failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  // ── generateQuestionsBatch: Groq(70b) → Gemini fallback, single attempt each ──
+  // Purpose-built for AssessmentGenerator.js's bulk question generation, which
+  // runs its own outer retry loop across attempts (escalating buffers, fresh
+  // seeds) — this method makes exactly one Groq call then, if that yields
+  // nothing, one Gemini call, and unwraps the `{questions: [...]}` shape the
+  // question-generation prompts always request. Reuses the shared LLMQueue
+  // concurrency control and Groq/Gemini credentials instead of the raw fetch
+  // calls AssessmentGenerator used to make directly.
+  async generateQuestionsBatch(prompt, system = '', { temperature = 0.85, maxTokens = 16000, timeoutMs = 30000 } = {}) {
+    if (this.groqEnabled) {
+      const parsed = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs });
+      if (Array.isArray(parsed?.questions)) return parsed.questions;
+    }
+    if (this.isEnabled()) {
+      const parsed = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: Math.max(maxTokens, 16384), timeoutMs });
+      if (Array.isArray(parsed?.questions)) return parsed.questions;
+    }
+    return null;
   }
 
   // ── generateJSON: Gemini → Groq fallback ─────────────────────────────────

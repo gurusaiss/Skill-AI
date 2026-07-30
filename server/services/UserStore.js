@@ -713,6 +713,11 @@ class UserStore {
     let logs = auditData.logs;
     if (filters.userId)    logs = logs.filter(l => l.userId === filters.userId);
     if (filters.eventType) logs = logs.filter(l => l.eventType === filters.eventType);
+    // roleId lives inside metadata (every assessment-engine audit event —
+    // assessment_locked/unlocked/regenerated/modification_blocked,
+    // question_locked/unlocked — logs { roleId, ... }), not a top-level
+    // column, so this filters on the nested field rather than l.roleId.
+    if (filters.roleId)    logs = logs.filter(l => l.metadata?.roleId === filters.roleId);
     if (filters.startDate) logs = logs.filter(l => new Date(l.timestamp) >= new Date(filters.startDate));
     if (filters.endDate)   logs = logs.filter(l => new Date(l.timestamp) <= new Date(filters.endDate));
     logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
