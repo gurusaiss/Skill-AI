@@ -80,6 +80,42 @@ function filesTotalCount(role, fallback = 50) {
   return s.length > 0 ? s.reduce((acc, f) => acc + f.questionCount, 0) : fallback;
 }
 
+// Scales each source's questionCount by `ratio` and returns sources whose
+// counts sum to EXACTLY `exactTotal` — largest-remainder apportionment, not
+// independent per-file rounding. Independent `Math.round(count * ratio)` per
+// file does not guarantee the sum equals the target (classic apportionment
+// problem): e.g. counts 17/17/16 scaled by 0.96 round to 16/16/15 = 47, not
+// the intended 48. generateQuestionsFromFiles produces exactly the sum of
+// per-file counts, and regenerate-questions hard-aborts if that sum doesn't
+// match aiTarget — so an off-by-a-few rounding error here previously made
+// every regenerate on an affected role/lock-count fail with a spurious 500.
+function apportionCounts(sources, ratio, exactTotal) {
+  const scaled = sources.map(s => {
+    const raw = Math.max(1, s.questionCount * ratio);
+    return { source: s, floor: Math.max(1, Math.floor(raw)), remainder: raw - Math.floor(raw) };
+  });
+  let sum = scaled.reduce((acc, s) => acc + s.floor, 0);
+  let deficit = exactTotal - sum;
+  if (deficit > 0) {
+    // Give the leftover units to the sources with the largest fractional
+    // remainder first (standard largest-remainder / Hamilton apportionment).
+    scaled.sort((a, b) => b.remainder - a.remainder);
+    for (let i = 0; i < deficit; i++) scaled[i % scaled.length].floor += 1;
+  } else if (deficit < 0) {
+    // Scaling rounded UP more than needed (can happen since every source is
+    // floored to a minimum of 1) — trim from the largest counts first so no
+    // source drops below 1.
+    scaled.sort((a, b) => b.floor - a.floor);
+    let i = 0;
+    while (deficit < 0 && i < scaled.length * 4) {
+      const s = scaled[i % scaled.length];
+      if (s.floor > 1) { s.floor -= 1; deficit += 1; }
+      i++;
+    }
+  }
+  return scaled.map(s => ({ ...s.source, questionCount: s.floor }));
+}
+
 // Unbiased Fisher-Yates shuffle — replaces the `sort(() => Math.random() - 0.5)`
 // pattern used elsewhere in this codebase, which is both statistically biased
 // and (in the old assignment code) was being used to resample/subset a bank
@@ -1090,11 +1126,15 @@ router.put('/:id/questions', authenticate, requireRole('admin', 'manager'), asyn
     const { questions } = req.body;
     if (!Array.isArray(questions)) return res.status(400).json({ success: false, error: 'questions must be an array' });
     if (ctx.target.mode === 'draft') {
-      const enforced = enforceLockedQuestions(ctx.target.version.questions, questions);
+      const stored = ctx.target.version.questions || [];
+      const enforced = enforceLockedQuestions(stored, questions);
+      await recordRemovedQuestions(ctx.role, stored, enforced);
       await QuestionBankVersions.updateQuestions(ctx.target.version.id, enforced);
       return res.json({ success: true, data: enforced });
     } else {
-      const enforced = enforceLockedQuestions(ctx.role.questionBank, questions);
+      const stored = ctx.role.questionBank || [];
+      const enforced = enforceLockedQuestions(stored, questions);
+      await recordRemovedQuestions(ctx.role, stored, enforced);
       await RoleLibrary.update(req.params.id, { questionBank: enforced, questionBankCount: enforced.length, updatedAt: new Date().toISOString() });
       return res.json({ success: true, data: enforced });
     }
@@ -1134,6 +1174,44 @@ router.post('/:id/questions', authenticate, requireRole('admin', 'manager'), asy
 });
 
 // ── DELETE /api/roles/:id/questions/:qid — remove one question ───────────────
+// A deleted question is a deliberate "never show this again" signal — the
+// admin looked at it and rejected it, which is a stronger signal than a
+// regenerate simply not reproducing it by chance. Persisted independently of
+// the live question bank (which loses all memory of a question the instant
+// it's filtered out) so it keeps suppressing that content — and near-dupes of
+// it, and its exact option/answer set — across every future regenerate, not
+// just until the next version overwrites the bank. Deduped by normalized text
+// and capped so a role deleted-into for years doesn't grow this unboundedly;
+// oldest entries drop first since the most likely repeat offenders are recent.
+const MAX_DELETED_QUESTIONS = 500;
+async function recordDeletedQuestion(role, deletedQ) {
+  if (!deletedQ?.question) return;
+  const signature = {
+    question: deletedQ.question,
+    options: deletedQ.options || undefined,
+    answer: deletedQ.answer || undefined,
+    type: deletedQ.type || undefined,
+  };
+  const existing = Array.isArray(role.deletedQuestions) ? role.deletedQuestions : [];
+  const normKey = deletedQ.question.trim().toLowerCase();
+  if (existing.some(q => (q.question || '').trim().toLowerCase() === normKey)) return;
+  const updated = [...existing, signature].slice(-MAX_DELETED_QUESTIONS);
+  await RoleLibrary.update(role.id, { deletedQuestions: updated });
+}
+
+// Same "never show this again" guarantee as recordDeletedQuestion, but for
+// PUT /:id/questions' bulk-replace path — that endpoint accepts an arbitrary
+// full replacement array, so a question present in `stored` but absent from
+// `enforced` (the submitted array, after locked-question enforcement) was
+// just as deliberately removed as one deleted via the single-question DELETE
+// route, and must be recorded the same way or it can silently reappear on a
+// later regenerate.
+async function recordRemovedQuestions(role, stored, enforced) {
+  const keptIds = new Set(enforced.filter(q => q?.id).map(q => q.id));
+  const removed = (stored || []).filter(q => q?.id && !keptIds.has(q.id));
+  for (const q of removed) await recordDeletedQuestion(role, q);
+}
+
 router.delete('/:id/questions/:qid', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const ctx = await requireEditableQuestions(req, res);
@@ -1150,6 +1228,7 @@ router.delete('/:id/questions/:qid', authenticate, requireRole('admin', 'manager
       const qbank = sourceBank.filter(q => q.id !== req.params.qid);
       await RoleLibrary.update(req.params.id, { questionBank: qbank, questionBankCount: qbank.length, updatedAt: new Date().toISOString() });
     }
+    await recordDeletedQuestion(ctx.role, target);
     res.json({ success: true, data: { id: req.params.qid } });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -1286,7 +1365,13 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
     const avoidById = new Map();
     for (const q of (approvedVersion?.questions || [])) if (q?.id) avoidById.set(q.id, q);
     for (const q of (latestVersion?.questions || [])) if (q?.id) avoidById.set(q.id, q);
-    const avoidQuestions = avoidById.size > 0 ? [...avoidById.values()] : existingBank;
+    // Deliberately-deleted questions must never come back — unlike the
+    // approved/latest-version content above, this list survives forever
+    // (independent of the live bank), so an admin's "no, not this one"
+    // signal stays enforced across every future regenerate, not just until
+    // the next version overwrites it. See recordDeletedQuestion above.
+    const deletedQuestions = Array.isArray(role.deletedQuestions) ? role.deletedQuestions : [];
+    const avoidQuestions = [...(avoidById.size > 0 ? [...avoidById.values()] : existingBank), ...deletedQuestions];
 
     // Fallback-padding combo high-water-mark from the previous generation, so
     // deterministic template content doesn't reproduce the same (skill,
@@ -1317,8 +1402,7 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), asy
       // ai-only mode) — not just ai-only+manual as before, since locking is
       // now the primary preservation mechanism in BOTH modes.
       if (manualQuestions.length > 0) {
-        const ratio = aiTarget / totalTarget;
-        genSources = fileSources.map(s => ({ ...s, questionCount: Math.max(1, Math.round(s.questionCount * ratio)) }));
+        genSources = apportionCounts(fileSources, aiTarget / totalTarget, aiTarget);
       }
       aiQuestions = await generateQuestionsFromFiles(genSources, {
         jobRole: updatedRole.roleName, skills: updatedRole.skills || [], seed: `qbank-${updatedRole.id}-regen-${Date.now()}`,
