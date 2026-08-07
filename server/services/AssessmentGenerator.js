@@ -472,6 +472,41 @@ function extractDocKeywords(text, maxTerms = 8) {
     .map(([w]) => w);
 }
 
+// Phrases/patterns that indicate a question was derived from document
+// metadata (title/heading/filename/author/etc.) rather than actual body
+// content, or names a specific person rather than a role/process (Issue 13).
+// Declared here (rather than only near validateQuestionBank, which also uses
+// them) so extractDocEntities below can reuse the exact same patterns for
+// its own noise filter instead of duplicating them.
+const HEADER_FOOTER_PATTERNS = [
+  /\bpage \d+\b/i, /\bversion \d+(\.\d+)*\b/i, /\bconfidential\b/i, /\bcopyright\b/i,
+  /\bfile ?name\b/i, /\.(docx?|pdf|xlsx?|pptx?)\b/i, /\bauthor(ed)? by\b/i, /\breviewed by\b/i,
+];
+const PERSON_NAME_PATTERNS = [/\bmr\.\s|\bmrs\.\s|\bms\.\s|\bdr\.\s/i];
+
+// A candidate entity/keyword pulled from a real, messy uploaded document
+// (headers, footers, page numbers, table cells, OCR artifacts) can just as
+// easily match extractDocEntities' proper-noun regex as a genuine system/tool
+// name can — e.g. "Page 3 Of 12", "TOTAL AMOUNT DUE", a heading fragment cut
+// off by a page break. That garbled phrase then gets substituted verbatim
+// into a fallback question template ("When starting a task involving Page 3
+// Of 12, which action should be completed first?"), which is the direct,
+// model-independent (not a GROQ/Gemini quality issue) cause of confusing
+// fallback-path questions. Filters those out before they're ever added as a
+// candidate entity.
+function looksLikeNoisePhrase(phrase) {
+  if (HEADER_FOOTER_PATTERNS.some(re => re.test(phrase)) || PERSON_NAME_PATTERNS.some(re => re.test(phrase))) return true;
+  // 3+ consecutive ALL-CAPS words — a strong signal of a table header or
+  // shouty heading, not real prose. The proper-noun regex's
+  // `[a-zA-Z0-9]*` deliberately allows any case after the first letter (so
+  // it can also match genuine names), so this needs a separate check.
+  if (/^[A-Z0-9]+(\s+[A-Z0-9]+){2,}$/.test(phrase)) return true;
+  // Bare page-range fragments like "3 Of 12" — can appear without a leading
+  // "Page" if extraction/OCR drops the first word.
+  if (/^\d+\s+of\s+\d+$/i.test(phrase)) return true;
+  return false;
+}
+
 // Extracts multi-word proper-noun phrases (tool/system/form names — "Payment
 // Gateway", "Tier 2 Escalation Matrix") and number+unit tokens (thresholds,
 // SLAs, codes — "48 hours", "99.9%", "Level 3") from a document. These are
@@ -488,12 +523,17 @@ function extractDocEntities(text, maxTerms = 12) {
 
   // Consecutive-capitalized sequences of 2-4 words, e.g. "Payment Gateway",
   // "Tier 2 Escalation Matrix" — skips a lone capitalized word at a sentence
-  // start (rarely meaningful alone) by requiring at least 2 words.
-  const properNounRe = /\b([A-Z][a-zA-Z0-9]{2,}(?:\s+(?:[A-Z][a-zA-Z0-9]*|\d+)){1,3})\b/g;
+  // start (rarely meaningful alone) by requiring at least 2 words. The
+  // separator is deliberately [ \t]+ (same line only), NOT \s+ — \s+ matches
+  // newlines too, which let this regex splice together unrelated adjacent
+  // lines (e.g. a table header ending in "TOTAL AMOUNT DUE" immediately
+  // followed by the next line's capitalized first word) into one garbled
+  // multi-word "entity" that then got used as a fallback question topic.
+  const properNounRe = /\b([A-Z][a-zA-Z0-9]{2,}(?:[ \t]+(?:[A-Z][a-zA-Z0-9]*|\d+)){1,3})\b/g;
   let m;
   while ((m = properNounRe.exec(text)) !== null) {
     const phrase = m[1].trim();
-    if (phrase.length >= 6 && phrase.length <= 60) entities.add(phrase);
+    if (phrase.length >= 6 && phrase.length <= 60 && !looksLikeNoisePhrase(phrase)) entities.add(phrase);
   }
 
   // Number + unit tokens — thresholds, SLAs, percentages, tiers/levels/codes.
@@ -869,14 +909,8 @@ function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyD
   });
 }
 
-// Phrases/patterns that indicate a question was derived from document
-// metadata (title/heading/filename/author/etc.) rather than actual body
-// content, or names a specific person rather than a role/process (Issue 13).
-const HEADER_FOOTER_PATTERNS = [
-  /\bpage \d+\b/i, /\bversion \d+(\.\d+)*\b/i, /\bconfidential\b/i, /\bcopyright\b/i,
-  /\bfile ?name\b/i, /\.(docx?|pdf|xlsx?|pptx?)\b/i, /\bauthor(ed)? by\b/i, /\breviewed by\b/i,
-];
-const PERSON_NAME_PATTERNS = [/\bmr\.\s|\bmrs\.\s|\bms\.\s|\bdr\.\s/i];
+// HEADER_FOOTER_PATTERNS / PERSON_NAME_PATTERNS are declared above, next to
+// extractDocEntities' looksLikeNoisePhrase, which reuses them.
 
 /**
  * Validates a question bank before persisting/approving it.
