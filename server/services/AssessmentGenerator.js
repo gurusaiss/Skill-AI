@@ -7,6 +7,22 @@ import { randomUUID } from 'crypto';
 import { classifyJDVsProcessSections } from '../utils/textPreprocessor.js';
 import GeminiService from './GeminiService.js';
 
+// Groq's free/on-demand tier enforces a hard per-REQUEST token budget (prompt
+// tokens + requested max_tokens combined) — observed limit: 12,000 TPM for
+// llama-3.3-70b-versatile. A single request whose own (input + max_tokens)
+// exceeds that is rejected outright with HTTP 413, before generating
+// anything — this is not a rate/timing issue solvable by spacing calls out.
+// The original chunk sizes (80,000 chars) and max_tokens (16,000+) were sized
+// for Groq's paid-tier 128k context window, which silently assumed the free
+// tier wasn't in play. These smaller budgets keep each individual request
+// comfortably under the free-tier ceiling — at the cost of more attempts
+// needed to fill a large question count (a real quality/latency tradeoff,
+// not a full fix; the free tier itself is the actual constraint. See
+// docs/DEPLOYMENT_GUIDE.md for upgrading to a paid Groq/Gemini tier).
+const FREE_TIER_SOURCE_CHAR_BUDGET = 6000;   // ~1,500 tokens of source text per request
+const FREE_TIER_MAX_OUTPUT_TOKENS  = 3000;   // leaves ample headroom under the 12k/req cap
+const FREE_TIER_MAX_QUESTIONS_PER_CALL = 8;  // bounds expected output size per request
+
 // ── Shared near-duplicate / seen-content tracking ────────────────────────────
 // Single source of truth for "have we already produced this question" —
 // previously this logic was independently copy-pasted across
@@ -1133,8 +1149,12 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
   const skillsList = Array.isArray(jdSkills) && jdSkills.length ? jdSkills : [];
   const system = buildSystemPrompt();
 
-  // Build supporting docs text — no arbitrary cap; full text from each doc is included.
-  // Combined text is bounded only by LLM context window (Groq 128k tokens, Gemini 1M tokens).
+  // Build supporting docs text, then truncate the combined (jdText +
+  // supportingDocsText) source to FREE_TIER_SOURCE_CHAR_BUDGET so a single
+  // Groq request's prompt tokens leave room for FREE_TIER_MAX_OUTPUT_TOKENS
+  // under the free tier's combined per-request cap (see constant comment
+  // above) — jdText gets priority since it's the primary source; whatever
+  // budget remains goes to supportingDocsText.
   let supportingDocsText = '';
   if (Array.isArray(supportingDocs) && supportingDocs.length > 0) {
     const parts = [];
@@ -1144,6 +1164,9 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     }
     supportingDocsText = parts.join('\n\n');
   }
+  const jdTextForPrompt = jdText.slice(0, FREE_TIER_SOURCE_CHAR_BUDGET);
+  const remainingBudget = Math.max(0, FREE_TIER_SOURCE_CHAR_BUDGET - jdTextForPrompt.length);
+  supportingDocsText = supportingDocsText.slice(0, remainingBudget);
 
   let pool = [];
   const MAX_ATTEMPTS = 5;
@@ -1152,12 +1175,15 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     const stillNeeded = num - pool.length;
     // Escalating buffer: first attempt +40%, later attempts ask for progressively more
     // headroom since each additional attempt tends to yield a lower unique-acceptance rate.
+    // Capped at FREE_TIER_MAX_QUESTIONS_PER_CALL (not 100) so a single
+    // request's expected output stays small enough to fit the free-tier
+    // per-request token budget alongside FREE_TIER_MAX_OUTPUT_TOKENS.
     const bufferMultiplier = 1.4 + attempt * 0.3;
-    const askFor = Math.min(100, Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
+    const askFor = Math.min(FREE_TIER_MAX_QUESTIONS_PER_CALL, Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
     const seed = attempt === 0 ? baseSeed : `${baseSeed}-retry${attempt}-${randomUUID().slice(0, 6)}`;
-    const prompt = buildUserPrompt({ count: askFor, jobRole, jdText, skillsList, types, seed, supportingDocsText, avoidQuestions });
+    const prompt = buildUserPrompt({ count: askFor, jobRole, jdText: jdTextForPrompt, skillsList, types, seed, supportingDocsText, avoidQuestions });
 
-    let batch = await GeminiService.generateQuestionsBatch(prompt, system);
+    let batch = await GeminiService.generateQuestionsBatch(prompt, system, { maxTokens: FREE_TIER_MAX_OUTPUT_TOKENS });
     if (batch && batch.length > 0) {
       const combinedSource = `${jdText}\n${supportingDocsText}`;
       const noGeneric = filterGenericPhrasing(batch);
@@ -1289,12 +1315,13 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
   const system = buildDocumentSystemPrompt();
 
   // Split document into chunks so ALL content contributes to question generation,
-  // regardless of document size. 80,000 chars (~20k tokens) per chunk is safe for
-  // both Groq (128k token window) and Gemini (1M token window) after accounting for
-  // system/user prompt overhead and output space.
-  // Chunks overlap by 1,500 chars to avoid missing content at section boundaries.
-  const CHUNK_SIZE = 80000;
-  const CHUNK_OVERLAP = 1500;
+  // regardless of document size. FREE_TIER_SOURCE_CHAR_BUDGET (not the
+  // context-window-sized 80,000 chars this used to be) keeps each chunk's
+  // request comfortably under Groq's free-tier per-request token cap — see
+  // the constant's comment near the top of this file. Chunks overlap to
+  // avoid missing content at section boundaries.
+  const CHUNK_SIZE = FREE_TIER_SOURCE_CHAR_BUDGET;
+  const CHUNK_OVERLAP = 300;
   const chunks = [];
   if (text.length <= CHUNK_SIZE) {
     chunks.push(text);
@@ -1330,13 +1357,13 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
     for (let attempt = 0; attempt < MAX_ATTEMPTS && pool.length < num; attempt++) {
       const stillNeeded = Math.max(chunkTarget - pool.length, num - pool.length);
       const bufferMultiplier = 1.4 + attempt * 0.3;
-      const askFor = Math.min(100, Math.max(1, Math.ceil(stillNeeded * bufferMultiplier)));
+      const askFor = Math.min(FREE_TIER_MAX_QUESTIONS_PER_CALL, Math.max(1, Math.ceil(stillNeeded * bufferMultiplier)));
       const attemptSeed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 4)}`;
       const prompt = buildDocumentUserPrompt({
         count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder, processDelivery, avoidQuestions,
       });
 
-      let batch = await GeminiService.generateQuestionsBatch(prompt, system);
+      let batch = await GeminiService.generateQuestionsBatch(prompt, system, { maxTokens: FREE_TIER_MAX_OUTPUT_TOKENS });
       if (batch && batch.length > 0) {
         const noGeneric = filterGenericPhrasing(batch);
         const keywordPrefiltered = filterGrounded(noGeneric, chunk);
