@@ -8,7 +8,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-RecSys-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
-> **Multi-tenant B2B SaaS for adaptive corporate training — 9 specialized AI agents + Hybrid SVD Recommendation Engine**
+> **Multi-tenant B2B SaaS for intelligent corporate training — 9 specialized AI agents + Hybrid SVD Recommendation Engine**
 
 ---
 
