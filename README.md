@@ -16,7 +16,7 @@
 
 SkillForge AI turns a plain-English learning goal into a **fully personalized training program** — curriculum, daily challenges, scoring, tutor chat, interview prep, and market intelligence — all orchestrated by AI agents that adapt every 3 sessions.
 
-**Currently in live pilot at a real company.**
+**Currently in live pilot at a real company**
 
 ---
 
