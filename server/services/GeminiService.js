@@ -227,18 +227,30 @@ class GeminiService {
     }
   }
 
-  // ── generateQuestionsBatch: Groq(70b) → Gemini fallback, single attempt each ──
+  // ── generateQuestionsBatch: Groq(70b) → Groq(8b-instant) → Gemini, single attempt each ──
   // Purpose-built for AssessmentGenerator.js's bulk question generation, which
   // runs its own outer retry loop across attempts (escalating buffers, fresh
-  // seeds) — this method makes exactly one Groq call then, if that yields
-  // nothing, one Gemini call, and unwraps the `{questions: [...]}` shape the
-  // question-generation prompts always request. Reuses the shared LLMQueue
-  // concurrency control and Groq/Gemini credentials instead of the raw fetch
-  // calls AssessmentGenerator used to make directly.
+  // seeds) — this method makes exactly one attempt per provider/model tier,
+  // and unwraps the `{questions: [...]}` shape the question-generation
+  // prompts always request. Reuses the shared LLMQueue concurrency control
+  // and Groq/Gemini credentials instead of the raw fetch calls
+  // AssessmentGenerator used to make directly.
+  //
+  // The middle tier (llama-3.1-8b-instant) matters specifically on Groq's
+  // free/on-demand tier: rate limits there are enforced PER MODEL, not per
+  // account, so a request that gets hard-rejected against the 70b model's
+  // tight TPM budget has a real chance of succeeding against 8b-instant's
+  // separate, much larger budget — a free way to salvage a request that
+  // would otherwise fall straight through to the deterministic template
+  // fallback. Quality is lower than 70b but still real LLM output grounded
+  // in the actual prompt, not a topic-word-substituted template.
   async generateQuestionsBatch(prompt, system = '', { temperature = 0.85, maxTokens = 16000, timeoutMs = 30000 } = {}) {
     if (this.groqEnabled) {
-      const parsed = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs });
-      if (Array.isArray(parsed?.questions)) return parsed.questions;
+      const parsed70b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'llama-3.3-70b-versatile' });
+      if (Array.isArray(parsed70b?.questions)) return parsed70b.questions;
+
+      const parsed8b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'llama-3.1-8b-instant' });
+      if (Array.isArray(parsed8b?.questions)) return parsed8b.questions;
     }
     if (this.isEnabled()) {
       const parsed = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: Math.max(maxTokens, 16384), timeoutMs });
