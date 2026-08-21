@@ -1381,8 +1381,9 @@ function tagMetadata(questions, { generatedFrom, stakeholderFlag = false, proces
 // in the source document's content. Skills from the role are passed as context
 // only (so the LLM understands the employee profile) but are NOT used as a
 // question source. This prevents role skills from overriding document content.
-async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, sourceType, questionCount, questionTypes, seed, skillsContext = [], stakeholder = false, processDelivery = false, avoidQuestions = [], startingComboCounters = null } = {}) {
+async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, sourceType, questionCount, questionTypes, seed, skillsContext = [], stakeholder = false, processDelivery = false, avoidQuestions = [], startingComboCounters = null, onProgress = null } = {}) {
   const num   = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
+  const emit  = makeProgressEmitter(onProgress, num);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const baseSeed = seed || randomUUID().slice(0, 8);
   const text  = (sourceText || '').trim();
@@ -1447,7 +1448,7 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
         count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder, processDelivery, avoidQuestions,
       });
 
-      let batch = await GeminiService.generateQuestionsBatch(prompt, system, { maxTokens: FREE_TIER_MAX_OUTPUT_TOKENS });
+      let batch = await GeminiService.generateQuestionsBatch(prompt, system, { maxTokens: outputTokensFor(askFor), onThrottle: emit.throttle });
       if (batch && batch.length > 0) {
         const noGeneric = filterGenericPhrasing(batch);
         const keywordPrefiltered = filterGrounded(noGeneric, chunk);
@@ -1457,6 +1458,7 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
         }
         pool = mergeUnique(pool, grounded, avoidQuestions);
       }
+      emit.progress(pool.length);
     }
   }
 
@@ -1561,8 +1563,24 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
     jobRole = 'Professional', skills = [], seed: baseSeed = '',
     avoidQuestions = [],                  // cross-version "don't repeat these" set, applied per-source
     startingComboCountersBySource = {},   // { [sourceName]: {easy,medium,hard} } from the previous version
+    onProgress = null,                    // optional progress hook (see makeProgressEmitter)
   } = globalContext;
   fileSources = expandSplitSources(fileSources);
+  // Aggregate progress across ALL sources: each per-source call reports its
+  // own 0..N, so translate that into overall done/total for the caller.
+  const overallTotal = fileSources.reduce((s, f) => s + Math.min(100, Math.max(1, parseInt(f.questionCount) || 5)), 0);
+  let completedBeforeSource = 0;
+  const emitOverall = (evt) => {
+    if (typeof onProgress !== 'function') return;
+    try {
+      onProgress({
+        phase: evt?.phase || 'generating',
+        done: Math.min(overallTotal, completedBeforeSource + (evt?.done || 0)),
+        total: overallTotal,
+        delayMs: evt?.delayMs,
+      });
+    } catch { /* progress hook must never break generation */ }
+  };
   const allQuestions = [];
   // Shared fuzzy tracker across ALL files (upgraded from exact-text-only
   // matching) — two different uploaded documents that thematically overlap
@@ -1601,6 +1619,7 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
       processDelivery: !!source.processDelivery,
       avoidQuestions,
       startingComboCounters: startingComboCountersBySource[source.name] || null,
+      onProgress: emitOverall,
     });
     if (batch?.finalComboCounters) finalComboCountersBySource[source.name] = batch.finalComboCounters;
 
@@ -1707,6 +1726,11 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
         }
       }
     }
+
+    // Roll the aggregate progress baseline forward so the next source's
+    // 0..N reporting continues from here rather than restarting at 0.
+    completedBeforeSource = allQuestions.length;
+    emitOverall({ phase: 'generating', done: 0 });
   }
 
   // Per-source combo high-water-marks — the next regenerate call reads this

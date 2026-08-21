@@ -832,6 +832,7 @@ function QuestionBankModal({ role, onClose }) {
   const [newQ, setNewQ] = useState({ ...EMPTY_Q });
   const [diffFilter, setDiffFilter] = useState('all');
   const [generating, setGenerating] = useState(false);
+  const [genProgress, setGenProgress] = useState(null);
   const pollRef = useRef(null);
 
   useEffect(() => {
@@ -839,29 +840,61 @@ function QuestionBankModal({ role, onClose }) {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
+  // Poll the server's generation-status endpoint until the background run
+  // finishes, then load the resulting bank. Generation legitimately takes
+  // MINUTES on the free LLM tier (rate-limited to ~8,000 tokens/min), so the
+  // old 20-poll / 60-second cap gave up long before a real bank could finish —
+  // which is exactly why the UI kept showing an empty list and asking the user
+  // to "Regenerate All" over and over. Polls for up to 15 minutes and reports
+  // live progress instead of guessing from an empty question list.
+  const pollGenerationStatus = async () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setGenerating(true);
+    let polls = 0;
+    const MAX_POLLS = 300; // 300 x 3s = 15 minutes
+    pollRef.current = setInterval(async () => {
+      polls++;
+      if (polls > MAX_POLLS) {
+        clearInterval(pollRef.current);
+        setGenerating(false);
+        setGenProgress(null);
+        toast('Generation is taking unusually long — reopen this window to check again.', 'error');
+        return;
+      }
+      try {
+        const s = await authFetch(`/api/roles/${role.id}/generation-status`);
+        const st = s?.data ?? s ?? {};
+        setGenProgress({ done: st.done || 0, total: st.total || 0, phase: st.phase, throttleMs: st.throttleMs || 0 });
+
+        if (st.status === 'done' || st.status === 'idle') {
+          clearInterval(pollRef.current);
+          const r = await authFetch(`/api/roles/${role.id}/questions`);
+          const q2 = Array.isArray(r) ? r : (r?.data ?? []);
+          setQuestions(q2);
+          setGenerating(false);
+          setGenProgress(null);
+          if (q2.length > 0) toast(`${q2.length} questions ready`);
+        } else if (st.status === 'failed') {
+          clearInterval(pollRef.current);
+          setGenerating(false);
+          setGenProgress(null);
+          toast(st.error || 'Generation failed — please try Regenerate again.', 'error');
+        }
+      } catch (_) { /* transient network error — keep polling */ }
+    }, 3000);
+  };
+
   const loadBank = async () => {
     setLoading(true);
     try {
       const res = await authFetch(`/api/roles/${role.id}/questions`);
       const qs = Array.isArray(res) ? res : (res?.data ?? []);
       setQuestions(qs);
-      // If empty and role has JD/docs, background generation is in progress — poll
+      // Empty bank + a JD/docs present means a background generation is
+      // probably still running (or was interrupted) — ask the server rather
+      // than assuming, and keep polling until it actually resolves.
       if (qs.length === 0 && (hasFiles || role.jobDescription)) {
-        setGenerating(true);
-        let polls = 0;
-        pollRef.current = setInterval(async () => {
-          polls++;
-          if (polls > 20) { clearInterval(pollRef.current); setGenerating(false); return; }
-          try {
-            const r = await authFetch(`/api/roles/${role.id}/questions`);
-            const q2 = Array.isArray(r) ? r : (r?.data ?? []);
-            if (q2.length > 0) {
-              setQuestions(q2);
-              setGenerating(false);
-              clearInterval(pollRef.current);
-            }
-          } catch (_) {}
-        }, 3000);
+        pollGenerationStatus();
       }
     } catch (e) { toast(e.message, 'error'); }
     finally { setLoading(false); }
@@ -878,14 +911,22 @@ function QuestionBankModal({ role, onClose }) {
         payload.updatedJdFiles = localJdFiles;
         payload.updatedSupportingFiles = localSupportingFiles;
       }
+      // Returns 202 immediately with a job handle — generation continues
+      // server-side. Blocking on the full generation here used to guarantee a
+      // 30s client abort (plus 2 automatic retries that each kicked off ANOTHER
+      // competing generation), so the click appeared to do nothing.
       const res = await authFetch(`/api/roles/${role.id}/regenerate-questions`, { method: 'POST', body: JSON.stringify(payload) });
-      const newQs = res?.data?.questions ?? res?.questions ?? [];
-      setQuestions(newQs);
-      const lockedCount = newQs.filter(q => q.locked).length;
-      toast(lockedCount > 0
-        ? `Regenerated ${newQs.length - lockedCount} question${newQs.length - lockedCount !== 1 ? 's' : ''} — ${lockedCount} locked question${lockedCount !== 1 ? 's' : ''} preserved`
-        : `Regenerated ${newQs.length} questions`);
+      const noOp = res?.noOp || res?.data?.noOp;
+      if (noOp) {
+        toast(res?.message || 'All questions are locked — nothing to regenerate.');
+        setRegenConfirm(false);
+        return;
+      }
       setRegenConfirm(false);
+      toast(res?.data?.alreadyRunning
+        ? 'Generation already in progress — tracking it now.'
+        : 'Generation started — this can take a few minutes on the free AI tier.');
+      pollGenerationStatus();
     } catch (e) { toast(e.message, 'error'); }
     finally { setRegen(false); }
   };
@@ -1162,9 +1203,25 @@ function QuestionBankModal({ role, onClose }) {
             <div className="text-center py-10 space-y-3">
               <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600/10 border border-indigo-500/30">
                 <span className="text-indigo-400 text-sm">⏳</span>
-                <p className="text-indigo-300 text-sm font-medium">Generating questions from your documents…</p>
+                <p className="text-indigo-300 text-sm font-medium">
+                  {genProgress?.total
+                    ? `Generating questions… ${genProgress.done}/${genProgress.total}`
+                    : 'Generating questions from your documents…'}
+                </p>
               </div>
-              <p className="text-slate-500 text-xs">This usually takes 15–45 seconds. This page will update automatically.</p>
+              {genProgress?.total > 0 && (
+                <div className="max-w-xs mx-auto h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                  <div
+                    className="h-full bg-indigo-500 transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.round((genProgress.done / Math.max(1, genProgress.total)) * 100))}%` }}
+                  />
+                </div>
+              )}
+              <p className="text-slate-500 text-xs">
+                {genProgress?.phase === 'throttled' && genProgress?.throttleMs > 0
+                  ? `Paused ~${Math.round(genProgress.throttleMs / 1000)}s for the AI provider's rate limit — this is normal on the free tier.`
+                  : 'This can take a few minutes on the free AI tier. This page updates automatically — you can leave it open.'}
+              </p>
             </div>
           )}
           {!loading && !generating && filtered.length === 0 && (

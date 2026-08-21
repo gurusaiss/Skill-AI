@@ -26,9 +26,16 @@
 
 const MAX_CONCURRENT  = parseInt(process.env.LLM_MAX_CONCURRENT || '5', 10);
 const MAX_QUEUE_DEPTH = parseInt(process.env.LLM_MAX_QUEUE      || '200', 10);
-// Slightly under Groq's real 12,000 TPM cap to leave headroom for estimate
-// error (we estimate tokens; the API counts the real tokenization).
-const GROQ_TPM_LIMIT  = parseInt(process.env.GROQ_TPM_LIMIT     || '11000', 10);
+// Groq's REAL free/on-demand per-minute token budget, read from live
+// x-ratelimit-limit-tokens response headers: 8,000 TPM for both
+// openai/gpt-oss-120b and openai/gpt-oss-20b (and the bucket appears to be
+// shared across models on this tier, so falling back to the smaller model
+// does NOT buy a fresh budget). The previous default here was 11,000 —
+// ABOVE the real ceiling — so the limiter permitted spending Groq would
+// reject, and calls still failed with 429/413 despite "pacing" them.
+// 7,000 leaves headroom for token-estimate error (we estimate ~4 chars/token;
+// the API counts real tokenization).
+const GROQ_TPM_LIMIT  = parseInt(process.env.GROQ_TPM_LIMIT     || '7000', 10);
 const TPM_WINDOW_MS   = 60000;
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
