@@ -85,6 +85,12 @@ class GeminiService {
     return `https://generativelanguage.googleapis.com/v1beta/models/${this.resolvedModel}:generateContent`;
   }
 
+  // True while Gemini has recently returned a quota 429. Callers skip Gemini
+  // entirely during this window rather than issuing calls that cannot succeed.
+  geminiQuotaBlocked() {
+    return !!(this._quotaBlockedUntil && Date.now() < this._quotaBlockedUntil);
+  }
+
   isEnabled() {
     return !!(this.apiKey && this.apiKey.length > 10);
   }
@@ -300,11 +306,40 @@ class GeminiService {
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
       }));
-      if (!res.ok) return null;
+      // Surface WHY a call failed instead of returning a silent null — a 404
+      // (retired model), a 429 (quota) and a truncated body are completely
+      // different problems, and an opaque null previously made a retired
+      // model name look like an exhausted quota for weeks.
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        // Gemini's FREE tier allows only 20 requests per DAY per model
+        // (quotaId GenerateRequestsPerDayPerProjectPerModel-FreeTier). Once
+        // that's gone, every further call is a guaranteed 429 — so record it
+        // and stop attempting Gemini for a cooldown instead of burning
+        // latency on calls that cannot succeed. Requests are the scarce
+        // resource here, not tokens.
+        if (res.status === 429) {
+          const perDay = /GenerateRequestsPerDayPerProjectPerModel/.test(errText);
+          this._quotaBlockedUntil = Date.now() + (perDay ? 10 * 60 * 1000 : 60 * 1000);
+          console.warn(`[Gemini] 429 quota exhausted (${perDay ? 'per-DAY free-tier request cap' : 'short-term rate limit'}) — pausing Gemini attempts and using Groq fallback`);
+          return null;
+        }
+        console.warn(`[Gemini] HTTP ${res.status} on ${this.resolvedModel}: ${errText.slice(0, 200)}`);
+        return null;
+      }
 
       const data = await res.json();
+      const finishReason = data.candidates?.[0]?.finishReason;
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) return null;
+      if (!text) {
+        console.warn(`[Gemini] empty response (finishReason=${finishReason || 'unknown'})`);
+        return null;
+      }
+      // MAX_TOKENS means the JSON was cut off mid-structure; the parse below
+      // would fail anyway, but naming the cause makes it actionable.
+      if (finishReason === 'MAX_TOKENS') {
+        console.warn(`[Gemini] output hit maxOutputTokens (${maxTokens}) — JSON truncated, batch discarded. Lower questions-per-call or raise the cap.`);
+      }
 
       const clean = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
       const parsed = JSON.parse(clean);
@@ -342,9 +377,19 @@ class GeminiService {
     // calls all succeeded), so routing question generation to Gemini first
     // turns the same job into a couple of calls instead of dozens. Groq
     // stays as the fallback for when Gemini is unavailable or errors.
-    if (this.isEnabled()) {
-      const parsed = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: Math.max(maxTokens, 8192), timeoutMs });
+    if (this.isEnabled() && !this.geminiQuotaBlocked()) {
+      const geminiTokens = Math.max(maxTokens, 8192);
+      const parsed = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: geminiTokens, timeoutMs });
       if (Array.isArray(parsed?.questions)) return parsed.questions;
+
+      // Retry Gemini once — but ONLY for transient failures (truncated JSON,
+      // slow call). Never retry a quota 429: the free tier's cap is per-DAY,
+      // so an immediate retry is guaranteed to fail and just burns time.
+      if (!this.geminiQuotaBlocked()) {
+        console.warn('[Gemini] question batch failed (non-quota) — retrying Gemini once before falling back to Groq');
+        const retry = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: geminiTokens, timeoutMs });
+        if (Array.isArray(retry?.questions)) return retry.questions;
+      }
     }
     if (this.groqEnabled) {
       const parsed120b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'openai/gpt-oss-120b', onThrottle });

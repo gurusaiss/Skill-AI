@@ -41,7 +41,13 @@ const GEMINI_SOURCE_CHAR_BUDGET   = 24000; // ~6,000 tokens — fewer, richer ch
 // batch was discarded. Gemini has no tight per-minute token squeeze here, so
 // there's no reason to be stingy: give it real headroom.
 const GEMINI_MAX_OUTPUT_TOKENS    = 32768;
-const GEMINI_MAX_QUESTIONS_PER_CALL = 15;  // conservative vs. the 20 that verified, to keep JSON well inside budget
+// Gemini's FREE tier caps REQUESTS at 20 per DAY per model — requests, not
+// tokens, are the scarce resource. So pack as many questions into each call as
+// the output budget safely allows: at 25/call a 50-question bank costs ~2-3
+// requests instead of ~7, which is the difference between a handful of banks
+// per day and running dry after one. 32k output tokens comfortably covers 25
+// questions (~350 tokens each) plus the model's reasoning overhead.
+const GEMINI_MAX_QUESTIONS_PER_CALL = 25;
 
 function geminiPrimary() {
   const k = process.env.GEMINI_API_KEY;
@@ -1264,7 +1270,11 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
   const chunkTargets  = chunks.map(c => Math.max(2, Math.ceil(num * (c.length / totalChunkLen) * 1.4)));
 
   let pool = [];
-  const MAX_ATTEMPTS = chunks.length > 1 ? 3 : 5; // per chunk — fewer per-chunk retries when there are multiple chunks to cover, same total attempt budget as before for the single-chunk (short JD) case
+  // Each attempt is one LLM request. On Gemini's free tier requests are capped
+  // at 20 PER DAY per model, so retry budget is genuinely expensive there —
+  // keep it tight. Groq has effectively unlimited requests (only a slow token
+  // budget), so it can afford more attempts to reach the target count.
+  const MAX_ATTEMPTS = geminiPrimary() ? 2 : (chunks.length > 1 ? 3 : 5);
 
   for (let ci = 0; ci < chunks.length; ci++) {
     if (pool.length >= num) break; // already have enough from earlier chunks
@@ -1460,7 +1470,7 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
   const chunkTargets  = chunks.map(c => Math.max(2, Math.ceil(num * (c.length / totalChunkLen) * 1.4)));
 
   let pool = [];
-  const MAX_ATTEMPTS = 4; // per chunk
+  const MAX_ATTEMPTS = geminiPrimary() ? 2 : 4; // per chunk — see generateQuestionsFromJD for why Gemini gets fewer
 
   for (let ci = 0; ci < chunks.length; ci++) {
     if (pool.length >= num) break; // already have enough from earlier chunks
@@ -1602,16 +1612,20 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
     onProgress = null,                    // optional progress hook (see makeProgressEmitter)
   } = globalContext;
   fileSources = expandSplitSources(fileSources);
-  // Aggregate progress across ALL sources: each per-source call reports its
-  // own 0..N, so translate that into overall done/total for the caller.
+  // Aggregate progress across ALL sources. Because generation now runs in
+  // PARALLEL across sources (see phase 1 below), progress arrives interleaved
+  // from several files at once — so track each source's latest reported count
+  // separately and sum them, rather than assuming a sequential baseline.
   const overallTotal = fileSources.reduce((s, f) => s + Math.min(100, Math.max(1, parseInt(f.questionCount) || 5)), 0);
-  let completedBeforeSource = 0;
-  const emitOverall = (evt) => {
+  const perSourceDone = new Array(fileSources.length).fill(0);
+  const emitFor = (idx) => (evt) => {
     if (typeof onProgress !== 'function') return;
     try {
+      perSourceDone[idx] = Math.max(perSourceDone[idx], evt?.done || 0);
+      const done = perSourceDone.reduce((a, b) => a + b, 0);
       onProgress({
         phase: evt?.phase || 'generating',
-        done: Math.min(overallTotal, completedBeforeSource + (evt?.done || 0)),
+        done: Math.min(overallTotal, done),
         total: overallTotal,
         delayMs: evt?.delayMs,
       });
@@ -1630,6 +1644,54 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
   const tracker = createSeenTracker(avoidQuestions);
   const finalComboCountersBySource = {};
 
+  // ── PHASE 1: generate every source's questions IN PARALLEL ────────────────
+  // Generation is entirely network-bound (minutes of LLM latency) while the
+  // cross-file dedup below is pure in-memory work (microseconds), so running
+  // the LLM calls concurrently is where all the wall-clock savings are: three
+  // PDFs that took ~6 minutes sequentially finish in roughly the time of the
+  // slowest single file.
+  //
+  // This does NOT change dedup semantics. Each per-source call already
+  // received only the cross-VERSION `avoidQuestions` set and never saw what
+  // sibling files produced in the same run — all cross-file deduplication
+  // happens afterwards, in phase 2, against the shared tracker. Phase 2 still
+  // walks sources in their original order, so the accepted set is identical to
+  // what the sequential version produced.
+  //
+  // Concurrency is bounded for free by LLMQueue's semaphore (default 5 in
+  // flight), so a role with many uploaded files can't fan out unbounded HTTP
+  // requests at the provider.
+  const batches = await Promise.all(fileSources.map((source, idx) => {
+    const text = (source.text || '').trim();
+    if (!text) return null;
+    const count = Math.min(100, Math.max(1, parseInt(source.questionCount) || 5));
+    // Seed includes the index: with parallel starts, Date.now() alone can be
+    // identical across sources and would make two files share a seed.
+    const srcSeed = `${baseSeed || 'fs'}-${(source.name || 'file').replace(/\W/g, '').slice(0, 20)}-${idx}-${Date.now()}`;
+    // Uses generateQuestionsFromDocument (not generateQuestionsFromJD) so the
+    // prompt is framed around document content, not JD roles/responsibilities.
+    // srcSkills is passed as context-only — it does not drive question topics.
+    return generateQuestionsFromDocument(text, {
+      jobRole:         source.jobRole || jobRole,
+      sourceName:      source.name,
+      sourceType:      source.sourceType || 'supporting',
+      questionCount:   count,
+      questionTypes:   buildTypeSeqLocal(count),
+      seed:            srcSeed,
+      skillsContext:   source.skills || skills,
+      stakeholder:     !!source.stakeholder,
+      processDelivery: !!source.processDelivery,
+      avoidQuestions,
+      startingComboCounters: startingComboCountersBySource[source.name] || null,
+      onProgress: emitFor(idx),
+    }).catch(e => {
+      // One bad file must never abort the whole bank — phase 2 pads for it.
+      console.error(`[generateQuestionsFromFiles] "${source.name}" generation failed: ${e.message}`);
+      return null;
+    });
+  }));
+
+  // ── PHASE 2: accept / dedup / pad SEQUENTIALLY (order-stable, as before) ──
   for (const [sourceIdx, source] of fileSources.entries()) {
     const text = (source.text || '').trim();
     const count = Math.min(100, Math.max(1, parseInt(source.questionCount) || 5));
@@ -1637,26 +1699,8 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
 
     const srcJobRole = source.jobRole || jobRole;
     const srcSkills  = source.skills  || skills;
-    const srcSeed    = `${baseSeed || 'fs'}-${(source.name || 'file').replace(/\W/g, '').slice(0, 20)}-${Date.now()}`;
 
-    // Generate exactly `count` unique questions from this source file.
-    // Uses generateQuestionsFromDocument (not generateQuestionsFromJD) so the
-    // prompt is framed around document content, not JD roles/responsibilities.
-    // srcSkills is passed as context-only — it does not drive question topics.
-    const batch = await generateQuestionsFromDocument(text, {
-      jobRole:         srcJobRole,
-      sourceName:      source.name,
-      sourceType:      source.sourceType || 'supporting',
-      questionCount:   count,
-      questionTypes:   buildTypeSeqLocal(count),
-      seed:            srcSeed,
-      skillsContext:   srcSkills,
-      stakeholder:     !!source.stakeholder,
-      processDelivery: !!source.processDelivery,
-      avoidQuestions,
-      startingComboCounters: startingComboCountersBySource[source.name] || null,
-      onProgress: emitOverall,
-    });
+    const batch = batches[sourceIdx];
     if (batch?.finalComboCounters) finalComboCountersBySource[source.name] = batch.finalComboCounters;
 
     // Accept non-duplicates up to `count` — tracked in a per-source array
@@ -1763,10 +1807,15 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
       }
     }
 
-    // Roll the aggregate progress baseline forward so the next source's
-    // 0..N reporting continues from here rather than restarting at 0.
-    completedBeforeSource = allQuestions.length;
-    emitOverall({ phase: 'generating', done: 0 });
+    // Report the real accepted-so-far total after this source's dedup/padding
+    // settles. Phase 1's per-source emitters track in-flight LLM progress;
+    // this reflects what actually made it into the bank.
+    perSourceDone[sourceIdx] = acceptedForSource.length;
+    if (typeof onProgress === 'function') {
+      try {
+        onProgress({ phase: 'generating', done: Math.min(overallTotal, allQuestions.length), total: overallTotal });
+      } catch { /* progress hook must never break generation */ }
+    }
   }
 
   // Per-source combo high-water-marks — the next regenerate call reads this
