@@ -201,10 +201,11 @@ Required Skills:
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'openai/gpt-oss-120b',
           messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
           temperature: 0.2,
           max_tokens: 2000,
+          reasoning_effort: 'low',
         }),
         signal: AbortSignal.timeout(20000),
       });

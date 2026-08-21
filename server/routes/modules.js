@@ -538,11 +538,12 @@ IMPORTANT: Create exactly ${numSessions} sessions. All content must be specific 
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
             body: JSON.stringify({
-              model: 'llama-3.3-70b-versatile',
+              model: 'openai/gpt-oss-120b',
               messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
               temperature: 0.7,
               max_tokens: 6000,
               response_format: { type: 'json_object' },
+              reasoning_effort: 'low',
             }),
             signal: AbortSignal.timeout(60000),
           });
@@ -748,7 +749,7 @@ Return JSON:
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
-          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 3000, response_format: { type: 'json_object' } }),
+          body: JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 3000, response_format: { type: 'json_object' }, reasoning_effort: 'low' }),
           signal: AbortSignal.timeout(30000),
         });
         if (r.ok) {

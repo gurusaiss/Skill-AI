@@ -9,7 +9,7 @@ import GeminiService from './GeminiService.js';
 
 // Groq's free/on-demand tier enforces a hard per-REQUEST token budget (prompt
 // tokens + requested max_tokens combined) — observed limit: 12,000 TPM for
-// llama-3.3-70b-versatile. A single request whose own (input + max_tokens)
+// openai/gpt-oss-120b (Groq). A single request whose own (input + max_tokens)
 // exceeds that is rejected outright with HTTP 413, before generating
 // anything — this is not a rate/timing issue solvable by spacing calls out.
 // The original chunk sizes (80,000 chars) and max_tokens (16,000+) were sized
@@ -20,8 +20,41 @@ import GeminiService from './GeminiService.js';
 // not a full fix; the free tier itself is the actual constraint. See
 // docs/DEPLOYMENT_GUIDE.md for upgrading to a paid Groq/Gemini tier).
 const FREE_TIER_SOURCE_CHAR_BUDGET = 6000;   // ~1,500 tokens of source text per request
-const FREE_TIER_MAX_OUTPUT_TOKENS  = 3000;   // leaves ample headroom under the 12k/req cap
+const FREE_TIER_MAX_OUTPUT_TOKENS  = 3000;   // hard ceiling on requested output
 const FREE_TIER_MAX_QUESTIONS_PER_CALL = 8;  // bounds expected output size per request
+
+// A question in our JSON format runs ~150-200 output tokens (stem, 4 options,
+// answer, explanation, quote). Reserving a flat 3,000 max_tokens for an
+// 8-question call wildly over-counts against Groq's per-minute budget (the API
+// counts REQUESTED max_tokens, not tokens actually generated), which starves
+// the rolling window and forces more pacing waits. Sizing max_tokens to the
+// actual number of questions asked for lets more calls fit per minute.
+function outputTokensFor(count) {
+  return Math.min(FREE_TIER_MAX_OUTPUT_TOKENS, Math.max(600, (count || 1) * 200 + 400));
+}
+
+// Wraps an optional caller-supplied onProgress callback into two safe emitters
+// used throughout generation. `progress(done)` reports how many questions are
+// accepted so far (monotonic, clamped to total). `throttle(delayMs)` reports a
+// rate-limit pause so the UI can show "pausing for rate limit ~Ns" instead of
+// looking frozen. Both swallow callback errors — a progress hook must never
+// break generation. No-ops entirely when onProgress isn't provided (every
+// existing caller), so behavior is unchanged unless a caller opts in.
+function makeProgressEmitter(onProgress, total) {
+  let lastDone = -1;
+  const safe = (evt) => { if (typeof onProgress === 'function') { try { onProgress(evt); } catch { /* ignore */ } } };
+  return {
+    progress(done) {
+      const clamped = Math.min(total, Math.max(0, done | 0));
+      if (clamped === lastDone) return;
+      lastDone = clamped;
+      safe({ phase: 'generating', done: clamped, total });
+    },
+    throttle(delayMs) {
+      safe({ phase: 'throttled', done: Math.max(0, lastDone), total, delayMs: delayMs | 0 });
+    },
+  };
+}
 
 // ── Shared near-duplicate / seen-content tracking ────────────────────────────
 // Single source of truth for "have we already produced this question" —
@@ -1141,20 +1174,16 @@ function fillEmergencyGap(existing, num, { types, skillsList, jobRole }) {
   return combined.slice(0, num);
 }
 
-export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed, supportingDocs, avoidQuestions = [], startingComboCounters = null }) {
+export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed, supportingDocs, avoidQuestions = [], startingComboCounters = null, onProgress = null }) {
   const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
+  const emit = makeProgressEmitter(onProgress, num);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const baseSeed = employeeSeed || randomUUID().slice(0, 8);
   const jdText = (jobDescription || '').trim();
   const skillsList = Array.isArray(jdSkills) && jdSkills.length ? jdSkills : [];
   const system = buildSystemPrompt();
 
-  // Build supporting docs text, then truncate the combined (jdText +
-  // supportingDocsText) source to FREE_TIER_SOURCE_CHAR_BUDGET so a single
-  // Groq request's prompt tokens leave room for FREE_TIER_MAX_OUTPUT_TOKENS
-  // under the free tier's combined per-request cap (see constant comment
-  // above) — jdText gets priority since it's the primary source; whatever
-  // budget remains goes to supportingDocsText.
+  // Build supporting docs text, then combine with the JD text.
   let supportingDocsText = '';
   if (Array.isArray(supportingDocs) && supportingDocs.length > 0) {
     const parts = [];
@@ -1164,35 +1193,82 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     }
     supportingDocsText = parts.join('\n\n');
   }
-  const jdTextForPrompt = jdText.slice(0, FREE_TIER_SOURCE_CHAR_BUDGET);
-  const remainingBudget = Math.max(0, FREE_TIER_SOURCE_CHAR_BUDGET - jdTextForPrompt.length);
-  supportingDocsText = supportingDocsText.slice(0, remainingBudget);
+  const combinedSource = [jdText, supportingDocsText].filter(Boolean).join('\n\n');
+
+  // Split the FULL combined source into chunks so every part of the JD and
+  // every supporting doc contributes to generation, regardless of length —
+  // mirrors generateQuestionsFromDocument's chunking exactly. The previous
+  // version hard-truncated to FREE_TIER_SOURCE_CHAR_BUDGET (~1,500 tokens,
+  // ~6,000 chars) with NO chunking: every one of the 5 retry attempts saw
+  // the exact same first slice, so anything beyond roughly the first page
+  // of a JD or any supporting doc was NEVER seen by the LLM — the direct,
+  // confirmed cause of generated questions not matching the uploaded
+  // JD/file for anything longer than a page or two.
+  const CHUNK_SIZE = FREE_TIER_SOURCE_CHAR_BUDGET;
+  const CHUNK_OVERLAP = 300;
+  const chunks = [];
+  if (combinedSource.length <= CHUNK_SIZE) {
+    chunks.push(combinedSource);
+  } else {
+    let pos = 0;
+    while (pos < combinedSource.length) {
+      let end = Math.min(pos + CHUNK_SIZE, combinedSource.length);
+      if (end < combinedSource.length) {
+        const boundary = combinedSource.lastIndexOf('\n\n', end);
+        if (boundary > pos + CHUNK_SIZE / 2) end = boundary;
+      }
+      chunks.push(combinedSource.slice(pos, end));
+      if (end >= combinedSource.length) break;
+      pos = Math.max(pos + 1, end - CHUNK_OVERLAP);
+    }
+    console.log(`[generateQuestionsFromJD] "${jobRole}": ${combinedSource.length} chars (JD + supporting docs) split into ${chunks.length} chunks for full coverage`);
+  }
+
+  const totalChunkLen = chunks.reduce((s, c) => s + c.length, 0);
+  const chunkTargets  = chunks.map(c => Math.max(2, Math.ceil(num * (c.length / totalChunkLen) * 1.4)));
 
   let pool = [];
-  const MAX_ATTEMPTS = 5;
+  const MAX_ATTEMPTS = chunks.length > 1 ? 3 : 5; // per chunk — fewer per-chunk retries when there are multiple chunks to cover, same total attempt budget as before for the single-chunk (short JD) case
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS && pool.length < num; attempt++) {
-    const stillNeeded = num - pool.length;
-    // Escalating buffer: first attempt +40%, later attempts ask for progressively more
-    // headroom since each additional attempt tends to yield a lower unique-acceptance rate.
-    // Capped at FREE_TIER_MAX_QUESTIONS_PER_CALL (not 100) so a single
-    // request's expected output stays small enough to fit the free-tier
-    // per-request token budget alongside FREE_TIER_MAX_OUTPUT_TOKENS.
-    const bufferMultiplier = 1.4 + attempt * 0.3;
-    const askFor = Math.min(FREE_TIER_MAX_QUESTIONS_PER_CALL, Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
-    const seed = attempt === 0 ? baseSeed : `${baseSeed}-retry${attempt}-${randomUUID().slice(0, 6)}`;
-    const prompt = buildUserPrompt({ count: askFor, jobRole, jdText: jdTextForPrompt, skillsList, types, seed, supportingDocsText, avoidQuestions });
+  for (let ci = 0; ci < chunks.length; ci++) {
+    if (pool.length >= num) break; // already have enough from earlier chunks
+    const chunk = chunks[ci];
+    const chunkTarget = chunkTargets[ci];
+    const poolBeforeThisChunk = pool.length;
+    const isLastChunk = ci === chunks.length - 1;
+    // Cap what THIS chunk may contribute to its own proportional share,
+    // unless it's the last chunk (which absorbs any shortfall so the exact
+    // count is still guaranteed). Without this cap, an early chunk that
+    // happens to produce more than enough content hogs the entire question
+    // budget and later chunks — and everything they cover in the JD/uploaded
+    // file — never get proportional representation, even though the
+    // chunking loop technically "ran." This was silently defeating the
+    // point of chunking for full-document coverage.
+    const chunkCeiling = isLastChunk ? num : Math.min(num, poolBeforeThisChunk + chunkTarget);
 
-    let batch = await GeminiService.generateQuestionsBatch(prompt, system, { maxTokens: FREE_TIER_MAX_OUTPUT_TOKENS });
-    if (batch && batch.length > 0) {
-      const combinedSource = `${jdText}\n${supportingDocsText}`;
-      const noGeneric = filterGenericPhrasing(batch);
-      const keywordPrefiltered = filterGrounded(noGeneric, combinedSource);
-      const grounded = verifyQuoteGrounded(keywordPrefiltered, combinedSource);
-      if (grounded.length < batch.length) {
-        console.warn(`[generateQuestionsFromJD] attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded/unquoted questions`);
+    for (let attempt = 0; attempt < MAX_ATTEMPTS && pool.length < chunkCeiling; attempt++) {
+      const stillNeeded = chunkCeiling - pool.length;
+      // Escalating buffer: first attempt +40%, later attempts ask for progressively more
+      // headroom since each additional attempt tends to yield a lower unique-acceptance rate.
+      // Capped at FREE_TIER_MAX_QUESTIONS_PER_CALL (not 100) so a single
+      // request's expected output stays small enough to fit the free-tier
+      // per-request token budget alongside its proportional max_tokens.
+      const bufferMultiplier = 1.4 + attempt * 0.3;
+      const askFor = Math.min(FREE_TIER_MAX_QUESTIONS_PER_CALL, Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
+      const seed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 6)}`;
+      const prompt = buildUserPrompt({ count: askFor, jobRole, jdText: chunk, skillsList, types, seed, supportingDocsText: '', avoidQuestions });
+
+      let batch = await GeminiService.generateQuestionsBatch(prompt, system, { maxTokens: outputTokensFor(askFor), onThrottle: emit.throttle });
+      if (batch && batch.length > 0) {
+        const noGeneric = filterGenericPhrasing(batch);
+        const keywordPrefiltered = filterGrounded(noGeneric, chunk);
+        const grounded = verifyQuoteGrounded(keywordPrefiltered, chunk);
+        if (grounded.length < batch.length) {
+          console.warn(`[generateQuestionsFromJD] chunk${ci} attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded/unquoted questions`);
+        }
+        pool = mergeUnique(pool, grounded, avoidQuestions);
       }
-      pool = mergeUnique(pool, grounded, avoidQuestions);
+      emit.progress(pool.length);
     }
   }
 
@@ -1353,9 +1429,17 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
     if (pool.length >= num) break; // already have enough from earlier chunks
     const chunk    = chunks[ci];
     const chunkTarget = chunkTargets[ci];
+    const poolBeforeThisChunk = pool.length;
+    const isLastChunk = ci === chunks.length - 1;
+    // Cap this chunk's contribution to its own proportional share (see
+    // generateQuestionsFromJD for the full explanation) — without this, an
+    // early chunk that happens to produce enough content on its own hogs the
+    // entire question budget and later parts of the uploaded document never
+    // get proportional representation, even though chunking technically ran.
+    const chunkCeiling = isLastChunk ? num : Math.min(num, poolBeforeThisChunk + chunkTarget);
 
-    for (let attempt = 0; attempt < MAX_ATTEMPTS && pool.length < num; attempt++) {
-      const stillNeeded = Math.max(chunkTarget - pool.length, num - pool.length);
+    for (let attempt = 0; attempt < MAX_ATTEMPTS && pool.length < chunkCeiling; attempt++) {
+      const stillNeeded = chunkCeiling - pool.length;
       const bufferMultiplier = 1.4 + attempt * 0.3;
       const askFor = Math.min(FREE_TIER_MAX_QUESTIONS_PER_CALL, Math.max(1, Math.ceil(stillNeeded * bufferMultiplier)));
       const attemptSeed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 4)}`;

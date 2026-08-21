@@ -4,14 +4,39 @@
  * Tiered model strategy (matches api_report.md recommendation):
  *   Tier 1 — Complex/JSON  : generateJSON()      → Gemini 2.0 Flash first, Groq 70b fallback
  *   Tier 2 — Medium/Text   : generateText()      → Gemini 2.0 Flash first, Groq 70b fallback
- *   Tier 3 — Simple/Fast   : generateTextFast()  → Groq llama-3.1-8b-instant first, Gemini fallback
- *                            generateJSONFast()  → Groq llama-3.1-8b-instant first, Gemini fallback
+ *   Tier 3 — Simple/Fast   : generateTextFast()  → Groq openai/gpt-oss-20b first, Gemini fallback
+ *                            generateJSONFast()  → Groq openai/gpt-oss-20b first, Gemini fallback
  *
  * All methods return null on failure — callers fall back to rule-based logic.
  */
 
 import LLMCache from './LLMCache.js';
 import LLMQueue from './LLMQueue.js';
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Rough token estimate for TPM pacing: ~4 chars/token for English text, plus
+// the requested output cap (Groq counts prompt + max_tokens toward the
+// per-minute budget). Intentionally an over-estimate-friendly heuristic — the
+// LLMQueue window leaves headroom under the real cap for estimate error.
+function estimateGroqTokens(prompt, system, maxTokens) {
+  return Math.ceil(((system || '').length + (prompt || '').length) / 4) + (maxTokens || 0);
+}
+
+// Extract how long Groq wants us to wait from a 429/413 rate-limit response —
+// prefers the standard Retry-After header, falls back to parsing the
+// "Please retry in 41.14s" phrasing Groq puts in the error body, then a
+// conservative default.
+function parseRetryMs(res, bodyText) {
+  const header = res.headers?.get?.('retry-after');
+  if (header) {
+    const secs = parseFloat(header);
+    if (!isNaN(secs)) return Math.min(90000, Math.max(1000, Math.ceil(secs * 1000)));
+  }
+  const m = /retry in ([\d.]+)\s*s/i.exec(bodyText || '');
+  if (m) return Math.min(90000, Math.max(1000, Math.ceil(parseFloat(m[1]) * 1000)));
+  return 5000;
+}
 
 class GeminiService {
   constructor() {
@@ -46,46 +71,75 @@ class GeminiService {
   }
 
   // ── Groq: generate JSON ───────────────────────────────────────────────────
-  async _groqJSON(prompt, system = '', { temperature = 0.7, maxTokens = 2048, timeoutMs = 30000, model = 'llama-3.3-70b-versatile' } = {}) {
+  // onThrottle(delayMs) fires whenever this call has to wait — either for the
+  // LLMQueue TPM budget (before the call) or on a 429/413 retry-after (after a
+  // rejected attempt) — so callers can surface "pausing for rate limit" to the
+  // user instead of the run appearing frozen.
+  async _groqJSON(prompt, system = '', { temperature = 0.7, maxTokens = 2048, timeoutMs = 30000, model = 'openai/gpt-oss-120b', onThrottle = null } = {}) {
     if (!this.groqEnabled) return null;
-    try {
-      const messages = [];
-      if (system) messages.push({ role: 'system', content: system });
-      messages.push({ role: 'user', content: prompt });
+    const estTokens = estimateGroqTokens(prompt, system, maxTokens);
+    const MAX_RATE_RETRIES = 2;
 
-      const res = await LLMQueue.run(() => fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.groqApiKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature,
-          max_tokens: maxTokens,
-          response_format: { type: 'json_object' },
-        }),
-        signal: AbortSignal.timeout(timeoutMs),
-      }));
+    for (let attempt = 0; attempt <= MAX_RATE_RETRIES; attempt++) {
+      try {
+        const messages = [];
+        if (system) messages.push({ role: 'system', content: system });
+        messages.push({ role: 'user', content: prompt });
 
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Groq HTTP ${res.status}: ${err.slice(0, 200)}`);
+        const res = await LLMQueue.run(() => fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.groqApiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature,
+            max_tokens: maxTokens,
+            response_format: { type: 'json_object' },
+            // gpt-oss models spend part of max_tokens on internal reasoning
+            // before emitting the final answer — at default effort this can
+            // consume the entire budget on a small max_tokens call, leaving
+            // nothing for the actual JSON and failing validation with an
+            // empty failed_generation. Low effort is sufficient here: the
+            // prompt already does the "reasoning" via explicit grounding
+            // instructions, not multi-step chain-of-thought.
+            reasoning_effort: 'low',
+          }),
+          signal: AbortSignal.timeout(timeoutMs),
+        }), estTokens, onThrottle);
+
+        if (!res.ok) {
+          const errText = await res.text();
+          // Rate limited despite pacing (estimate error, or a different model
+          // tier with a lower TPM cap than the shared window assumes): honor
+          // Groq's requested wait and retry the SAME call rather than falling
+          // straight through to a generic template.
+          if ((res.status === 429 || res.status === 413) && attempt < MAX_RATE_RETRIES) {
+            const waitMs = parseRetryMs(res, errText);
+            if (typeof onThrottle === 'function') { try { onThrottle(waitMs); } catch { /* never break generation */ } }
+            console.warn(`[Groq] rate-limited (${res.status}) on ${model} — waiting ${Math.round(waitMs / 1000)}s then retrying (attempt ${attempt + 1}/${MAX_RATE_RETRIES})`);
+            await sleep(waitMs);
+            continue;
+          }
+          throw new Error(`Groq HTTP ${res.status}: ${errText.slice(0, 200)}`);
+        }
+
+        const data = await res.json();
+        const text = data.choices?.[0]?.message?.content;
+        if (!text) throw new Error('Empty response from Groq');
+
+        const parsed = JSON.parse(text);
+        this.groqCallCount++;
+        console.log(`[Groq] ✅ Success (${model}) — call #${this.groqCallCount}`);
+        return parsed;
+      } catch (err) {
+        console.error(`[Groq] ❌ Failed (${model}): ${err.message}`);
+        return null;
       }
-
-      const data = await res.json();
-      const text = data.choices?.[0]?.message?.content;
-      if (!text) throw new Error('Empty response from Groq');
-
-      const parsed = JSON.parse(text);
-      this.groqCallCount++;
-      console.log(`[Groq] ✅ Success — call #${this.groqCallCount}`);
-      return parsed;
-    } catch (err) {
-      console.error(`[Groq] ❌ Failed: ${err.message}`);
-      return null;
     }
+    return null;
   }
 
   // ── Groq: generate plain text (70b — standard fallback) ─────────────────
@@ -103,10 +157,11 @@ class GeminiService {
           'Authorization': `Bearer ${this.groqApiKey}`,
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'openai/gpt-oss-120b',
           messages,
           temperature: 0.8,
           max_tokens: 1024,
+          reasoning_effort: 'low',
         }),
         signal: AbortSignal.timeout(20000),
       }));
@@ -134,10 +189,11 @@ class GeminiService {
           'Authorization': `Bearer ${this.groqApiKey}`,
         },
         body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
+          model: 'openai/gpt-oss-20b',
           messages,
           temperature: 0.8,
           max_tokens: 512,
+          reasoning_effort: 'low',
         }),
         signal: AbortSignal.timeout(15000),
       }));
@@ -170,11 +226,12 @@ class GeminiService {
           'Authorization': `Bearer ${this.groqApiKey}`,
         },
         body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
+          model: 'openai/gpt-oss-20b',
           messages,
           temperature: 0.7,
           max_tokens: 1024,
           response_format: { type: 'json_object' },
+          reasoning_effort: 'low',
         }),
         signal: AbortSignal.timeout(20000),
       }));
@@ -236,7 +293,7 @@ class GeminiService {
   // and Groq/Gemini credentials instead of the raw fetch calls
   // AssessmentGenerator used to make directly.
   //
-  // The middle tier (llama-3.1-8b-instant) matters specifically on Groq's
+  // The middle tier (openai/gpt-oss-20b) matters specifically on Groq's
   // free/on-demand tier: rate limits there are enforced PER MODEL, not per
   // account, so a request that gets hard-rejected against the 70b model's
   // tight TPM budget has a real chance of succeeding against 8b-instant's
@@ -244,12 +301,12 @@ class GeminiService {
   // would otherwise fall straight through to the deterministic template
   // fallback. Quality is lower than 70b but still real LLM output grounded
   // in the actual prompt, not a topic-word-substituted template.
-  async generateQuestionsBatch(prompt, system = '', { temperature = 0.85, maxTokens = 16000, timeoutMs = 30000 } = {}) {
+  async generateQuestionsBatch(prompt, system = '', { temperature = 0.85, maxTokens = 16000, timeoutMs = 30000, onThrottle = null } = {}) {
     if (this.groqEnabled) {
-      const parsed70b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'llama-3.3-70b-versatile' });
+      const parsed70b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'openai/gpt-oss-120b', onThrottle });
       if (Array.isArray(parsed70b?.questions)) return parsed70b.questions;
 
-      const parsed8b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'llama-3.1-8b-instant' });
+      const parsed8b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'openai/gpt-oss-20b', onThrottle });
       if (Array.isArray(parsed8b?.questions)) return parsed8b.questions;
     }
     if (this.isEnabled()) {
@@ -382,7 +439,7 @@ class GeminiService {
   // ── generateTextFast: Groq 8b-instant → Gemini fallback (Tier-3 tasks) ───
   /**
    * For simple, high-frequency text tasks (tutor chat, scheduler briefs).
-   * Routes to Groq llama-3.1-8b-instant FIRST (near-free, fastest).
+   * Routes to Groq openai/gpt-oss-20b FIRST (near-free, fastest).
    * Falls back to full Gemini only if Groq is unavailable or fails.
    */
   async generateTextFast(prompt, system = '') {
@@ -398,7 +455,7 @@ class GeminiService {
   // ── generateJSONFast: Groq 8b-instant → Gemini fallback (medium JSON) ────
   /**
    * For medium-priority JSON tasks where 8b quality is sufficient.
-   * Routes to Groq llama-3.1-8b-instant FIRST, falls back to full Gemini.
+   * Routes to Groq openai/gpt-oss-20b FIRST, falls back to full Gemini.
    */
   async generateJSONFast(prompt, system = '') {
     // Try fast Groq first

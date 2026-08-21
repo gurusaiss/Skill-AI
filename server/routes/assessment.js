@@ -162,11 +162,12 @@ If the answer is NO — replace the question with one that passes this test.
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'openai/gpt-oss-120b',
           messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
           temperature: 0.8,
           max_tokens: 5000,
           response_format: { type: 'json_object' },
+          reasoning_effort: 'low',
         }),
         signal: AbortSignal.timeout(30000),
       });
@@ -2164,11 +2165,12 @@ Note: "caseStudy" may be null on sessions that don't need one, but MUST be prese
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
               body: JSON.stringify({
-                model: 'llama-3.3-70b-versatile',
+                model: 'openai/gpt-oss-120b',
                 messages: [{ role: 'user', content: prompt }],
                 temperature: 0.7,
                 max_tokens: 8000,
                 response_format: { type: 'json_object' },
+                reasoning_effort: 'low',
               }),
               signal: AbortSignal.timeout(45000),
             }));

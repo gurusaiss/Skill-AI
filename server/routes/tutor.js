@@ -42,7 +42,7 @@ function ruleBased(message) {
  * Body: { message: string, context: string, history: [{role, content}] }
  *
  * Optimisations vs original:
- *   1. Uses generateTextFast() → Groq llama-3.1-8b-instant first (near-free)
+ *   1. Uses generateTextFast() → Groq openai/gpt-oss-20b first (near-free)
  *   2. History trimmed to last 3 turns instead of 5 (saves ~20% tokens)
  *   3. Identical messages within 2 min return cached replies (dedup rapid-fire)
  */
@@ -80,7 +80,7 @@ router.post('/chat', authenticate, async (req, res) => {
 
     prompt += `Student: ${trimmedMsg}\nTutor:`;
 
-    // ── generateTextFast: Groq llama-3.1-8b-instant first (Tier-3 task) ────
+    // ── generateTextFast: Groq openai/gpt-oss-20b first (Tier-3 task) ────
     const aiReply = await geminiService.generateTextFast(prompt, systemPrompt);
 
     if (aiReply && aiReply.trim()) {
