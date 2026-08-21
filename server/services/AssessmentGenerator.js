@@ -19,18 +19,54 @@ import GeminiService from './GeminiService.js';
 // needed to fill a large question count (a real quality/latency tradeoff,
 // not a full fix; the free tier itself is the actual constraint. See
 // docs/DEPLOYMENT_GUIDE.md for upgrading to a paid Groq/Gemini tier).
-const FREE_TIER_SOURCE_CHAR_BUDGET = 6000;   // ~1,500 tokens of source text per request
-const FREE_TIER_MAX_OUTPUT_TOKENS  = 3000;   // hard ceiling on requested output
-const FREE_TIER_MAX_QUESTIONS_PER_CALL = 8;  // bounds expected output size per request
+// Per-request budgets. These were sized for Groq's free/on-demand tier, whose
+// ~8,000 tokens-per-MINUTE ceiling forces many small, paced requests — which
+// is what made a multi-PDF bank take 15-40+ minutes. Gemini has no comparable
+// per-minute squeeze here (measured: 20 questions in one call, 5 concurrent
+// calls all fine), so when Gemini is the active provider we use far larger
+// batches and bigger source chunks: the same bank becomes a couple of calls
+// instead of dozens. Falls back to the tight Groq numbers automatically when
+// Gemini isn't configured, so nothing breaks on a Groq-only deployment.
+const GROQ_SOURCE_CHAR_BUDGET    = 6000;   // ~1,500 tokens of source text per request
+const GROQ_MAX_OUTPUT_TOKENS     = 3000;
+const GROQ_MAX_QUESTIONS_PER_CALL = 8;
 
-// A question in our JSON format runs ~150-200 output tokens (stem, 4 options,
-// answer, explanation, quote). Reserving a flat 3,000 max_tokens for an
-// 8-question call wildly over-counts against Groq's per-minute budget (the API
-// counts REQUESTED max_tokens, not tokens actually generated), which starves
-// the rolling window and forces more pacing waits. Sizing max_tokens to the
-// actual number of questions asked for lets more calls fit per minute.
+const GEMINI_SOURCE_CHAR_BUDGET   = 24000; // ~6,000 tokens — fewer, richer chunks
+// gemini-3.6-flash is a THINKING model: reasoning tokens are billed against
+// the same output budget as the answer (a measured call spent 2,161 tokens
+// thinking before writing a single question). Our question schema is also
+// large — type/question/4 options/answer/explanation/skillArea/sourceSection/
+// sourceQuote runs ~250-350 tokens each. An 8,192 budget truncated the JSON
+// mid-string ("Unterminated string in JSON at position 9371") and the whole
+// batch was discarded. Gemini has no tight per-minute token squeeze here, so
+// there's no reason to be stingy: give it real headroom.
+const GEMINI_MAX_OUTPUT_TOKENS    = 32768;
+const GEMINI_MAX_QUESTIONS_PER_CALL = 15;  // conservative vs. the 20 that verified, to keep JSON well inside budget
+
+function geminiPrimary() {
+  const k = process.env.GEMINI_API_KEY;
+  return !!(k && k.length > 10);
+}
+function sourceCharBudget()    { return geminiPrimary() ? GEMINI_SOURCE_CHAR_BUDGET   : GROQ_SOURCE_CHAR_BUDGET; }
+function maxQuestionsPerCall() { return geminiPrimary() ? GEMINI_MAX_QUESTIONS_PER_CALL : GROQ_MAX_QUESTIONS_PER_CALL; }
+function maxOutputTokensCap()  { return geminiPrimary() ? GEMINI_MAX_OUTPUT_TOKENS    : GROQ_MAX_OUTPUT_TOKENS; }
+
+// A question in our JSON format runs ~250-350 output tokens (stem, 4 options,
+// answer, explanation, skillArea, sourceSection, sourceQuote).
+//
+// Two very different sizing regimes:
+//  - Groq: the API counts REQUESTED max_tokens against the ~8,000/min budget,
+//    so over-reserving directly costs throughput. Size tightly.
+//  - Gemini: no comparable per-minute squeeze, AND it's a thinking model whose
+//    reasoning tokens share the output budget — under-reserving truncates the
+//    JSON mid-object and the entire batch is thrown away. Size generously,
+//    with a flat reasoning allowance on top of the per-question estimate.
 function outputTokensFor(count) {
-  return Math.min(FREE_TIER_MAX_OUTPUT_TOKENS, Math.max(600, (count || 1) * 200 + 400));
+  const n = count || 1;
+  if (geminiPrimary()) {
+    return Math.min(maxOutputTokensCap(), Math.max(4000, n * 400 + 6000)); // +6k reasoning headroom
+  }
+  return Math.min(maxOutputTokensCap(), Math.max(600, n * 200 + 400));
 }
 
 // Wraps an optional caller-supplied onProgress callback into two safe emitters
@@ -1204,7 +1240,7 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
   // of a JD or any supporting doc was NEVER seen by the LLM — the direct,
   // confirmed cause of generated questions not matching the uploaded
   // JD/file for anything longer than a page or two.
-  const CHUNK_SIZE = FREE_TIER_SOURCE_CHAR_BUDGET;
+  const CHUNK_SIZE = sourceCharBudget();
   const CHUNK_OVERLAP = 300;
   const chunks = [];
   if (combinedSource.length <= CHUNK_SIZE) {
@@ -1254,7 +1290,7 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
       // request's expected output stays small enough to fit the free-tier
       // per-request token budget alongside its proportional max_tokens.
       const bufferMultiplier = 1.4 + attempt * 0.3;
-      const askFor = Math.min(FREE_TIER_MAX_QUESTIONS_PER_CALL, Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
+      const askFor = Math.min(maxQuestionsPerCall(), Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
       const seed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 6)}`;
       const prompt = buildUserPrompt({ count: askFor, jobRole, jdText: chunk, skillsList, types, seed, supportingDocsText: '', avoidQuestions });
 
@@ -1397,7 +1433,7 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
   // request comfortably under Groq's free-tier per-request token cap — see
   // the constant's comment near the top of this file. Chunks overlap to
   // avoid missing content at section boundaries.
-  const CHUNK_SIZE = FREE_TIER_SOURCE_CHAR_BUDGET;
+  const CHUNK_SIZE = sourceCharBudget();
   const CHUNK_OVERLAP = 300;
   const chunks = [];
   if (text.length <= CHUNK_SIZE) {
@@ -1442,7 +1478,7 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
     for (let attempt = 0; attempt < MAX_ATTEMPTS && pool.length < chunkCeiling; attempt++) {
       const stillNeeded = chunkCeiling - pool.length;
       const bufferMultiplier = 1.4 + attempt * 0.3;
-      const askFor = Math.min(FREE_TIER_MAX_QUESTIONS_PER_CALL, Math.max(1, Math.ceil(stillNeeded * bufferMultiplier)));
+      const askFor = Math.min(maxQuestionsPerCall(), Math.max(1, Math.ceil(stillNeeded * bufferMultiplier)));
       const attemptSeed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 4)}`;
       const prompt = buildDocumentUserPrompt({
         count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder, processDelivery, avoidQuestions,

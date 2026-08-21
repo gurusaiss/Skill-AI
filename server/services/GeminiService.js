@@ -38,13 +38,30 @@ function parseRetryMs(res, bodyText) {
   return 5000;
 }
 
+// Gemini model names Google has retired. A request to any of these fails with
+// HTTP 404 ("no longer available") — NOT with an auth or quota error, so it
+// looks like a broken key rather than a stale model name. The deployed
+// environment sets GEMINI_MODEL in a hosting dashboard (Render/Vercel), which
+// would keep overriding the code default with a dead name long after this fix
+// ships, so a configured-but-retired value is ignored in favour of the current
+// default instead of being trusted blindly.
+const RETIRED_GEMINI_MODELS = new Set([
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-exp',
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-2.5-flash',
+  'gemini-pro',
+]);
+
 class GeminiService {
   constructor() {
-    this.model = 'gemini-2.0-flash';
+    this.model = 'gemini-3.6-flash';
     this.maxRetries = 3;
     this.callCount = 0;
     this.groqCallCount = 0;
     this.groqFastCallCount = 0;
+    this._warnedRetired = false;
   }
 
   // ── Gemini credentials ────────────────────────────────────────────────────
@@ -52,9 +69,20 @@ class GeminiService {
     return process.env.GEMINI_API_KEY || '';
   }
 
+  get resolvedModel() {
+    const configured = process.env.GEMINI_MODEL;
+    if (configured && RETIRED_GEMINI_MODELS.has(configured)) {
+      if (!this._warnedRetired) {
+        this._warnedRetired = true;
+        console.warn(`[Gemini] GEMINI_MODEL="${configured}" is retired by Google (404s on every call) — using "${this.model}" instead. Update the env var to silence this.`);
+      }
+      return this.model;
+    }
+    return configured || this.model;
+  }
+
   get endpoint() {
-    const model = process.env.GEMINI_MODEL || this.model;
-    return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    return `https://generativelanguage.googleapis.com/v1beta/models/${this.resolvedModel}:generateContent`;
   }
 
   isEnabled() {
@@ -253,7 +281,11 @@ class GeminiService {
   // Distinct from generateJSON's retrying Gemini path below: callers that
   // already run their own outer retry loop (e.g. bulk question generation)
   // want one attempt per call, not 3 retries nested inside each attempt.
-  async _geminiJSONOnce(prompt, system = '', { temperature = 0.85, maxTokens = 16384, timeoutMs = 30000 } = {}) {
+  // timeoutMs defaults to 120s, not 30s: gemini-3.6-flash is a *thinking*
+  // model (a measured 20-question call spent 2,161 tokens on reasoning and
+  // took ~40s wall-clock). A 30s abort killed exactly the large, useful
+  // batches this path exists to make.
+  async _geminiJSONOnce(prompt, system = '', { temperature = 0.85, maxTokens = 16384, timeoutMs = 120000 } = {}) {
     if (!this.isEnabled()) return null;
     try {
       const body = {
@@ -301,17 +333,25 @@ class GeminiService {
   // would otherwise fall straight through to the deterministic template
   // fallback. Quality is lower than 70b but still real LLM output grounded
   // in the actual prompt, not a topic-word-substituted template.
-  async generateQuestionsBatch(prompt, system = '', { temperature = 0.85, maxTokens = 16000, timeoutMs = 30000, onThrottle = null } = {}) {
-    if (this.groqEnabled) {
-      const parsed70b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'openai/gpt-oss-120b', onThrottle });
-      if (Array.isArray(parsed70b?.questions)) return parsed70b.questions;
-
-      const parsed8b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'openai/gpt-oss-20b', onThrottle });
-      if (Array.isArray(parsed8b?.questions)) return parsed8b.questions;
-    }
+  async generateQuestionsBatch(prompt, system = '', { temperature = 0.85, maxTokens = 16000, timeoutMs = 120000, onThrottle = null } = {}) {
+    // GEMINI FIRST — this ordering matters enormously for wall-clock time.
+    // Groq's free/on-demand tier allows only ~8,000 tokens/MINUTE, so a
+    // multi-PDF bank needs dozens of paced calls and took 15-40+ minutes.
+    // Gemini's free tier has no comparable per-minute token squeeze here
+    // (measured: 20 questions returned in a single call, and 5 concurrent
+    // calls all succeeded), so routing question generation to Gemini first
+    // turns the same job into a couple of calls instead of dozens. Groq
+    // stays as the fallback for when Gemini is unavailable or errors.
     if (this.isEnabled()) {
-      const parsed = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: Math.max(maxTokens, 16384), timeoutMs });
+      const parsed = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: Math.max(maxTokens, 8192), timeoutMs });
       if (Array.isArray(parsed?.questions)) return parsed.questions;
+    }
+    if (this.groqEnabled) {
+      const parsed120b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'openai/gpt-oss-120b', onThrottle });
+      if (Array.isArray(parsed120b?.questions)) return parsed120b.questions;
+
+      const parsed20b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'openai/gpt-oss-20b', onThrottle });
+      if (Array.isArray(parsed20b?.questions)) return parsed20b.questions;
     }
     return null;
   }
