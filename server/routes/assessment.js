@@ -13,6 +13,7 @@
  */
 import express from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { llmLimiter } from '../middleware/rateLimiters.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
@@ -1510,7 +1511,7 @@ router.get('/:id/reports/:userId/download', authenticate, async (req, res) => {
  * POST /api/assessments/generate-from-jd
  * Preview: generate questions from a specific employee's JD (no assessment saved)
  */
-router.post('/generate-from-jd', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.post('/generate-from-jd', authenticate, requireRole('admin', 'manager'), llmLimiter, async (req, res) => {
   try {
     const { userId, jobRole, jobDescription, questionCount = 5, questionTypes = ['mcq'] } = req.body;
 
@@ -1900,7 +1901,7 @@ router.post('/export-filtered-reports', authenticate, async (req, res) => {
 /**
  * POST /api/assessments/generate (legacy compat — module-based)
  */
-router.post('/generate', authenticate, async (req, res) => {
+router.post('/generate', authenticate, llmLimiter, async (req, res) => {
   try {
     const { moduleTitle, moduleDescription, skills, numQuestions, questionTypes, sessionTitle, sessionTopics, sessionKeyPoints } = req.body;
     const num = Math.min(Math.max(parseInt(numQuestions) || 5, 2), 20);

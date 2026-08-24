@@ -1,11 +1,17 @@
 /**
- * GeminiService.js — Gemini 2.0 Flash + Groq fallback
+ * GeminiService.js — Gemini (multi-key rotation) → Cerebras → Groq fallback chain
  *
- * Tiered model strategy (matches api_report.md recommendation):
- *   Tier 1 — Complex/JSON  : generateJSON()      → Gemini 2.0 Flash first, Groq 70b fallback
- *   Tier 2 — Medium/Text   : generateText()      → Gemini 2.0 Flash first, Groq 70b fallback
- *   Tier 3 — Simple/Fast   : generateTextFast()  → Groq openai/gpt-oss-20b first, Gemini fallback
- *                            generateJSONFast()  → Groq openai/gpt-oss-20b first, Gemini fallback
+ * Question-bank generation (generateQuestionsBatch) tries, in order:
+ *   1. Gemini 3.6-flash, rotating across every GEMINI_API_KEY[_N] configured.
+ *      Free tier caps each KEY at 20 requests/day per model — rotating across
+ *      keys from separate Google AI Studio projects multiplies that ceiling
+ *      for free (each project gets its own independent quota).
+ *   2. Cerebras (OpenAI-compatible), a much larger free tier (1M tokens/day,
+ *      14,400 requests/day, no credit card) — a strong second option once
+ *      every Gemini key is exhausted for the day.
+ *   3. Groq openai/gpt-oss-120b, then openai/gpt-oss-20b — effectively
+ *      unlimited requests but only ~8,000 tokens/MINUTE, so it's the slowest
+ *      path and stays last.
  *
  * All methods return null on failure — callers fall back to rule-based logic.
  */
@@ -54,6 +60,11 @@ const RETIRED_GEMINI_MODELS = new Set([
   'gemini-pro',
 ]);
 
+// Highest N in GEMINI_API_KEY_N this app will look for. Arbitrary ceiling
+// just to keep the env scan bounded — raise it if someone actually wires up
+// more than this many free-tier projects.
+const MAX_GEMINI_KEYS = 10;
+
 class GeminiService {
   constructor() {
     this.model = 'gemini-3.6-flash';
@@ -62,11 +73,48 @@ class GeminiService {
     this.groqCallCount = 0;
     this.groqFastCallCount = 0;
     this._warnedRetired = false;
+    // Per-KEY quota cooldown (Map<key, blockedUntilMs>) — Gemini's free-tier
+    // request cap is per API key (really per Google Cloud project), not
+    // shared across keys, so key A being exhausted must not block key B.
+    this._geminiKeyBlockedUntil = new Map();
+    this._cerebrasModelPromise = null;
   }
 
-  // ── Gemini credentials ────────────────────────────────────────────────────
-  get apiKey() {
-    return process.env.GEMINI_API_KEY || '';
+  // ── Gemini credentials — multi-key rotation ──────────────────────────────
+  // Reads GEMINI_API_KEY plus GEMINI_API_KEY_2..GEMINI_API_KEY_N. Each key is
+  // expected to come from a SEPARATE Google AI Studio project — Gemini's free
+  // tier quota (20 requests/day per model, confirmed live) is scoped per
+  // project, so 3 keys from 3 projects genuinely triples the daily ceiling;
+  // 3 keys from the same project would not.
+  get geminiKeys() {
+    const keys = [process.env.GEMINI_API_KEY];
+    for (let i = 2; i <= MAX_GEMINI_KEYS; i++) keys.push(process.env[`GEMINI_API_KEY_${i}`]);
+    return keys.filter(k => k && k.length > 10);
+  }
+
+  // First key not currently in a quota cooldown, or null if every configured
+  // key is blocked. Simple round-robin-by-availability: always starts from
+  // the front of the list, so a freshly-unblocked earlier key gets reused
+  // before falling further down the list — the ordering doesn't matter for
+  // correctness, only that a non-blocked key is found when one exists.
+  _pickGeminiKey() {
+    const now = Date.now();
+    for (const key of this.geminiKeys) {
+      const blockedUntil = this._geminiKeyBlockedUntil.get(key);
+      if (!blockedUntil || now >= blockedUntil) return key;
+    }
+    return null;
+  }
+
+  // Google's free-tier daily quota resets at a fixed time, not "24h from the
+  // failed call" — using next-UTC-midnight as the cooldown boundary is an
+  // approximation (the actual reset may be Pacific-time-based) but errs
+  // toward retrying a LITTLE early rather than blocking a key that's
+  // actually already reset, which is the safer direction to be wrong in.
+  _msUntilNextUtcMidnight() {
+    const now = new Date();
+    const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 5, 0));
+    return next.getTime() - now.getTime();
   }
 
   get resolvedModel() {
@@ -85,14 +133,15 @@ class GeminiService {
     return `https://generativelanguage.googleapis.com/v1beta/models/${this.resolvedModel}:generateContent`;
   }
 
-  // True while Gemini has recently returned a quota 429. Callers skip Gemini
-  // entirely during this window rather than issuing calls that cannot succeed.
+  // True only when EVERY configured key is currently in a quota cooldown —
+  // i.e. there is truly nothing left to try. Callers skip Gemini entirely in
+  // that state rather than issuing calls that cannot succeed.
   geminiQuotaBlocked() {
-    return !!(this._quotaBlockedUntil && Date.now() < this._quotaBlockedUntil);
+    return this.geminiKeys.length > 0 && this._pickGeminiKey() === null;
   }
 
   isEnabled() {
-    return !!(this.apiKey && this.apiKey.length > 10);
+    return this.geminiKeys.length > 0;
   }
 
   // ── Groq credentials ──────────────────────────────────────────────────────
@@ -102,6 +151,96 @@ class GeminiService {
 
   get groqEnabled() {
     return !!(this.groqApiKey && this.groqApiKey.length > 10);
+  }
+
+  // ── Cerebras credentials ──────────────────────────────────────────────────
+  // OpenAI-compatible API. Free tier (no credit card, confirmed): 1,000,000
+  // tokens/day and 14,400 requests/day PER MODEL, ~30 requests/min — far more
+  // headroom than either Gemini (20 req/day/key) or Groq (8,000 tokens/min).
+  get cerebrasApiKey() {
+    return process.env.CEREBRAS_API_KEY || '';
+  }
+
+  get cerebrasEnabled() {
+    return !!(this.cerebrasApiKey && this.cerebrasApiKey.length > 10);
+  }
+
+  // Discovers a real, currently-available chat model from Cerebras's own
+  // /v1/models endpoint instead of hardcoding a name — this exact codebase
+  // just spent a long session debugging hardcoded Groq/Gemini model names
+  // that had been silently retired, so a new integration deliberately avoids
+  // repeating that mistake. Cached per process; a hardcoded fallback name is
+  // used only if discovery itself fails (e.g. transient network error).
+  async _resolveCerebrasModel() {
+    if (this._cerebrasModelPromise) return this._cerebrasModelPromise;
+    this._cerebrasModelPromise = (async () => {
+      try {
+        const res = await fetch('https://api.cerebras.ai/v1/models', {
+          headers: { 'Authorization': `Bearer ${this.cerebrasApiKey}` },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const ids = (data.data || []).map(m => m.id).filter(Boolean);
+        if (ids.length === 0) throw new Error('empty model list');
+        // Prefer a larger/more capable-sounding instruct model when several
+        // are offered; otherwise take whatever is actually available.
+        const preferred = ids.find(id => /scout|70b|32b|qwen/i.test(id)) || ids[0];
+        console.log(`[Cerebras] resolved model: ${preferred} (from ${ids.length} available)`);
+        return preferred;
+      } catch (err) {
+        console.warn(`[Cerebras] model discovery failed (${err.message}) — using fallback name, which may be stale`);
+        return 'llama-3.3-70b';
+      }
+    })();
+    return this._cerebrasModelPromise;
+  }
+
+  // Cerebras: generate JSON. Same OpenAI-compatible shape as Groq, so this
+  // mirrors _groqJSON closely, minus the aggressive TPM pacing Groq needs —
+  // Cerebras's free tier is generous enough that reactive 429 handling alone
+  // is sufficient without a proactive token-bucket gate.
+  async _cerebrasJSON(prompt, system = '', { temperature = 0.7, maxTokens = 4096 } = {}) {
+    if (!this.cerebrasEnabled) return null;
+    try {
+      const model = await this._resolveCerebrasModel();
+      const messages = [];
+      if (system) messages.push({ role: 'system', content: system });
+      messages.push({ role: 'user', content: prompt });
+
+      const res = await LLMQueue.run(() => fetch('https://api.cerebras.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.cerebrasApiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+          response_format: { type: 'json_object' },
+        }),
+        signal: AbortSignal.timeout(30000),
+      }));
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        console.warn(`[Cerebras] HTTP ${res.status} on ${model}: ${errText.slice(0, 200)}`);
+        return null;
+      }
+
+      const data = await res.json();
+      const text = data.choices?.[0]?.message?.content;
+      if (!text) { console.warn('[Cerebras] empty response'); return null; }
+
+      const parsed = JSON.parse(text);
+      console.log(`[Cerebras] ✅ Success (${model})`);
+      return parsed;
+    } catch (err) {
+      console.warn(`[Cerebras] failed: ${err.message}`);
+      return null;
+    }
   }
 
   // ── Groq: generate JSON ───────────────────────────────────────────────────
@@ -292,7 +431,8 @@ class GeminiService {
   // took ~40s wall-clock). A 30s abort killed exactly the large, useful
   // batches this path exists to make.
   async _geminiJSONOnce(prompt, system = '', { temperature = 0.85, maxTokens = 16384, timeoutMs = 120000 } = {}) {
-    if (!this.isEnabled()) return null;
+    const key = this._pickGeminiKey();
+    if (!key) return null;
     try {
       const body = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -300,7 +440,7 @@ class GeminiService {
       };
       if (system) body.systemInstruction = { parts: [{ text: system }] };
 
-      const res = await LLMQueue.run(() => fetch(`${this.endpoint}?key=${this.apiKey}`, {
+      const res = await LLMQueue.run(() => fetch(`${this.endpoint}?key=${key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -312,16 +452,21 @@ class GeminiService {
       // model name look like an exhausted quota for weeks.
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        // Gemini's FREE tier allows only 20 requests per DAY per model
-        // (quotaId GenerateRequestsPerDayPerProjectPerModel-FreeTier). Once
-        // that's gone, every further call is a guaranteed 429 — so record it
-        // and stop attempting Gemini for a cooldown instead of burning
-        // latency on calls that cannot succeed. Requests are the scarce
-        // resource here, not tokens.
+        // Gemini's FREE tier allows only 20 requests per DAY per model, PER
+        // KEY (quotaId GenerateRequestsPerDayPerProjectPerModel-FreeTier).
+        // Block only THIS key — a sibling key from a different project is
+        // unaffected and generateQuestionsBatch's retry will pick it up.
         if (res.status === 429) {
           const perDay = /GenerateRequestsPerDayPerProjectPerModel/.test(errText);
-          this._quotaBlockedUntil = Date.now() + (perDay ? 10 * 60 * 1000 : 60 * 1000);
-          console.warn(`[Gemini] 429 quota exhausted (${perDay ? 'per-DAY free-tier request cap' : 'short-term rate limit'}) — pausing Gemini attempts and using Groq fallback`);
+          const cooldownMs = perDay ? this._msUntilNextUtcMidnight() : 60 * 1000;
+          this._geminiKeyBlockedUntil.set(key, Date.now() + cooldownMs);
+          const now = Date.now();
+          const remaining = this.geminiKeys.filter(k => {
+            if (k === key) return false;
+            const until = this._geminiKeyBlockedUntil.get(k);
+            return !until || now >= until;
+          }).length;
+          console.warn(`[Gemini] key ...${key.slice(-4)} hit ${perDay ? 'its per-DAY free-tier quota' : 'a short-term rate limit'} — cooling down ${Math.round(cooldownMs / 60000)}min. ${remaining > 0 ? `${remaining} other key(s) still available.` : 'No other keys available — falling to Cerebras/Groq.'}`);
           return null;
         }
         console.warn(`[Gemini] HTTP ${res.status} on ${this.resolvedModel}: ${errText.slice(0, 200)}`);
@@ -377,19 +522,23 @@ class GeminiService {
     // calls all succeeded), so routing question generation to Gemini first
     // turns the same job into a couple of calls instead of dozens. Groq
     // stays as the fallback for when Gemini is unavailable or errors.
-    if (this.isEnabled() && !this.geminiQuotaBlocked()) {
+    if (this.isEnabled()) {
       const geminiTokens = Math.max(maxTokens, 8192);
-      const parsed = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: geminiTokens, timeoutMs });
-      if (Array.isArray(parsed?.questions)) return parsed.questions;
-
-      // Retry Gemini once — but ONLY for transient failures (truncated JSON,
-      // slow call). Never retry a quota 429: the free tier's cap is per-DAY,
-      // so an immediate retry is guaranteed to fail and just burns time.
-      if (!this.geminiQuotaBlocked()) {
-        console.warn('[Gemini] question batch failed (non-quota) — retrying Gemini once before falling back to Groq');
-        const retry = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: geminiTokens, timeoutMs });
-        if (Array.isArray(retry?.questions)) return retry.questions;
+      // Loop across every configured key, not just "retry once": a 429 on
+      // key A immediately frees up key B (different project, independent
+      // quota) on the very next iteration via _pickGeminiKey(). Bounded by
+      // the actual number of keys so this can't loop forever, and stops the
+      // moment every key is in cooldown (geminiQuotaBlocked()).
+      const maxAttempts = Math.max(1, this.geminiKeys.length);
+      for (let i = 0; i < maxAttempts; i++) {
+        if (i > 0 && this.geminiQuotaBlocked()) break;
+        const parsed = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: geminiTokens, timeoutMs });
+        if (Array.isArray(parsed?.questions)) return parsed.questions;
       }
+    }
+    if (this.cerebrasEnabled) {
+      const parsed = await this._cerebrasJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192) });
+      if (Array.isArray(parsed?.questions)) return parsed.questions;
     }
     if (this.groqEnabled) {
       const parsed120b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'openai/gpt-oss-120b', onThrottle });

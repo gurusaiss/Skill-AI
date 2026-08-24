@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import * as pdfParse from 'pdf-parse';
 import SmartAgent from '../agent/SmartAgent.js';
 import { authenticate } from '../middleware/auth.js';
+import { llmLimiter } from '../middleware/rateLimiters.js';
 import UserStore from '../services/UserStore.js';
 
 // Lazy-import Socket.io emitter to avoid circular dependency at startup
@@ -73,7 +74,7 @@ const extractTextFromPDF = async (filePath) => {
  * Supports both JSON requests and multipart/form-data for PDF uploads
  * Requires authentication - uses learningUUID from authenticated user
  */
-router.post('/', authenticate, upload.single('jobDescriptionFile'), async (req, res) => {
+router.post('/', authenticate, llmLimiter, upload.single('jobDescriptionFile'), async (req, res) => {
   let uploadedFilePath = null;
   
   try {

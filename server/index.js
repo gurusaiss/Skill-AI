@@ -110,7 +110,7 @@ const PORT = process.env.PORT || 3001;
 
 // Trust Render/Vercel/Railway reverse proxy — required for rate-limiter + correct IP
 app.set('trust proxy', 1);
-const geminiEnabled = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.length > 10);
+const geminiEnabled = geminiService.isEnabled();
 const groqEnabled = !!(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.length > 10);
 
 // Middleware
@@ -148,16 +148,13 @@ const globalLimiter = rateLimit({
 });
 app.use('/api/', globalLimiter);
 
-// Heavy LLM endpoint rate limit — 10 req/min per IP
-const llmLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (_req, res) => res.status(429).json({ success: false, error: 'LLM rate limit — max 10 generations per minute.' }),
-});
-app.use('/api/goal', llmLimiter);
-app.use('/api/assessments', llmLimiter);
+// The heavy-LLM rate limiter (10 req/min/IP) is applied directly to the
+// specific generation routes inside goal.js and assessment.js instead of
+// blanket-mounted per-router here — see middleware/rateLimiters.js for why:
+// the previous per-router mount also throttled high-frequency, zero-LLM
+// routes (checking assignments, opening/submitting an assessment, loading a
+// dashboard), which is a real outage risk for any office where many
+// employees share one outbound IP.
 
 // Global request timeout — 90s hard ceiling (prevents hung connections under load)
 app.use((req, res, next) => {
@@ -220,7 +217,9 @@ app.get('/api/health', (req, res) => {
       status: 'ok',
       gemini: geminiEnabled ? 'enabled' : 'disabled',
       groq: groqEnabled ? 'enabled (fallback)' : 'disabled',
-      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+      model: geminiService.resolvedModel,
+      geminiKeys: geminiService.geminiKeys.length,
+      cerebras: geminiService.cerebrasEnabled ? 'enabled' : 'disabled',
       agents: [
         'GoalAgent', 'DecomposeAgent', 'DiagnosticAgent',
         'ScoringAgent', 'CurriculumAgent', 'EvaluatorAgent',
@@ -421,7 +420,7 @@ const server = httpServer.listen(PORT, () => {
 ║       SkillForge AI Server v3          ║
 ╠════════════════════════════════════════╣
 ║  Port:    ${PORT}                           ║
-║  Gemini:  ${geminiEnabled ? '✅ ON  (gemini-2.0-flash)' : '❌ OFF (rule-based fallback)'}  ║
+║  Gemini:  ${geminiEnabled ? `✅ ON  (${geminiService.resolvedModel}, ${geminiService.geminiKeys.length} key${geminiService.geminiKeys.length === 1 ? '' : 's'})` : '❌ OFF (rule-based fallback)'}  ║
 ║  WS:      ✅ Socket.io enabled          ║
 ║  Docs:    http://localhost:${PORT}/api/docs ║
 ║  DB:      ${process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'placeholder' ? '📦 Supabase' : '📁 File-based'}                 ║
