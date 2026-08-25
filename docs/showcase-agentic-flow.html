@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SkillForge AI — Agentic Architecture Showcase</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0F172A;
+    color: #F8FAFC;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    padding: 40px 24px;
+  }
+
+  /* ── Header ── */
+  .header {
+    text-align: center;
+    margin-bottom: 64px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 18px;
+    border-radius: 999px;
+    background: rgba(99,102,241,0.15);
+    border: 1px solid rgba(99,102,241,0.4);
+    color: #A5B4FC;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .header h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    font-weight: 900;
+    background: linear-gradient(135deg, #818CF8, #C084FC, #38BDF8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.15;
+    margin-bottom: 16px;
+  }
+  .header p {
+    color: #94A3B8;
+    font-size: 17px;
+    max-width: 560px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* ── Section titles ── */
+  .section-title {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-sub {
+    color: #64748B;
+    font-size: 14px;
+    margin-bottom: 36px;
+  }
+  .section-wrap {
+    max-width: 1100px;
+    margin: 0 auto 80px;
+  }
+
+  /* ── Card base ── */
+  .card {
+    background: #1E293B;
+    border: 1px solid rgba(148,163,184,0.12);
+    border-radius: 20px;
+    padding: 32px;
+  }
+
+  /* ══════════════════════════════════════════════
+     SECTION 1 — REACT CHAIN
+  ══════════════════════════════════════════════ */
+  .react-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .react-step {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    position: relative;
+  }
+
+  .react-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 22px;
+    top: 52px;
+    width: 2px;
+    height: calc(100% - 20px);
+    background: linear-gradient(180deg, var(--step-color, #6366F1) 0%, transparent 100%);
+    opacity: 0.3;
+  }
+
+  .step-icon-wrap {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    border: 2px solid var(--step-color, #6366F1);
+    background: rgba(var(--step-rgb, 99,102,241), 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+
+  .step-body {
+    flex: 1;
+    padding-bottom: 32px;
+  }
+
+  .step-label {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+  }
+
+  .step-content {
+    background: rgba(15,23,42,0.6);
+    border: 1px solid rgba(148,163,184,0.1);
+    border-radius: 12px;
+    padding: 14px 18px;
+  }
+
+  .step-content .title {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .step-content .desc {
+    font-size: 13px;
+    color: #94A3B8;
+    line-height: 1.6;
+  }
+
+  .step-content .code {
+    margin-top: 10px;
+    font-family: 'Consolas', 'Fira Code', monospace;
+    font-size: 12px;
+    color: #7DD3FC;
+    background: rgba(15,23,42,0.8);
+    border: 1px solid rgba(56,189,248,0.2);
+    border-radius: 8px;
+    padding: 10px 14px;
+    line-height: 1.7;
+  }
+
+  /* thought */
+  .step-thought { --step-color: #8B5CF6; --step-rgb: 139,92,246; }
+  .step-thought .step-label { background: rgba(139,92,246,0.2); color: #C4B5FD; }
+  .step-thought .step-content .title { color: #C4B5FD; }
+
+  /* action */
+  .step-action { --step-color: #3B82F6; --step-rgb: 59,130,246; }
+  .step-action .step-label { background: rgba(59,130,246,0.2); color: #93C5FD; }
+  .step-action .step-content .title { color: #93C5FD; }
+
+  /* observation */
+  .step-obs { --step-color: #06B6D4; --step-rgb: 6,182,212; }
+  .step-obs .step-label { background: rgba(6,182,212,0.2); color: #67E8F9; }
+  .step-obs .step-content .title { color: #67E8F9; }
+
+  /* answer */
+  .step-answer { --step-color: #10B981; --step-rgb: 16,185,129; }
+  .step-answer .step-label { background: rgba(16,185,129,0.2); color: #6EE7B7; }
+  .step-answer .step-content .title { color: #6EE7B7; }
+
+  .react-iteration-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #475569;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px dashed #334155;
+    margin: 8px 0 16px 66px;
+  }
+
+  .tool-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 10px;
+    border-radius: 6px;
+    background: rgba(59,130,246,0.15);
+    border: 1px solid rgba(59,130,246,0.3);
+    color: #93C5FD;
+    font-family: monospace;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 8px;
+  }
+
+  /* ══════════════════════════════════════════════
+     SECTION 2 — AGENT NETWORK
+  ══════════════════════════════════════════════ */
+  .network-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16/9;
+    min-height: 480px;
+    background: radial-gradient(ellipse at 50% 40%, rgba(99,102,241,0.06) 0%, transparent 70%);
+  }
+
+  svg.network-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .agent-node {
+    cursor: default;
+  }
+
+  .node-outer {
+    transition: all 0.3s;
+    animation: nodePulse 3s ease-in-out infinite;
+  }
+
+  @keyframes nodePulse {
+    0%, 100% { opacity: 0.6; r: 36; }
+    50% { opacity: 0.9; r: 38; }
+  }
+
+  .edge-line {
+    stroke-dasharray: 6 4;
+    animation: edgeDash 2s linear infinite;
+  }
+
+  @keyframes edgeDash {
+    to { stroke-dashoffset: -20; }
+  }
+
+  .node-label {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 9px;
+    font-weight: 700;
+    text-anchor: middle;
+    fill: #CBD5E1;
+    letter-spacing: 0.03em;
+  }
+
+  .flow-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(148,163,184,0.1);
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #94A3B8;
+  }
+
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Tools grid ── */
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .tool-card {
+    background: rgba(15,23,42,0.7);
+    border: 1px solid rgba(148,163,184,0.1);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+
+  .tool-card .tool-name {
+    font-family: monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: #7DD3FC;
+    margin-bottom: 4px;
+  }
+
+  .tool-card .tool-desc {
+    font-size: 12px;
+    color: #64748B;
+    line-height: 1.5;
+  }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    margin-top: 40px;
+    padding-top: 32px;
+    border-top: 1px solid rgba(148,163,184,0.08);
+    color: #475569;
+    font-size: 13px;
+  }
+
+  .footer strong { color: #818CF8; }
+
+  /* Print */
+  @media print {
+    body { background: #fff; color: #000; }
+    .card { background: #f8fafc; border-color: #e2e8f0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ──────────────────────────────────────────────────────────────── -->
+<div class="header">
+  <div class="badge">⚡ SkillForge AI · Agentic Architecture</div>
+  <h1>How Our AI Agents Think & Act</h1>
+  <p>A visual walkthrough of the ReAct reasoning loop and 9-agent network powering SkillForge AI's autonomous learning system.</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     SECTION 1 — ReAct CHAIN (Reasoning + Acting)
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="section-wrap">
+  <div class="section-title">🧠 ReAct Pattern — Reasoning + Acting</div>
+  <div class="section-sub">Every AI decision in SkillForge goes through explicit Thought → Action → Observation loops before committing to a recommendation. This makes AI decisions transparent and auditable.</div>
+
+  <div class="card">
+    <div class="react-flow">
+
+      <!-- THOUGHT 1 -->
+      <div class="react-step step-thought">
+        <div class="step-icon-wrap">💭</div>
+        <div class="step-body">
+          <span class="step-label">Thought 1</span>
+          <div class="step-content">
+            <div class="title">Analyze the learner's situation</div>
+            <div class="desc">The agent reads the current context: day in plan, recent session scores, skill being studied. It forms a hypothesis about what action to take.</div>
+            <div class="code">THOUGHT: The learner is on Day 8. Last 3 sessions averaged 52% — below the 70% mastery threshold.<br>I need to analyze performance patterns before deciding whether to continue or intervene.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACTION 1 -->
+      <div class="react-step step-action">
+        <div class="step-icon-wrap">⚡</div>
+        <div class="step-body">
+          <span class="step-label">Action 1</span>
+          <div class="step-content">
+            <div class="title">Call a tool to get real data</div>
+            <div class="desc">The agent calls a specific tool function with structured arguments. It waits for the result before continuing its reasoning chain.</div>
+            <div class="code">ACTION: analyze_performance({"sessions": [last 3], "topic": "React Hooks"})</div>
+            <div><span class="tool-badge">🔧 analyze_performance</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OBSERVATION 1 -->
+      <div class="react-step step-obs">
+        <div class="step-icon-wrap">👁️</div>
+        <div class="step-body">
+          <span class="step-label">Observation 1</span>
+          <div class="step-content">
+            <div class="title">Process tool result</div>
+            <div class="desc">The agent receives the tool's output and incorporates it into its understanding. The observation is concrete data — not a guess.</div>
+            <div class="code">OBSERVATION: avgScore=52%, trend=declining (-8pts), topic="React Hooks".<br>Performance is below threshold. Weakness confirmed.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="react-iteration-badge">↻ Second Iteration — deeper investigation</div>
+
+      <!-- THOUGHT 2 -->
+      <div class="react-step step-thought">
+        <div class="step-icon-wrap">💭</div>
+        <div class="step-body">
+          <span class="step-label">Thought 2</span>
+          <div class="step-content">
+            <div class="title">Plan the next targeted action</div>
+            <div class="desc">With data in hand, the agent reasons about what to do. Should it add review days? Check skill gaps more precisely?</div>
+            <div class="code">THOUGHT: Score is 52% on React Hooks specifically. I should check skill gaps to see<br>if this is isolated or part of a broader JavaScript weakness before scheduling review.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACTION 2 -->
+      <div class="react-step step-action">
+        <div class="step-icon-wrap">⚡</div>
+        <div class="step-body">
+          <span class="step-label">Action 2</span>
+          <div class="step-content">
+            <div class="title">Check skill gaps precisely</div>
+            <div class="desc">The agent calls a second, more targeted tool to validate its hypothesis before making a plan change.</div>
+            <div class="code">ACTION: check_skill_gaps({"skills": ["React Hooks", "useState", "useEffect", "async JS"]})</div>
+            <div><span class="tool-badge">🔧 check_skill_gaps</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OBSERVATION 2 -->
+      <div class="react-step step-obs">
+        <div class="step-icon-wrap">👁️</div>
+        <div class="step-body">
+          <span class="step-label">Observation 2</span>
+          <div class="step-content">
+            <div class="title">Confirm the gap pattern</div>
+            <div class="desc">Real evidence confirms the weakness is isolated to hooks — not all JavaScript. The agent now has enough data to act decisively.</div>
+            <div class="code">OBSERVATION: weakSkills=["React Hooks", "useEffect"], count=2.<br>Other JS skills are at 74%+. Targeted hook review needed.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FINAL ANSWER -->
+      <div class="react-step step-answer">
+        <div class="step-icon-wrap">✅</div>
+        <div class="step-body">
+          <span class="step-label">Final Answer</span>
+          <div class="step-content">
+            <div class="title">Transparent, evidence-backed recommendation</div>
+            <div class="desc">After 2 reasoning iterations with real tool data, the agent commits to a specific, justified action. The decision is fully auditable — every step is logged.</div>
+            <div class="code">FINAL ANSWER: ✅ Adding 2 targeted review sessions for "React Hooks" (useEffect focus).<br>Avg score 52% with declining trend. Other JS skills healthy at 74%+.<br>Estimated 2 sessions to reach 70% mastery threshold.</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /react-flow -->
+
+    <!-- Tools palette -->
+    <div style="margin-top:32px; padding-top:24px; border-top:1px solid rgba(148,163,184,0.1);">
+      <div style="font-size:12px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px;">Available Tools</div>
+      <div class="tools-grid">
+        <div class="tool-card">
+          <div class="tool-name">analyze_performance()</div>
+          <div class="tool-desc">Returns avg score, trend, topic from recent sessions</div>
+        </div>
+        <div class="tool-card">
+          <div class="tool-name">check_skill_gaps()</div>
+          <div class="tool-desc">Finds skills below 70% mastery threshold</div>
+        </div>
+        <div class="tool-card">
+          <div class="tool-name">get_market_demand()</div>
+          <div class="tool-desc">Returns job market demand and salary data for a skill</div>
+        </div>
+        <div class="tool-card">
+          <div class="tool-name">schedule_review()</div>
+          <div class="tool-desc">Inserts targeted review session into learning plan</div>
+        </div>
+        <div class="tool-card">
+          <div class="tool-name">calculate_mastery()</div>
+          <div class="tool-desc">Computes mastery level and proficiency grade</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /card -->
+</div><!-- /section-wrap -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     SECTION 2 — 9-AGENT NETWORK
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="section-wrap">
+  <div class="section-title">🌐 9-Agent Network — How They Collaborate</div>
+  <div class="section-sub">Each learning journey activates all 9 specialized agents in sequence. They hand off context, debate adaptation decisions, and work in parallel where possible.</div>
+
+  <div class="card">
+    <div class="network-wrap">
+      <svg class="network-svg" viewBox="0 0 900 480" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <!-- Glows -->
+          <filter id="glow-indigo"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <filter id="glow-teal"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+
+          <!-- Arrow marker -->
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="rgba(148,163,184,0.4)"/>
+          </marker>
+
+          <!-- Node gradients -->
+          <radialGradient id="g1" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#6366F1" stop-opacity="0.4"/><stop offset="100%" stop-color="#6366F1" stop-opacity="0.08"/></radialGradient>
+          <radialGradient id="g2" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.4"/><stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.08"/></radialGradient>
+          <radialGradient id="g3" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#06B6D4" stop-opacity="0.4"/><stop offset="100%" stop-color="#06B6D4" stop-opacity="0.08"/></radialGradient>
+          <radialGradient id="g4" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#0EA5E9" stop-opacity="0.4"/><stop offset="100%" stop-color="#0EA5E9" stop-opacity="0.08"/></radialGradient>
+          <radialGradient id="g5" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#14B8A6" stop-opacity="0.4"/><stop offset="100%" stop-color="#14B8A6" stop-opacity="0.08"/></radialGradient>
+          <radialGradient id="g6" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#10B981" stop-opacity="0.4"/><stop offset="100%" stop-color="#10B981" stop-opacity="0.08"/></radialGradient>
+          <radialGradient id="g7" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#F59E0B" stop-opacity="0.4"/><stop offset="100%" stop-color="#F59E0B" stop-opacity="0.08"/></radialGradient>
+          <radialGradient id="g8" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#EC4899" stop-opacity="0.4"/><stop offset="100%" stop-color="#EC4899" stop-opacity="0.08"/></radialGradient>
+          <radialGradient id="g9" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#A78BFA" stop-opacity="0.4"/><stop offset="100%" stop-color="#A78BFA" stop-opacity="0.08"/></radialGradient>
+        </defs>
+
+        <!-- ── EDGES (drawn first, behind nodes) ── -->
+        <!-- GoalAgent → DecomposeAgent -->
+        <line x1="450" y1="70" x2="230" y2="175" stroke="#6366F1" stroke-width="1.5" stroke-opacity="0.35" stroke-dasharray="6 4" class="edge-line" marker-end="url(#arrow)"/>
+        <!-- GoalAgent → DiagnosticAgent -->
+        <line x1="450" y1="70" x2="670" y2="175" stroke="#6366F1" stroke-width="1.5" stroke-opacity="0.35" stroke-dasharray="6 4" class="edge-line" marker-end="url(#arrow)"/>
+        <!-- DecomposeAgent → ScoringAgent -->
+        <line x1="230" y1="195" x2="230" y2="285" stroke="#8B5CF6" stroke-width="1.5" stroke-opacity="0.3" stroke-dasharray="6 4" class="edge-line" marker-end="url(#arrow)"/>
+        <!-- DiagnosticAgent → ScoringAgent -->
+        <line x1="670" y1="195" x2="290" y2="290" stroke="#06B6D4" stroke-width="1.5" stroke-opacity="0.3" stroke-dasharray="6 4" class="edge-line" marker-end="url(#arrow)"/>
+        <!-- ScoringAgent → CurriculumAgent -->
+        <line x1="270" y1="300" x2="610" y2="285" stroke="#0EA5E9" stroke-width="1.5" stroke-opacity="0.3" stroke-dasharray="6 4" class="edge-line" marker-end="url(#arrow)"/>
+        <!-- ScoringAgent → EvaluatorAgent -->
+        <line x1="230" y1="315" x2="160" y2="370" stroke="#0EA5E9" stroke-width="1.2" stroke-opacity="0.25" stroke-dasharray="4 4" class="edge-line" marker-end="url(#arrow)"/>
+        <!-- CurriculumAgent → AdaptorAgent -->
+        <line x1="650" y1="310" x2="490" y2="375" stroke="#14B8A6" stroke-width="1.5" stroke-opacity="0.3" stroke-dasharray="6 4" class="edge-line" marker-end="url(#arrow)"/>
+        <!-- EvaluatorAgent → AdaptorAgent -->
+        <line x1="200" y1="385" x2="410" y2="380" stroke="#10B981" stroke-width="1.5" stroke-opacity="0.3" stroke-dasharray="6 4" class="edge-line" marker-end="url(#arrow)"/>
+        <!-- AdaptorAgent → MarketAgent -->
+        <line x1="510" y1="385" x2="720" y2="380" stroke="#F59E0B" stroke-width="1.5" stroke-opacity="0.3" stroke-dasharray="6 4" class="edge-line" marker-end="url(#arrow)"/>
+        <!-- AdaptorAgent → SimulationAgent -->
+        <line x1="450" y1="400" x2="450" y2="440" stroke="#F59E0B" stroke-width="1.5" stroke-opacity="0.3" stroke-dasharray="6 4" class="edge-line" marker-end="url(#arrow)"/>
+        <!-- Debate line (EvaluatorAgent ↔ AdaptorAgent, bidirectional) -->
+        <line x1="185" y1="370" x2="425" y2="365" stroke="#F59E0B" stroke-width="1" stroke-opacity="0.2" stroke-dasharray="3 6"/>
+
+        <!-- ── NODES ── -->
+
+        <!-- 1. GoalAgent (top center) -->
+        <g class="agent-node" transform="translate(450,55)">
+          <circle r="42" fill="url(#g1)" stroke="#6366F1" stroke-width="1.5" stroke-opacity="0.6"/>
+          <circle r="30" fill="rgba(99,102,241,0.2)"/>
+          <text y="5" text-anchor="middle" font-size="20">🎯</text>
+          <text y="58" class="node-label">GoalAgent</text>
+          <text y="68" class="node-label" style="fill:#6366F1;font-size:8px;">STEP 1</text>
+        </g>
+
+        <!-- 2. DecomposeAgent (mid left) -->
+        <g class="agent-node" transform="translate(220,185)">
+          <circle r="36" fill="url(#g2)" stroke="#8B5CF6" stroke-width="1.5" stroke-opacity="0.6"/>
+          <circle r="26" fill="rgba(139,92,246,0.2)"/>
+          <text y="5" text-anchor="middle" font-size="18">🌳</text>
+          <text y="50" class="node-label">DecomposeAgent</text>
+          <text y="60" class="node-label" style="fill:#8B5CF6;font-size:8px;">STEP 2</text>
+        </g>
+
+        <!-- 3. DiagnosticAgent (mid right) -->
+        <g class="agent-node" transform="translate(680,185)">
+          <circle r="36" fill="url(#g3)" stroke="#06B6D4" stroke-width="1.5" stroke-opacity="0.6"/>
+          <circle r="26" fill="rgba(6,182,212,0.2)"/>
+          <text y="5" text-anchor="middle" font-size="18">📋</text>
+          <text y="50" class="node-label">DiagnosticAgent</text>
+          <text y="60" class="node-label" style="fill:#06B6D4;font-size:8px;">STEP 3</text>
+        </g>
+
+        <!-- 4. ScoringAgent (center left) -->
+        <g class="agent-node" transform="translate(230,300)">
+          <circle r="34" fill="url(#g4)" stroke="#0EA5E9" stroke-width="1.5" stroke-opacity="0.6"/>
+          <circle r="24" fill="rgba(14,165,233,0.2)"/>
+          <text y="5" text-anchor="middle" font-size="17">📊</text>
+          <text y="48" class="node-label">ScoringAgent</text>
+          <text y="58" class="node-label" style="fill:#0EA5E9;font-size:8px;">STEP 4</text>
+        </g>
+
+        <!-- 5. CurriculumAgent (center right) -->
+        <g class="agent-node" transform="translate(660,300)">
+          <circle r="34" fill="url(#g5)" stroke="#14B8A6" stroke-width="1.5" stroke-opacity="0.6"/>
+          <circle r="24" fill="rgba(20,184,166,0.2)"/>
+          <text y="5" text-anchor="middle" font-size="17">📅</text>
+          <text y="48" class="node-label">CurriculumAgent</text>
+          <text y="58" class="node-label" style="fill:#14B8A6;font-size:8px;">STEP 5</text>
+        </g>
+
+        <!-- 6. EvaluatorAgent (lower left) -->
+        <g class="agent-node" transform="translate(160,385)">
+          <circle r="32" fill="url(#g6)" stroke="#10B981" stroke-width="1.5" stroke-opacity="0.6"/>
+          <circle r="22" fill="rgba(16,185,129,0.2)"/>
+          <text y="5" text-anchor="middle" font-size="16">✅</text>
+          <text y="46" class="node-label">EvaluatorAgent</text>
+          <text y="56" class="node-label" style="fill:#10B981;font-size:8px;">STEP 6</text>
+        </g>
+
+        <!-- 7. AdaptorAgent (lower center) -->
+        <g class="agent-node" transform="translate(450,385)">
+          <circle r="38" fill="url(#g7)" stroke="#F59E0B" stroke-width="2" stroke-opacity="0.7"/>
+          <circle r="28" fill="rgba(245,158,11,0.25)"/>
+          <text y="5" text-anchor="middle" font-size="19">⚡</text>
+          <text y="53" class="node-label" style="font-weight:900;">AdaptorAgent</text>
+          <text y="63" class="node-label" style="fill:#F59E0B;font-size:8px;">STEP 7 · DEBATE</text>
+        </g>
+
+        <!-- 8. MarketAgent (lower right) -->
+        <g class="agent-node" transform="translate(750,385)">
+          <circle r="32" fill="url(#g8)" stroke="#EC4899" stroke-width="1.5" stroke-opacity="0.6"/>
+          <circle r="22" fill="rgba(236,72,153,0.2)"/>
+          <text y="5" text-anchor="middle" font-size="16">💼</text>
+          <text y="46" class="node-label">MarketAgent</text>
+          <text y="56" class="node-label" style="fill:#EC4899;font-size:8px;">STEP 8</text>
+        </g>
+
+        <!-- 9. SimulationAgent (bottom center) -->
+        <g class="agent-node" transform="translate(450,455)">
+          <circle r="30" fill="url(#g9)" stroke="#A78BFA" stroke-width="1.5" stroke-opacity="0.6"/>
+          <circle r="21" fill="rgba(167,139,250,0.2)"/>
+          <text y="4" text-anchor="middle" font-size="15">🔮</text>
+          <text y="44" class="node-label">SimulationAgent</text>
+          <text y="54" class="node-label" style="fill:#A78BFA;font-size:8px;">STEP 9</text>
+        </g>
+
+        <!-- Debate badge -->
+        <rect x="265" y="340" width="130" height="22" rx="11" fill="rgba(245,158,11,0.12)" stroke="rgba(245,158,11,0.3)" stroke-width="1"/>
+        <text x="330" y="355" text-anchor="middle" font-size="10" fill="#FCD34D" font-weight="700">⚔️ Agent Debate</text>
+
+      </svg>
+    </div><!-- /network-wrap -->
+
+    <!-- Legend -->
+    <div class="flow-legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#6366F1"></div>GoalAgent — Parses learning goal, detects domain</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#8B5CF6"></div>DecomposeAgent — Builds 4-6 skill dependency tree</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#06B6D4"></div>DiagnosticAgent — Generates 5 MCQ knowledge check</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#0EA5E9"></div>ScoringAgent — Identifies gaps, calculates mastery %</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#14B8A6"></div>CurriculumAgent — Builds 14-21 day personalized plan</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#10B981"></div>EvaluatorAgent — Scores practice responses (4 criteria)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#F59E0B"></div>AdaptorAgent — Runs multi-agent debate, evolves plan</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#EC4899"></div>MarketAgent — Live job market & salary intelligence</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#A78BFA"></div>SimulationAgent — Career scenario simulations</div>
+    </div>
+  </div><!-- /card -->
+</div><!-- /section-wrap -->
+
+
+<!-- ── FOOTER ── -->
+<div class="footer">
+  Built with <strong>SkillForge AI</strong> · Powered by <strong>Gemini 2.0 Flash</strong> + <strong>Groq Llama-3</strong> · 9 Specialized Agents · ReAct Pattern
+</div>
+
+</body>
+</html>

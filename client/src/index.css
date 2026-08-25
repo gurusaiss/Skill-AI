@@ -1,0 +1,267 @@
+/* Import SkillForge Premium Design System */
+@import './styles/design-system.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ── Base font: 18px scales all rem Tailwind classes up proportionally ── */
+html {
+  scroll-behavior: smooth;
+  font-size: 18px;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background:
+    radial-gradient(circle at top, rgba(99, 102, 241, 0.18), transparent 30%),
+    linear-gradient(180deg, #0f172a 0%, #111827 100%);
+  color: #f8fafc;
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+/* Global typography improvements */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+p {
+  line-height: 1.6;
+}
+
+/* Ensure all text is readable at every zoom level */
+small, .text-xs {
+  font-size: max(0.8rem, 13px);
+}
+.text-sm {
+  font-size: max(0.875rem, 14px);
+}
+
+/* Prevent horizontal overflow at laptop widths / zoom > 100% */
+body {
+  overflow-x: hidden;
+}
+
+/* Max-width containers scale down gracefully */
+.max-w-7xl {
+  max-width: min(80rem, 100%);
+}
+
+/* Ensure cards don't overflow their grid cells */
+.card-grid > * {
+  min-width: 0;
+}
+
+/* Hide scrollbar while allowing scroll (cross-browser) */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Focus visible for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--brand-primary, #6366f1);
+  outline-offset: 2px;
+}
+
+/* ── Global scrollbar (dark theme default) ── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0f172a;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+  border: 2px solid #0f172a;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6366f1;
+}
+::-webkit-scrollbar-corner {
+  background: #0f172a;
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 #0f172a;
+}
+
+/* ══════════════════════════════════════════════════════════
+   LIGHT MODE — applied when <html class="theme-light">
+   ══════════════════════════════════════════════════════════ */
+html.theme-light {
+  color-scheme: light;
+}
+
+html.theme-light body {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  color: #0f172a;
+}
+
+/* ── Navbar / Header ── */
+html.theme-light header {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.theme-light .theme-toggle-btn {
+  color: #475569 !important;
+}
+html.theme-light .theme-toggle-btn:hover {
+  color: #0f172a !important;
+  background-color: #f1f5f9 !important;
+}
+
+/* ── Dark slate background cards / containers ── */
+html.theme-light .bg-slate-900,
+html.theme-light .bg-slate-800,
+html.theme-light .bg-slate-700 {
+  background-color: #ffffff !important;
+}
+
+html.theme-light .bg-\[\#0F172A\],
+html.theme-light .bg-\[\#0f172a\],
+html.theme-light .bg-\[\#111827\],
+html.theme-light .bg-\[\#1E293B\],
+html.theme-light .bg-\[\#1e293b\] {
+  background-color: #f8fafc !important;
+}
+
+html.theme-light .bg-slate-800\/50,
+html.theme-light .bg-slate-800\/30,
+html.theme-light .bg-slate-900\/50,
+html.theme-light .bg-slate-900\/30,
+html.theme-light .bg-slate-700\/50,
+html.theme-light .bg-slate-700\/30 {
+  background-color: rgba(241, 245, 249, 0.8) !important;
+}
+
+html.theme-light .bg-slate-900\/80,
+html.theme-light .bg-slate-900\/90 {
+  background-color: rgba(248, 250, 252, 0.95) !important;
+}
+
+/* Hover states */
+html.theme-light .hover\:bg-slate-800:hover,
+html.theme-light .hover\:bg-slate-700:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* ── Text colors ── */
+html.theme-light .text-white {
+  color: #0f172a !important;
+}
+html.theme-light .text-slate-100 {
+  color: #1e293b !important;
+}
+html.theme-light .text-slate-200 {
+  color: #334155 !important;
+}
+html.theme-light .text-slate-300 {
+  color: #475569 !important;
+}
+html.theme-light .text-slate-400 {
+  color: #64748b !important;
+}
+html.theme-light .text-slate-500 {
+  color: #64748b !important;
+}
+html.theme-light .text-slate-600 {
+  color: #94a3b8 !important;
+}
+html.theme-light .hover\:text-white:hover {
+  color: #0f172a !important;
+}
+
+/* ── Borders ── */
+html.theme-light .border-slate-700,
+html.theme-light .border-slate-800,
+html.theme-light .border-slate-700\/50,
+html.theme-light .border-slate-800\/50 {
+  border-color: #e2e8f0 !important;
+}
+html.theme-light .border-\[\#1E293B\],
+html.theme-light .border-\[\#1e293b\] {
+  border-color: #e2e8f0 !important;
+}
+html.theme-light .divide-slate-700 > * + * {
+  border-color: #e2e8f0 !important;
+}
+
+/* ── Active nav links ── */
+html.theme-light .bg-indigo-600\/20 {
+  background-color: rgba(99, 102, 241, 0.12) !important;
+}
+html.theme-light .border-indigo-500\/30 {
+  border-color: rgba(99, 102, 241, 0.4) !important;
+}
+
+/* ── Dropdowns / Modals (notification panel, profile menu) ── */
+html.theme-light .bg-slate-800.border.border-slate-700.rounded-xl,
+html.theme-light .absolute.bg-slate-800 {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12) !important;
+}
+
+/* ── KPI / Stats cards ── */
+html.theme-light [class*="bg-slate-8"],
+html.theme-light [class*="bg-slate-9"] {
+  background-color: #ffffff !important;
+}
+
+/* ── Scrollbar (light) ── */
+html.theme-light ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+html.theme-light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+html.theme-light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ══════════════════════════════════════════════════════════ */
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}

@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>db-architecture-review.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> or <div class="page"></div> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="database-architecture-review--skill-forge">Database Architecture Review — Skill Forge</h1>
+<p>Date: 2026-06-19 | Analyst: Claude Code | Status: ANALYSIS ONLY — no changes made</p>
+<hr>
+<h2 id="database-overview">Database Overview</h2>
+<p>The database has <strong>28 tables</strong> across two distinct storage systems:</p>
+<table>
+<thead>
+<tr>
+<th>Storage System</th>
+<th>Tables</th>
+<th>Schema Pattern</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DataStore.js</code> (newer)</td>
+<td>17 tables</td>
+<td>JSONB <code>{ id TEXT PK, data JSONB }</code></td>
+</tr>
+<tr>
+<td><code>db/store.js</code> (older)</td>
+<td>11 tables</td>
+<td>Flat relational columns</td>
+</tr>
+</tbody>
+</table>
+<p>This dual-system architecture is the single biggest structural issue. It works correctly today because both systems have file-based fallbacks, but it means there are two code paths, two query styles, and inconsistent scoping behavior. No tables are unused — every table has active read/write code paths. The architecture is sound for its current scale but has three issues that will matter before enterprise scale: multi-tenancy gaps, no database-enforced relationships (JSONB stores everything), and the sessions table disconnect.</p>
+<p>Overall quality: <strong>Functional. Not yet enterprise-ready. No critical failures, several forward risks.</strong></p>
+<hr>
+<h2 id="table-review">Table Review</h2>
+<h3 id="core-user--auth-tables">Core User &amp; Auth Tables</h3>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Purpose</th>
+<th>Used By</th>
+<th>Status</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>users</code></td>
+<td>Central user registry — all roles (superadmin, admin, manager, employee)</td>
+<td><code>UserStore.js</code>, every route</td>
+<td><strong>KEEP</strong></td>
+<td>Core identity table. Single source of truth.</td>
+</tr>
+<tr>
+<td><code>activation_tokens</code></td>
+<td>Email verification tokens for account activation flow</td>
+<td><code>DataStore.ActivationTokens</code>, <code>auth.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Needed for the email invite + activate workflow. Short-lived records.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="company--structure-tables">Company &amp; Structure Tables</h3>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Purpose</th>
+<th>Used By</th>
+<th>Status</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>companies</code></td>
+<td>Multi-tenant company registry — stores companyCode, name, settings</td>
+<td><code>DataStore.Companies</code>, <code>superadmin.js</code>, <code>auth.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Core to multi-tenancy. Company codes, admin linking, self-registration all depend on it.</td>
+</tr>
+<tr>
+<td><code>organizations</code></td>
+<td>Earlier abstraction for org hierarchy (pre-companies)</td>
+<td><code>DataStore.Organizations</code>, <code>organizations.js</code></td>
+<td><strong>REVIEW</strong></td>
+<td>Conceptually overlaps with <code>companies</code>. In code, Organizations are treated as sub-units or a legacy layer. Needs clarification on whether this is a sub-tenant concept (division within a company) or a duplicate of companies.</td>
+</tr>
+<tr>
+<td><code>departments</code></td>
+<td>Org units within an organization</td>
+<td><code>DataStore.Departments</code>, <code>organizations.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Enterprise org structure. Part of org → dept → team hierarchy. Needed for manager scoping.</td>
+</tr>
+<tr>
+<td><code>teams</code></td>
+<td>Sub-units within departments</td>
+<td><code>DataStore.Teams</code>, <code>organizations.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Part of the org hierarchy. Manager-scoped views depend on this.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Risk:</strong> The <code>organizations</code> → <code>departments</code> → <code>teams</code> hierarchy exists in parallel with <code>companies</code>. It is not yet clear in the code whether organizations.companyId links back to companies. If they are independent trees, data written to one is invisible to the other. Needs verification.</p>
+<hr>
+<h3 id="assessment-tables">Assessment Tables</h3>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Purpose</th>
+<th>Used By</th>
+<th>Status</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>assessments</code></td>
+<td>Assessment definitions — questions, target roles, settings</td>
+<td><code>DataStore.Assessments</code>, <code>assessment.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Core to the product. Auto-generated and manually created assessments both land here.</td>
+</tr>
+<tr>
+<td><code>assessment_submissions</code></td>
+<td>Employee answers and scores</td>
+<td><code>DataStore.Submissions</code>, <code>assessment.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Separate from the assessment definition intentionally — one assessment can have many submissions per employee (retakes).</td>
+</tr>
+<tr>
+<td><code>assessment_reports</code></td>
+<td>Post-submission AI analysis and performance classification</td>
+<td><code>DataStore.Reports</code>, <code>assessment.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Needed. Reports are generated after submission and contain more data than the submission itself (tier classification, recommendations).</td>
+</tr>
+<tr>
+<td><code>assessment_thresholds</code></td>
+<td>Per-company configurable performance tier settings</td>
+<td><code>DataStore.AssessmentThresholds</code>, <code>assessment.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Recently added. One record per company. Correctly designed.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Note:</strong> <code>assessments</code>, <code>assessment_submissions</code>, <code>assessment_reports</code> are three separate tables for a reason — the assessment lifecycle has three distinct states. Do not merge.</p>
+<hr>
+<h3 id="module--content-tables">Module &amp; Content Tables</h3>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Purpose</th>
+<th>Used By</th>
+<th>Status</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>modules</code></td>
+<td>Training module definitions — title, content, sessions, skills</td>
+<td><code>db/store.js</code>, <code>modules.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Core content unit. Uses flat schema (older system).</td>
+</tr>
+<tr>
+<td><code>pending_modules</code></td>
+<td>AI-generated modules awaiting admin approval before publishing</td>
+<td><code>DataStore.PendingModules</code>, <code>modules.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Needed for the content review approval gate. Without this, AI-generated content would go live immediately.</td>
+</tr>
+<tr>
+<td><code>assignments</code></td>
+<td>Links modules to employees/groups with due dates and progress</td>
+<td><code>db/store.js</code>, <code>assignments.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>The core assignment record. Tracks per-user progress.</td>
+</tr>
+<tr>
+<td><code>module_assignments</code></td>
+<td>Secondary assignment tracking (JSONB pattern)</td>
+<td><code>DataStore.ModuleAssignments</code>, routes</td>
+<td><strong>REVIEW</strong></td>
+<td>Potentially duplicates <code>assignments</code>. Both tables track module→user links. Need to confirm these are used for different assignment types (e.g., individual vs group) or if one is legacy.</td>
+</tr>
+<tr>
+<td><code>packages</code></td>
+<td>Named collections of modules bundled together</td>
+<td><code>db/store.js</code>, <code>content.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Distinct from modules — a package is a curated bundle. Used for structured curriculum delivery.</td>
+</tr>
+<tr>
+<td><code>skill_packages</code></td>
+<td>Module collections organized by skill axis</td>
+<td><code>db/store.js</code>, <code>content.js</code></td>
+<td><strong>REVIEW</strong></td>
+<td>Functionally similar to <code>packages</code>. Both are &quot;collection of modules.&quot; Difference is the grouping axis (skill vs general). May be mergeable into packages with a <code>type</code> field — but only merge if the data shapes are truly compatible.</td>
+</tr>
+<tr>
+<td><code>learning_tracks</code></td>
+<td>Sequential ordered learning paths</td>
+<td><code>db/store.js</code>, <code>content.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Distinct concept — a learning track defines order and progression rules. Not the same as a package.</td>
+</tr>
+<tr>
+<td><code>assignment_requests</code></td>
+<td>Employee self-request for a module/package</td>
+<td><code>db/store.js</code>, <code>assignments.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Needed for the approval workflow — employees request, admin approves.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="role--jd-tables">Role &amp; JD Tables</h3>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Purpose</th>
+<th>Used By</th>
+<th>Status</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>role_library</code></td>
+<td>Company-scoped master list of job roles with JD and skills</td>
+<td><code>DataStore.RoleLibrary</code>, <code>roles.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Source of truth for job descriptions and skill mappings. Central to auto-assessment generation.</td>
+</tr>
+<tr>
+<td><code>user_jd_profiles</code></td>
+<td>Per-user snapshot of their JD and skills at time of onboarding</td>
+<td><code>DataStore.UserJDProfiles</code>, <code>users.js</code>, <code>auth.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Needed. Separate from role_library — a user's JD is a point-in-time snapshot. If the role's JD is updated in role_library, the user's assessment should reflect their JD at hire time, not the updated one.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="generated-content--ai-tables">Generated Content &amp; AI Tables</h3>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Purpose</th>
+<th>Used By</th>
+<th>Status</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>generated_content</code></td>
+<td>Audit log of all AI-generated content for admin review</td>
+<td><code>DataStore.GeneratedContent</code>, <code>assessment.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Recently added. Needed for the content review workflow — admins see what was auto-generated and when.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="social--group-tables">Social / Group Tables</h3>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Purpose</th>
+<th>Used By</th>
+<th>Status</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>groups</code></td>
+<td>Named employee groups for bulk assignment and scoping</td>
+<td><code>DataStore.Groups</code> + <code>db/store.js</code>, <code>groups.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Note: <code>groups</code> is read by TWO different store systems. DataStore and db/store both query it. Risk of inconsistency.</td>
+</tr>
+<tr>
+<td><code>group_memberships</code></td>
+<td>Junction table mapping users to groups</td>
+<td><code>db/store.js</code>, <code>groups.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Correct design for a many-to-many relationship.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h3 id="operations--infrastructure-tables">Operations &amp; Infrastructure Tables</h3>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Purpose</th>
+<th>Used By</th>
+<th>Status</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>notifications</code></td>
+<td>In-app user notification records</td>
+<td><code>db/store.js</code>, <code>notifications.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Active. Read/write confirmed in store.js.</td>
+</tr>
+<tr>
+<td><code>audit_logs</code></td>
+<td>Platform-wide event log (user actions, admin operations)</td>
+<td><code>db/store.js</code>, <code>audit.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Enterprise compliance requirement. Needed.</td>
+</tr>
+<tr>
+<td><code>approval_requests</code></td>
+<td>Module/content approval requests and decisions</td>
+<td><code>DataStore.ApprovalRequests</code>, <code>approvals.js</code></td>
+<td><strong>KEEP</strong></td>
+<td>Powers the admin approval center.</td>
+</tr>
+<tr>
+<td><code>employee_checklists</code></td>
+<td>Per-employee onboarding and task checklists</td>
+<td><code>DataStore.EmployeeChecklists</code></td>
+<td><strong>KEEP</strong></td>
+<td>Onboarding flow. One record per user (keyed by userId).</td>
+</tr>
+<tr>
+<td><code>sessions</code></td>
+<td>Learning session data (per-user AI tutor sessions)</td>
+<td><code>migrate_to_supabase.js</code> only</td>
+<td><strong>REVIEW</strong></td>
+<td><strong>Critical gap.</strong> The live session system reads/writes <code>{uuid}.json</code> flat files in <code>server/data/</code>. The Supabase <code>sessions</code> table is only written by the one-time migration script. In production (Render), flat files are ephemeral and wiped on restart. Session data is currently at risk of loss unless the migration script was run after every new user. The DataStore / session.js routes do NOT write to this table.</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="multi-tenant-review">Multi-Tenant Review</h2>
+<h3 id="what-is-correctly-isolated">What is correctly isolated</h3>
+<ul>
+<li><code>users</code> — every user record has a <code>companyId</code> field</li>
+<li><code>role_library</code> — <code>getByCompany(companyId)</code> filter enforced in DataStore</li>
+<li><code>generated_content</code> — <code>getByCompany(companyId)</code> filter enforced</li>
+<li><code>assessment_thresholds</code> — keyed by companyId</li>
+<li><code>companies</code> — isolated by definition</li>
+</ul>
+<h3 id="risks-identified">Risks identified</h3>
+<p><strong>Risk 1 — Application-layer-only isolation (no DB enforcement)</strong></p>
+<p>All multi-tenant filtering is done in application code, not at the database level. The JSONB pattern stores <code>companyId</code> inside the <code>data</code> JSONB blob. Supabase RLS cannot filter on JSONB internals without generated columns or custom policies. This means:</p>
+<ul>
+<li>If application code has a bug, Company A's data can be returned to Company B</li>
+<li>There is no database-level safety net preventing cross-company reads</li>
+</ul>
+<p>Affected tables: <code>assessments</code>, <code>assessment_submissions</code>, <code>assessment_reports</code>, <code>generated_content</code>, <code>role_library</code>, <code>user_jd_profiles</code>, <code>employee_checklists</code></p>
+<p><strong>Risk 2 — modules, packages, assignments have no visible companyId</strong></p>
+<p>The <code>modules</code>, <code>packages</code>, <code>skill_packages</code>, <code>learning_tracks</code>, <code>assignments</code> tables use flat column schemas in <code>db/store.js</code>. The schema does not show a <code>companyId</code> column. If these tables are shared across all companies, a Company A employee could be assigned Company B's modules. This needs verification.</p>
+<p><strong>Risk 3 — organizations table may not be linked to companies</strong></p>
+<p>The <code>DataStore.Organizations</code> and <code>DataStore.Departments</code> code filters by <code>org_id</code> but it is not confirmed that each <code>organization</code> record links back to a <code>companyId</code>. If organizations are not scoped to a company, an admin from one company could see another company's org structure.</p>
+<p><strong>Risk 4 — groups table has dual writers</strong></p>
+<p><code>groups</code> is written by both <code>DataStore.Groups</code> (JSONB pattern) and <code>db/store.js</code> (flat pattern). The two systems use different query structures. A group written via DataStore uses <code>{ id, data: {...} }</code> — a group written via db/store uses flat columns. Reading from one system will not see records written by the other unless both systems produce compatible rows. Verified: DataStore groups.js does query <code>id, data</code> specifically. This needs a careful audit of which routes use which store.</p>
+<hr>
+<h2 id="storage-review">Storage Review</h2>
+<h3 id="where-storage-is-being-consumed">Where storage is being consumed</h3>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Concern</th>
+<th>Severity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>assessments</code> JSONB</td>
+<td>Each assessment stores full question arrays (10-50 questions) with options and answers inside one JSONB blob</td>
+<td>Medium — grows with scale</td>
+</tr>
+<tr>
+<td><code>assessment_submissions</code> JSONB</td>
+<td>Stores full user answers for every submission</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td><code>sessions</code> flat files</td>
+<td><code>server/data/*.json</code> files — each UUID file stores an entire learning session including full LLM conversation history</td>
+<td><strong>High</strong> — these files are large (500KB–2MB each based on the sample JSON files in the repo) and grow unboundedly</td>
+</tr>
+<tr>
+<td><code>modules</code> content column</td>
+<td>Module content is stored inline in the modules table and stripped on upsert if too large (code has a retry without content field)</td>
+<td>Medium — the retry-without-content means some modules may silently lose their content</td>
+</tr>
+<tr>
+<td><code>audit_logs</code></td>
+<td>Append-only, no TTL or archiving</td>
+<td>Low now, grows forever</td>
+</tr>
+<tr>
+<td><code>notifications</code></td>
+<td>No cleanup/archiving</td>
+<td>Low now</td>
+</tr>
+</tbody>
+</table>
+<h3 id="storage-optimization-opportunities-do-not-implement-yet">Storage optimization opportunities (do not implement yet)</h3>
+<ol>
+<li>Session flat files (<code>server/data/*.json</code>) are the largest storage consumers. These should be persisted to the <code>sessions</code> Supabase table rather than disk — the migration script exists but the live code path doesn't use it.</li>
+<li>Assessment JSONB blobs could be split if question banks grow large, but this is premature at current scale.</li>
+<li><code>audit_logs</code> and <code>notifications</code> should eventually have a retention policy (e.g. keep 90 days) — not needed yet.</li>
+</ol>
+<hr>
+<h2 id="performance-review">Performance Review</h2>
+<h3 id="missing-indexes-suspected--cannot-confirm-without-schema-column-definitions">Missing indexes (suspected — cannot confirm without schema column definitions)</h3>
+<p>The JSONB <code>data</code> column pattern means most filtering is done by loading all rows and filtering in JavaScript (e.g., <code>getAll()</code> then <code>.filter()</code>). This is fine at hundreds of records but becomes a bottleneck at thousands.</p>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Query Pattern</th>
+<th>Risk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>assessments</code></td>
+<td><code>getAll()</code> → filter by <code>companyId</code>, <code>userId</code>, <code>roleName</code> in JS</td>
+<td>High at scale</td>
+</tr>
+<tr>
+<td><code>assessment_submissions</code></td>
+<td><code>getAll()</code> → filter by <code>userId</code> or <code>assessmentId</code> in JS</td>
+<td>High at scale</td>
+</tr>
+<tr>
+<td><code>assessment_reports</code></td>
+<td><code>getAll()</code> → filter by <code>userId</code> in JS</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td><code>role_library</code></td>
+<td><code>getAll()</code> → filter by <code>companyId</code> in JS</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td><code>generated_content</code></td>
+<td><code>getAll()</code> → filter by <code>companyId</code> in JS</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td><code>notifications</code></td>
+<td>Supabase <code>.eq('user_id', userId)</code></td>
+<td>OK — column exists</td>
+</tr>
+<tr>
+<td><code>audit_logs</code></td>
+<td>Supabase <code>.eq('user_id', userId)</code></td>
+<td>OK — column exists</td>
+</tr>
+</tbody>
+</table>
+<h3 id="slow-query-risks">Slow query risks</h3>
+<ul>
+<li><code>Assessments.getAll()</code> is called on every assessment-related page load. At 10,000+ assessments this becomes slow. The JSONB pattern has no way to add a Postgres index on <code>data-&gt;&gt;'companyId'</code> without a generated column.</li>
+<li><code>getAllHealed()</code> performs a Supabase read AND a file read on every call. At high request rates, this doubles I/O.</li>
+</ul>
+<h3 id="dual-store-system-risk">Dual-store system risk</h3>
+<p><code>groups</code> is queried by two different systems. A future developer adding a group via one system that gets read by another is a real bug risk. This inconsistency will become a production incident at some point.</p>
+<hr>
+<h2 id="enterprise-readiness-review">Enterprise Readiness Review</h2>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Current State</th>
+<th>Enterprise Ready?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Data isolation</td>
+<td>Application-level only, no DB enforcement</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Tenant scoping</td>
+<td>Inconsistent — some tables scoped, others not confirmed</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td>Session persistence</td>
+<td>Flat files on Render (ephemeral)</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Indexes</td>
+<td>None on JSONB fields (cannot add without schema change)</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Relationship enforcement</td>
+<td>None — JSONB stores references as strings</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Audit trail</td>
+<td>Yes — audit_logs table active</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Multi-company</td>
+<td>Yes — companies + companyCode system works</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Bulk operations</td>
+<td>Yes — bulk import in users.js</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Content review workflow</td>
+<td>Yes — generated_content + ContentReview page</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Configurable per-company</td>
+<td>Yes — assessment_thresholds</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Horizontal scalability</td>
+<td>Blocked by file-based session storage</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Summary:</strong> The platform handles its current load well and all features work. It is not yet ready for thousands of concurrent users across dozens of companies because of the session storage gap, the application-only multi-tenancy enforcement, and the JSONB query pattern at scale.</p>
+<hr>
+<h2 id="recommended-next-actions">Recommended Next Actions</h2>
+<p>Listed in order of risk priority. No implementation — analysis only.</p>
+<h3 id="priority-1--critical">Priority 1 — Critical</h3>
+<ol>
+<li>
+<p><strong>Fix session persistence.</strong> The <code>sessions</code> Supabase table exists and the migration script works, but the live session code still reads/writes <code>{uuid}.json</code> flat files. On Render these files are wiped on every restart. Either route live session reads/writes through Supabase, or document and accept that session data is ephemeral. This is the most likely source of user-reported data loss.</p>
+</li>
+<li>
+<p><strong>Confirm companyId scoping on modules, packages, assignments.</strong> Check whether these flat-schema tables have a <code>company_id</code> column. If not, a Company A admin can currently assign Company B modules to their employees. This is the most serious multi-tenancy gap.</p>
+</li>
+<li>
+<p><strong>Clarify organizations vs companies.</strong> Determine if <code>organizations</code> is a sub-entity of a company (i.e., each org has a companyId foreign key) or if they are parallel competing concepts. If parallel, the organization features are not multi-tenant-safe.</p>
+</li>
+</ol>
+<h3 id="priority-2--important">Priority 2 — Important</h3>
+<ol start="4">
+<li>
+<p><strong>Resolve the groups dual-writer problem.</strong> Pick one store system as the source of truth for groups. Migrate the other system's routes to use the same store. The current dual-writer risk is silent data inconsistency.</p>
+</li>
+<li>
+<p><strong>Add companyId as a Supabase-native column to high-traffic JSONB tables.</strong> For <code>assessments</code>, <code>role_library</code>, <code>generated_content</code>, add a real <code>company_id</code> column alongside the JSONB <code>data</code> blob. This enables native Postgres indexes and real RLS policies.</p>
+</li>
+<li>
+<p><strong>Evaluate skill_packages vs packages.</strong> Review whether these two tables can be unified with a <code>type</code> or <code>subtype</code> field. Merging is only recommended if the data shapes are identical — do not merge if they serve genuinely different UX purposes.</p>
+</li>
+</ol>
+<h3 id="priority-3--before-scale">Priority 3 — Before Scale</h3>
+<ol start="7">
+<li>
+<p><strong>Add a Postgres generated column + index</strong> on <code>data-&gt;&gt;'companyId'</code> for the four highest-traffic JSONB tables (assessments, role_library, generated_content, assessment_reports). This converts full-table scans into indexed lookups.</p>
+</li>
+<li>
+<p><strong>Add retention policy for audit_logs and notifications.</strong> At 1,000 users doing 10 actions/day, audit_logs grows by 10,000 records/day. After one year that's 3.6M rows. Add a scheduled cleanup or archive to cold storage.</p>
+</li>
+<li>
+<p><strong>Document and standardize the two-store system.</strong> Either migrate all tables to the JSONB DataStore pattern or all to the flat-column store.js pattern. Having both doubles maintenance burden.</p>
+</li>
+<li>
+<p><strong>Review module_assignments vs assignments.</strong> Confirm whether these are used for different purposes (group assignments vs individual assignments) or if one is a legacy table that can be retired after data migration.</p>
+</li>
+</ol>
+<hr>
+<p><em>No schema changes, migrations, or SQL were executed. This is analysis only. All recommendations require approval before implementation.</em></p>
+
+</body>
+</html>
