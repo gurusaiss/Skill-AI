@@ -302,11 +302,19 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
 
   const loadQuestions = async () => {
     setLoadingQ(true);
-    try {
-      // Build rich context from this specific session's topics
-      const sessionTopics = session?.topics || session?.keyPoints?.slice(0, 5) || [];
-      const sessionKeyPoints = session?.keyPoints || [];
+    const sessionTopics = session?.topics || session?.keyPoints?.slice(0, 5) || [];
 
+    // Use pre-generated quiz embedded in the session object when available —
+    // avoids a fresh LLM call on every employee session-open.
+    const embedded = Array.isArray(session?.quiz) ? session.quiz : [];
+    if (embedded.length >= 3) {
+      setQuestions(embedded.slice(0, 10));
+      setLoadingQ(false);
+      return;
+    }
+
+    try {
+      const sessionKeyPoints = session?.keyPoints || [];
       const res = await authFetch('/api/assessments/generate', {
         method: 'POST',
         body: JSON.stringify({
@@ -323,7 +331,6 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
       const qs = Array.isArray(res) ? res : (res?.questions || []);
       setQuestions(qs.length >= 5 ? qs.slice(0, 10) : FALLBACK_QUESTIONS(sessionTitle, sessionTopics));
     } catch {
-      const sessionTopics = session?.topics || [];
       setQuestions(FALLBACK_QUESTIONS(sessionTitle, sessionTopics));
     } finally {
       setLoadingQ(false);

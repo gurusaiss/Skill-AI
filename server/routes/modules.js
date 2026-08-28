@@ -14,6 +14,8 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import { PendingModules, ModuleAssignments, Groups } from '../services/DataStore.js';
+import GeminiService from '../services/GeminiService.js';
+import LLMCache from '../services/LLMCache.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -475,7 +477,12 @@ Generate a JSON object:
       ],
       "explanation": "2-3 paragraphs written like a subject-matter expert mentoring someone in this specific role. Include real-world context from the correct industry, why this matters for job performance, and practical application examples from the actual domain.",
       "notes": "Practical tips, common mistakes professionals in this role make, and how to avoid them.",
-      "duration": "45 min"
+      "duration": "45 min",
+      "quiz": [
+        {"question": "Scenario-based MCQ testing this session's topic in this role's context", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "A", "explanation": "Why A is correct"},
+        {"question": "Second question testing a different aspect of this session", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "B", "explanation": "Explanation"},
+        {"question": "Third question", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "A", "explanation": "Explanation"}
+      ]
     }
   ],
   "roadmap": [
@@ -497,69 +504,19 @@ IMPORTANT: Create exactly ${numSessions} sessions. All content must be specific 
 
     let generated = null;
 
-    // Try Gemini first
-    try {
-      const geminiKey = process.env.GEMINI_API_KEY;
-      const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-      if (geminiKey && geminiKey.length > 10) {
-        const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: systemPrompt + '\n\n' + userPrompt }] }],
-              generationConfig: { temperature: 0.7, maxOutputTokens: 8000, responseMimeType: 'application/json' },
-            }),
-            signal: AbortSignal.timeout(60000),
-          }
-        );
-        if (geminiRes.ok) {
-          const geminiData = await geminiRes.json();
-          const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-            const parsed = JSON.parse(text);
-            if (parsed.sessions && Array.isArray(parsed.sessions) && parsed.sessions.length > 0) {
-              generated = parsed;
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('[modules/generate-content] Gemini failed:', err.message);
-    }
-
-    // Fallback to Groq
-    if (!generated) {
+    const cacheKey = `module_content_${id}_${LLMCache.hash(skills.join(',') + jobRole + assessmentGaps.join(',') + jdContext.slice(0, 100))}`;
+    const cached = LLMCache.get(cacheKey);
+    if (cached) {
+      generated = cached;
+    } else {
       try {
-        const groqKey = process.env.GROQ_API_KEY;
-        if (groqKey && groqKey.length > 10) {
-          const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
-            body: JSON.stringify({
-              model: 'openai/gpt-oss-120b',
-              messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
-              temperature: 0.7,
-              max_tokens: 6000,
-              response_format: { type: 'json_object' },
-              reasoning_effort: 'low',
-            }),
-            signal: AbortSignal.timeout(60000),
-          });
-          if (groqRes.ok) {
-            const groqData = await groqRes.json();
-            const text = groqData.choices?.[0]?.message?.content;
-            if (text) {
-              const parsed = JSON.parse(text);
-              if (parsed.sessions && Array.isArray(parsed.sessions) && parsed.sessions.length > 0) {
-                generated = parsed;
-              }
-            }
-          }
+        const result = await GeminiService.generateJSON(userPrompt, systemPrompt, { maxTokens: 8000 });
+        if (result?.sessions && Array.isArray(result.sessions) && result.sessions.length > 0) {
+          generated = result;
+          LLMCache.set(cacheKey, generated, LLMCache.TTL.MODULE);
         }
       } catch (err) {
-        console.warn('[modules/generate-content] Groq failed:', err.message);
+        console.warn('[modules/generate-content] LLM failed:', err.message);
       }
     }
 
@@ -681,9 +638,7 @@ router.post('/auto-generate', authenticate, async (req, res) => {
 
     let moduleContent = null;
     try {
-      const groqKey = process.env.GROQ_API_KEY;
-      if (groqKey?.length > 10) {
-        const prompt = `Design a targeted remedial training module for an employee based on their assessment results.
+      const prompt = `Design a targeted remedial training module for an employee based on their assessment results.
 
 === EMPLOYEE CONTEXT ===
 Job Role: ${jobRole || 'Professional'}
@@ -746,17 +701,10 @@ Return JSON:
     }
   ]
 }`;
-        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
-          body: JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 3000, response_format: { type: 'json_object' }, reasoning_effort: 'low' }),
-          signal: AbortSignal.timeout(30000),
-        });
-        if (r.ok) {
-          const d = await r.json();
-          moduleContent = JSON.parse(d.choices?.[0]?.message?.content || '{}');
+        const result = await GeminiService.generateJSON(prompt, '', { maxTokens: 4000 });
+        if (result?.sessions && Array.isArray(result.sessions)) {
+          moduleContent = result;
         }
-      }
     } catch (e) { console.warn('[auto-generate] AI failed:', e.message); }
 
     const pending = {
@@ -827,6 +775,10 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
         sessions: pending.module.sessions,
         objectives: pending.module.objectives,
         assessmentSource: pending.assessmentReportId,
+        // Preserve JD + assessment context so regeneration stays specific
+        weakAreas: pending.weakAreas || [],
+        jobRole: pending.jobRole || '',
+        assessmentTitle: pending.assessmentTitle || '',
       },
     }, req.user.userId);
 
