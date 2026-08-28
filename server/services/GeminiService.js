@@ -557,7 +557,7 @@ class GeminiService {
    * @param {string} system - optional system instruction
    * @returns {Promise<object|null>}
    */
-  async generateJSON(prompt, system = '') {
+  async generateJSON(prompt, system = '', { maxTokens = 2048 } = {}) {
     // Try Gemini first (if key is present)
     if (this.isEnabled()) {
       for (let attempt = 0; attempt < this.maxRetries; attempt++) {
@@ -566,7 +566,7 @@ class GeminiService {
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: {
               temperature: 0.7,
-              maxOutputTokens: 2048,
+              maxOutputTokens: maxTokens,
               responseMimeType: 'application/json'
             }
           };
@@ -621,7 +621,7 @@ class GeminiService {
     // Groq fallback
     if (this.groqEnabled) {
       console.log('[LLM] 🔄 Attempting Groq fallback for JSON generation');
-      const result = await this._groqJSON(prompt, system);
+      const result = await this._groqJSON(prompt, system, { maxTokens });
       if (result) return result;
     }
 

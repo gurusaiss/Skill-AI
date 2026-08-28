@@ -19,6 +19,7 @@ export const TTL = {
   TUTOR_MSG   :  2 * 60 * 1000,        //  2 min  — dedup identical rapid-fire chat messages
   EVAL        : 30 * 60 * 1000,        // 30 min  — same challenge + same response
   CHALLENGE   :  4 * 60 * 60 * 1000,   //  4 h    — ChallengeEngine per plan day
+  MODULE      :  6 * 60 * 60 * 1000,   //  6 h    — training module content per module+role+gaps
   QUIZ        : 12 * 60 * 60 * 1000,   // 12 h    — QuizGenerator per domain+skills
   MARKET      : 24 * 60 * 60 * 1000,   // 24 h    — MarketAgent per domain
   INTERVIEW   : 24 * 60 * 60 * 1000,   // 24 h    — InterviewAgent questions per role+skills
