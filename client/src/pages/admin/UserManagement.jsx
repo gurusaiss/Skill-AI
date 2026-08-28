@@ -197,7 +197,7 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
                           a.click();
                           URL.revokeObjectURL(url);
                         } catch (err) {
-                          alert('Download failed: ' + err.message);
+                          setToast({ message: 'Download failed: ' + err.message, type: 'error' });
                         }
                       }}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-indigo-300 text-xs font-semibold transition-colors shrink-0"

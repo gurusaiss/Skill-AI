@@ -10,6 +10,17 @@ const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'h
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// Technical patterns that should never be shown raw to users
+const TECHNICAL_PATTERN = /\b(TypeError|ReferenceError|SyntaxError|Cannot read|cannot read|undefined is not|null is not|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|stack trace|at Object\.|at Function\.|at Module\.)\b|^\s+at\s/;
+
+const sanitizeError = (msg) => {
+  if (!msg || msg.length > 300 || TECHNICAL_PATTERN.test(msg)) {
+    console.error('[authFetch] raw server error:', msg);
+    return 'Something went wrong — please try again.';
+  }
+  return msg;
+};
+
 export const authFetch = async (path, options = {}) => {
   const token = localStorage.getItem('auth_token');
   // Don't set Content-Type for FormData — the browser must set it automatically
@@ -50,11 +61,11 @@ export const authFetch = async (path, options = {}) => {
       }
 
       if (!res.ok) {
-        const msg = typeof data?.error === 'string'
+        const raw = typeof data?.error === 'string'
           ? data.error
           : (data?.error?.message || data?.message || `Request failed (${res.status})`);
         // HTTP errors are not retried
-        throw new Error(msg);
+        throw new Error(sanitizeError(raw));
       }
 
       return data?.data ?? data;

@@ -5,6 +5,12 @@ import { authFetch } from '../utils/authFetch.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
 import { useNotification } from '../contexts/NotificationContext.jsx';
 
+// Every other page that makes a raw fetch (not via authFetch, which has its
+// own internal BASE_URL) declares this locally — this file was missing it
+// entirely, causing a ReferenceError on every raw fetch call below
+// (EmployeeReportView's module pre-fetch, ModuleReport's data load).
+const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+
 // ─── PDF Download helper ──────────────────────────────────────────────────────
 function downloadReportPDF(employeeData) {
   const { employeeName, email, completionRate, completedAssignments, totalAssignments, assignments = [] } = employeeData;
@@ -342,7 +348,7 @@ function AdminReportView({ user, navigate }) {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-8 max-w-7xl mx-auto">
-      <button onClick={() => navigate('/admin/dashboard')} className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2">← Back to Dashboard</button>
+      <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2">← Back to Dashboard</button>
 
       <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
@@ -644,7 +650,7 @@ function EmployeeReportView({ user, navigate }) {
   if (!report) {
     return (
       <div className="min-h-screen px-4 py-8 max-w-4xl mx-auto bg-[#0F172A] text-white">
-        <button onClick={() => navigate('/dashboard')} className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2">← Back</button>
+        <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2">← Back</button>
         <div className="text-center py-16">
           <div className="text-5xl mb-4">📄</div>
           <h1 className="text-2xl font-black mb-2">No Report Yet</h1>
@@ -657,7 +663,7 @@ function EmployeeReportView({ user, navigate }) {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-8 max-w-5xl mx-auto">
-      <button onClick={() => navigate('/dashboard')} className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2">← Back to Dashboard</button>
+      <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2">← Back to Dashboard</button>
 
       <div className="mb-8 flex items-center justify-between">
         <div>
