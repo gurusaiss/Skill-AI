@@ -20,6 +20,7 @@ const CareerTwin           = lazy(() => import('./pages/CareerTwin.jsx'));
 const ExplainabilityConsole = lazy(() => import('./pages/ExplainabilityConsole.jsx'));
 const DemoMode             = lazy(() => import('./pages/DemoMode.jsx'));
 const InterviewSimulator   = lazy(() => import('./pages/InterviewSimulator.jsx'));
+const NotFound             = lazy(() => import('./pages/NotFound.jsx'));
 
 // Auth Pages
 const Login                = lazy(() => import('./pages/auth/Login.jsx'));
@@ -231,6 +232,7 @@ const App = () => {
                   <Certificate />
                 </ProtectedRoute>
               } />
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
         </div>

@@ -1509,7 +1509,7 @@ export default function AssessmentManagement() {
                       a.click();
                       URL.revokeObjectURL(url);
                     } catch (e) {
-                      alert('PDF download failed: ' + e.message);
+                      showToast('PDF download failed: ' + e.message, 'error');
                     }
                   }}
                   className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/40 text-xs font-bold transition-colors"
@@ -2028,6 +2028,7 @@ function parseQuestionnaireCSV(text) {
 const EMPTY_Q_MANUAL = { type: 'mcq', question: '', difficulty: 'medium', options: ['A) ', 'B) ', 'C) ', 'D) '], answer: 'A', explanation: '', skillArea: '' };
 
 function ManualAssessmentModal({ employees, onClose, onCreated }) {
+  const { notify: showToast } = useNotification();
   const [step, setStep] = useState(1);
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [qSource, setQSource] = useState('manual'); // 'manual' | 'upload'
@@ -2096,7 +2097,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
       });
       onCreated();
     } catch (e) {
-      alert(e.message || 'Failed to create assessment');
+      showToast(e.message || 'Failed to create assessment', 'error');
     } finally {
       setCreating(false);
     }

@@ -1,13 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { authFetch } from '../../utils/authFetch.js';
-
-const toast = (msg, type = 'success') => {
-  const el = document.createElement('div');
-  el.textContent = msg;
-  el.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;padding:12px 20px;border-radius:8px;font-size:14px;font-weight:600;color:#fff;background:${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#f59e0b'};box-shadow:0 4px 12px rgba(0,0,0,.3);`;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 3500);
-};
+import { useNotification } from '../../contexts/NotificationContext.jsx';
 
 const TIER_COLORS = {
   Outstanding: '#10B981', Excellent: '#22C55E', Good: '#84CC16',
@@ -45,6 +38,7 @@ function TypeBadge({ type }) {
 // ── Question Editor ───────────────────────────────────────────────────────────
 
 function QuestionEditor({ assessment, onSaved, onClose }) {
+  const { success, error: notifyError } = useNotification();
   // Normalise: questions live in .questions or in employeeAssignments[0].questions
   const getQs = (a) => a?.questions || a?.employeeAssignments?.[0]?.questions || [];
   const [qs, setQs] = useState(() => getQs(assessment).map((q, i) => ({ ...q, _key: i })));
@@ -71,7 +65,7 @@ function QuestionEditor({ assessment, onSaved, onClose }) {
   const removeQuestion = (idx) => setQs(prev => prev.filter((_, i) => i !== idx));
 
   const save = async () => {
-    if (qs.some(q => !q.question?.trim())) { toast('All questions must have text', 'error'); return; }
+    if (qs.some(q => !q.question?.trim())) { notifyError('All questions must have text'); return; }
     setSaving(true);
     try {
       const cleanQs = qs.map(({ _key, ...q }) => q);
@@ -82,9 +76,9 @@ function QuestionEditor({ assessment, onSaved, onClose }) {
         body.questionCount = cleanQs.length;
       }
       await authFetch(`/api/assessments/${assessment.id}`, { method: 'PUT', body: JSON.stringify(body) });
-      toast(`Questions saved (${cleanQs.length} total)`);
+      success(`Questions saved (${cleanQs.length} total)`);
       onSaved();
-    } catch { toast('Failed to save questions', 'error'); }
+    } catch { notifyError('Failed to save questions'); }
     finally { setSaving(false); }
   };
 
@@ -162,6 +156,7 @@ function QuestionEditor({ assessment, onSaved, onClose }) {
 }
 
 export default function ContentReview() {
+  const { success, error: notifyError, warning } = useNotification();
   const [items, setItems] = useState([]);
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -207,32 +202,32 @@ export default function ContentReview() {
     try {
       const res = await authFetch(`/api/assessments/${contentId}`);
       setPreviewAssessment(res?.data || null);
-    } catch { toast('Failed to load assessment', 'error'); }
+    } catch { notifyError('Failed to load assessment'); }
     finally { setPreviewLoading(false); }
   };
 
   const regenerate = async (roleId, roleName) => {
-    if (!roleId) return toast('No role ID available to regenerate', 'warning');
+    if (!roleId) return warning('No role ID available to regenerate');
     try {
       await authFetch(`/api/roles/${roleId}/generate-assessment`, { method: 'POST', body: JSON.stringify({ questionCount: 10 }) });
-      toast(`Assessment regenerated for ${roleName}`);
+      success(`Assessment regenerated for ${roleName}`);
       load();
-    } catch { toast('Regeneration failed', 'error'); }
+    } catch { notifyError('Regeneration failed'); }
   };
 
   const bulkGenerate = async () => {
     try {
       const res = await authFetch('/api/roles/bulk-generate-assessments', { method: 'POST' });
-      toast(`Bulk generation started — ${res?.data?.queued || 0} roles queued`);
-    } catch { toast('Bulk generation failed', 'error'); }
+      success(`Bulk generation started — ${res?.data?.queued || 0} roles queued`);
+    } catch { notifyError('Bulk generation failed'); }
   };
 
   const saveThresholds = async () => {
     setThresholdSaving(true);
     try {
       await authFetch('/api/assessments/thresholds', { method: 'PUT', body: JSON.stringify({ thresholds }) });
-      toast('Thresholds saved');
-    } catch { toast('Failed to save thresholds', 'error'); }
+      success('Thresholds saved');
+    } catch { notifyError('Failed to save thresholds'); }
     finally { setThresholdSaving(false); }
   };
 

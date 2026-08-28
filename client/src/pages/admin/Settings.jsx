@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotification } from '../../contexts/NotificationContext.jsx';
 
 export default function Settings() {
   const { user, hasRole, logout } = useAuth();
@@ -15,6 +16,7 @@ export default function Settings() {
 
   if (!user || !hasRole('admin')) return null;
 
+  const { success } = useNotification();
   const [activeSection, setActiveSection] = useState('general');
   const [saving, setSaving] = useState(false);
 
@@ -31,7 +33,7 @@ export default function Settings() {
 
   const handleSave = () => {
     setSaving(true);
-    setTimeout(() => { setSaving(false); alert('Settings saved successfully.'); }, 800);
+    setTimeout(() => { setSaving(false); success('Settings saved successfully.'); }, 800);
   };
 
   return (
