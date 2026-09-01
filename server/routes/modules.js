@@ -478,6 +478,31 @@ Generate a JSON object:
       "explanation": "2-3 paragraphs written like a subject-matter expert mentoring someone in this specific role. Include real-world context from the correct industry, why this matters for job performance, and practical application examples from the actual domain.",
       "notes": "Practical tips, common mistakes professionals in this role make, and how to avoid them.",
       "duration": "45 min",
+      "sopSteps": {
+        "title": "How to: [specific procedure in this role's domain — must be a real task this job role performs]",
+        "purpose": "Why this procedure matters and when it is triggered in day-to-day work",
+        "steps": [
+          {"step": 1, "action": "First specific action", "detail": "Exact guidance: which system/tool/form/menu to use, what to enter, what to check — enough detail that someone can follow without prior knowledge"},
+          {"step": 2, "action": "Second action", "detail": "Specific guidance including any conditions, validations, or approvals needed"},
+          {"step": 3, "action": "Third action", "detail": "Continue with granular steps"},
+          {"step": 4, "action": "Fourth action", "detail": "Include confirmation/verification step"},
+          {"step": 5, "action": "Final action and sign-off", "detail": "How to confirm completion and document the outcome"}
+        ],
+        "expectedOutcome": "What the completed result looks like — specific record, status, or output that proves it was done correctly",
+        "commonErrors": ["Specific mistake #1 this role makes and how to prevent it", "Specific mistake #2"]
+      },
+      "practicalTask": {
+        "title": "Hands-On Task: [name of the system/real-world task]",
+        "scenario": "A realistic workplace situation that requires the learner to apply what they just read — be specific to this role and industry",
+        "steps": [
+          {"step": 1, "instruction": "First thing to do in the system/tool/process", "hint": "Tip if stuck: where to find this, what to look for"},
+          {"step": 2, "instruction": "Second action", "hint": "Hint"},
+          {"step": 3, "instruction": "Third action", "hint": "Hint"},
+          {"step": 4, "instruction": "Fourth action", "hint": "Hint"}
+        ],
+        "updateChallenge": "After completing the steps, update or document the following: [specific record, field, log entry, or report the learner must fill in to demonstrate they completed the task — this is the evaluation point]",
+        "successCriteria": "How the learner knows they did it correctly — specific visible result or output to check"
+      },
       "quiz": [
         {"question": "Scenario-based MCQ testing this session's topic in this role's context", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "A", "explanation": "Why A is correct"},
         {"question": "Second question testing a different aspect of this session", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "B", "explanation": "Explanation"},

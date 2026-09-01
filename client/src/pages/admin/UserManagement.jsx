@@ -365,6 +365,14 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   const [addRoleForm, setAddRoleForm] = useState({ roleName: '', department: '', jobDescription: '' });
   const [addingRole, setAddingRole] = useState(false);
   const [showAddRoleForm, setShowAddRoleForm] = useState(false);
+  const [roleOptions, setRoleOptions] = useState([]);
+
+  useEffect(() => {
+    authFetch('/api/roles').then(res => {
+      const list = Array.isArray(res) ? res : res?.roles || res?.data || [];
+      setRoleOptions(list.map(r => ({ name: r.roleName || r.name || '', dept: r.department || '' })).filter(r => r.name));
+    }).catch(() => {});
+  }, []);
 
   const managers = useMemo(() => users.filter(u => u.role === 'manager' && u.userId !== user.userId), [users, user.userId]);
   const isEmployee = form.role === 'employee';
@@ -588,7 +596,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   }, [activeSection]);
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-xl max-h-[92vh] flex flex-col shadow-2xl">
 
         {/* Header */}
@@ -656,12 +664,18 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <FieldLabel>Primary Job Role {roleLibLookup && <span className="text-indigo-400 text-xs ml-1">↻ looking up…</span>}</FieldLabel>
-                  <input type="text" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Frontend Developer" />
+                  <input type="text" list="edit-role-options" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Frontend Developer" autoComplete="off" />
+                  <datalist id="edit-role-options">
+                    {roleOptions.map(r => <option key={r.name} value={r.name}>{r.dept ? `${r.name} — ${r.dept}` : r.name}</option>)}
+                  </datalist>
                   <p className="text-xs text-slate-600 mt-0.5">JD auto-fills from Role Library on match</p>
                 </div>
                 <div>
                   <FieldLabel>Department</FieldLabel>
-                  <input type="text" value={form.department} onChange={f('department')} className={inputCls} placeholder="e.g. Engineering" />
+                  <input type="text" list="edit-dept-options" value={form.department} onChange={f('department')} className={inputCls} placeholder="e.g. Engineering" autoComplete="off" />
+                  <datalist id="edit-dept-options">
+                    {[...new Set(roleOptions.map(r => r.dept).filter(Boolean))].sort().map(d => <option key={d} value={d} />)}
+                  </datalist>
                 </div>
               </div>
 
@@ -696,8 +710,9 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                     <input type="text" placeholder="Role Name (required)" value={addRoleForm.roleName}
                       onChange={e => setAddRoleForm(p => ({ ...p, roleName: e.target.value }))}
                       className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
-                    <input type="text" placeholder="Department (optional)" value={addRoleForm.department}
+                    <input type="text" list="edit-dept-options" placeholder="Department (optional)" value={addRoleForm.department}
                       onChange={e => setAddRoleForm(p => ({ ...p, department: e.target.value }))}
+                      autoComplete="off"
                       className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
                     <textarea placeholder="Job Description (optional — triggers auto-assessment)" value={addRoleForm.jobDescription}
                       onChange={e => setAddRoleForm(p => ({ ...p, jobDescription: e.target.value }))}
@@ -769,7 +784,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
 
               <div>
                 <FieldLabel>Job Role</FieldLabel>
-                <input type="text" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Senior React Developer" />
+                <input type="text" list="edit-role-options" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Senior React Developer" autoComplete="off" />
               </div>
 
               {/* Current JD status */}
@@ -1048,7 +1063,7 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
     const emailError = user.emailError;
 
     return (
-      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
 
           {/* Header */}
@@ -1211,7 +1226,10 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
             </div>
             <div>
               <FieldLabel>Department</FieldLabel>
-              <input type="text" value={form.department} onChange={f('department')} className={inputCls} placeholder="e.g. Engineering" />
+              <input type="text" list="create-dept-options" value={form.department} onChange={f('department')} className={inputCls} placeholder="e.g. Engineering" autoComplete="off" />
+              <datalist id="create-dept-options">
+                {[...new Set(roleOptions.map(r => r.dept).filter(Boolean))].sort().map(d => <option key={d} value={d} />)}
+              </datalist>
             </div>
           </div>
           <div>
@@ -1252,9 +1270,9 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
                   <datalist id="create-add-role-options">
                     {roleOptions.map(r => <option key={r.name} value={r.name} />)}
                   </datalist>
-                  <input type="text" value={addRoleForm.department}
+                  <input type="text" list="create-dept-options" value={addRoleForm.department}
                     onChange={e => setAddRoleForm(prev => ({ ...prev, department: e.target.value }))}
-                    className={inputCls} placeholder="Department (optional)" />
+                    className={inputCls} placeholder="Department (optional)" autoComplete="off" />
                 </div>
                 <button
                   onClick={() => {

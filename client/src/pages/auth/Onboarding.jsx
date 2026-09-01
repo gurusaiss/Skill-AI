@@ -17,12 +17,20 @@ export default function Onboarding() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [roleOptions, setRoleOptions] = useState([]);
 
   useEffect(() => {
     if (!userId) {
       navigate('/auth/login');
     }
   }, [userId, navigate]);
+
+  useEffect(() => {
+    authFetch('/api/roles').then(res => {
+      const list = Array.isArray(res) ? res : res?.roles || res?.data || [];
+      setRoleOptions(list.map(r => ({ name: r.roleName || r.name || '', dept: r.department || '' })).filter(r => r.name));
+    }).catch(() => {});
+  }, []);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -156,12 +164,21 @@ export default function Onboarding() {
                 id="jobRole"
                 name="jobRole"
                 type="text"
+                list="onboard-role-options"
                 value={form.jobRole}
-                onChange={handleChange}
+                onChange={e => {
+                  const val = e.target.value;
+                  const match = roleOptions.find(r => r.name.toLowerCase() === val.toLowerCase());
+                  setForm(prev => ({ ...prev, jobRole: val, ...(match?.dept && !prev.department ? { department: match.dept } : {}) }));
+                }}
                 placeholder="e.g. Frontend Developer, Data Analyst…"
                 disabled={loading}
+                autoComplete="off"
                 className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#0F172A] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
               />
+              <datalist id="onboard-role-options">
+                {roleOptions.map(r => <option key={r.name} value={r.name}>{r.dept ? `${r.name} — ${r.dept}` : r.name}</option>)}
+              </datalist>
             </div>
 
             {/* Department */}
@@ -173,12 +190,17 @@ export default function Onboarding() {
                 id="department"
                 name="department"
                 type="text"
+                list="onboard-dept-options"
                 value={form.department}
                 onChange={handleChange}
                 placeholder="e.g. Engineering, Marketing, Sales…"
                 disabled={loading}
+                autoComplete="off"
                 className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#0F172A] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
               />
+              <datalist id="onboard-dept-options">
+                {[...new Set(roleOptions.map(r => r.dept).filter(Boolean))].sort().map(d => <option key={d} value={d} />)}
+              </datalist>
             </div>
 
             {/* Company Name (optional) */}
