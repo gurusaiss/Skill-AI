@@ -136,6 +136,24 @@ function Navbar() {
     <header className="sticky top-0 z-30 border-b border-[#1E293B] bg-[#0F172A]/95 backdrop-blur">
       <div className="flex items-center w-full px-4 py-2 gap-1.5 min-w-0">
 
+        {/* Back / Forward nav arrows */}
+        <div className="flex items-center gap-0.5 flex-shrink-0 mr-1">
+          <button
+            onClick={() => navigate(-1)}
+            title="Go back"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
+          <button
+            onClick={() => navigate(1)}
+            title="Go forward"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 11l4-4-4-4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
+        </div>
+
         {/* Brand — never shrinks, always single line */}
         <Link to="/" className="flex items-center gap-2.5 flex-shrink-0 mr-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-600/20 border border-indigo-500/20 text-base flex-shrink-0">🧠</div>

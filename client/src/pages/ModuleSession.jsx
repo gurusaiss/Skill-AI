@@ -31,6 +31,14 @@ function downloadSessionNotes(session, sessionIndex, moduleTitle) {
   const notesHtml = (explanation || notes)
     ? `<h2>Explanation & Notes</h2><div style="white-space:pre-wrap">${explanation || notes}</div>`
     : '';
+  const sop = session.sopSteps;
+  const sopHtml = (sop && Array.isArray(sop.steps) && sop.steps.length > 0)
+    ? `<h2>SOP: ${sop.title || ''}</h2>${sop.purpose ? `<p style="color:#475569;font-size:13px">${sop.purpose}</p>` : ''}<ol>${sop.steps.map(s => `<li><strong>${s.action}</strong>${s.detail ? `<br><span style="color:#64748b;font-size:12px">${s.detail}</span>` : ''}</li>`).join('')}</ol>${sop.expectedOutcome ? `<p><strong>Expected Outcome:</strong> ${sop.expectedOutcome}</p>` : ''}`
+    : '';
+  const pt = session.practicalTask;
+  const ptHtml = (pt && Array.isArray(pt.steps) && pt.steps.length > 0)
+    ? `<h2>Hands-On Task: ${pt.title || ''}</h2>${pt.scenario ? `<p style="background:#f1f5f9;padding:10px;border-radius:6px;font-size:13px">${pt.scenario}</p>` : ''}<ol>${pt.steps.map(s => `<li>${s.instruction}${s.hint ? `<br><em style="font-size:12px;color:#64748b">💡 ${s.hint}</em>` : ''}</li>`).join('')}</ol>${pt.updateChallenge ? `<p style="background:#fef3c7;padding:10px;border-radius:6px"><strong>✍️ Update Challenge:</strong> ${pt.updateChallenge}</p>` : ''}${pt.successCriteria ? `<p><strong>Success Criteria:</strong> ${pt.successCriteria}</p>` : ''}`
+    : '';
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title} — Learning Notes</title>
 <style>
@@ -48,7 +56,7 @@ function downloadSessionNotes(session, sessionIndex, moduleTitle) {
 <div class="meta">Module: <strong>${moduleTitle || 'Learning Module'}</strong></div>
 <h1>Day ${sessionIndex + 1}: ${title}</h1>
 ${session.description ? `<p style="color:#475569">${session.description}</p>` : ''}
-${defsHtml}${pointsHtml}${notesHtml}
+${defsHtml}${pointsHtml}${notesHtml}${sopHtml}${ptHtml}
 <div class="footer">Downloaded from SkillForge AI &nbsp;|&nbsp; ${new Date().toLocaleDateString()}</div>
 </body></html>`;
 
@@ -87,6 +95,8 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
   const learningObjectives = session.learningObjectives || [];
   const exercise = session.exercise && (session.exercise.instructions || session.exercise.title) ? session.exercise : null;
   const caseStudy = session.caseStudy && session.caseStudy.scenario ? session.caseStudy : null;
+  const sopSteps = session.sopSteps && Array.isArray(session.sopSteps.steps) && session.sopSteps.steps.length > 0 ? session.sopSteps : null;
+  const practicalTask = session.practicalTask && Array.isArray(session.practicalTask.steps) && session.practicalTask.steps.length > 0 ? session.practicalTask : null;
   const isCapstone = session.type === 'capstone';
 
   return (
@@ -195,6 +205,90 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
                 Learning content for <strong className="text-white">{title}</strong> covers the foundational concepts of the module.
                 Complete the knowledge quiz below to progress.
               </p>
+            </section>
+          )}
+
+          {/* SOP Documentation Steps */}
+          {sopSteps && (
+            <section className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-5">
+              <h2 className="text-xs font-bold text-cyan-400 uppercase tracking-widest mb-1 flex items-center gap-2">
+                <span>📋</span> Standard Operating Procedure
+              </h2>
+              <p className="text-sm font-bold text-white mb-1">{sopSteps.title}</p>
+              {sopSteps.purpose && <p className="text-xs text-slate-400 mb-4 leading-relaxed">{sopSteps.purpose}</p>}
+              <ol className="space-y-3">
+                {sopSteps.steps.map((s, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="w-6 h-6 rounded-full bg-cyan-600/25 border border-cyan-500/40 flex items-center justify-center text-xs font-black text-cyan-300 flex-shrink-0 mt-0.5">
+                      {s.step || i + 1}
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-white">{s.action}</p>
+                      {s.detail && <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{s.detail}</p>}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              {sopSteps.expectedOutcome && (
+                <div className="mt-4 rounded-lg bg-cyan-900/20 border border-cyan-500/20 px-3 py-2">
+                  <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">Expected Outcome: </span>
+                  <span className="text-xs text-slate-300">{sopSteps.expectedOutcome}</span>
+                </div>
+              )}
+              {sopSteps.commonErrors && sopSteps.commonErrors.length > 0 && (
+                <div className="mt-2 rounded-lg bg-red-900/15 border border-red-500/20 px-3 py-2">
+                  <p className="text-xs font-bold text-red-400 uppercase tracking-wider mb-1">Common Mistakes to Avoid</p>
+                  <ul className="space-y-0.5">
+                    {sopSteps.commonErrors.map((e, i) => (
+                      <li key={i} className="text-xs text-slate-300 flex gap-1.5"><span className="text-red-400 flex-shrink-0">✕</span>{e}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Practical Task */}
+          {practicalTask && (
+            <section className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-5">
+              <h2 className="text-xs font-bold text-violet-400 uppercase tracking-widest mb-1 flex items-center gap-2">
+                <span>🖥️</span> Hands-On Practice Task
+              </h2>
+              <p className="text-sm font-bold text-white mb-1">{practicalTask.title}</p>
+              {practicalTask.scenario && (
+                <div className="rounded-lg bg-violet-900/20 border border-violet-500/20 px-3 py-2 mb-4">
+                  <p className="text-xs font-bold text-violet-300 mb-0.5">Scenario</p>
+                  <p className="text-xs text-slate-300 leading-relaxed">{practicalTask.scenario}</p>
+                </div>
+              )}
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Your Steps</p>
+              <ol className="space-y-3 mb-4">
+                {practicalTask.steps.map((s, i) => (
+                  <li key={i} className="rounded-lg bg-slate-800/50 border border-slate-700/50 p-3">
+                    <div className="flex gap-2 items-start">
+                      <span className="w-5 h-5 rounded-full bg-violet-600/30 border border-violet-500/40 flex items-center justify-center text-xs font-black text-violet-300 flex-shrink-0">
+                        {s.step || i + 1}
+                      </span>
+                      <div>
+                        <p className="text-sm text-white">{s.instruction}</p>
+                        {s.hint && <p className="text-xs text-slate-500 mt-0.5 italic">💡 {s.hint}</p>}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              {practicalTask.updateChallenge && (
+                <div className="rounded-lg bg-amber-900/20 border border-amber-500/30 px-4 py-3 mb-3">
+                  <p className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-1">✍️ Update Challenge</p>
+                  <p className="text-sm text-slate-200 leading-relaxed">{practicalTask.updateChallenge}</p>
+                </div>
+              )}
+              {practicalTask.successCriteria && (
+                <div className="rounded-lg bg-emerald-900/15 border border-emerald-500/20 px-3 py-2">
+                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Success Criteria: </span>
+                  <span className="text-xs text-slate-300">{practicalTask.successCriteria}</span>
+                </div>
+              )}
             </section>
           )}
 

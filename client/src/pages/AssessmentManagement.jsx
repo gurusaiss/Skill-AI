@@ -1224,8 +1224,8 @@ export default function AssessmentManagement() {
 
       {/* ===== EDIT ASSESSMENT MODAL ===== */}
       {editTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setEditTarget(null)}>
-          <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
               <h3 className="text-lg font-black text-white">Edit Assessment</h3>
               <button onClick={() => setEditTarget(null)} className="text-slate-500 hover:text-white text-xl">✕</button>
@@ -1286,8 +1286,8 @@ export default function AssessmentManagement() {
 
       {/* ===== QUESTION EDITOR MODAL ===== */}
       {qEditTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setQEditTarget(null)}>
-          <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden shadow-2xl flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-[#0F172A] z-10">
               <div>
