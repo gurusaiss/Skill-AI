@@ -13,7 +13,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Technical patterns that should never be shown raw to users
 const TECHNICAL_PATTERN = /\b(TypeError|ReferenceError|SyntaxError|Cannot read|cannot read|undefined is not|null is not|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|stack trace|at Object\.|at Function\.|at Module\.)\b|^\s+at\s/;
 
-const sanitizeError = (msg) => {
+export const sanitizeError = (msg) => {
   if (!msg || msg.length > 300 || TECHNICAL_PATTERN.test(msg)) {
     console.error('[authFetch] raw server error:', msg);
     return 'Something went wrong — please try again.';

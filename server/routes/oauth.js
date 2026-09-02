@@ -129,7 +129,7 @@ router.get('/google/callback', async (req, res) => {
   } catch (error) {
     console.error('[OAuth Routes] Google callback error:', error.message);
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    res.redirect(`${frontendUrl}/login?error=oauth_failed&message=${encodeURIComponent(error.message)}`);
+    res.redirect(`${frontendUrl}/login?error=oauth_failed&message=${encodeURIComponent('Google sign-in failed. Please try again.')}`);
   }
 });
 

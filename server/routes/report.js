@@ -45,7 +45,7 @@ router.post('/generate', authenticate, async (req, res) => {
     res.status(500).json({
       success: false,
       data: null,
-      error: error.message
+      error: 'Failed to generate report'
     });
   }
 });
@@ -146,7 +146,7 @@ router.get('/all', authenticate, async (req, res) => {
     res.json({ success: true, data: { reports, total: reports.length }, error: null });
   } catch (error) {
     console.error('[GET /api/report/all]', error);
-    res.status(500).json({ success: false, data: null, error: error.message });
+    res.status(500).json({ success: false, data: null, error: 'Failed to load reports' });
   }
 });
 
@@ -190,14 +190,14 @@ router.get('/:userId', authenticate, async (req, res) => {
       return res.status(404).json({
         success: false,
         data: null,
-        error: error.message
+        error: 'Report not found'
       });
     }
 
     res.status(500).json({
       success: false,
       data: null,
-      error: error.message
+      error: 'Failed to load report'
     });
   }
 });

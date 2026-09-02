@@ -37,7 +37,7 @@ router.post('/submit', authenticate, async (req, res) => {
     res.status(500).json({
       success: false,
       data: null,
-      error: error.message
+      error: 'Failed to submit diagnostic'
     });
   }
 });

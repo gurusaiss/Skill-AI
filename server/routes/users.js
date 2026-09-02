@@ -674,6 +674,10 @@ router.post('/:userId/jd-upload', authenticate, jdUpload.single('jd'), async (re
     if (!user) {
       return res.status(404).json({ success: false, data: null, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
     }
+    // Company isolation: admin/manager may only touch users in their own company.
+    if (!canAccessUser(req.user, user)) {
+      return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
+    }
 
     if (!req.file) {
       return res.status(400).json({ success: false, data: null, error: { code: 'NO_FILE', message: 'No file uploaded' } });
@@ -731,7 +735,7 @@ router.post('/:userId/jd-upload', authenticate, jdUpload.single('jd'), async (re
     });
   } catch (error) {
     console.error('[User Routes] JD upload error:', error.message);
-    res.status(500).json({ success: false, data: null, error: { code: 'UPLOAD_ERROR', message: 'File upload failed: ' + error.message } });
+    res.status(500).json({ success: false, data: null, error: { code: 'UPLOAD_ERROR', message: 'File upload failed. Please try again.' } });
   } finally {
     // Always delete the uploaded file — text is now stored in DB
     if (uploadedPath) { try { unlinkSync(uploadedPath); } catch {} }
@@ -757,6 +761,10 @@ router.post('/:userId/jd-url', authenticate, async (req, res) => {
     const user = await UserStore.getUserById(userId);
     if (!user) {
       return res.status(404).json({ success: false, data: null, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+    }
+    // Company isolation: admin/manager may only touch users in their own company.
+    if (!canAccessUser(req.user, user)) {
+      return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
     }
 
     const { url } = req.body;
@@ -832,6 +840,10 @@ router.get('/:userId/jd', authenticate, async (req, res) => {
     const user = await UserStore.getUserById(userId);
     if (!user) {
       return res.status(404).json({ success: false, data: null, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+    }
+    // Company isolation: admin/manager may only view JD info for users in their own company.
+    if (!canAccessUser(req.user, user)) {
+      return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
     }
 
     res.json({
@@ -930,6 +942,9 @@ router.post('/:userId/resend-invite', authenticate, requireRole('admin', 'manage
   try {
     const user = await UserStore.getUserById(req.params.userId);
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    // Company isolation: an admin/manager must not mint an activation token for
+    // a user outside their own company (the token grants full account takeover).
+    if (!canAccessUser(req.user, user)) return res.status(403).json({ success: false, error: 'Access denied' });
 
     const tokenId = uuidv4();
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
@@ -954,7 +969,7 @@ router.post('/:userId/resend-invite', authenticate, requireRole('admin', 'manage
     res.json({ success: true, data: { emailSent, emailError: emailSent ? null : result?.error, activationUrl } });
   } catch (e) {
     console.error('[resend-invite]', e.message);
-    res.status(500).json({ success: false, error: e.message });
+    res.status(500).json({ success: false, error: 'Failed to resend invitation' });
   }
 });
 
@@ -975,6 +990,10 @@ router.put('/:userId/role', authenticate, requireRole('admin'), async (req, res)
     const user = await UserStore.getUserById(userId);
     if (!user) {
       return res.status(404).json({ success: false, data: null, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+    }
+    // Company isolation: an admin must not change the role of a user in another company.
+    if (!canAccessUser(req.user, user)) {
+      return res.status(403).json({ success: false, data: null, error: { code: 'FORBIDDEN', message: 'Access denied' } });
     }
 
     const oldRole = user.role;
@@ -1065,6 +1084,10 @@ router.get('/:userId/jd-file', authenticate, async (req, res) => {
     }
 
     const user = await UserStore.getUserById(userId);
+    // Company isolation: admin/manager may only download JD files for users in their own company.
+    if (user && !canAccessUser(req.user, user)) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
     if (!user?.jobDescriptionFile) {
       return res.status(404).json({ success: false, error: 'No JD file uploaded' });
     }

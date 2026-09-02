@@ -32,8 +32,8 @@ router.get('/challenge/:userId/:day', authenticate, async (req, res) => {
     res.json({ success: true, data: result, error: null });
   } catch (error) {
     console.error('[GET /api/session/challenge]', error);
-    const status = error.message.includes('not found') ? 404 : 500;
-    res.status(status).json({ success: false, data: null, error: error.message });
+    const notFound = error.message.includes('not found');
+    res.status(notFound ? 404 : 500).json({ success: false, data: null, error: notFound ? 'Challenge not found' : 'Failed to load challenge' });
   }
 });
 
@@ -62,8 +62,8 @@ router.get('/dashboard/:userId', authenticate, async (req, res) => {
     res.json({ success: true, data, error: null });
   } catch (error) {
     console.error('[GET /api/session/dashboard]', error);
-    const status = error.message.includes('not found') ? 404 : 500;
-    res.status(status).json({ success: false, data: null, error: error.message });
+    const notFound = error.message.includes('not found');
+    res.status(notFound ? 404 : 500).json({ success: false, data: null, error: notFound ? 'Dashboard not found' : 'Failed to load dashboard' });
   }
 });
 
@@ -88,7 +88,7 @@ router.post('/submit', authenticate, async (req, res) => {
     res.json({ success: true, data: result, error: null });
   } catch (error) {
     console.error('[POST /api/session/submit]', error);
-    res.status(500).json({ success: false, data: null, error: error.message });
+    res.status(500).json({ success: false, data: null, error: 'Failed to submit session' });
   }
 });
 
@@ -116,7 +116,8 @@ router.get('/debates/:userId', authenticate, async (req, res) => {
     const debates = await agent.getDebates(learningUUID);
     res.json({ success: true, data: { debates }, error: null });
   } catch (error) {
-    res.status(500).json({ success: false, data: null, error: error.message });
+    console.error('[GET /api/session/debates]', error);
+    res.status(500).json({ success: false, data: null, error: 'Failed to load debates' });
   }
 });
 
@@ -210,7 +211,7 @@ RULES:
     res.json({ success: true, data: { questions }, error: null });
   } catch (error) {
     console.error('[POST /api/session/quiz]', error);
-    res.status(500).json({ success: false, data: null, error: error.message });
+    res.status(500).json({ success: false, data: null, error: 'Failed to generate quiz' });
   }
 });
 
@@ -285,7 +286,7 @@ Return ONLY valid JSON:
     res.json({ success: true, data: { notes }, error: null });
   } catch (error) {
     console.error('[POST /api/session/notes]', error);
-    res.status(500).json({ success: false, data: null, error: error.message });
+    res.status(500).json({ success: false, data: null, error: 'Failed to generate notes' });
   }
 });
 

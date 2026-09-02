@@ -33,8 +33,8 @@ router.get('/', authenticate, requireRole('admin', 'manager'), async (req, res) 
 
     res.json({ success: true, data: { groups: enriched, total: enriched.length }, error: null });
   } catch (e) {
-    console.error('[groups GET /]', e);
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[groups GET /]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to fetch groups' });
   }
 });
 
@@ -78,7 +78,8 @@ router.get('/:id', authenticate, requireRole('admin', 'manager'), async (req, re
       error: null,
     });
   } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[groups GET /:id]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to fetch group' });
   }
 });
 
@@ -130,8 +131,8 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
     const saved = await Groups.create(group);
     res.status(201).json({ success: true, data: saved, error: null });
   } catch (e) {
-    console.error('[groups POST /]', e);
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[groups POST /]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to create group' });
   }
 });
 
@@ -183,7 +184,8 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
     const updated = await Groups.update(req.params.id, updates);
     res.json({ success: true, data: updated || { ...existing, ...updates }, error: null });
   } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[groups PUT /:id]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to update group' });
   }
 });
 
@@ -201,7 +203,8 @@ router.delete('/:id', authenticate, requireRole('admin'), async (req, res) => {
     await Groups.delete(req.params.id);
     res.json({ success: true, data: { deleted: true, id: req.params.id }, error: null });
   } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[groups DELETE /:id]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to delete group' });
   }
 });
 

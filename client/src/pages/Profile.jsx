@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../contexts/NotificationContext.jsx';
+import { sanitizeError } from '../utils/authFetch.js';
 
 /**
  * Profile Page Component
@@ -148,7 +149,7 @@ export default function Profile() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error?.message || 'Failed to send OTP');
+        throw new Error(sanitizeError(data.error?.message) || 'Failed to send OTP');
       }
 
       setOtpSent(true);
@@ -225,7 +226,7 @@ export default function Profile() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error?.message || 'Failed to change password');
+        throw new Error(sanitizeError(data.error?.message) || 'Failed to change password');
       }
 
       setSuccess('Password changed successfully');

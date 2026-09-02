@@ -507,21 +507,25 @@ router.get('/', authenticate, async (req, res) => {
     const { userId, groupId, status, type } = req.query;
 
     const filters = {};
-    if (userId) filters.user_id = userId;
     if (groupId) filters.group_id = groupId;
     if (status) filters.status = status;
     if (type) filters.type = type;
 
-    // Restrict non-admins to their own assignments
-    if (req.user.role !== 'admin') {
-      if (!userId && !groupId) {
-        filters.user_id = req.user.userId || req.user.id;
-      }
-      // Managers can only see their team's assignments
-      if (req.user.role === 'manager' && !userId) {
-        const employees = await UserStore.getManagerEmployees(req.user.userId);
-        const employeeIds = employees.map(e => e.userId || e.id);
-        // Return all assignments for these employees
+    // Restrict non-admins to their own assignments (or, for managers, their direct reports').
+    // A client-supplied `userId` must never let a non-admin read another user's assignments.
+    if (req.user.role === 'admin') {
+      if (userId) filters.user_id = userId;
+    } else if (req.user.role === 'manager') {
+      const employees = await UserStore.getManagerEmployees(req.user.userId);
+      const employeeIds = employees.map(e => e.userId || e.id);
+      if (userId) {
+        const selfId = req.user.userId || req.user.id;
+        if (userId !== selfId && !employeeIds.includes(userId)) {
+          return res.status(403).json({ success: false, data: null, error: { code: 'FORBIDDEN', message: 'Access denied' } });
+        }
+        filters.user_id = userId;
+      } else if (!groupId) {
+        // Return all assignments for the manager's team
         const allAssignments = await UserStore.getAssignments({});
         let filtered = allAssignments.filter(a =>
           employeeIds.includes(a.assigned_to_user) ||
@@ -538,6 +542,9 @@ router.get('/', authenticate, async (req, res) => {
         }));
         return res.json({ success: true, data: { assignments: filtered, count: filtered.length }, error: null });
       }
+    } else {
+      // Employee or any other non-privileged role: always restricted to self.
+      filters.user_id = req.user.userId || req.user.id;
     }
 
     const assignments = await UserStore.getAssignments(filters);

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { sanitizeError } from '../utils/authFetch.js';
 
 // Create the Auth Context
 const AuthContext = createContext({
@@ -170,7 +171,7 @@ export const AuthProvider = ({ children }) => {
                 typeof retryErr === 'string'
                   ? retryErr
                   : retryErr?.message || `Request failed with status ${retry.response.status}`;
-              throw new Error(retryMsg);
+              throw new Error(sanitizeError(retryMsg));
             }
             return retry.payload;
           }
@@ -187,7 +188,7 @@ export const AuthProvider = ({ children }) => {
           typeof errorBody === 'string'
             ? errorBody
             : errorBody?.message || errorBody?.detail || `Request failed with status ${response.status}`;
-        throw new Error(errorMessage);
+        throw new Error(sanitizeError(errorMessage));
       }
 
       return payload;

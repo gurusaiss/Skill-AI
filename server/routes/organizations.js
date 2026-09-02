@@ -55,7 +55,7 @@ router.post('/organizations', authenticate, requireRole('admin'), async (req, re
 /**
  * GET /api/org/departments
  */
-router.get('/departments', authenticate, async (req, res) => {
+router.get('/departments', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const { org_id } = req.query;
     const depts = await Departments.getAll(org_id || null);
@@ -110,7 +110,7 @@ router.put('/departments/:id', authenticate, requireRole('admin'), async (req, r
 /**
  * GET /api/org/teams
  */
-router.get('/teams', authenticate, async (req, res) => {
+router.get('/teams', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const { dept_id, manager_id } = req.query;
     const teams = await Teams.getAll(dept_id || null, manager_id || null);
