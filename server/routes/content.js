@@ -38,7 +38,8 @@ router.get('/packages/:id', authenticate, async (req, res) => {
     // For now, return modules as package content
     res.json({ success: true, data: { modules: pkg }, error: null });
   } catch (error) {
-    res.status(500).json({ success: false, data: null, error: { message: error.message } });
+    console.error('[content/packages/:id] error:', error.message);
+    res.status(500).json({ success: false, data: null, error: { message: 'Failed to fetch package' } });
   }
 });
 
@@ -235,11 +236,13 @@ router.post('/learning-tracks', authenticate, requireRole('admin'), async (req, 
 // GROUPS
 // ─────────────────────────────────────────────────────────────────────
 
-/** GET /api/content/groups - Get all groups */
+/** GET /api/content/groups - Get all groups (scoped to the caller's company) */
 router.get('/groups', authenticate, async (req, res) => {
   try {
-    const groups = await db.getGroups();
-    res.json({ success: true, data: { groups: groups || [] }, error: null });
+    const allGroups = await db.getGroups();
+    const companyId = req.user.companyId || 'default';
+    const groups = (allGroups || []).filter(g => (g.companyId || 'default') === companyId);
+    res.json({ success: true, data: { groups }, error: null });
   } catch (error) {
     res.status(500).json({ success: false, data: null, error: { message: 'Failed to fetch groups' } });
   }
@@ -259,6 +262,7 @@ router.post('/groups', authenticate, requireRole('admin', 'manager'), async (req
       name,
       description: description || '',
       department: department || '',
+      companyId: req.user.companyId || 'default',
       created_by: req.user.userId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -281,6 +285,16 @@ router.post('/groups/:groupId/members', authenticate, requireRole('admin', 'mana
 
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
       return res.status(400).json({ success: false, data: null, error: { message: 'userIds array is required' } });
+    }
+
+    const companyId = req.user.companyId || 'default';
+    const allGroups = await db.getGroups();
+    const group = (allGroups || []).find(g => g.id === groupId);
+    if (!group) {
+      return res.status(404).json({ success: false, data: null, error: { message: 'Group not found' } });
+    }
+    if ((group.companyId || 'default') !== companyId) {
+      return res.status(403).json({ success: false, data: null, error: { message: 'Access denied' } });
     }
 
     const memberships = await db.addGroupMembers(groupId, userIds, roleInGroup || 'member');

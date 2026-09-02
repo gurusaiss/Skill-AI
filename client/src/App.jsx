@@ -146,6 +146,16 @@ const App = () => {
                   <ExplainabilityConsole />
                 </ProtectedRoute>
               } />
+              <Route path="/simulation"   element={
+                <ProtectedRoute>
+                  <SimulationLab />
+                </ProtectedRoute>
+              } />
+              <Route path="/interview"    element={
+                <ProtectedRoute>
+                  <InterviewSimulator />
+                </ProtectedRoute>
+              } />
               <Route path="/demo"         element={<DemoMode />} />
               
               {/* Auth Pages - Public */}

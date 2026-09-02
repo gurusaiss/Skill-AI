@@ -22,6 +22,7 @@ import { generateQuestionsFromJD, validateQuestionBank, generateQuestionsFromFil
 import UserStore from '../services/UserStore.js';
 import GenerationJobs from '../services/GenerationJobs.js';
 import { preprocessDocumentText, extractJDCoreContent, removeFilenameFromText } from '../utils/textPreprocessor.js';
+import GeminiService from '../services/GeminiService.js';
 
 // Use createRequire so CJS packages (pdf-parse, mammoth) load correctly from ESM
 const _require = createRequire(import.meta.url);
@@ -196,26 +197,8 @@ Required Skills:
 - ...`;
 
   try {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (groqKey?.length > 10) {
-      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
-        body: JSON.stringify({
-          model: 'openai/gpt-oss-120b',
-          messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-          temperature: 0.2,
-          max_tokens: 2000,
-          reasoning_effort: 'low',
-        }),
-        signal: AbortSignal.timeout(20000),
-      });
-      if (r.ok) {
-        const d = await r.json();
-        const extracted = d.choices?.[0]?.message?.content?.trim();
-        if (extracted && extracted.length > 20) return extracted;
-      }
-    }
+    const extracted = (await GeminiService.generateText(prompt, system))?.trim();
+    if (extracted && extracted.length > 20) return extracted;
   } catch (e) {
     console.warn('[extractJDEssentials] LLM extraction failed, storing raw JD:', e.message);
   }

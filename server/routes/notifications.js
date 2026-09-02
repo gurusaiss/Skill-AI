@@ -4,7 +4,7 @@
  */
 
 import express from 'express';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireRole } from '../middleware/auth.js';
 import * as db from '../db/store.js';
 
 const router = express.Router();
@@ -20,7 +20,8 @@ router.get('/', authenticate, async (req, res) => {
     const unreadCount = notifications.filter(n => !n.read).length;
     res.json({ success: true, data: { notifications, unreadCount }, error: null });
   } catch (error) {
-    res.status(500).json({ success: false, data: null, error: { message: error.message } });
+    console.error('[GET /api/notifications] error:', error.message);
+    res.status(500).json({ success: false, data: null, error: { message: 'Failed to load notifications' } });
   }
 });
 
@@ -35,7 +36,8 @@ router.put('/read-all', authenticate, async (req, res) => {
     await db.markAllNotificationsRead(userId);
     res.json({ success: true, data: { message: 'All notifications marked as read' }, error: null });
   } catch (error) {
-    res.status(500).json({ success: false, data: null, error: { message: error.message } });
+    console.error('[PUT /api/notifications/read-all] error:', error.message);
+    res.status(500).json({ success: false, data: null, error: { message: 'Failed to update notifications' } });
   }
 });
 
@@ -49,16 +51,17 @@ router.put('/:id/read', authenticate, async (req, res) => {
     const notif = await db.markNotificationRead(req.params.id, userId);
     res.json({ success: true, data: { notification: notif }, error: null });
   } catch (error) {
-    const status = error.message === 'Notification not found' ? 404 : 500;
-    res.status(status).json({ success: false, data: null, error: { message: error.message } });
+    const notFound = error.message === 'Notification not found';
+    console.error('[PUT /api/notifications/:id/read] error:', error.message);
+    res.status(notFound ? 404 : 500).json({ success: false, data: null, error: { message: notFound ? 'Notification not found' : 'Failed to update notification' } });
   }
 });
 
 /**
  * POST /api/notifications
- * Create a notification (admin/system use)
+ * Create a notification (admin only — cross-user notification creation)
  */
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const { userId, title, message, type = 'info', actionUrl } = req.body;
     if (!userId || !title || !message) {
@@ -74,7 +77,8 @@ router.post('/', authenticate, async (req, res) => {
     });
     res.status(201).json({ success: true, data: { notification: notif }, error: null });
   } catch (error) {
-    res.status(500).json({ success: false, data: null, error: { message: error.message } });
+    console.error('[POST /api/notifications] error:', error.message);
+    res.status(500).json({ success: false, data: null, error: { message: 'Failed to create notification' } });
   }
 });
 

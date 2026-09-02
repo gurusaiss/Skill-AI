@@ -20,10 +20,11 @@ import { randomUUID } from 'crypto';
 import multer from 'multer';
 import UserStore from '../services/UserStore.js';
 import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds, Groups, QuestionBankVersions, EmployeeAssessmentAssignments } from '../services/DataStore.js';
-import LLMQueue from '../services/LLMQueue.js';
 import * as db from '../db/store.js';
 import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
 import { getApprovedBankCached } from '../services/QuestionBankCache.js';
+import GeminiService from '../services/GeminiService.js';
+import LLMCache from '../services/LLMCache.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -43,6 +44,17 @@ function shuffle(arr) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+// Tenant scoping: an admin/manager may only act on assessments within their own
+// company ('default' company stays open for single-tenant installs; superadmin is global).
+function canAccessAssessment(actor, assessment) {
+  if (!actor || !assessment) return false;
+  if (actor.role === 'superadmin') return true;
+  const actorCompany = actor.companyId || 'default';
+  const assessmentCompany = assessment.companyId || 'default';
+  if (actorCompany === 'default') return true;
+  return actorCompany === assessmentCompany;
 }
 
 // Strips internal provenance/generation metadata that must be stored (Issue
@@ -74,166 +86,6 @@ async function hydrateAssignmentsForAdmin(assessment) {
       return { ...ea, questions: order.map(qid => byId.get(qid)).filter(Boolean) };
     }),
   };
-}
-
-// ── AI question generation ────────────────────────────────────────────────────
-
-// generateQuestionsFromJD is imported from ../services/AssessmentGenerator.js
-// Keeping this stub comment so line references stay stable
-async function _unused_generateQuestionsFromJD_stub({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed }) {
-  const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 30);
-  const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
-  const seed = employeeSeed || randomUUID().slice(0, 8);
-  const jdText = (jobDescription || '').trim();
-  const skillsList = Array.isArray(jdSkills) && jdSkills.length ? jdSkills : [];
-
-  // ── System prompt: domain-agnostic, anti-contamination ──────────────────────
-  const system = `You are an expert HR assessment designer who creates role-specific assessments for ALL job functions across ALL industries — HR, Operations, Finance, Sales, Marketing, Customer Success, Procurement, L&D, Project Management, IT, Engineering, Healthcare, Legal, and any other domain.
-
-ABSOLUTE RULES:
-1. Read and extract the actual domain, responsibilities, tools, and required knowledge from the JD FIRST.
-2. Generate questions ONLY about what the JD explicitly requires — never introduce topics from unrelated domains.
-3. Domain must match: HR role → HR questions. Finance role → Finance questions. Operations → Operations questions. Do NOT cross domains.
-4. Every question must trace directly to a specific responsibility, skill, process, tool, or competency in the JD.
-5. Match seniority level: Executive/Director → strategy, policy, P&L, stakeholder decisions. Manager → team management, planning, escalation, reporting. Specialist/Executive → applied process, tools, day-to-day procedures. Junior/Coordinator → foundational knowledge, process steps.
-6. Never generate software coding or engineering architecture questions unless the JD explicitly lists programming as a requirement.
-7. Always return valid JSON with exactly a "questions" array.`;
-
-  // ── User prompt: 3-step JD-first pipeline ───────────────────────────────────
-  const prompt = `Generate ${num} assessment questions for this employee.
-
-=== EMPLOYEE PROFILE ===
-Job Role: ${jobRole || 'Professional'}
-${skillsList.length ? `Skills identified from JD: ${skillsList.join(', ')}` : ''}
-
-=== JOB DESCRIPTION ===
-${jdText || '(No JD provided — use only the job role to infer responsibilities)'}
-
-=== VARIATION SEED: ${seed} ===
-
-=== STEP-BY-STEP GENERATION PROCESS ===
-
-STEP 1 — EXTRACT THE ROLE PROFILE FROM THE JD:
-Identify before generating any question:
-• Primary domain/industry (HR / Finance / Operations / Sales / IT / Healthcare / Legal / etc.)
-• Seniority level (junior / specialist / senior / manager / director / executive)
-• Top 5 day-to-day responsibilities described in the JD
-• Required tools, platforms, systems (HRMS, SAP, Salesforce, Excel, Jira, etc.)
-• Required processes (recruitment, budgeting, pipeline management, vendor evaluation, etc.)
-• Required knowledge areas (labor law, IFRS, Agile, ISO standards, etc.)
-• Required soft skills and competencies (stakeholder management, negotiation, team leadership, etc.)
-• Key performance indicators or expected outcomes mentioned
-
-STEP 2 — GENERATE QUESTIONS GROUNDED IN THE EXTRACTED PROFILE:
-• Use exactly this question type mix (cycle through): ${types.join(', ')}
-• Difficulty distribution: 30% easy, 50% medium, 20% hard
-• Each question must test something from the profile extracted in Step 1
-• Prefer scenario-based questions: "In your role as ${jobRole || 'a professional'}, when [situation], what do you do?"
-• For non-technical roles: test processes, decisions, communication, and domain knowledge — NOT coding or engineering
-• For managerial roles: include team management, delegation, conflict resolution, resource planning, KPI reporting
-• For finance/procurement: include budgeting, approval workflows, vendor management, compliance
-• For HR roles: include recruitment processes, employee relations, HR policies, performance management
-• For sales/marketing: include pipeline management, client handling, campaign strategy, metrics tracking
-• Use the variation seed (${seed}) to select different angles and scenarios even if two employees share the same JD
-
-STEP 3 — VALIDATE EACH QUESTION BEFORE RETURNING:
-For every question ask: "Can I point to a specific line or responsibility in the JD that makes this question relevant?"
-If the answer is NO — replace the question with one that passes this test.
-
-=== OUTPUT FORMAT ===
-{
-  "questions": [
-    {
-      "type": "mcq|fill_blank|subjective",
-      "question": "specific, scenario-grounded question relevant to this exact role and JD",
-      "difficulty": "easy|medium|hard",
-      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
-      "answer": "A (or B/C/D for mcq) | exact phrase for fill_blank | detailed model answer for subjective",
-      "explanation": "one sentence — which JD requirement this question tests and why it matters for this role",
-      "skillArea": "the specific responsibility, skill, or competency from the JD being tested"
-    }
-  ]
-}`;
-
-  // Try Groq first (faster, higher rate limit)
-  try {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (groqKey?.length > 10) {
-      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
-        body: JSON.stringify({
-          model: 'openai/gpt-oss-120b',
-          messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-          temperature: 0.8,
-          max_tokens: 5000,
-          response_format: { type: 'json_object' },
-          reasoning_effort: 'low',
-        }),
-        signal: AbortSignal.timeout(30000),
-      });
-      if (r.ok) {
-        const d = await r.json();
-        const parsed = JSON.parse(d.choices?.[0]?.message?.content || '{}');
-        if (Array.isArray(parsed.questions) && parsed.questions.length > 0) return parsed.questions;
-      }
-    }
-  } catch (e) { console.warn('[assessment] Groq failed:', e.message); }
-
-  // Try Gemini
-  try {
-    const geminiKey = process.env.GEMINI_API_KEY;
-    const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-    if (geminiKey?.length > 10) {
-      const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: system + '\n\n' + prompt }] }],
-            generationConfig: { temperature: 0.8, maxOutputTokens: 5000, responseMimeType: 'application/json' },
-          }),
-          signal: AbortSignal.timeout(30000),
-        }
-      );
-      if (r.ok) {
-        const d = await r.json();
-        const parsed = JSON.parse(d.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
-        if (Array.isArray(parsed.questions) && parsed.questions.length > 0) return parsed.questions;
-      }
-    }
-  } catch (e) { console.warn('[assessment] Gemini failed:', e.message); }
-
-  // Fallback — skill-grounded rule-based questions (never fully generic)
-  const role = jobRole || 'Professional';
-  const fallbackSkills = skillsList.length > 0 ? skillsList
-    : ['core responsibilities', 'stakeholder communication', 'process management', 'performance delivery', 'problem solving'];
-  return Array.from({ length: num }, (_, i) => {
-    const t = types[i % types.length];
-    const difficulty = ['easy', 'medium', 'hard'][i % 3];
-    const skill = fallbackSkills[i % fallbackSkills.length];
-    return {
-      type: t,
-      question: t === 'mcq'
-        ? `As a ${role}, when facing a challenge related to ${skill}, what is the most effective first step?`
-        : t === 'fill_blank'
-        ? `A key outcome of strong ${skill} in the ${role} role is ______.`
-        : `Describe a specific situation in your ${role} role where ${skill} was critical. What approach did you take and what was the result?`,
-      difficulty,
-      options: t === 'mcq' ? [
-        `A) Assess the situation, identify root cause, and develop a structured plan`,
-        `B) Escalate immediately without gathering information`,
-        `C) Wait for the situation to resolve on its own`,
-        `D) Delegate without providing context or follow-up`,
-      ] : undefined,
-      answer: t === 'mcq' ? 'A'
-        : t === 'fill_blank' ? 'consistent, measurable, and high-quality outcomes'
-        : `In my ${role} role, I approach ${skill} challenges by first clarifying objectives and constraints, then systematically identifying root causes, designing solutions aligned with organizational goals, and tracking outcomes against defined KPIs.`,
-      explanation: `Tests applied ${skill} competency directly required in the ${role} role.`,
-      skillArea: skill,
-    };
-  });
 }
 
 // ── Normalise answers from frontend into a dense array indexed by question pos ─
@@ -290,7 +142,8 @@ router.get('/generated-content', authenticate, requireRole('admin', 'manager'), 
     const all = await GeneratedContent.getByCompany(companyId);
     res.json({ success: true, data: all || [] });
   } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
+    console.error('[assessments GET generated-content]', e.message);
+    res.status(500).json({ success: false, error: 'Failed to load content' });
   }
 });
 
@@ -301,7 +154,8 @@ router.get('/thresholds', authenticate, async (req, res) => {
     const saved = await AssessmentThresholds.getByCompany(companyId);
     res.json({ success: true, data: { thresholds: saved?.thresholds || DEFAULT_THRESHOLDS } });
   } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
+    console.error('[assessments GET thresholds]', e.message);
+    res.status(500).json({ success: false, error: 'Failed to load thresholds' });
   }
 });
 
@@ -316,7 +170,8 @@ router.put('/thresholds', authenticate, requireRole('admin'), async (req, res) =
     const saved = await AssessmentThresholds.upsert(companyId, thresholds);
     res.json({ success: true, data: saved });
   } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
+    console.error('[assessments PUT thresholds]', e.message);
+    res.status(500).json({ success: false, error: 'Failed to save thresholds' });
   }
 });
 
@@ -479,7 +334,8 @@ router.get('/', authenticate, async (req, res) => {
     const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
     res.json({ success: true, data: isPrivileged ? await Promise.all(result.map(hydrateAssignmentsForAdmin)) : result, error: null });
   } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[assessments GET /]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to load assessments' });
   }
 });
 
@@ -677,7 +533,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
     res.status(201).json({ success: true, data: saved || newAssessment, error: null });
   } catch (e) {
     console.error('[POST /api/assessments]', e);
-    res.status(500).json({ success: false, data: null, error: e.message });
+    res.status(500).json({ success: false, data: null, error: 'Failed to create assessment' });
   }
 });
 
@@ -765,7 +621,7 @@ router.post('/manual', authenticate, requireRole('admin', 'manager'), async (req
     res.status(201).json({ success: true, data: saved || newAssessment, error: null });
   } catch (e) {
     console.error('[POST /api/assessments/manual]', e);
-    res.status(500).json({ success: false, data: null, error: e.message });
+    res.status(500).json({ success: false, data: null, error: 'Failed to create assessment' });
   }
 });
 
@@ -802,7 +658,7 @@ router.post('/parse-questionnaire', authenticate, requireRole('admin', 'manager'
     res.json({ success: true, data: { questions, count: questions.length }, error: null });
   } catch (e) {
     console.error('[POST /api/assessments/parse-questionnaire]', e);
-    res.status(500).json({ success: false, data: null, error: e.message });
+    res.status(500).json({ success: false, data: null, error: 'Failed to parse questionnaire' });
   }
 });
 
@@ -1134,7 +990,7 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
     res.status(400).json({ success: false, data: null, error: `Unsupported format: ${format}. Use xlsx, pdf, docx, or zip.` });
   } catch (e) {
     console.error('[GET /api/assessments/:id/export-reports]', e);
-    res.status(500).json({ success: false, data: null, error: e.message });
+    res.status(500).json({ success: false, data: null, error: 'Failed to export reports' });
   }
 });
 
@@ -1503,7 +1359,7 @@ router.get('/:id/reports/:userId/download', authenticate, async (req, res) => {
     }
   } catch (e) {
     console.error('[GET /api/assessments/:id/reports/:userId/download]', e);
-    res.status(500).json({ success: false, data: null, error: e.message });
+    res.status(500).json({ success: false, data: null, error: 'Failed to download report' });
   }
 });
 
@@ -1537,7 +1393,7 @@ router.post('/generate-from-jd', authenticate, requireRole('admin', 'manager'), 
     res.json({ success: true, data: questions, error: null });
   } catch (e) {
     console.error('[POST /api/assessments/generate-from-jd]', e);
-    res.status(500).json({ success: false, data: null, error: e.message });
+    res.status(500).json({ success: false, data: null, error: 'Failed to generate questions' });
   }
 });
 
@@ -1607,7 +1463,8 @@ router.get('/my', authenticate, async (req, res) => {
 
     res.json({ success: true, data: myAssessments, error: null });
   } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[assessments GET mine]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to load assessments' });
   }
 });
 
@@ -1648,7 +1505,8 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
 
     res.json({ success: true, data: filteredReports, error: null });
   } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[assessments/:id/report]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to load reports' });
   }
 });
 
@@ -1763,7 +1621,7 @@ ${headerRow}${tableRows}
     }
   } catch (e) {
     console.error('[export-all-reports]', e);
-    res.status(500).json({ success: false, error: e.message });
+    res.status(500).json({ success: false, error: 'Failed to export reports' });
   }
 });
 
@@ -1894,7 +1752,7 @@ router.post('/export-filtered-reports', authenticate, async (req, res) => {
     return res.end(Buffer.isBuffer(buf) ? buf : Buffer.from(buf));
   } catch (e) {
     console.error('[export-filtered-reports]', e);
-    res.status(500).json({ success: false, error: e.message });
+    res.status(500).json({ success: false, error: 'Failed to export reports' });
   }
 });
 
@@ -1920,7 +1778,8 @@ router.post('/generate', authenticate, llmLimiter, async (req, res) => {
 
     res.json({ success: true, data: questions, error: null });
   } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[assessments generate-from-jd variant]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to load questions' });
   }
 });
 
@@ -1949,9 +1808,14 @@ router.get('/:id', authenticate, async (req, res) => {
       return res.json({ success: true, data: { ...assessment, employeeAssignments: [resolved] }, error: null });
     }
 
+    if (!canAccessAssessment(req.user, assessment)) {
+      return res.status(403).json({ success: false, data: null, error: 'Access denied' });
+    }
+
     res.json({ success: true, data: await hydrateAssignmentsForAdmin(assessment), error: null });
   } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[assessments/:id] error:', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to load assessment' });
   }
 });
 
@@ -2095,10 +1959,10 @@ router.post('/:id/submit', authenticate, async (req, res) => {
         numSessions = Math.min(Math.max(numSessions, 2), 10);
         const depth = { ...base, numSessions };
 
-        // Groq module generation
+        // Module generation — routed through GeminiService (multi-key Gemini + Cerebras/Groq
+        // fallback + rate-pacing) with an LLMCache tier, instead of a raw single-key Groq fetch.
         let moduleContent = null;
-        const groqKey = process.env.GROQ_API_KEY;
-        if (groqKey?.length > 10) {
+        {
           try {
             const prompt = `Design a personalized corporate learning journey for an employee based on their assessment results. You are an enterprise L&D instructional designer.
 
@@ -2162,37 +2026,21 @@ Return ONLY valid JSON matching exactly this structure:
 }
 Note: "caseStudy" may be null on sessions that don't need one, but MUST be present on the capstone.`;
 
-            const r = await LLMQueue.run(() => fetch('https://api.groq.com/openai/v1/chat/completions', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
-              body: JSON.stringify({
-                model: 'openai/gpt-oss-120b',
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.7,
-                max_tokens: 8000,
-                response_format: { type: 'json_object' },
-                reasoning_effort: 'low',
-              }),
-              signal: AbortSignal.timeout(45000),
-            }));
-            if (r.ok) {
-              const d = await r.json();
-              const raw = d.choices?.[0]?.message?.content || '{}';
-              moduleContent = JSON.parse(raw);
-              console.log(`[auto-assign] Groq generated module: "${moduleContent.title}" with ${moduleContent.sessions?.length} sessions`);
+            const cacheKey = `autoassign_module_${LLMCache.hash(jobRole + skills.join(',') + classification + depth.numSessions + jdContext.slice(0, 100))}`;
+            const cached = LLMCache.get(cacheKey);
+            if (cached) {
+              moduleContent = cached;
             } else {
-              const errText = await r.text().catch(() => '');
-              console.warn(`[auto-assign] Groq HTTP ${r.status}: ${errText.slice(0, 200)}`);
+              const result = await GeminiService.generateJSON(prompt, '', { maxTokens: 8000 });
+              if (result?.sessions && Array.isArray(result.sessions) && result.sessions.length > 0) {
+                moduleContent = result;
+                LLMCache.set(cacheKey, moduleContent, LLMCache.TTL.MODULE);
+                console.log(`[auto-assign] Generated module: "${moduleContent.title}" with ${moduleContent.sessions?.length} sessions`);
+              }
             }
           } catch (e) {
-            if (e.code === 'LLM_QUEUE_FULL') {
-              console.warn('[auto-assign] LLM queue full — using rule-based fallback sessions');
-            } else {
-              console.warn('[auto-assign] Groq failed:', e.message);
-            }
+            console.warn('[auto-assign] Module generation failed:', e.message);
           }
-        } else {
-          console.warn('[auto-assign] GROQ_API_KEY not set — using fallback sessions');
         }
 
         // Build sessions with day-based unlock dates
@@ -2359,7 +2207,7 @@ Note: "caseStudy" may be null on sessions that don't need one, but MUST be prese
     res.json({ success: true, data: { report, scoring }, error: null });
   } catch (e) {
     console.error('[POST /api/assessments/:id/submit]', e);
-    res.status(500).json({ success: false, data: null, error: e.message });
+    res.status(500).json({ success: false, data: null, error: 'Failed to submit assessment' });
   }
 });
 
@@ -2369,16 +2217,23 @@ Note: "caseStudy" may be null on sessions that don't need one, but MUST be prese
  */
 router.get('/:id/report', authenticate, async (req, res) => {
   try {
-    const allReports = await Reports.getAll();
-    const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
+    const assessment = await Assessments.getById(req.params.id);
+    if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Not found' });
 
+    const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
+    if (isPrivileged && !canAccessAssessment(req.user, assessment)) {
+      return res.status(403).json({ success: false, data: null, error: 'Access denied' });
+    }
+
+    const allReports = await Reports.getAll();
     const filtered = isPrivileged
       ? allReports.filter(r => r.assessmentId === req.params.id)
       : allReports.filter(r => r.assessmentId === req.params.id && r.userId === req.user.userId);
 
     res.json({ success: true, data: filtered, error: null });
   } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[assessments/:id/report] error:', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to load report' });
   }
 });
 
@@ -2390,6 +2245,9 @@ router.put('/:id', authenticate, requireRole('admin', 'manager'), async (req, re
   try {
     const existing = await Assessments.getById(req.params.id);
     if (!existing) return res.status(404).json({ success: false, data: null, error: 'Not found' });
+    if (!canAccessAssessment(req.user, existing)) {
+      return res.status(403).json({ success: false, data: null, error: 'Access denied' });
+    }
 
     const updated = await Assessments.update(req.params.id, {
       ...req.body,
@@ -2399,7 +2257,8 @@ router.put('/:id', authenticate, requireRole('admin', 'manager'), async (req, re
 
     res.json({ success: true, data: updated || existing, error: null });
   } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[assessments PUT :id] error:', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to update assessment' });
   }
 });
 
@@ -2411,10 +2270,14 @@ router.delete('/:id', authenticate, requireRole('admin', 'manager'), async (req,
   try {
     const existing = await Assessments.getById(req.params.id);
     if (!existing) return res.status(404).json({ success: false, data: null, error: 'Not found' });
+    if (!canAccessAssessment(req.user, existing)) {
+      return res.status(403).json({ success: false, data: null, error: 'Access denied' });
+    }
     await Assessments.delete(req.params.id);
     res.json({ success: true, data: { id: req.params.id }, error: null });
   } catch (e) {
-    res.status(500).json({ success: false, data: null, error: e.message });
+    console.error('[assessments DELETE :id] error:', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to delete assessment' });
   }
 });
 

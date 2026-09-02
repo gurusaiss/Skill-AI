@@ -24,6 +24,17 @@ const DATA_DIR = join(__moduleDir, '../data');
 
 const router = express.Router();
 
+// Tenant scoping: a module with a companyId belongs to that company only.
+// Superadmin is global; a module with no companyId is treated as shared/global content.
+function canAccessModule(actor, module) {
+  if (!actor || !module) return false;
+  if (actor.role === 'superadmin') return true;
+  if (!module.companyId) return true;
+  const actorCompany = actor.companyId || 'default';
+  if (actorCompany === 'default') return true;
+  return actorCompany === module.companyId;
+}
+
 /**
  * GET /api/modules
  * Get all modules (with pagination and filtering) - from Supabase or file fallback
@@ -178,6 +189,9 @@ router.get('/:id', authenticate, async (req, res) => {
 
     if (!module) {
       return res.status(404).json({ success: false, error: { message: 'Module not found' } });
+    }
+    if (!canAccessModule(req.user, module)) {
+      return res.status(403).json({ success: false, error: { message: 'Access denied' } });
     }
 
     res.json({ success: true, data: module });
@@ -360,6 +374,11 @@ router.put('/:id', authenticate, async (req, res) => {
 
     if (user.role !== 'admin' && user.role !== 'manager') {
       return res.status(403).json({ success: false, error: { message: 'Only admins and managers can update modules' } });
+    }
+
+    const existingModule = await db.getModuleById(id).catch(() => null);
+    if (existingModule && !canAccessModule(user, existingModule)) {
+      return res.status(403).json({ success: false, error: { message: 'Access denied' } });
     }
 
     const updatedModule = await db.updateModule(id, req.body);
@@ -622,6 +641,11 @@ router.delete('/:id', authenticate, async (req, res) => {
 
     if (user.role !== 'admin') {
       return res.status(403).json({ success: false, error: { message: 'Only admins can delete modules' } });
+    }
+
+    const existingModule = await db.getModuleById(id).catch(() => null);
+    if (existingModule && !canAccessModule(user, existingModule)) {
+      return res.status(403).json({ success: false, error: { message: 'Access denied' } });
     }
 
     const deleted = await db.deleteModule(id);

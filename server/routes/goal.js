@@ -131,7 +131,7 @@ router.post('/', authenticate, llmLimiter, upload.single('jobDescriptionFile'), 
     res.status(500).json({
       success: false,
       data: null,
-      error: error.message
+      error: 'Failed to process goal'
     });
   } finally {
     // Clean up uploaded file
@@ -177,19 +177,19 @@ router.get('/:userId', authenticate, async (req, res) => {
     });
   } catch (error) {
     console.error('[GET /api/goal/:userId]', error);
-    
+
     if (error.message.includes('not found')) {
       return res.status(404).json({
         success: false,
         data: null,
-        error: error.message
+        error: 'Goal session not found'
       });
     }
-    
+
     res.status(500).json({
       success: false,
       data: null,
-      error: error.message
+      error: 'Failed to load goal session'
     });
   }
 });
