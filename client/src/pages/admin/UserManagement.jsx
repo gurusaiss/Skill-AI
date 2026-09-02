@@ -1174,7 +1174,7 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="p-5 border-b border-slate-700/60 flex items-center justify-between">
           <div>
@@ -1398,7 +1398,7 @@ function ImportModal({ onClose, onImported, setToast }) {
   const invalidCount = preview?.preview.filter(r => r.status === 'error').length || 0;
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
 
         {/* Header */}
@@ -1842,7 +1842,7 @@ function ManageAccessModal({ user: targetUser, onClose, onSaved, setToast }) {
   const colorMap = { purple: { bg: 'bg-purple-500/10', border: 'border-purple-500/40', text: 'text-purple-300', check: 'bg-purple-500/20 border-purple-500/50' }, indigo: { bg: 'bg-indigo-500/10', border: 'border-indigo-500/40', text: 'text-indigo-300', check: 'bg-indigo-500/20 border-indigo-500/50' }, emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/40', text: 'text-emerald-300', check: 'bg-emerald-500/20 border-emerald-500/50' } };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
       <div className="bg-slate-800 border border-slate-700/80 rounded-2xl w-full max-w-md shadow-2xl">
         <div className="p-5 border-b border-slate-700/60 flex items-center justify-between">
           <div>
