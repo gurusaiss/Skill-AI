@@ -184,9 +184,9 @@ describe('Evaluator - Property-Based Tests', () => {
   });
 
   describe('Property 13: Session evaluation output is complete and bounded', () => {
-    it('should return complete evaluation with bounded score for arbitrary challenge responses', () => {
-      fc.assert(
-        fc.property(
+    it('should return complete evaluation with bounded score for arbitrary challenge responses', async () => {
+      await fc.assert(
+        fc.asyncProperty(
           // Generate arbitrary challenges
           fc.record({
             id: fc.string({ minLength: 1, maxLength: 20 }),
@@ -194,8 +194,8 @@ describe('Evaluator - Property-Based Tests', () => {
             model_solution: fc.string({ minLength: 1, maxLength: 500 })
           }),
           fc.string({ maxLength: 1000 }), // arbitrary response (including empty)
-          (challenge, userResponse) => {
-            const result = evaluator.scoreSession(challenge, userResponse);
+          async (challenge, userResponse) => {
+            const result = await evaluator.scoreSession(challenge, userResponse);
 
             // Assert score is in [0, 100]
             expect(result.score).toBeGreaterThanOrEqual(0);
@@ -221,16 +221,16 @@ describe('Evaluator - Property-Based Tests', () => {
       );
     });
 
-    it('should handle empty responses correctly', () => {
-      fc.assert(
-        fc.property(
+    it('should handle empty responses correctly', async () => {
+      await fc.assert(
+        fc.asyncProperty(
           fc.record({
             id: fc.string({ minLength: 1, maxLength: 20 }),
             evaluation_criteria: fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 0, maxLength: 10 }),
             model_solution: fc.string({ minLength: 1, maxLength: 500 })
           }),
-          (challenge) => {
-            const result = evaluator.scoreSession(challenge, '');
+          async (challenge) => {
+            const result = await evaluator.scoreSession(challenge, '');
 
             // Assert all required fields are present and valid
             expect(result.score).toBeGreaterThanOrEqual(0);

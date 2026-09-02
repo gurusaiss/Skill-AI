@@ -61,7 +61,7 @@ describe('Evaluator Integration Tests', () => {
     expect(results[0].score).toBeLessThanOrEqual(95);
   });
 
-  it('should work with real challenges from knowledge bank', () => {
+  it('should work with real challenges from knowledge bank', async () => {
     const challengesPath = join(__dirname, '../knowledge/challenges.json');
     const challengesBank = JSON.parse(readFileSync(challengesPath, 'utf-8'));
 
@@ -76,7 +76,7 @@ describe('Evaluator Integration Tests', () => {
     For pagination, I would use query parameters like ?page=1&limit=10.
     Error handling would return consistent JSON responses with error codes and messages.`;
 
-    const result = evaluator.scoreSession(challenge, response);
+    const result = await evaluator.scoreSession(challenge, response);
 
     // Should get a good score since response covers many criteria
     expect(result.score).toBeGreaterThan(60);
@@ -87,14 +87,14 @@ describe('Evaluator Integration Tests', () => {
     expect(result.modelSolution).toBe(challenge.model_solution);
   });
 
-  it('should handle empty or minimal responses gracefully', () => {
+  it('should handle empty or minimal responses gracefully', async () => {
     const challenge = {
       evaluation_criteria: ['test', 'example', 'criteria'],
       model_solution: 'Model solution'
     };
 
-    const emptyResult = evaluator.scoreSession(challenge, '');
-    const minimalResult = evaluator.scoreSession(challenge, 'test');
+    const emptyResult = await evaluator.scoreSession(challenge, '');
+    const minimalResult = await evaluator.scoreSession(challenge, 'test');
 
     // Empty response should get low score
     expect(emptyResult.score).toBeLessThan(20);
@@ -106,7 +106,7 @@ describe('Evaluator Integration Tests', () => {
     expect(minimalResult.weaknesses.length).toBeGreaterThan(0);
   });
 
-  it('should give word count bonus for detailed responses', () => {
+  it('should give word count bonus for detailed responses', async () => {
     const challenge = {
       evaluation_criteria: ['test'],
       model_solution: 'Model solution'
@@ -115,8 +115,8 @@ describe('Evaluator Integration Tests', () => {
     const shortResponse = 'test';
     const longResponse = 'test ' + 'word '.repeat(150); // 150+ words
 
-    const shortResult = evaluator.scoreSession(challenge, shortResponse);
-    const longResult = evaluator.scoreSession(challenge, longResponse);
+    const shortResult = await evaluator.scoreSession(challenge, shortResponse);
+    const longResult = await evaluator.scoreSession(challenge, longResponse);
 
     // Long response should score higher due to word count bonus
     expect(longResult.score).toBeGreaterThan(shortResult.score);

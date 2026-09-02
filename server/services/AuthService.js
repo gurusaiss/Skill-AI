@@ -75,10 +75,6 @@ class AuthService {
       errors.push('Password must contain at least one number');
     }
 
-    if (!/[!@#$%^&*()\-_=+\[\]{};:'",.<>/?\\|`~]/.test(password)) {
-      errors.push('Password must contain at least one special character (e.g. !@#$%^&*)');
-    }
-
     return {
       valid: errors.length === 0,
       errors

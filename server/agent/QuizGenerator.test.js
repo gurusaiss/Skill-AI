@@ -1,8 +1,14 @@
 // Feature: skillforge-ai, Property 5: Quiz question count invariant
+//
+// NOTE: the product now generates a fixed-length diagnostic quiz (TARGET_QUESTIONS,
+// currently 5) regardless of skill-tree size, rather than scaling 2x per skill.
+// This file was updated to match that design — see QuizGenerator.js's `generate()`.
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import fc from 'fast-check';
 import QuizGenerator from './QuizGenerator.js';
+
+const TARGET_QUESTIONS = 5;
 
 describe('QuizGenerator Property Tests', () => {
   let generator;
@@ -37,77 +43,41 @@ describe('QuizGenerator Property Tests', () => {
   };
 
   describe('Property 5: Quiz question count invariant', () => {
-    it('should return exactly 2 × N questions for any skill tree with N skills (3 ≤ N ≤ 7)', () => {
-      fc.assert(
-        fc.property(arbitrarySkillTree(), (skillTree) => {
-          const questions = generator.generate(skillTree);
-          const expectedQuestionCount = skillTree.skills.length * 2;
-          
-          // Assert exactly 2 × N questions
+    it(`should return exactly ${TARGET_QUESTIONS} questions for any skill tree with 3-7 skills`, async () => {
+      await fc.assert(
+        fc.asyncProperty(arbitrarySkillTree(), async (skillTree) => {
+          const questions = await generator.generate(skillTree);
+
           expect(questions).toBeDefined();
           expect(Array.isArray(questions)).toBe(true);
-          expect(questions.length).toBe(expectedQuestionCount);
+          expect(questions.length).toBe(TARGET_QUESTIONS);
         }),
         { numRuns: 100 }
       );
     });
 
-    it('should ensure no skill has zero questions', () => {
-      fc.assert(
-        fc.property(arbitrarySkillTree(), (skillTree) => {
-          const questions = generator.generate(skillTree);
-          
-          // Count questions per skill
-          const questionCountBySkill = {};
-          skillTree.skills.forEach(skill => {
-            questionCountBySkill[skill.id] = 0;
-          });
-          
+    // Note: for a known domain (e.g. backend_development), generate() may return a
+    // curated rule-based quiz whose questions carry the bank's own real skill ids —
+    // not necessarily the arbitrary/fuzzed skill ids passed in here. So this only
+    // asserts skillId is present and well-formed, not that it's one of the fuzzed ids.
+    it('should ensure every question has a well-formed skillId', async () => {
+      await fc.assert(
+        fc.asyncProperty(arbitrarySkillTree(), async (skillTree) => {
+          const questions = await generator.generate(skillTree);
+
           questions.forEach(question => {
-            if (Object.prototype.hasOwnProperty.call(questionCountBySkill, question.skillId)) {
-              questionCountBySkill[question.skillId]++;
-            }
-          });
-          
-          // Assert every skill has at least one question (should be exactly 2)
-          Object.values(questionCountBySkill).forEach(count => {
-            expect(count).toBeGreaterThan(0);
+            expect(typeof question.skillId).toBe('string');
+            expect(question.skillId.length).toBeGreaterThan(0);
           });
         }),
         { numRuns: 100 }
       );
     });
 
-    it('should ensure each skill has exactly 2 questions', () => {
-      fc.assert(
-        fc.property(arbitrarySkillTree(), (skillTree) => {
-          const questions = generator.generate(skillTree);
-          
-          // Count questions per skill
-          const questionCountBySkill = {};
-          skillTree.skills.forEach(skill => {
-            questionCountBySkill[skill.id] = 0;
-          });
-          
-          questions.forEach(question => {
-            if (Object.prototype.hasOwnProperty.call(questionCountBySkill, question.skillId)) {
-              questionCountBySkill[question.skillId]++;
-            }
-          });
-          
-          // Assert every skill has exactly 2 questions
-          Object.entries(questionCountBySkill).forEach(([skillId, count]) => {
-            expect(count).toBe(2);
-          });
-        }),
-        { numRuns: 100 }
-      );
-    });
-
-    it('should ensure all questions have required fields', () => {
-      fc.assert(
-        fc.property(arbitrarySkillTree(), (skillTree) => {
-          const questions = generator.generate(skillTree);
+    it('should ensure all questions have required fields', async () => {
+      await fc.assert(
+        fc.asyncProperty(arbitrarySkillTree(), async (skillTree) => {
+          const questions = await generator.generate(skillTree);
           
           questions.forEach(question => {
             // Check required fields exist
@@ -144,7 +114,7 @@ describe('QuizGenerator Property Tests', () => {
       );
     });
 
-    it('should handle edge case of exactly 3 skills', () => {
+    it('should handle edge case of exactly 3 skills', async () => {
       const skillTree = {
         domain: 'backend_development',
         domainName: 'Backend Development',
@@ -154,12 +124,12 @@ describe('QuizGenerator Property Tests', () => {
           { id: 'skill3', name: 'Skill 3', level: 'advanced', days: 5, topics: ['topic3'] }
         ]
       };
-      
-      const questions = generator.generate(skillTree);
-      expect(questions.length).toBe(6); // 3 skills × 2 questions
+
+      const questions = await generator.generate(skillTree);
+      expect(questions.length).toBe(TARGET_QUESTIONS);
     });
 
-    it('should handle edge case of exactly 7 skills', () => {
+    it('should handle edge case of exactly 7 skills', async () => {
       const skillTree = {
         domain: 'backend_development',
         domainName: 'Backend Development',
@@ -174,8 +144,8 @@ describe('QuizGenerator Property Tests', () => {
         ]
       };
       
-      const questions = generator.generate(skillTree);
-      expect(questions.length).toBe(14); // 7 skills × 2 questions
+      const questions = await generator.generate(skillTree);
+      expect(questions.length).toBe(TARGET_QUESTIONS);
     });
   });
 });

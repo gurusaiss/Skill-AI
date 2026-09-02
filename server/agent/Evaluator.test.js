@@ -76,20 +76,20 @@ describe('Evaluator', () => {
   });
 
   describe('scoreSession', () => {
-    it('should return score in range [0, 100]', () => {
+    it('should return score in range [0, 100]', async () => {
       const challenge = {
         evaluation_criteria: ['API', 'REST', 'HTTP'],
         model_solution: 'Sample solution'
       };
 
       const response = 'This is about API design using REST and HTTP methods';
-      const result = evaluator.scoreSession(challenge, response);
+      const result = await evaluator.scoreSession(challenge, response);
 
       expect(result.score).toBeGreaterThanOrEqual(0);
       expect(result.score).toBeLessThanOrEqual(100);
     });
 
-    it('should cap score at 98', () => {
+    it('should cap score at 98', async () => {
       const challenge = {
         evaluation_criteria: ['test', 'example'],
         model_solution: 'Sample solution'
@@ -97,57 +97,57 @@ describe('Evaluator', () => {
 
       // Very long response with all keywords
       const response = 'test example ' + 'word '.repeat(200);
-      const result = evaluator.scoreSession(challenge, response);
+      const result = await evaluator.scoreSession(challenge, response);
 
       expect(result.score).toBeLessThanOrEqual(98);
     });
 
-    it('should return valid grade (A-F)', () => {
+    it('should return valid grade (A-F)', async () => {
       const challenge = {
         evaluation_criteria: ['test'],
         model_solution: 'Sample solution'
       };
 
       const response = 'test response';
-      const result = evaluator.scoreSession(challenge, response);
+      const result = await evaluator.scoreSession(challenge, response);
 
       expect(['A', 'B', 'C', 'D', 'F']).toContain(result.grade);
     });
 
-    it('should return non-empty strengths array', () => {
+    it('should return non-empty strengths array', async () => {
       const challenge = {
         evaluation_criteria: ['test'],
         model_solution: 'Sample solution'
       };
 
       const response = 'test response';
-      const result = evaluator.scoreSession(challenge, response);
+      const result = await evaluator.scoreSession(challenge, response);
 
       expect(Array.isArray(result.strengths)).toBe(true);
       expect(result.strengths.length).toBeGreaterThan(0);
     });
 
-    it('should return non-empty weaknesses array', () => {
+    it('should return non-empty weaknesses array', async () => {
       const challenge = {
         evaluation_criteria: ['test'],
         model_solution: 'Sample solution'
       };
 
       const response = 'test response';
-      const result = evaluator.scoreSession(challenge, response);
+      const result = await evaluator.scoreSession(challenge, response);
 
       expect(Array.isArray(result.weaknesses)).toBe(true);
       expect(result.weaknesses.length).toBeGreaterThan(0);
     });
 
-    it('should return modelSolution', () => {
+    it('should return modelSolution', async () => {
       const challenge = {
         evaluation_criteria: ['test'],
         model_solution: 'This is the model solution'
       };
 
       const response = 'test response';
-      const result = evaluator.scoreSession(challenge, response);
+      const result = await evaluator.scoreSession(challenge, response);
 
       expect(result.modelSolution).toBe('This is the model solution');
     });
