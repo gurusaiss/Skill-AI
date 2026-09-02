@@ -6,6 +6,7 @@ import React, { useState } from 'react';
  */
 export default function ProjectModal({ isOpen, onClose, project }) {
   const [showPrompt, setShowPrompt] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   if (!isOpen || !project) return null;
 
@@ -175,12 +176,14 @@ Please provide a detailed implementation guide with code examples.`;
               </div>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(generateAIPrompt());
-                  alert('Prompt copied to clipboard!');
+                  navigator.clipboard.writeText(generateAIPrompt()).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  });
                 }}
                 className="mt-2 w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all"
               >
-                📋 Copy to Clipboard
+                {copied ? '✅ Copied!' : '📋 Copy to Clipboard'}
               </button>
             </div>
           )}
