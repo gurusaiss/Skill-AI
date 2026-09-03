@@ -626,7 +626,7 @@ IMPORTANT: Create exactly ${numSessions} sessions. All content must be specific 
     res.json({ success: true, data: updatedModule });
   } catch (error) {
     console.error('[modules/generate-content] Error:', error);
-    res.status(500).json({ success: false, error: { message: 'Failed to generate content: ' + error.message } });
+    res.status(500).json({ success: false, error: { message: 'Failed to generate content' } });
   }
 });
 
@@ -652,6 +652,17 @@ router.delete('/:id', authenticate, async (req, res) => {
 
     if (!deleted) {
       return res.status(404).json({ success: false, error: { message: 'Module not found' } });
+    }
+
+    // Cancel any assignments pointing at the now-deleted module instead of
+    // leaving them dangling — an employee opening one would otherwise hit a
+    // 404/broken module view with no indication why.
+    try {
+      const allAssignments = await UserStore.getAssignments({});
+      const affected = allAssignments.filter(a => a.assignable_id === id || a.assignableId === id);
+      await Promise.all(affected.map(a => UserStore.updateAssignment(a.id, { status: 'cancelled' })));
+    } catch (e) {
+      console.warn('[modules/delete] Failed to cancel dangling assignments:', e.message);
     }
 
     res.json({ success: true, message: 'Module deleted', data: { id } });

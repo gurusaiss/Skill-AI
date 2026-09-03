@@ -683,6 +683,9 @@ export const UserJDProfiles = {
     }
     return readFile('user_jd_profiles.json').find(p => p.id === userId) || null;
   },
+  async delete(userId) {
+    return deleteHealed('user_jd_profiles', 'user_jd_profiles.json', userId);
+  },
 };
 
 // ── ROLE LIBRARY ──────────────────────────────────────────────────────────────

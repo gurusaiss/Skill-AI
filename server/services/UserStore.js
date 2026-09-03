@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { createClient } from '@supabase/supabase-js';
 import ws from 'ws';
-import { UserJDProfiles } from './DataStore.js';
+import { UserJDProfiles, Groups } from './DataStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -314,6 +314,13 @@ class UserStore {
   }
 
   async deleteUser(userId) {
+    // Cascade cleanup first — a hard delete of the user row with dangling
+    // references left behind (assignments, group membership, JD profile)
+    // breaks admin dashboards/exports that try to resolve a now-nonexistent
+    // user_id. Historical records that exist for audit/compliance reasons
+    // (assessment reports, submissions) are intentionally left untouched.
+    await this._cleanupUserReferences(userId);
+
     const sb = getSB();
     if (sb) {
       const { error } = await sb.from('users').delete().eq('user_id', userId);
@@ -329,6 +336,34 @@ class UserStore {
     await this.writeAssignmentsFile(aData);
     await this.writeUsersFile(data);
     return true;
+  }
+
+  async _cleanupUserReferences(userId) {
+    // Assignments — both directions (as the assignee, and as the assigner/manager)
+    try {
+      const sb = getSB();
+      if (sb) {
+        await sb.from('assignments').delete().eq('assigned_to_user', userId);
+        await sb.from('assignments').delete().eq('assigned_by', userId);
+      }
+    } catch (e) { console.warn('[deleteUser] assignment cleanup failed:', e.message); }
+
+    // Group membership — remove from employeeIds, clear managerId if they managed it
+    try {
+      const allGroups = await Groups.getAll();
+      for (const g of allGroups || []) {
+        const isMember = (g.employeeIds || []).includes(userId);
+        const isManager = g.managerId === userId;
+        if (!isMember && !isManager) continue;
+        const updates = {};
+        if (isMember) updates.employeeIds = (g.employeeIds || []).filter(id => id !== userId);
+        if (isManager) { updates.managerId = null; updates.managerName = ''; }
+        await Groups.update(g.id, updates);
+      }
+    } catch (e) { console.warn('[deleteUser] group membership cleanup failed:', e.message); }
+
+    // JD profile
+    try { await UserJDProfiles.delete(userId); } catch (e) { console.warn('[deleteUser] JD profile cleanup failed:', e.message); }
   }
 
   async getAllUsers(filters = {}) {
