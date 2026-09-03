@@ -1623,7 +1623,12 @@ router.get('/:userId/job-roles', authenticate, async (req, res) => {
 async function addAdditionalJobRole(user, { roleName, department, jobDescription, jdSkills }, actorUserId) {
   if (!roleName?.trim()) return { role: null, reason: 'roleName is required' };
 
-  const existing = user.additionalJobRoles || [];
+  // Re-fetch immediately before the read-modify-write to shrink the race window
+  // against a concurrent add/remove for the same user (additionalJobRoles is a
+  // single array field with no per-item locking — two near-simultaneous adds
+  // built from a stale `user` snapshot would otherwise silently drop one of them).
+  const fresh = await UserStore.getUserById(user.userId).catch(() => null);
+  const existing = (fresh || user).additionalJobRoles || [];
   if (existing.some(r => r.roleName?.toLowerCase() === roleName.toLowerCase())
       || (user.jobRole || '').toLowerCase() === roleName.toLowerCase()) {
     return { role: null, reason: 'duplicate' };

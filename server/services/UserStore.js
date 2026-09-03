@@ -423,16 +423,27 @@ class UserStore {
 
   async getManagerEmployees(managerId) {
     const aData = await this.readAssignmentsFile();
-    const ids = aData.assignments.filter(a => a.managerId === managerId).map(a => a.employeeId);
-    const employees = await Promise.all(ids.map(id => this.getUserById(id)));
-    return employees.filter(Boolean);
+    const ids = [...new Set(aData.assignments.filter(a => a.managerId === managerId).map(a => a.employeeId))];
+    return this.getUsersByIds(ids);
   }
 
   async getEmployeeManagers(employeeId) {
     const aData = await this.readAssignmentsFile();
-    const ids = aData.assignments.filter(a => a.employeeId === employeeId).map(a => a.managerId);
-    const managers = await Promise.all(ids.map(id => this.getUserById(id)));
-    return managers.filter(Boolean);
+    const ids = [...new Set(aData.assignments.filter(a => a.employeeId === employeeId).map(a => a.managerId))];
+    return this.getUsersByIds(ids);
+  }
+
+  // Batched lookup — replaces N individual getUserById() round-trips with one query.
+  async getUsersByIds(ids) {
+    if (!ids?.length) return [];
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('users').select('*').in('user_id', ids);
+      if (!error) return (data || []).map(rowToUser).filter(Boolean);
+    }
+    const data = await this.readUsersFile();
+    const idSet = new Set(ids);
+    return (data.users || []).filter(u => idSet.has(u.userId || u.id));
   }
 
   async getEmployeesByManager(managerId) { return this.getManagerEmployees(managerId); }
@@ -452,6 +463,7 @@ class UserStore {
     const sb = getSB();
     if (sb) {
       let q = sb.from('assignments').select('*');
+      if (filters.id)         q = q.eq('id', filters.id);
       if (filters.user_id || filters.assigned_to_user)
         q = q.eq('assigned_to_user', filters.user_id || filters.assigned_to_user);
       if (filters.group_id)  q = q.eq('assigned_to_group', filters.group_id);
@@ -463,6 +475,7 @@ class UserStore {
     }
     const data = await this.readAssignmentsFile();
     let assignments = data.assignments || [];
+    if (filters.id)          assignments = assignments.filter(a => a.id === filters.id);
     if (filters.user_id || filters.assigned_to_user)
       assignments = assignments.filter(a => a.assigned_to_user === (filters.user_id || filters.assigned_to_user));
     if (filters.group_id)   assignments = assignments.filter(a => a.assigned_to_group === filters.group_id);
