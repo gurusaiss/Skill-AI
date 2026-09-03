@@ -1804,6 +1804,12 @@ router.get('/:id', authenticate, async (req, res) => {
           const byId = new Map(version.questions.map(q => [q.id, q]));
           resolved = { ...myAssignment, questions: eaa.question_order.map(qid => byId.get(qid)).filter(Boolean).map(stripInternalMetadata) };
         }
+      } else if (Array.isArray(myAssignment.questions)) {
+        // Legacy/ad-hoc assessments embed questions directly — apply the same
+        // internal-metadata stripping (source file/section, generation
+        // provenance) that the versioned path above already applies, for
+        // consistency between the two question-resolution paths.
+        resolved = { ...myAssignment, questions: myAssignment.questions.map(stripInternalMetadata) };
       }
       return res.json({ success: true, data: { ...assessment, employeeAssignments: [resolved] }, error: null });
     }

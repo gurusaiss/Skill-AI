@@ -558,63 +558,25 @@ class GeminiService {
    * @returns {Promise<object|null>}
    */
   async generateJSON(prompt, system = '', { maxTokens = 2048 } = {}) {
-    // Try Gemini first (if key is present)
+    // Try Gemini first (if a key is present). Reuses _geminiJSONOnce, which
+    // correctly picks a real key via _pickGeminiKey() and tracks per-key
+    // quota cooldowns — this method used to build the request with a
+    // nonexistent `this.apiKey` (undefined), so every Gemini call here
+    // silently failed auth on every attempt and always fell through to Groq
+    // (or the caller's generic rule-based fallback if Groq wasn't configured).
     if (this.isEnabled()) {
       for (let attempt = 0; attempt < this.maxRetries; attempt++) {
-        try {
-          const body = {
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: maxTokens,
-              responseMimeType: 'application/json'
-            }
-          };
-          if (system) body.systemInstruction = { parts: [{ text: system }] };
-
-          const res = await LLMQueue.run(() => fetch(`${this.endpoint}?key=${this.apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal: AbortSignal.timeout(30000),
-          }));
-
-          if (!res.ok) {
-            const err = await res.text();
-            const errMsg = `HTTP ${res.status}: ${err.slice(0, 200)}`;
-
-            // 429 quota exceeded — skip remaining retries, go straight to Groq
-            if (res.status === 429) {
-              console.warn(`[Gemini] ⚠️  Quota exceeded (429) — switching to Groq fallback`);
-              break;
-            }
-
-            throw new Error(errMsg);
-          }
-
-          const data = await res.json();
-          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!text) throw new Error('Empty response from Gemini');
-
-          const clean = text
-            .replace(/^```json\s*/i, '')
-            .replace(/^```\s*/i, '')
-            .replace(/```\s*$/i, '')
-            .trim();
-
-          const parsed = JSON.parse(clean);
+        const parsed = await this._geminiJSONOnce(prompt, system, { temperature: 0.7, maxTokens, timeoutMs: 30000 });
+        if (parsed) {
           this.callCount++;
           console.log(`[Gemini] ✅ Success (attempt ${attempt + 1}) — call #${this.callCount}`);
           return parsed;
-
-        } catch (err) {
-          console.error(`[Gemini] ❌ Attempt ${attempt + 1}/${this.maxRetries} failed: ${err.message}`);
-          if (attempt < this.maxRetries - 1) {
-            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-          }
+        }
+        if (this.geminiQuotaBlocked()) break;
+        if (attempt < this.maxRetries - 1) {
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
         }
       }
-
       console.warn('[Gemini] All retries exhausted — trying Groq fallback');
     }
 
@@ -634,31 +596,40 @@ class GeminiService {
    * Generate plain text
    */
   async generateText(prompt, system = '') {
-    // Try Gemini first
+    // Try Gemini first. Was previously built with a nonexistent `this.apiKey`
+    // (always undefined) — every call failed auth silently and fell straight
+    // to Groq. Now uses the real multi-key selector via _pickGeminiKey().
     if (this.isEnabled()) {
-      try {
-        const body = {
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.8, maxOutputTokens: 1024 }
-        };
-        if (system) body.systemInstruction = { parts: [{ text: system }] };
+      const key = this._pickGeminiKey();
+      if (key) {
+        try {
+          const body = {
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.8, maxOutputTokens: 1024 }
+          };
+          if (system) body.systemInstruction = { parts: [{ text: system }] };
 
-        const res = await LLMQueue.run(() => fetch(`${this.endpoint}?key=${this.apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(20000),
-        }));
+          const res = await LLMQueue.run(() => fetch(`${this.endpoint}?key=${key}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(20000),
+          }));
 
-        if (res.ok) {
-          const data = await res.json();
-          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) return text;
-        } else if (res.status === 429) {
-          console.warn('[Gemini] ⚠️  Quota exceeded (429) on generateText — switching to Groq');
+          if (res.ok) {
+            const data = await res.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) return text;
+          } else if (res.status === 429) {
+            const errText = await res.text().catch(() => '');
+            const perDay = /GenerateRequestsPerDayPerProjectPerModel/.test(errText);
+            const cooldownMs = perDay ? this._msUntilNextUtcMidnight() : 60 * 1000;
+            this._geminiKeyBlockedUntil.set(key, Date.now() + cooldownMs);
+            console.warn('[Gemini] ⚠️  Quota exceeded (429) on generateText — switching to Groq');
+          }
+        } catch {
+          // fall through to Groq
         }
-      } catch {
-        // fall through to Groq
       }
     }
 

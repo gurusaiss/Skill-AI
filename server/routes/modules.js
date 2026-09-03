@@ -766,6 +766,7 @@ Return JSON:
       employeeName: user?.name || '',
       companyId: req.user.companyId || null,
       jobRole: jobRole || '',
+      jobDescription: user?.jobDescription || '',
       assessmentReportId: assessmentReportId || null,
       assessmentTitle: assessmentTitle || '',
       weakAreas: skills,
@@ -837,6 +838,7 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
         // Preserve JD + assessment context so regeneration stays specific
         weakAreas: pending.weakAreas || [],
         jobRole: pending.jobRole || '',
+        jobDescription: pending.jobDescription || '',
         assessmentTitle: pending.assessmentTitle || '',
       },
     }, req.user.userId);
