@@ -382,10 +382,23 @@ export default function GroupManagement() {
   };
 
   const handleEdit = async (form) => {
-    await authFetch(`/api/groups/${modal.group.id}`, { method: 'PUT', body: JSON.stringify(form) });
-    showToast('Group updated successfully');
-    setModal(null);
-    fetchAll();
+    try {
+      await authFetch(`/api/groups/${modal.group.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...form, expectedUpdatedAt: modal.group.updatedAt || null }),
+      });
+      showToast('Group updated successfully');
+      setModal(null);
+      fetchAll();
+    } catch (err) {
+      if (err.message?.includes('changed by someone else')) {
+        showToast(err.message, 'error');
+        setModal(null);
+        fetchAll();
+        return;
+      }
+      throw err;
+    }
   };
 
   const handleDelete = async (group) => {

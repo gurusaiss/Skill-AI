@@ -148,7 +148,22 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
       return res.status(403).json({ success: false, data: null, error: 'Access denied' });
     }
 
-    const { name, managerId, description, employeeIds, status } = req.body;
+    const { name, managerId, description, employeeIds, status, expectedUpdatedAt } = req.body;
+
+    // Optimistic-concurrency check: the group-edit UI sends the FULL desired
+    // employeeIds/managerId/etc. snapshot (not a diff), so two admins editing
+    // the same group around the same time would otherwise have the second
+    // PUT silently overwrite the first's changes with no indication anything
+    // was lost. If the client tells us what updatedAt it loaded, reject a
+    // stale write instead of clobbering — the admin reloads and retries.
+    if (expectedUpdatedAt && existing.updatedAt && expectedUpdatedAt !== existing.updatedAt) {
+      return res.status(409).json({
+        success: false,
+        data: null,
+        error: 'This group was changed by someone else since you opened it. Your edit was not saved — please review the latest version and try again.',
+      });
+    }
+
     const companyId = req.user.companyId || 'default';
     const allUsers = await UserStore.getAllUsers({});
 
