@@ -446,16 +446,16 @@ export default function GroupManagement() {
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-teal-600/20 border border-teal-500/30 flex items-center justify-center text-2xl">👥</div>
+            <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-2xl">👥</div>
             <div>
               <h1 className="text-2xl font-bold text-white">Group Management</h1>
-              <p className="text-teal-400 text-sm font-semibold">Admin Panel · Company-Scoped</p>
+              <p className="text-indigo-400 text-sm font-semibold">Admin Panel · Company-Scoped</p>
             </div>
           </div>
           {isAdmin && (
             <button
               onClick={() => setModal({ mode: 'create' })}
-              className="flex items-center gap-2 px-5 py-2.5 bg-teal-600 hover:bg-teal-500 rounded-xl text-white font-bold text-sm transition-all shadow-lg"
+              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-sm transition-all shadow-lg"
             >
               ➕ Create Group
             </button>
@@ -463,9 +463,9 @@ export default function GroupManagement() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           {[
-            { label: 'Total Groups', value: groups.length, icon: '🗂️', color: 'border-teal-500/30 bg-teal-500/5 text-teal-400' },
+            { label: 'Total Groups', value: groups.length, icon: '🗂️', color: 'border-indigo-500/30 bg-indigo-500/5 text-indigo-400' },
             { label: 'Active', value: activeCount, icon: '✅', color: 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400' },
             { label: 'Total Members', value: totalMembers, icon: '👤', color: 'border-indigo-500/30 bg-indigo-500/5 text-indigo-400' },
           ].map(s => (
@@ -489,7 +489,7 @@ export default function GroupManagement() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search groups by name or manager..."
-              className="w-full bg-slate-800/50 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500/60"
+              className="w-full bg-slate-800/50 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60"
             />
           </div>
           <SearchableSelect
@@ -514,16 +514,23 @@ export default function GroupManagement() {
 
         {/* Table */}
         {loading ? (
-          <div className="text-center py-16">
-            <div className="animate-spin text-teal-400 text-4xl mb-4">⟳</div>
-            <div className="text-slate-400 text-sm">Loading groups...</div>
+          <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl overflow-hidden divide-y divide-slate-700/40">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="px-5 py-4 flex items-center gap-4 animate-pulse">
+                <div className="w-9 h-9 rounded-xl bg-slate-700/50 shrink-0" />
+                <div className="flex-1 h-4 bg-slate-700/50 rounded" />
+                <div className="w-24 h-4 bg-slate-700/40 rounded" />
+                <div className="w-16 h-4 bg-slate-700/40 rounded" />
+                <div className="w-16 h-6 bg-slate-700/50 rounded-lg" />
+              </div>
+            ))}
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-slate-500">
             <div className="text-5xl mb-3">👥</div>
             <p className="text-sm font-semibold mb-2">{(search || filterStatus !== 'all' || filterManager !== 'all') ? 'No groups match your filters.' : 'No groups yet.'}</p>
             {!(search || filterStatus !== 'all' || filterManager !== 'all') && isAdmin && (
-              <button onClick={() => setModal({ mode: 'create' })} className="mt-2 text-teal-400 hover:text-teal-300 text-sm font-bold underline">
+              <button onClick={() => setModal({ mode: 'create' })} className="mt-2 text-indigo-400 hover:text-indigo-300 text-sm font-bold underline">
                 Create your first group →
               </button>
             )}
@@ -545,7 +552,7 @@ export default function GroupManagement() {
                   <tr key={g.id} className="hover:bg-slate-700/20 transition-colors">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-teal-600/20 border border-teal-500/20 flex items-center justify-center text-sm font-bold text-teal-400 flex-shrink-0">
+                        <div className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/20 flex items-center justify-center text-sm font-bold text-indigo-400 flex-shrink-0">
                           {g.name?.charAt(0)?.toUpperCase() || 'G'}
                         </div>
                         <div>

@@ -631,19 +631,19 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
             <>
               <div>
                 <FieldLabel required>Full Name</FieldLabel>
-                <input type="text" value={form.name} onChange={f('name')} className={inputCls} placeholder="John Doe" />
+                <input type="text" aria-label="Full Name" value={form.name} onChange={f('name')} className={inputCls} placeholder="John Doe" />
               </div>
 
               <div>
                 <FieldLabel>Email</FieldLabel>
-                <input type="email" value={form.email} onChange={f('email')} className={inputCls} placeholder="john@company.com" />
+                <input type="email" aria-label="Email" value={form.email} onChange={f('email')} className={inputCls} placeholder="john@company.com" />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 {isAdmin && (
                   <div>
                     <FieldLabel>Role</FieldLabel>
-                    <select value={form.role} onChange={f('role')} className={selectCls}>
+                    <select value={form.role} onChange={f('role')} aria-label="Role" className={selectCls}>
                       <option value="admin">Admin</option>
                       <option value="manager">Manager</option>
                       <option value="employee">Employee</option>
@@ -652,7 +652,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                 )}
                 <div>
                   <FieldLabel>Status</FieldLabel>
-                  <select value={form.status} onChange={f('status')} className={selectCls}>
+                  <select value={form.status} onChange={f('status')} aria-label="Status" className={selectCls}>
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                     <option value="blocked">Blocked</option>
@@ -664,7 +664,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <FieldLabel>Primary Job Role {roleLibLookup && <span className="text-indigo-400 text-xs ml-1">↻ looking up…</span>}</FieldLabel>
-                  <input type="text" list="edit-role-options" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Frontend Developer" autoComplete="off" />
+                  <input type="text" list="edit-role-options" aria-label="Primary Job Role" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Frontend Developer" autoComplete="off" />
                   <datalist id="edit-role-options">
                     {roleOptions.map(r => <option key={r.name} value={r.name}>{r.dept ? `${r.name} — ${r.dept}` : r.name}</option>)}
                   </datalist>
@@ -672,7 +672,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                 </div>
                 <div>
                   <FieldLabel>Department</FieldLabel>
-                  <input type="text" list="edit-dept-options" value={form.department} onChange={f('department')} className={inputCls} placeholder="e.g. Engineering" autoComplete="off" />
+                  <input type="text" list="edit-dept-options" aria-label="Department" value={form.department} onChange={f('department')} className={inputCls} placeholder="e.g. Engineering" autoComplete="off" />
                   <datalist id="edit-dept-options">
                     {[...new Set(roleOptions.map(r => r.dept).filter(Boolean))].sort().map(d => <option key={d} value={d} />)}
                   </datalist>
@@ -707,14 +707,14 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                 )}
                 {showAddRoleForm && (
                   <div className="rounded-xl border border-indigo-500/30 bg-slate-800/40 p-3 space-y-2">
-                    <input type="text" placeholder="Role Name (required)" value={addRoleForm.roleName}
+                    <input type="text" aria-label="Additional role name" placeholder="Role Name (required)" value={addRoleForm.roleName}
                       onChange={e => setAddRoleForm(p => ({ ...p, roleName: e.target.value }))}
                       className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
-                    <input type="text" list="edit-dept-options" placeholder="Department (optional)" value={addRoleForm.department}
+                    <input type="text" list="edit-dept-options" aria-label="Additional role department" placeholder="Department (optional)" value={addRoleForm.department}
                       onChange={e => setAddRoleForm(p => ({ ...p, department: e.target.value }))}
                       autoComplete="off"
                       className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
-                    <textarea placeholder="Job Description (optional — triggers auto-assessment)" value={addRoleForm.jobDescription}
+                    <textarea aria-label="Additional role job description" placeholder="Job Description (optional — triggers auto-assessment)" value={addRoleForm.jobDescription}
                       onChange={e => setAddRoleForm(p => ({ ...p, jobDescription: e.target.value }))}
                       rows={2}
                       className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none resize-y" />
@@ -728,7 +728,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
 
               <div>
                 <FieldLabel>Company Name</FieldLabel>
-                <input type="text" value={form.companyName} onChange={f('companyName')} className={inputCls} placeholder="e.g. Acme Corp" />
+                <input type="text" aria-label="Company Name" value={form.companyName} onChange={f('companyName')} className={inputCls} placeholder="e.g. Acme Corp" />
               </div>
 
               <div className="pt-1 border-t border-slate-700/40">
@@ -784,7 +784,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
 
               <div>
                 <FieldLabel>Job Role</FieldLabel>
-                <input type="text" list="edit-role-options" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Senior React Developer" autoComplete="off" />
+                <input type="text" list="edit-role-options" aria-label="Job Role" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Senior React Developer" autoComplete="off" />
               </div>
 
               {/* Current JD status */}
@@ -903,7 +903,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
               <div>
                 <FieldLabel>Assign Module</FieldLabel>
                 <div className="flex gap-2">
-                  <select value={assignModuleId} onChange={e => setAssignModuleId(e.target.value)} className={`flex-1 ${selectCls}`}>
+                  <select value={assignModuleId} onChange={e => setAssignModuleId(e.target.value)} aria-label="Assign Module" className={`flex-1 ${selectCls}`}>
                     <option value="">Select module…</option>
                     {modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
                   </select>
@@ -921,7 +921,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                   <p className="text-xs text-slate-500 mb-2">Current: <span className="text-indigo-400 font-medium">{managers.find(m => m.userId === currentManagerId)?.name || 'Unknown'}</span></p>
                 )}
                 <div className="flex gap-2">
-                  <select value={assignManagerId} onChange={e => setAssignManagerId(e.target.value)} className={`flex-1 ${selectCls}`}>
+                  <select value={assignManagerId} onChange={e => setAssignManagerId(e.target.value)} aria-label="Assign Manager" className={`flex-1 ${selectCls}`}>
                     <option value="">Select manager…</option>
                     {managers.map(m => <option key={m.userId} value={m.userId}>{m.name}{m.userId === currentManagerId ? ' ✓' : ''}</option>)}
                   </select>
@@ -1190,16 +1190,16 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
         <div className="p-5 space-y-4">
           <div>
             <FieldLabel required>Full Name</FieldLabel>
-            <input type="text" value={form.name} onChange={f('name')} className={inputCls} placeholder="Jane Smith" />
+            <input type="text" aria-label="Full Name" value={form.name} onChange={f('name')} className={inputCls} placeholder="Jane Smith" />
           </div>
           <div>
             <FieldLabel required>Email</FieldLabel>
-            <input type="email" value={form.email} onChange={f('email')} className={inputCls} placeholder="jane@company.com" />
+            <input type="email" aria-label="Email" value={form.email} onChange={f('email')} className={inputCls} placeholder="jane@company.com" />
           </div>
           {currentUserRole === 'admin' && (
             <div>
               <FieldLabel>Role</FieldLabel>
-              <select value={form.role} onChange={f('role')} className={selectCls}>
+              <select value={form.role} onChange={f('role')} aria-label="Role" className={selectCls}>
                 <option value="employee">Employee</option>
                 <option value="manager">Manager</option>
                 <option value="admin">Admin</option>
@@ -1212,6 +1212,7 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
               <input
                 type="text"
                 list="create-role-options"
+                aria-label="Job Role"
                 value={form.jobRole}
                 onChange={e => {
                   const val = e.target.value;
@@ -1229,7 +1230,7 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
             </div>
             <div>
               <FieldLabel>Department</FieldLabel>
-              <input type="text" list="create-dept-options" value={form.department} onChange={f('department')} className={inputCls} placeholder="e.g. Engineering" autoComplete="off" />
+              <input type="text" list="create-dept-options" aria-label="Department" value={form.department} onChange={f('department')} className={inputCls} placeholder="e.g. Engineering" autoComplete="off" />
               <datalist id="create-dept-options">
                 {[...new Set(roleOptions.map(r => r.dept).filter(Boolean))].sort().map(d => <option key={d} value={d} />)}
               </datalist>
@@ -1237,7 +1238,7 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
           </div>
           <div>
             <FieldLabel>Job Description</FieldLabel>
-            <textarea value={form.jobDescription} onChange={f('jobDescription')} rows={4}
+            <textarea aria-label="Job Description" value={form.jobDescription} onChange={f('jobDescription')} rows={4}
               className={`${inputCls} resize-y`}
               placeholder="Paste Job Description here (optional — can be added/uploaded later)" />
           </div>
@@ -2032,17 +2033,6 @@ export default function UserManagement() {
     setUsers(prev => [newUser, ...prev]);
   };
 
-  if (loading && users.length === 0) {
-    return (
-      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-12 h-12 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-slate-400 text-sm">Loading users…</p>
-        </div>
-      </div>
-    );
-  }
-
   const thClass = 'py-3 px-4 text-left';
   const thBtn = 'flex items-center gap-0.5 text-xs font-bold text-slate-400 hover:text-white uppercase tracking-wider transition-colors';
 
@@ -2189,7 +2179,19 @@ export default function UserManagement() {
         </div>
 
         {/* Table */}
-        {displayedUsers.length === 0 ? (
+        {loading && users.length === 0 ? (
+          <div className="bg-[#111827] border border-slate-700/40 rounded-2xl overflow-hidden shadow-xl divide-y divide-slate-700/20">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="px-4 py-3.5 flex items-center gap-4 animate-pulse">
+                <div className="w-9 h-9 rounded-xl bg-slate-700/50 shrink-0" />
+                <div className="flex-1 h-4 bg-slate-700/50 rounded" />
+                <div className="w-32 h-4 bg-slate-700/40 rounded" />
+                <div className="w-20 h-4 bg-slate-700/40 rounded" />
+                <div className="w-16 h-6 bg-slate-700/50 rounded-lg" />
+              </div>
+            ))}
+          </div>
+        ) : displayedUsers.length === 0 ? (
           <div className="bg-[#111827] border border-slate-700/40 rounded-2xl p-16 text-center shadow-xl">
             <div className="text-5xl mb-4 opacity-20">👤</div>
             <h3 className="text-lg font-bold text-slate-400 mb-1">{(search || filterDept !== 'all' || filterStatus !== 'all') ? 'No users match your filters' : 'No users yet'}</h3>

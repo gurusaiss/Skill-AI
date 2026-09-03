@@ -270,7 +270,7 @@ export default function ApprovalCenter() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           {[
             { label: 'Pending', value: pendingCount, color: 'border-amber-500/30 bg-amber-500/5 text-amber-400', onClick: () => setFilterStatus('pending') },
             { label: 'Approved', value: approvedCount, color: 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400', onClick: () => setFilterStatus('approved') },

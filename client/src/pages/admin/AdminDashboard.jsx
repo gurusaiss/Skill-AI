@@ -232,7 +232,7 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
         </div>
 
         {/* Quick stats bar */}
-        <div className="grid grid-cols-4 divide-x divide-slate-700/50 border-b border-slate-700/50">
+        <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-slate-700/50 border-b border-slate-700/50">
           {[
             { label: 'Assessments', value: empReports.length, color: 'text-indigo-400' },
             { label: 'Latest Score', value: latestReport ? `${latestReport.score}%` : '—', color: latestReport?.score >= 70 ? 'text-emerald-400' : latestReport?.score ? 'text-amber-400' : 'text-slate-500' },
@@ -1041,7 +1041,7 @@ export default function AdminDashboard() {
       {/* ═══════════════════ APPROVALS ═══════════════════ */}
       {activeTab === 'approvals' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
               <p className="text-2xl font-black text-amber-400">{pendingRequests.length}</p>
               <p className="text-xs font-bold text-amber-400/70 uppercase tracking-widest mt-0.5">Pending</p>
