@@ -1182,7 +1182,10 @@ export default function AdminDashboard() {
 
                     return (
                       <div key={uid} onClick={() => setSelectedEmployee(emp)}
-                        className="grid items-center px-4 py-3.5 hover:bg-slate-800/40 cursor-pointer transition-all min-w-[900px]"
+                        role="button" tabIndex={0}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedEmployee(emp); } }}
+                        aria-label={`View details for ${emp.name || emp.email || 'employee'}`}
+                        className="grid items-center px-4 py-3.5 hover:bg-slate-800/40 cursor-pointer transition-all min-w-[900px] focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-inset"
                         style={{ gridTemplateColumns: '1.8fr 1.2fr 1fr 1fr 1fr 0.8fr 1fr' }}>
 
                         {/* Employee */}

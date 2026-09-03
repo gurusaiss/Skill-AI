@@ -198,6 +198,7 @@ function Navbar() {
             <div className="relative" ref={notifRef}>
               <button
                 onClick={() => setNotifOpen(!notifOpen)}
+                aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
                 className="relative flex items-center justify-center w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
               >
                 <span className="text-sm leading-none">🔔</span>
@@ -223,10 +224,11 @@ function Navbar() {
                       <div className="px-4 py-6 text-center text-slate-500 text-sm">No notifications</div>
                     ) : (
                       notifications.slice(0, 20).map(n => (
-                        <div
+                        <button
                           key={n.id}
+                          type="button"
                           onClick={() => markRead(n.id)}
-                          className={`px-4 py-3 border-b border-slate-700/50 cursor-pointer hover:bg-slate-700/40 transition-colors ${!n.read ? 'bg-indigo-900/10' : ''}`}
+                          className={`w-full text-left px-4 py-3 border-b border-slate-700/50 cursor-pointer hover:bg-slate-700/40 transition-colors ${!n.read ? 'bg-indigo-900/10' : ''}`}
                         >
                           <div className="flex items-start gap-2">
                             {!n.read && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 flex-shrink-0" />}
@@ -238,7 +240,7 @@ function Navbar() {
                               </p>
                             </div>
                           </div>
-                        </div>
+                        </button>
                       ))
                     )}
                   </div>
@@ -321,6 +323,7 @@ function Navbar() {
 
             {/* Mobile hamburger */}
             <button onClick={() => setMenuOpen(!menuOpen)}
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
               className="md:hidden flex items-center justify-center w-7 h-7 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all text-sm">
               {menuOpen ? '✕' : '☰'}
             </button>
