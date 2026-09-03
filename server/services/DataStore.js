@@ -12,7 +12,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
@@ -45,7 +45,14 @@ function readFile(name) {
   try { return JSON.parse(readFileSync(p, 'utf-8')); } catch { return []; }
 }
 function writeFile(name, data) {
-  writeFileSync(join(DATA_DIR, name), JSON.stringify(data, null, 2));
+  // Write-to-temp-then-rename: no file locking exists in this fallback store,
+  // so a concurrent reader could otherwise observe a partially-written file.
+  // renameSync is atomic on the same filesystem — readers see the old or the
+  // complete new content, never a truncated intermediate state.
+  const targetPath = join(DATA_DIR, name);
+  const tmpPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+  renameSync(tmpPath, targetPath);
 }
 
 // ── Generic JSONB table CRUD ──────────────────────────────────────────────────
