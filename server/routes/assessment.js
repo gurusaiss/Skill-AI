@@ -1868,15 +1868,55 @@ router.post('/:id/submit', authenticate, async (req, res) => {
     // Score the submission
     const scoring = scoreSubmission(questions, responses);
 
-    // Update the specific employee's assignment inside the assessment
-    const updatedAssignments = [...assessment.employeeAssignments];
-    updatedAssignments[assignmentIdx] = {
-      ...assignment,
+    // Re-fetch the assessment immediately before writing to shrink the race
+    // window against a concurrent submit for the same employee — this is a
+    // shared JSONB array (no per-row locking), so a stale in-memory copy
+    // spliced back in can silently clobber a submission that landed in the
+    // gap between our initial fetch and now (scoring/question-resolution can
+    // take a while). Re-checking status here also stops a double-submit from
+    // scoring twice and creating a duplicate report.
+    const freshAssessment = await Assessments.getById(req.params.id);
+    const freshIdx = freshAssessment?.employeeAssignments?.findIndex(ea => ea.userId === req.user.userId);
+    if (freshIdx === -1 || freshIdx === undefined || freshIdx == null) {
+      return res.status(403).json({ success: false, data: null, error: 'You are not assigned to this assessment' });
+    }
+    if (freshAssessment.employeeAssignments[freshIdx].status === 'submitted') {
+      return res.status(400).json({ success: false, data: null, error: 'Assessment already submitted' });
+    }
+
+    const submittedAt = new Date().toISOString();
+    const updatedAssignments = [...freshAssessment.employeeAssignments];
+    updatedAssignments[freshIdx] = {
+      ...freshAssessment.employeeAssignments[freshIdx],
       status: 'submitted',
-      submittedAt: new Date().toISOString(),
+      submittedAt,
       responses,      // save normalised responses
       scoring,
     };
+
+    // Generate and persist the full report BEFORE flipping the assessment to
+    // "submitted" — if report creation fails, the assignment stays
+    // unsubmitted so the employee can retry, instead of being permanently
+    // locked out (by the status==='submitted' guard above) with no report.
+    const report = {
+      id: randomUUID(),
+      assessmentId: assessment.id,
+      assessmentTitle: assessment.title,
+      userId: req.user.userId,
+      companyId: req.user.companyId || 'default',
+      userName: req.user.name || assignment.userName,
+      jobRole: assignment.jobRole,
+      submittedAt,
+      ...scoring,
+      questions,
+      responses,
+      generatedAt: new Date().toISOString(),
+      improvementRecommendations: scoring.weakAreas?.length
+        ? scoring.weakAreas.map(a => `Focus on strengthening "${a}" through targeted practice and study`)
+        : [],
+    };
+
+    await Reports.create(report);
 
     // Persist updated assessment to Supabase
     await Assessments.update(req.params.id, {
@@ -1890,31 +1930,10 @@ router.post('/:id/submit', authenticate, async (req, res) => {
     if (eaaRow) {
       await EmployeeAssessmentAssignments.updateSubmission(eaaRow.id, {
         status: 'submitted',
-        submittedAt: new Date().toISOString(),
+        submittedAt,
         scoring,
       });
     }
-
-    // Generate and persist full report
-    const report = {
-      id: randomUUID(),
-      assessmentId: assessment.id,
-      assessmentTitle: assessment.title,
-      userId: req.user.userId,
-      companyId: req.user.companyId || 'default',
-      userName: req.user.name || assignment.userName,
-      jobRole: assignment.jobRole,
-      submittedAt: new Date().toISOString(),
-      ...scoring,
-      questions,
-      responses,
-      generatedAt: new Date().toISOString(),
-      improvementRecommendations: scoring.weakAreas?.length
-        ? scoring.weakAreas.map(a => `Focus on strengthening "${a}" through targeted practice and study`)
-        : [],
-    };
-
-    await Reports.create(report);
 
     // ── Auto-generate + auto-assign module (non-blocking) ─────────────────────
     setImmediate(async () => {

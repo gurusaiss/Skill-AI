@@ -26,6 +26,30 @@ async function canAccessAssignment(actor, assignedUserId) {
   }
 }
 
+// Fill in missing title/module_name on module assignments with a single
+// batched lookup instead of one getModuleById() call per assignment (N+1).
+async function enrichAssignmentTitles(assignments) {
+  const needsTitle = assignments.filter(a =>
+    (a.type === 'module' || a.assignable_type === 'module') && !a.title && !a.module_name && a.assignable_id
+  );
+  if (needsTitle.length === 0) return assignments;
+
+  const moduleIds = [...new Set(needsTitle.map(a => a.assignable_id))];
+  let modulesById = new Map();
+  try {
+    const modules = await db.getModulesByIds(moduleIds);
+    modulesById = new Map(modules.map(m => [m.id, m]));
+  } catch {}
+
+  return assignments.map(a => {
+    if ((a.type === 'module' || a.assignable_type === 'module') && !a.title && !a.module_name && a.assignable_id) {
+      const mod = modulesById.get(a.assignable_id);
+      if (mod) return { ...a, title: mod.title, module_name: mod.title };
+    }
+    return a;
+  });
+}
+
 /**
  * POST /api/assignments/manager/:managerId/employees
  * Assign employees to a manager (admin only)
@@ -447,8 +471,7 @@ router.post('/requests/:id/reject', authenticate, requireRole('admin'), async (r
 router.get('/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const all = await UserStore.getAssignments({});
-    const a = all.find(r => r.id === id);
+    const [a] = await UserStore.getAssignments({ id });
     if (!a) return res.status(404).json({ success: false, error: { message: 'Assignment not found' } });
 
     // Authorization: owner, or same-company admin/manager (superadmin global)
@@ -531,15 +554,7 @@ router.get('/', authenticate, async (req, res) => {
           employeeIds.includes(a.assigned_to_user) ||
           a.assigned_by === req.user.userId
         );
-        filtered = await Promise.all(filtered.map(async a => {
-          if ((a.type === 'module' || a.assignable_type === 'module') && !a.title && !a.module_name && a.assignable_id) {
-            try {
-              const mod = await db.getModuleById(a.assignable_id);
-              if (mod) return { ...a, title: mod.title, module_name: mod.title };
-            } catch {}
-          }
-          return a;
-        }));
+        filtered = await enrichAssignmentTitles(filtered);
         return res.json({ success: true, data: { assignments: filtered, count: filtered.length }, error: null });
       }
     } else {
@@ -561,15 +576,7 @@ router.get('/', authenticate, async (req, res) => {
     }
 
     // Enrich assignments missing title/module_name by looking up the module
-    result = await Promise.all(result.map(async a => {
-      if ((a.type === 'module' || a.assignable_type === 'module') && !a.title && !a.module_name && a.assignable_id) {
-        try {
-          const mod = await db.getModuleById(a.assignable_id);
-          if (mod) return { ...a, title: mod.title, module_name: mod.title };
-        } catch {}
-      }
-      return a;
-    }));
+    result = await enrichAssignmentTitles(result);
 
     res.json({
       success: true,
@@ -583,29 +590,6 @@ router.get('/', authenticate, async (req, res) => {
       data: null,
       error: { code: 'ASSIGNMENT_ERROR', message: 'Failed to get assignments' },
     });
-  }
-});
-
-/**
- * GET /api/assignments/:id - Get single assignment by ID
- */
-router.get('/:id', authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const all = await UserStore.getAssignments({});
-    const assignment = all.find(a => a.id === id);
-    if (!assignment) {
-      return res.status(404).json({ success: false, data: null, error: { code: 'ASSIGNMENT_NOT_FOUND', message: 'Assignment not found' } });
-    }
-    // Auth check: owner or admin/manager
-    const isOwner = req.user.userId === assignment.assigned_to_user;
-    const isAdminOrManager = req.user.role === 'admin' || req.user.role === 'manager';
-    if (!isOwner && !isAdminOrManager) {
-      return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
-    }
-    res.json({ success: true, data: assignment, error: null });
-  } catch (err) {
-    res.status(500).json({ success: false, data: null, error: { code: 'ASSIGNMENT_ERROR', message: err.message } });
   }
 });
 

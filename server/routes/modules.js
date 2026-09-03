@@ -806,6 +806,16 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
     const pending = await PendingModules.getById(req.params.id);
     if (!pending) return res.status(404).json({ success: false, error: { message: 'Pending module not found' } });
 
+    // Idempotency guard: approval is a multi-step write (module -> assignment ->
+    // pending status) with no transaction across them. If a prior attempt already
+    // succeeded (e.g. the admin retried after a network timeout, or double-clicked
+    // before the button disabled), re-running this would create a duplicate module
+    // and a duplicate assignment. Short-circuit here instead.
+    if (pending.status === 'approved' && pending.moduleId) {
+      const existingModule = await db.getModuleById(pending.moduleId).catch(() => null);
+      return res.json({ success: true, data: { module: existingModule, alreadyApproved: true }, error: null });
+    }
+
     // Create the real module in Supabase
     const newModule = await db.createModule({
       title: pending.module.title,
