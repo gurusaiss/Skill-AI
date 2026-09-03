@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { readFile, writeFile, access, mkdir } from 'fs/promises';
+import { readFile, writeFile, rename, access, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { GeneratedModules } from '../services/DataStore.js';
 
@@ -93,7 +93,14 @@ async function readJsonFile(path) {
 }
 
 async function writeJsonFile(path, data) {
-  await writeFile(path, JSON.stringify(data, null, 2), 'utf-8');
+  // Write-to-temp-then-rename: this JSON-fallback store (used when Supabase
+  // isn't configured/reachable) has no file locking, so a concurrent reader
+  // could otherwise see a partially-written file mid-write. rename() is
+  // atomic on the same filesystem, so readers always see either the old or
+  // the fully-written new content, never a truncated intermediate state.
+  const tmpPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+  await rename(tmpPath, path);
 }
 
 // Content: Packages

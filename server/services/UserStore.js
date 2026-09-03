@@ -129,6 +129,16 @@ class UserStore {
 
   // ── File I/O helpers (fallback) ───────────────────────────────────────────
 
+  // Write-to-temp-then-rename: no file locking exists in this fallback store,
+  // so a concurrent reader could otherwise observe a partially-written file.
+  // rename() is atomic on the same filesystem — readers see the old or the
+  // complete new content, never a truncated intermediate state.
+  async _writeJsonAtomic(filePath, data) {
+    const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+    await fs.rename(tmpPath, filePath);
+  }
+
   async readUsersFile() {
     try {
       const data = await fs.readFile(this.usersFilePath, 'utf-8');
@@ -136,7 +146,7 @@ class UserStore {
     } catch { return { users: [], nextUserId: 1 }; }
   }
   async writeUsersFile(data) {
-    await fs.writeFile(this.usersFilePath, JSON.stringify(data, null, 2), 'utf-8');
+    await this._writeJsonAtomic(this.usersFilePath, data);
   }
   async readAssignmentsFile() {
     try {
@@ -145,7 +155,7 @@ class UserStore {
     } catch { return { assignments: [], nextAssignmentId: 1 }; }
   }
   async writeAssignmentsFile(data) {
-    await fs.writeFile(this.assignmentsFilePath, JSON.stringify(data, null, 2), 'utf-8');
+    await this._writeJsonAtomic(this.assignmentsFilePath, data);
   }
   async readAuditFile() {
     try {
@@ -154,7 +164,7 @@ class UserStore {
     } catch { return { logs: [], nextLogId: 1 }; }
   }
   async writeAuditFile(data) {
-    await fs.writeFile(this.auditFilePath, JSON.stringify(data, null, 2), 'utf-8');
+    await this._writeJsonAtomic(this.auditFilePath, data);
   }
 
   // ── User CRUD ─────────────────────────────────────────────────────────────
