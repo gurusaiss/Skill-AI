@@ -238,10 +238,14 @@ export default function Employee() {
 
       if (statsData.status === 'fulfilled') {
         setDashboardStats(statsData.value);
+      } else {
+        console.warn('[Employee] dashboard stats failed to load:', statsData.reason?.message);
       }
 
       if (mgrData.status === 'fulfilled') {
         setManagerInfo(mgrData.value);
+      } else {
+        console.warn('[Employee] manager info failed to load:', mgrData.reason?.message);
       }
     } catch (err) {
       showToast(err.message || 'Failed to load dashboard data', 'error');

@@ -257,6 +257,14 @@ export default function AssessmentManagement() {
         const v = groupRes.value;
         setGroups(Array.isArray(v) ? v : (v?.groups || []));
       }
+      const failed = [
+        assessRes.status === 'rejected' && 'assessments',
+        empRes.status === 'rejected' && 'employees',
+        groupRes.status === 'rejected' && 'groups',
+      ].filter(Boolean);
+      if (failed.length > 0) {
+        showToast(`Failed to load ${failed.join(', ')} — showing last known data`, 'error');
+      }
     } catch (e) {
       showToast(e.message || 'Failed to load data', 'error');
     } finally {

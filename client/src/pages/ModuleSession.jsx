@@ -614,7 +614,7 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
 
 // ─── Score phase ──────────────────────────────────────────────────────────────
 
-function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatch, onRetryQuiz, onNextSession, onDashboard, saving }) {
+function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatch, onRetryQuiz, onNextSession, onDashboard, saving, saveError, onRetrySave }) {
   const { pct, correct, total, results } = score;
   const passed = pct >= 70;
   const hasNext = sessionIndex + 1 < totalSessions;
@@ -635,6 +635,16 @@ function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatc
           <p className="text-slate-400 text-sm">{correct} correct out of {total} questions</p>
           {saving ? (
             <p className="text-slate-400 text-xs mt-2 animate-pulse">💾 Saving progress…</p>
+          ) : saveError ? (
+            <div className="mt-3 inline-flex flex-col items-center gap-2 rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3">
+              <p className="text-rose-300 text-xs font-semibold">⚠️ Your progress didn't save — this session won't count as complete yet.</p>
+              <button
+                onClick={onRetrySave}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors"
+              >
+                Retry Save
+              </button>
+            </div>
           ) : (
             <p className="text-emerald-300 text-xs mt-2">✓ Progress saved</p>
           )}
@@ -714,7 +724,9 @@ function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatc
           {hasNext && (
             <button
               onClick={onNextSession}
-              className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+              disabled={saveError}
+              title={saveError ? 'Retry saving your progress first' : undefined}
+              className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-indigo-600"
             >
               <span>Continue to Day {sessionIndex + 2}</span>
               <span>→</span>
@@ -788,6 +800,7 @@ export default function ModuleSession() {
   const [error, setError] = useState(null);
   const [quizScore, setQuizScore] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const [quizKey, setQuizKey] = useState(0); // increment to force QuizPhase remount on retry
 
   useEffect(() => {
@@ -833,10 +846,19 @@ export default function ModuleSession() {
   const handleQuizDone = async (score) => {
     setQuizScore(score);
     setPhase('score');
+    await saveQuizProgress(score);
+  };
 
+  // Persists the completed session's progress + score to the assignment.
+  // Extracted from handleQuizDone so the score screen can retry it — this
+  // write must never fail silently: if it doesn't land, the employee's
+  // completed session is invisible to their manager/admin forever with no
+  // indication anything went wrong.
+  const saveQuizProgress = async (score) => {
     if (!assignmentId) return;
 
     setSaving(true);
+    setSaveError(false);
     try {
       // Fetch current assignment to get the full existing state
       const current = await authFetch(`/api/assignments/${assignmentId}`);
@@ -882,7 +904,7 @@ export default function ModuleSession() {
         }),
       });
     } catch (_) {
-      // Silently fail — UI still shows score
+      setSaveError(true);
     } finally {
       setSaving(false);
     }
@@ -967,6 +989,8 @@ export default function ModuleSession() {
         sessionIndex={sessionIndex}
         totalSessions={totalSessions}
         saving={saving}
+        saveError={saveError}
+        onRetrySave={() => saveQuizProgress(quizScore)}
         onRewatch={handleRewatch}
         onRetryQuiz={handleRetryQuiz}
         onNextSession={goToNextSession}

@@ -354,6 +354,14 @@ export default function GroupManagement() {
       setGroups(grps);
       setManagers(users.filter(u => u.role === 'manager'));
       setEmployees(users.filter(u => u.role === 'employee'));
+
+      const failed = [
+        groupsData.status === 'rejected' && 'groups',
+        usersData.status === 'rejected' && 'users',
+      ].filter(Boolean);
+      if (failed.length > 0) {
+        showToast(`Failed to load ${failed.join(', ')} — showing last known data`, 'error');
+      }
     } catch (err) {
       showToast(err.message, 'error');
     } finally {

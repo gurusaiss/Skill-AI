@@ -836,7 +836,10 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                   <>
                     <p className="text-slate-500 text-xs mb-2">PDF, DOCX, DOC, TXT, RTF — up to 50MB. Text is extracted and stored; file is deleted.</p>
                     <div onClick={() => fileInputRef.current?.click()}
-                      className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors ${jdFile ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500 bg-slate-900/40'}`}>
+                      role="button" tabIndex={0}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}
+                      aria-label={jdFile ? `Selected file ${jdFile.name}. Click to change.` : 'Click to choose a job description file'}
+                      className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${jdFile ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500 bg-slate-900/40'}`}>
                       {jdFile ? (
                         <>
                           <p className="text-indigo-300 font-semibold text-sm">{jdFile.name}</p>
@@ -1948,13 +1951,23 @@ export default function UserManagement() {
         const m = modulesData.value;
         setModules(Array.isArray(m) ? m : m?.modules || m?.data || []);
       }
+      const failed = [
+        usersData.status === 'rejected' && 'users',
+        assignmentsData.status === 'rejected' && 'assignments',
+        modulesData.status === 'rejected' && 'modules',
+      ].filter(Boolean);
+      if (failed.length > 0) {
+        setToast({ message: `Failed to load ${failed.join(', ')} — showing last known data`, type: 'error' });
+      }
     } catch { setToast({ message: 'Failed to load data', type: 'error' }); }
     finally { setLoading(false); }
   };
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30_000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchData();
+    }, 30_000);
     return () => clearInterval(interval);
   }, []);
 
