@@ -4,11 +4,76 @@
 import express from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import UserStore from '../services/UserStore.js';
-import { Companies, ApprovalRequests, AccessCodes } from '../services/DataStore.js';
+import { Companies, ApprovalRequests, AccessCodes, Groups, Assessments, Reports } from '../services/DataStore.js';
 import { randomUUID } from 'crypto';
 import * as db from '../db/store.js';
 
 const router = express.Router();
+
+/**
+ * GET /api/admin/export
+ * Full company data export (admin only) — users, modules, assignments,
+ * groups, assessments, and reports scoped to the admin's own company.
+ * Intended as a manual backup/portability mechanism: the platform previously
+ * had no way for an admin to independently verify or export their own data
+ * outside of per-assessment report downloads.
+ */
+router.get('/export', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const companyId = req.user.companyId || 'default';
+    const inCompany = (c) => (c || 'default') === companyId;
+
+    const [allUsers, allModules, allAssignments, allGroups, allAssessments, allReports] = await Promise.all([
+      UserStore.getAllUsers({}),
+      db.getModules({}),
+      UserStore.getAssignments({}),
+      Groups.getAll(),
+      Assessments.getAll(),
+      Reports.getAll(),
+    ]);
+
+    const users = (allUsers || []).filter(u => inCompany(u.companyId)).map(u => {
+      const { passwordHash, otp, otpExpires, resetToken, resetTokenExpires, ...safe } = u;
+      return safe;
+    });
+    const companyUserIds = new Set(users.map(u => u.userId || u.id));
+
+    const modulesList = (Array.isArray(allModules) ? allModules : allModules?.modules || [])
+      .filter(m => !m.companyId || inCompany(m.companyId));
+    const moduleIds = new Set(modulesList.map(m => m.id));
+
+    const assignments = (allAssignments || []).filter(a =>
+      companyUserIds.has(a.assigned_to_user) || companyUserIds.has(a.assigned_by)
+    );
+    const groups = (allGroups || []).filter(g => inCompany(g.companyId));
+    const assessments = (allAssessments || []).filter(a => inCompany(a.companyId));
+    const reports = (allReports || []).filter(r => inCompany(r.companyId));
+
+    await UserStore.logAuthEvent('data_export', req.user.userId, {
+      companyId, counts: { users: users.length, modules: modulesList.length, assignments: assignments.length, groups: groups.length, assessments: assessments.length, reports: reports.length },
+      ipAddress: req.ip,
+    });
+
+    res.setHeader('Content-Disposition', `attachment; filename="skillforge-export-${companyId}-${new Date().toISOString().slice(0, 10)}.json"`);
+    res.json({
+      success: true,
+      data: {
+        exportedAt: new Date().toISOString(),
+        companyId,
+        users,
+        modules: modulesList,
+        assignments,
+        groups,
+        assessments,
+        reports,
+      },
+      error: null,
+    });
+  } catch (error) {
+    console.error('[admin/export] error:', error.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to export data' });
+  }
+});
 
 /**
  * GET /api/admin/dashboard
