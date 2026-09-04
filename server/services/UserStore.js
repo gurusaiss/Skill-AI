@@ -437,6 +437,16 @@ class UserStore {
       if (employees[i].role !== 'employee') throw new Error(`User ${employeeIds[i]} must have employee role`);
     }
 
+    // Persist on the employee's own user record (users.manager_id) FIRST —
+    // this is a real Supabase column, durable across restarts. The local-file
+    // mirror below (aData.assignments) previously was the ONLY place this
+    // relationship was recorded, with no Supabase path at all — on an
+    // ephemeral filesystem host, every manager-employee assignment made
+    // through this endpoint was silently wiped on the next restart/redeploy,
+    // which is why a manager's own dashboard could show zero direct reports
+    // even after an admin had explicitly assigned them.
+    await Promise.all(employeeIds.map(id => this.updateUser(id, { managerId })));
+
     const aData = await this.readAssignmentsFile();
     const created = [];
     for (const employeeId of employeeIds) {
@@ -458,23 +468,43 @@ class UserStore {
   }
 
   async removeEmployeeFromManager(managerId, employeeId) {
+    const employee = await this.getUserById(employeeId);
+    if (employee && employee.managerId === managerId) {
+      await this.updateUser(employeeId, { managerId: null });
+    }
+
     const aData = await this.readAssignmentsFile();
     const initial = aData.assignments.length;
     aData.assignments = aData.assignments.filter(a => !(a.managerId === managerId && a.employeeId === employeeId));
-    if (aData.assignments.length === initial) throw new Error('Assignment not found');
+    // The durable users.manager_id link may exist even when this ephemeral
+    // file has no matching row (e.g. it was wiped by a restart) — clearing
+    // that field above is the real removal; don't fail the whole operation
+    // just because the file-mirror had nothing to remove.
     await this.writeAssignmentsFile(aData);
     return true;
   }
 
   async getManagerEmployees(managerId) {
+    // Union of the durable users.manager_id field (a real Supabase column —
+    // set on every new assignment since the fix above, and by bulk-import)
+    // with the ephemeral file-mirror, which may hold assignments made before
+    // that fix or a Supabase outage. Without the durable source, a manager's
+    // employee list could go to zero after any restart on an ephemeral
+    // filesystem host even though the relationship was never actually removed.
+    const allUsers = await this.getAllUsers({});
+    const durableIds = allUsers.filter(u => u.managerId === managerId).map(u => u.userId || u.id);
     const aData = await this.readAssignmentsFile();
-    const ids = [...new Set(aData.assignments.filter(a => a.managerId === managerId).map(a => a.employeeId))];
+    const fileIds = aData.assignments.filter(a => a.managerId === managerId).map(a => a.employeeId);
+    const ids = [...new Set([...durableIds, ...fileIds])];
     return this.getUsersByIds(ids);
   }
 
   async getEmployeeManagers(employeeId) {
+    const employee = await this.getUserById(employeeId);
+    const durableIds = employee?.managerId ? [employee.managerId] : [];
     const aData = await this.readAssignmentsFile();
-    const ids = [...new Set(aData.assignments.filter(a => a.employeeId === employeeId).map(a => a.managerId))];
+    const fileIds = aData.assignments.filter(a => a.employeeId === employeeId).map(a => a.managerId);
+    const ids = [...new Set([...durableIds, ...fileIds])];
     return this.getUsersByIds(ids);
   }
 
