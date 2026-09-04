@@ -1016,7 +1016,13 @@ router.put('/:userId/accesses', authenticate, requireRole('admin'), async (req, 
   try {
     const { userId } = req.params;
     const { accesses } = req.body;
-    const validAccesses = ['admin', 'manager', 'trainer'];
+    // 'employee' must be explicitly grantable/revocable like the others —
+    // it was previously excluded here, so once an admin granted ANY access
+    // (e.g. 'trainer'), the implicit default employee-view access a
+    // manager/admin gets when accesses is empty (see getEffectiveAccesses in
+    // middleware/auth.js) was silently and permanently lost with no way to
+    // restore it through this endpoint.
+    const validAccesses = ['admin', 'manager', 'employee', 'trainer'];
 
     if (!Array.isArray(accesses)) {
       return res.status(400).json({ success: false, data: null, error: 'accesses must be an array' });

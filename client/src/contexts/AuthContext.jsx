@@ -542,7 +542,11 @@ export const AuthProvider = ({ children }) => {
       ],
     };
 
-    const userPermissions = rolePermissions[user.role] || [];
+    // Use the switched (effective) role, not always the primary role — a user
+    // who switches to "Employee View" via hasRole()-gated UI must also see
+    // permission-gated UI change consistently, instead of still seeing
+    // permissions for the role they switched away from.
+    const userPermissions = rolePermissions[getEffectiveRole()] || [];
     return userPermissions.includes(permission);
   };
 
