@@ -2223,6 +2223,7 @@ export default function UserManagement() {
                       <>
                         <th className={thClass}><button onClick={() => handleSort('jobRole')} className={thBtn}>Job Role <SortIcon column="jobRole" sortBy={sortBy} sortDir={sortDir} /></button></th>
                         <th className={thClass}><button onClick={() => handleSort('department')} className={thBtn}>Dept <SortIcon column="department" sortBy={sortBy} sortDir={sortDir} /></button></th>
+                        <th className={thClass}><span className={thBtn}>Manager</span></th>
                         <th className={thClass}><span className={thBtn}>JD</span></th>
                         <th className={thClass}><button onClick={() => handleSort('assignments')} className={thBtn}>Modules <SortIcon column="assignments" sortBy={sortBy} sortDir={sortDir} /></button></th>
                       </>
@@ -2271,6 +2272,11 @@ export default function UserManagement() {
                               ) : <span className="text-slate-600 text-xs italic">—</span>}
                             </td>
                             <td className="py-3 px-4"><span className="text-slate-400 text-sm">{u.department || '—'}</span></td>
+                            <td className="py-3 px-4">
+                              {u.managerId ? (
+                                <span className="text-slate-300 text-sm">{users.find(m => m.userId === u.managerId)?.name || '—'}</span>
+                              ) : <span className="text-slate-600 text-xs italic">Unassigned</span>}
+                            </td>
                             <td className="py-3 px-4">
                               {hasJD
                                 ? <span className="px-2 py-0.5 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">✓ JD</span>
