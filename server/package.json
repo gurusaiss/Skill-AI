@@ -27,6 +27,7 @@
     "pdf-parse": "^1.1.1",
     "pdfkit": "^0.15.0",
     "socket.io": "^4.8.3",
+    "socket.io-parser": "^4.2.7",
     "uuid": "^9.0.0",
     "ws": "^8.21.0",
     "xlsx": "^0.18.5"
