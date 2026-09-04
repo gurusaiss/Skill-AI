@@ -511,7 +511,12 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
           <p className="text-lg font-bold text-white leading-snug mb-6">{q.question}</p>
 
           {/* MCQ options */}
-          {q.type === 'mcq' && q.options && (
+          {q.type === 'mcq' && (!q.options || q.options.length === 0) && (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-amber-300 text-sm">
+              ⚠️ This question could not be loaded correctly (no answer options found). Skip ahead — your progress on other questions is unaffected.
+            </div>
+          )}
+          {q.type === 'mcq' && q.options && q.options.length > 0 && (
             <div className="space-y-2.5">
               {q.options.map((opt, oi) => {
                 const letter = ['A', 'B', 'C', 'D'][oi];
