@@ -239,6 +239,17 @@ export default function Assessment() {
 
     if (q.type === 'mcq' || q.type === 'multiple_choice') {
       const options = q.options || q.choices || [];
+      if (options.length === 0) {
+        // Fail visibly instead of silently rendering an empty answer area —
+        // a malformed/legacy question with no options previously looked
+        // identical to "this question has no answer choices to show," with
+        // no indication to the employee or support that something is broken.
+        return (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-amber-300 text-sm">
+            ⚠️ This question could not be loaded correctly (no answer options found). Please contact your admin — your progress on other questions is unaffected.
+          </div>
+        );
+      }
       return (
         <div className="space-y-2.5">
           {options.map((opt, oi) => {
