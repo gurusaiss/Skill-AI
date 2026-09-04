@@ -2,6 +2,29 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
+import { authFetch } from '../../utils/authFetch.js';
+
+function downloadJson(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadCsv(rows, headers, filename) {
+  const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines = [headers.join(','), ...rows.map(r => headers.map(h => escape(r[h])).join(','))];
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function Settings() {
   const { user, hasRole, logout } = useAuth();
@@ -14,11 +37,61 @@ export default function Settings() {
     }
   }, [user, hasRole, navigate]);
 
-  if (!user || !hasRole('admin')) return null;
-
-  const { success } = useNotification();
+  const { success, error: notifyError } = useNotification();
   const [activeSection, setActiveSection] = useState('general');
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(null); // which export button is in flight
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeSection !== 'audit') return;
+    let cancelled = false;
+    setAuditLoading(true);
+    authFetch('/api/audit/logs?limit=50')
+      .then(res => { if (!cancelled) setAuditLogs(res?.logs || []); })
+      .catch(() => { if (!cancelled) notifyError('Failed to load audit log'); })
+      .finally(() => { if (!cancelled) setAuditLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeSection]);
+
+  // Must come after every hook above — calling hooks conditionally (i.e.
+  // after an early return) violates the Rules of Hooks and crashes the page
+  // with a "change in the order of Hooks" error the moment `user` flips from
+  // not-yet-loaded to loaded across renders, which this early return used to
+  // sit above.
+  if (!user || !hasRole('admin')) return null;
+
+  const runExport = async (kind, fn) => {
+    setExporting(kind);
+    try {
+      await fn();
+      success('Export downloaded.');
+    } catch (err) {
+      notifyError(err.message || 'Export failed');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleDownloadFullBackup = () => runExport('full', async () => {
+    const data = await authFetch('/api/admin/export');
+    downloadJson(data, `skillforge-backup-${new Date().toISOString().slice(0, 10)}.json`);
+  });
+
+  const handleExportUsersCsv = () => runExport('users', async () => {
+    const data = await authFetch('/api/admin/export');
+    downloadCsv(
+      data.users || [],
+      ['userId', 'name', 'email', 'role', 'jobRole', 'department', 'status', 'createdAt'],
+      `skillforge-users-${new Date().toISOString().slice(0, 10)}.csv`
+    );
+  });
+
+  const handleExportModulesJson = () => runExport('modules', async () => {
+    const data = await authFetch('/api/admin/export');
+    downloadJson(data.modules || [], `skillforge-modules-${new Date().toISOString().slice(0, 10)}.json`);
+  });
 
   const sections = [
     { id: 'general',        label: 'General',       icon: '⚙️',  desc: 'Platform name, logo, and default settings' },
@@ -330,22 +403,24 @@ export default function Settings() {
                       </tr>
                     </thead>
                     <tbody>
-                      {[
-                        { time: '2026-05-19 01:42', actor: 'admin@skillforge.ai', action: 'ROLE_CHANGED',   detail: 'user-008 → manager' },
-                        { time: '2026-05-18 16:10', actor: 'admin@skillforge.ai', action: 'MODULE_CREATED', detail: '"React Advanced"' },
-                        { time: '2026-05-18 12:05', actor: 'manager@skillforge.ai', action: 'ASSIGNMENT_CREATED', detail: 'Mod-012 → emp-045' },
-                        { time: '2026-05-17 09:30', actor: 'system', action: 'AUTO_SYNC', detail: 'Progress batch reconcile' },
-                        { time: '2026-05-16 22:15', actor: 'admin@skillforge.ai', action: 'USER_DELETED', detail: 'user-012 self-deletion blocked' },
-                      ].map((row, i) => (
-                        <tr key={i} className="border-b border-slate-700/30">
-                          <td className="py-2.5 px-3 text-slate-500 text-xs">{row.time}</td>
-                          <td className="py-2.5 px-3 text-slate-300 text-xs">{row.actor}</td>
-                          <td className="py-2.5 px-3">
-                            <span className="text-xs font-bold uppercase px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">{row.action}</span>
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-500 text-xs">{row.detail}</td>
-                        </tr>
-                      ))}
+                      {auditLoading ? (
+                        <tr><td colSpan={4} className="py-6 px-3 text-center text-slate-500 text-xs">Loading audit log…</td></tr>
+                      ) : auditLogs.length === 0 ? (
+                        <tr><td colSpan={4} className="py-6 px-3 text-center text-slate-500 text-xs">No events recorded yet.</td></tr>
+                      ) : (
+                        auditLogs.map((row) => (
+                          <tr key={row.logId} className="border-b border-slate-700/30">
+                            <td className="py-2.5 px-3 text-slate-500 text-xs whitespace-nowrap">{row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}</td>
+                            <td className="py-2.5 px-3 text-slate-300 text-xs">{row.userId || 'system'}</td>
+                            <td className="py-2.5 px-3">
+                              <span className="text-xs font-bold uppercase px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">{row.eventType}</span>
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-500 text-xs max-w-xs truncate" title={JSON.stringify(row.metadata)}>
+                              {Object.entries(row.metadata || {}).slice(0, 2).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', ') || '—'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -361,21 +436,28 @@ export default function Settings() {
 
                 <div className="grid sm:grid-cols-2 gap-4">
                   {[
-                    { label: 'Download Full Backup',   desc: 'Export all data as a JSON snapshot', btn: '⬇️ Download',       btnStyle: 'bg-emerald-600/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30' },
-                    { label: 'Upload Backup',          desc: 'Restore platform state from a JSON file', btn: '⬆️ Upload', btnStyle: 'bg-indigo-600/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30' },
-                    { label: 'Export Users CSV',       desc: 'Download all users as a CSV spreadsheet', btn: '📄 Export',      btnStyle: 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600' },
-                    { label: 'Export Modules JSON',    desc: 'Download all module definitions', btn: '📚 Export',        btnStyle: 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600' },
+                    { key: 'full', label: 'Download Full Backup', desc: 'Export all data as a JSON snapshot', btn: '⬇️ Download', busyBtn: 'Exporting…', btnStyle: 'bg-emerald-600/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30', onClick: handleDownloadFullBackup },
+                    { key: 'restore', label: 'Upload Backup', desc: 'Restore platform state from a JSON file', btn: '⬆️ Upload', btnStyle: 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed', disabled: true, disabledNote: 'Not yet available — restore requires careful review to avoid data loss. Contact support if you need to restore from a backup.' },
+                    { key: 'users', label: 'Export Users CSV', desc: 'Download all users as a CSV spreadsheet', btn: '📄 Export', busyBtn: 'Exporting…', btnStyle: 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600', onClick: handleExportUsersCsv },
+                    { key: 'modules', label: 'Export Modules JSON', desc: 'Download all module definitions', btn: '📚 Export', busyBtn: 'Exporting…', btnStyle: 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600', onClick: handleExportModulesJson },
                   ].map(item => (
-                    <div key={item.label} className="rounded-xl border border-slate-700/40 bg-slate-900/50 p-4">
+                    <div key={item.key} className="rounded-xl border border-slate-700/40 bg-slate-900/50 p-4">
                       <p className="text-sm font-bold text-white mb-1">{item.label}</p>
                       <p className="text-xs text-slate-500 mb-3">{item.desc}</p>
-                      <button className={`px-3 py-2 rounded-lg border text-xs font-bold transition-all ${item.btnStyle}`}>{item.btn}</button>
+                      <button
+                        onClick={item.onClick}
+                        disabled={item.disabled || exporting === item.key}
+                        title={item.disabledNote}
+                        className={`px-3 py-2 rounded-lg border text-xs font-bold transition-all disabled:opacity-60 ${item.btnStyle}`}
+                      >
+                        {exporting === item.key ? item.busyBtn : item.btn}
+                      </button>
                     </div>
                   ))}
                 </div>
 
                 <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs text-amber-300">
-                  ⚠️ Restoring from backup will overwrite current users, modules, and assignment data. Always create a fresh download before importing.
+                  ⚠️ Restore-from-backup is not yet available in this build. Downloaded backups are still safe to keep — restoring will overwrite current users, modules, and assignment data once that feature ships, so always keep a fresh download before it does.
                 </div>
               </div>
             </div>

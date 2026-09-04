@@ -750,35 +750,69 @@ class UserStore {
 
   // ── Audit logging ─────────────────────────────────────────────────────────
 
+  // Audit logs previously wrote ONLY to a local JSON file, with no Supabase
+  // path at all — on any ephemeral-filesystem host (the app's Render free
+  // tier target, per the durability notes elsewhere in this file) the entire
+  // security audit trail is silently wiped on every restart/redeploy, even
+  // though Supabase is configured and used for everything else. Now tries
+  // Supabase first (table defined in sql/supabase_schema.sql) and only falls
+  // back to the file if that fails — e.g. the migration hasn't been run yet.
   async logAuthEvent(eventType, userId, metadata = {}) {
+    const logId = `log_${uuidv4().slice(0, 12)}`;
+    const timestamp = new Date().toISOString();
+    const logEntry = { logId, eventType, userId: userId || null, timestamp, metadata };
+
+    const sb = getSB();
+    if (sb) {
+      try {
+        const { error } = await sb.from('audit_logs').insert({
+          log_id: logId, event_type: eventType, user_id: userId || null, metadata, timestamp,
+        });
+        if (!error) return logEntry;
+      } catch { /* fall through to file */ }
+    }
+
     try {
       const auditData = await this.readAuditFile();
-      const logEntry = {
-        logId:     `log_${String(auditData.nextLogId).padStart(6, '0')}`,
-        eventType, userId: userId || null,
-        timestamp: new Date().toISOString(),
-        metadata,
-      };
       auditData.logs.push(logEntry);
-      auditData.nextLogId += 1;
+      auditData.nextLogId = (auditData.nextLogId || 1) + 1;
       await this.writeAuditFile(auditData);
       return logEntry;
     } catch { return {}; }
   }
 
   async getAuditLogs(filters = {}) {
-    const auditData = await this.readAuditFile();
-    let logs = auditData.logs;
-    if (filters.userId)    logs = logs.filter(l => l.userId === filters.userId);
-    if (filters.eventType) logs = logs.filter(l => l.eventType === filters.eventType);
+    const sb = getSB();
+    let logs = null;
+    if (sb) {
+      try {
+        let q = sb.from('audit_logs').select('*').order('timestamp', { ascending: false });
+        if (filters.userId)    q = q.eq('user_id', filters.userId);
+        if (filters.eventType) q = q.eq('event_type', filters.eventType);
+        if (filters.startDate) q = q.gte('timestamp', filters.startDate);
+        if (filters.endDate)   q = q.lte('timestamp', filters.endDate);
+        const { data, error } = await q;
+        if (!error && data) {
+          logs = data.map(r => ({ logId: r.log_id, eventType: r.event_type, userId: r.user_id, timestamp: r.timestamp, metadata: r.metadata || {} }));
+        }
+      } catch { /* fall through to file */ }
+    }
+
+    if (!logs) {
+      const auditData = await this.readAuditFile();
+      logs = auditData.logs;
+      if (filters.userId)    logs = logs.filter(l => l.userId === filters.userId);
+      if (filters.eventType) logs = logs.filter(l => l.eventType === filters.eventType);
+      if (filters.startDate) logs = logs.filter(l => new Date(l.timestamp) >= new Date(filters.startDate));
+      if (filters.endDate)   logs = logs.filter(l => new Date(l.timestamp) <= new Date(filters.endDate));
+      logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    }
+
     // roleId lives inside metadata (every assessment-engine audit event —
     // assessment_locked/unlocked/regenerated/modification_blocked,
     // question_locked/unlocked — logs { roleId, ... }), not a top-level
     // column, so this filters on the nested field rather than l.roleId.
-    if (filters.roleId)    logs = logs.filter(l => l.metadata?.roleId === filters.roleId);
-    if (filters.startDate) logs = logs.filter(l => new Date(l.timestamp) >= new Date(filters.startDate));
-    if (filters.endDate)   logs = logs.filter(l => new Date(l.timestamp) <= new Date(filters.endDate));
-    logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    if (filters.roleId) logs = logs.filter(l => l.metadata?.roleId === filters.roleId);
     return logs;
   }
 }

@@ -19,6 +19,19 @@ router.get('/logs', authenticate, requireRole('admin'), async (req, res) => {
 
     let logs = await UserStore.getAuditLogs(filters);
 
+    // Company isolation: an admin must only see their own company's audit
+    // trail. Log entries don't carry companyId directly, so resolve each
+    // actor's userId to their company and filter — 'default' stays global
+    // for single-tenant installs, matching the pattern used elsewhere.
+    const actorCompany = req.user.companyId || 'default';
+    if (req.user.role !== 'superadmin' && actorCompany !== 'default') {
+      const allUsers = await UserStore.getAllUsers({});
+      const companyUserIds = new Set(
+        allUsers.filter(u => (u.companyId || 'default') === actorCompany).map(u => u.userId || u.id)
+      );
+      logs = logs.filter(l => !l.userId || companyUserIds.has(l.userId));
+    }
+
     // Apply limit if specified
     if (limit) {
       const limitNum = parseInt(limit);
@@ -58,16 +71,31 @@ router.get('/logs/:userId', authenticate, async (req, res) => {
     const { userId } = req.params;
     const { eventType, startDate, endDate, limit } = req.query;
 
-    // Check if user is accessing their own logs or is admin
-    if (req.user.userId !== userId && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        data: null,
-        error: {
-          code: 'AUTH_FORBIDDEN',
-          message: 'You can only view your own audit logs'
+    // Check if user is accessing their own logs, or is an admin/superadmin
+    // in the SAME company as the target user (cross-tenant admins must not
+    // be able to pull another company's user's audit trail by id).
+    if (req.user.userId !== userId) {
+      if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+        return res.status(403).json({
+          success: false,
+          data: null,
+          error: { code: 'AUTH_FORBIDDEN', message: 'You can only view your own audit logs' },
+        });
+      }
+      if (req.user.role === 'admin') {
+        const actorCompany = req.user.companyId || 'default';
+        if (actorCompany !== 'default') {
+          const target = await UserStore.getUserById(userId);
+          const targetCompany = target?.companyId || 'default';
+          if (targetCompany !== actorCompany) {
+            return res.status(403).json({
+              success: false,
+              data: null,
+              error: { code: 'AUTH_FORBIDDEN', message: 'You can only view audit logs for users in your own company' },
+            });
+          }
         }
-      });
+      }
     }
 
     const filters = { userId };
