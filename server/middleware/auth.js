@@ -3,6 +3,26 @@ import UserStore from '../services/UserStore.js';
 import rateLimit from 'express-rate-limit';
 import { isBlocklisted } from '../security/tokenBlocklist.js';
 
+// Shared by authenticate() below AND routes/auth.js's login/me/password-change
+// responses — these MUST stay in sync. A manager/admin who has never had
+// `accesses` explicitly set (the common case) implicitly gets the standard
+// role-switch options (manager -> employee, admin -> manager+employee) so
+// the "Switch to X View" UI has something to offer. Previously this default
+// was applied only in routes/auth.js (to decide what the CLIENT shows in the
+// switcher), while this middleware checked the raw, un-derived DB value (to
+// decide what the SERVER actually authorizes) — so for any user who fell
+// into the implicit-default case, the switcher showed options that silently
+// did nothing: the client would send X-Active-Role, but the server would
+// reject it (not in the raw accesses list) and keep authorizing as the
+// primary role, with no error and no indication the switch didn't take.
+export function getEffectiveAccesses(user) {
+  const stored = user.accesses || [];
+  if (stored.length > 0) return stored;
+  if (user.role === 'manager') return ['employee'];
+  if (user.role === 'admin') return ['manager', 'employee'];
+  return stored;
+}
+
 /**
  * Authentication middleware - Verify JWT token
  * Extracts and verifies JWT from Authorization header
@@ -68,7 +88,7 @@ export const authenticate = async (req, res, next) => {
 
     // Determine effective role: X-Active-Role header if user has that access, else primary role
     const requestedRole = req.headers['x-active-role'];
-    const userAccesses = user.accesses || [];
+    const userAccesses = getEffectiveAccesses(user);
     const allRoles = [user.role, ...userAccesses];
     const effectiveRole = (requestedRole && allRoles.includes(requestedRole))
       ? requestedRole
@@ -143,7 +163,11 @@ export const requireRole = (...roles) => {
  * Rejects any request from a non-superadmin user
  */
 export const requireSuperAdmin = (req, res, next) => {
-  if (!req.user || req.user.role !== 'superadmin') {
+  // Check primaryRole too, matching requireRole's pattern (line 142) — a
+  // superadmin who has switched their active role via X-Active-Role must not
+  // lock themselves out of /api/superadmin/* just because req.user.role is
+  // temporarily something else. They're still genuinely the superadmin.
+  if (!req.user || (req.user.role !== 'superadmin' && req.user.primaryRole !== 'superadmin')) {
     return res.status(403).json({
       success: false,
       data: null,

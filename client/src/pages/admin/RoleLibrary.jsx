@@ -806,7 +806,7 @@ const Q_TYPES = [
   { value: 'subjective', label: 'Subjective',          icon: '📝', desc: 'Open-ended model answer' },
 ];
 
-function QuestionBankModal({ role, onClose }) {
+function QuestionBankModal({ role, onClose, onGenerated }) {
   const { notify: toast } = useNotification();
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -873,7 +873,15 @@ function QuestionBankModal({ role, onClose }) {
           setQuestions(q2);
           setGenerating(false);
           setGenProgress(null);
-          if (q2.length > 0) toast(`${q2.length} questions ready`);
+          if (q2.length > 0) {
+            toast(`${q2.length} questions ready`);
+            // Tell the parent so the table row's questionBankCount/Approve
+            // button update immediately — previously this modal only ever
+            // updated its own local `questions` state, so the admin could
+            // watch generation finish right here and still not see the
+            // Approve button on the role row until a full page reload.
+            onGenerated?.(role.id, q2.length);
+          }
         } else if (st.status === 'failed') {
           clearInterval(pollRef.current);
           setGenerating(false);
@@ -890,6 +898,7 @@ function QuestionBankModal({ role, onClose }) {
       const res = await authFetch(`/api/roles/${role.id}/questions`);
       const qs = Array.isArray(res) ? res : (res?.data ?? []);
       setQuestions(qs);
+      if (qs.length > 0 && qs.length !== (role.questionBankCount || 0)) onGenerated?.(role.id, qs.length);
       // Empty bank + a JD/docs present means a background generation is
       // probably still running (or was interrupted) — ask the server rather
       // than assuming, and keep polling until it actually resolves.
@@ -1601,6 +1610,14 @@ export default function RoleLibrary() {
   const [approveRole, setApproveRole] = useState(null); // role to approve assessment for
   const [historyRole, setHistoryRole] = useState(null); // role to view version/audit/assignment history for
 
+  // Fired by QuestionBankModal the moment it learns generation produced
+  // questions — updates the table row's count immediately (so the Approve
+  // button appears without a manual page reload) rather than waiting for the
+  // next full `load()`.
+  const handleBankGenerated = (roleId, count) => {
+    setRoles(prev => prev.map(r => r.id === roleId ? { ...r, questionBankCount: count } : r));
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -1768,7 +1785,7 @@ export default function RoleLibrary() {
 
       {/* Question Bank Modal */}
       {qBankRole && (
-        <QuestionBankModal role={qBankRole} onClose={() => setQBankRole(null)} />
+        <QuestionBankModal role={qBankRole} onClose={() => setQBankRole(null)} onGenerated={handleBankGenerated} />
       )}
 
       {/* Approve Assessment Modal */}

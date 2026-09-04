@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import AuthService from '../services/AuthService.js';
 import UserStore from '../services/UserStore.js';
 import EmailService from '../services/EmailService.js';
-import { authenticate, rateLimitLogin, rateLimitOTP, rateLimitPasswordReset } from '../middleware/auth.js';
+import { authenticate, rateLimitLogin, rateLimitOTP, rateLimitPasswordReset, getEffectiveAccesses } from '../middleware/auth.js';
 import { Companies, RoleLibrary, UserJDProfiles, Assessments, GeneratedContent, AccessCodes } from '../services/DataStore.js';
 import { sanitizeText, sanitizeEmail, sanitizePhone, sanitizeId } from '../utils/sanitize.js';
 import { addToBlocklist } from '../security/tokenBlocklist.js';
@@ -565,12 +565,7 @@ router.post('/login', rateLimitLogin, async (req, res) => {
       userAgent: req.headers['user-agent']
     });
 
-    const loginStoredAccesses = user.accesses || [];
-    let loginEffectiveAccesses = loginStoredAccesses;
-    if (loginStoredAccesses.length === 0) {
-      if (user.role === 'manager') loginEffectiveAccesses = ['employee'];
-      else if (user.role === 'admin') loginEffectiveAccesses = ['manager', 'employee'];
-    }
+    const loginEffectiveAccesses = getEffectiveAccesses(user);
 
     res.json({
       success: true,
@@ -644,12 +639,7 @@ router.post('/complete-password-change', rateLimitLogin, async (req, res) => {
 
     const token = AuthService.generateJWT(user.userId, user.email, user.role);
     const refreshToken = generateRefreshToken(user.userId);
-    const storedAccesses = user.accesses || [];
-    let effectiveAccesses = storedAccesses;
-    if (storedAccesses.length === 0) {
-      if (user.role === 'manager') effectiveAccesses = ['employee'];
-      else if (user.role === 'admin') effectiveAccesses = ['manager', 'employee'];
-    }
+    const effectiveAccesses = getEffectiveAccesses(user);
 
     res.json({
       success: true,
@@ -741,12 +731,7 @@ router.get('/me', authenticate, async (req, res) => {
 
     // Compute effective accesses: use stored accesses if non-empty,
     // otherwise derive sensible defaults so switch buttons appear without manual admin grant
-    const storedAccesses = user.accesses || [];
-    let effectiveAccesses = storedAccesses;
-    if (storedAccesses.length === 0) {
-      if (user.role === 'manager') effectiveAccesses = ['employee'];
-      else if (user.role === 'admin') effectiveAccesses = ['manager', 'employee'];
-    }
+    const effectiveAccesses = getEffectiveAccesses(user);
 
     res.json({
       success: true,

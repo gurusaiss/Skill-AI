@@ -707,8 +707,9 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                 )}
                 {showAddRoleForm && (
                   <div className="rounded-xl border border-indigo-500/30 bg-slate-800/40 p-3 space-y-2">
-                    <input type="text" aria-label="Additional role name" placeholder="Role Name (required)" value={addRoleForm.roleName}
+                    <input type="text" list="edit-role-options" aria-label="Additional role name" placeholder="Role Name (required)" value={addRoleForm.roleName}
                       onChange={e => setAddRoleForm(p => ({ ...p, roleName: e.target.value }))}
+                      autoComplete="off"
                       className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
                     <input type="text" list="edit-dept-options" aria-label="Additional role department" placeholder="Department (optional)" value={addRoleForm.department}
                       onChange={e => setAddRoleForm(p => ({ ...p, department: e.target.value }))}
@@ -1820,8 +1821,21 @@ const ACCESS_OPTIONS = [
   { value: 'employee', label: 'Employee', desc: 'Learner access',           color: 'emerald' },
 ];
 
+// Mirrors server/middleware/auth.js's getEffectiveAccesses(): a manager/admin
+// with no accesses explicitly set yet still implicitly has the standard
+// role-switch options. Without this, opening this modal for such a user
+// shows nothing checked, and saving as-is would submit an empty/partial
+// list — permanently wiping the implicit default the user actually has.
+function getEffectiveAccesses(user) {
+  const stored = user.accesses || [];
+  if (stored.length > 0) return stored;
+  if (user.role === 'manager') return ['employee'];
+  if (user.role === 'admin') return ['manager', 'employee'];
+  return stored;
+}
+
 function ManageAccessModal({ user: targetUser, onClose, onSaved, setToast }) {
-  const [selected, setSelected] = useState(targetUser.accesses || []);
+  const [selected, setSelected] = useState(getEffectiveAccesses(targetUser));
   const [saving, setSaving] = useState(false);
 
   const toggle = (val) => setSelected(p => p.includes(val) ? p.filter(x => x !== val) : [...p, val]);
