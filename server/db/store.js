@@ -376,7 +376,13 @@ export async function updateModule(id, updates) {
     const { data, error } = await supabase.from('modules').update(sbUpdates).eq('id', id).select().single();
     if (error) {
       if (error.code === 'PGRST116') {
-        // Row not in Supabase yet (stranded in file) — upsert it
+        // Row not in the flat `modules` table. Two places it could actually
+        // live instead: the ephemeral file (pre-migration, stranded), or the
+        // `generated_modules` JSONB DataStore table — createModule() falls
+        // back there whenever the flat-table write fails, and getModuleById/
+        // getModules already check it, but this function previously didn't,
+        // so any module actually stored there could be viewed and listed but
+        // never updated ("Module not found" on every edit).
         const existing = await (async () => {
           const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
           return (f?.modules || []).find(m => m.id === id) || null;
@@ -387,11 +393,18 @@ export async function updateModule(id, updates) {
           if (e2) throw e2;
           return normalizeModule(d2);
         }
+        const dsUpdated = await GeneratedModules.update(id, { ...updates, updatedAt: new Date().toISOString() }).catch(() => null);
+        if (dsUpdated) return dsUpdated;
+        return null;
       }
       throw error;
     }
     return normalizeModule(data);
   }
+  // Supabase not configured — try the JSONB DataStore first (its own update()
+  // already falls back to the file store), then the legacy ephemeral file.
+  const dsUpdated = await GeneratedModules.update(id, { ...updates, updatedAt: new Date().toISOString() }).catch(() => null);
+  if (dsUpdated) return dsUpdated;
   const path = join(DATA_DIR, 'modules.json');
   const f = await readJsonFile(path) || { modules: [] };
   const idx = f.modules.findIndex(m => m.id === id);
