@@ -929,6 +929,9 @@ export const GeneratedModules = {
   async update(id, updates) {
     return updateHealed('generated_modules', 'generated_modules_ds.json', id, updates);
   },
+  async delete(id) {
+    return deleteHealed('generated_modules', 'generated_modules_ds.json', id);
+  },
 };
 
 // ── QUESTION BANK VERSIONS ────────────────────────────────────────────────────

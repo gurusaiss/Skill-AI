@@ -416,17 +416,33 @@ export async function updateModule(id, updates) {
 
 export async function deleteModule(id) {
   if (isOn()) {
-    const { error } = await supabase.from('modules').delete().eq('id', id);
-    if (error) throw error;
-    return true;
+    // .delete() succeeds with an empty result (no error) even when no row
+    // matches — checking rows-affected via .select() first, same asymmetry
+    // as updateModule() above: a module actually stored in the
+    // `generated_modules` JSONB fallback would report "deleted" here
+    // without anything actually being removed from where it really lives.
+    const { data: existing } = await supabase.from('modules').select('id').eq('id', id).maybeSingle();
+    if (existing) {
+      const { error } = await supabase.from('modules').delete().eq('id', id);
+      if (error) throw error;
+      return true;
+    }
   }
   const path = join(DATA_DIR, 'modules.json');
   const f = await readJsonFile(path) || { modules: [] };
   const initial = f.modules.length;
   f.modules = f.modules.filter(m => m.id !== id);
-  if (f.modules.length === initial) return false;
-  await writeJsonFile(path, f);
-  return true;
+  if (f.modules.length !== initial) {
+    await writeJsonFile(path, f);
+    return true;
+  }
+  // Not in the flat table or the legacy file — check the JSONB fallback.
+  const dsExisting = await GeneratedModules.getById(id).catch(() => null);
+  if (dsExisting) {
+    await GeneratedModules.delete(id);
+    return true;
+  }
+  return false;
 }
 
 export async function createPackage(pkg, createdBy) {
