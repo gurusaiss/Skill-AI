@@ -762,11 +762,25 @@ export const RoleLibrary = {
   // roles. This checks case-insensitive, whitespace/punctuation-normalized
   // EXACT equality only — same normalization as findByName's own tier 1, but
   // with no contains/overlap fallback.
-  async findExactDuplicate(roleName, companyId) {
+  // Uniqueness is company + department + complete role name — the same role
+  // title in two different departments (e.g. "Quality Analyst" in Engineering
+  // vs. "Quality Analyst" in Operations) is legitimately two different roles
+  // and must be allowed to coexist. `department` is optional so callers that
+  // don't track it (or a role genuinely has none) keep the prior
+  // company-only behavior for that comparison. `excludeId` lets an update
+  // (rename) check for collisions with OTHER roles without flagging itself.
+  async findExactDuplicate(roleName, companyId, { department, excludeId } = {}) {
     const all = await this.getByCompany(companyId);
     if (!roleName?.trim() || !all?.length) return null;
-    const q = roleName.toLowerCase().trim().replace(/[-_/]+/g, ' ');
-    return all.find(r => r.roleName?.toLowerCase().trim().replace(/[-_/]+/g, ' ') === q) || null;
+    const norm = (s) => (s || '').toLowerCase().trim().replace(/[-_/]+/g, ' ');
+    const q = norm(roleName);
+    const deptQ = department !== undefined ? norm(department) : null;
+    return all.find(r => {
+      if (excludeId && r.id === excludeId) return false;
+      if (norm(r.roleName) !== q) return false;
+      if (deptQ !== null && norm(r.department) !== deptQ) return false;
+      return true;
+    }) || null;
   },
   async create(doc) {
     const sb = getSB();

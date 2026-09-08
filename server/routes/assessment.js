@@ -2103,6 +2103,20 @@ Note: "caseStudy" may be null on sessions that don't need one, but MUST be prese
               };
             });
 
+        // Same quiz-type normalization as modules.js — neither the LLM output
+        // above nor this file's own deterministic fallback quiz stamps a
+        // `type` field, and the employee-facing renderer gates strictly on
+        // it, leaving the answer area blank for anything unrecognized.
+        const KNOWN_QUIZ_TYPES = new Set(['mcq', 'fill_blank', 'subjective']);
+        rawSessions.forEach(session => {
+          if (!Array.isArray(session.quiz)) return;
+          session.quiz.forEach(q => {
+            if (!KNOWN_QUIZ_TYPES.has(q.type)) {
+              q.type = Array.isArray(q.options) && q.options.length > 0 ? 'mcq' : 'subjective';
+            }
+          });
+        });
+
         const sessions = rawSessions.map((s, i) => {
           const dayNumber = s.dayNumber || (i + 1);
           const unlockDate = new Date(startDate);

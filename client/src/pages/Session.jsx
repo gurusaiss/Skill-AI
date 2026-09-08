@@ -395,7 +395,16 @@ function QuizPhase({ questions, topic, skillName, onSubmit }) {
 
       {/* Questions */}
       <div className="space-y-5">
-        {questions.map((q, idx) => {
+        {questions.map((rawQ, idx) => {
+          // Same normalization as ModuleSession.jsx: this session's question
+          // source doesn't always stamp a `type` field, and gating strictly
+          // on 'mcq'/'fill' left the answer area completely blank (no
+          // options, no input) for anything with an unrecognized/missing
+          // type — infer from the presence of an options array instead.
+          const hasOptions = Array.isArray(rawQ?.options) && rawQ.options.length > 0;
+          const q = (rawQ.type === 'mcq' || rawQ.type === 'fill')
+            ? rawQ
+            : { ...rawQ, type: hasOptions ? 'mcq' : 'fill' };
           const isAnswered = (answers[q.id] || '').toString().trim().length > 0;
           return (
             <div
