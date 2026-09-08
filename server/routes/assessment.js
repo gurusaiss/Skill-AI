@@ -1757,7 +1757,18 @@ router.post('/export-filtered-reports', authenticate, async (req, res) => {
 });
 
 /**
- * POST /api/assessments/generate (legacy compat — module-based)
+ * POST /api/assessments/generate (legacy compat — module-session knowledge quiz)
+ *
+ * This is a lightweight per-session comprehension check, not a proctored
+ * assessment — it previously ran through generateQuestionsFromJD, the heavy
+ * JD-source-grounded pipeline (chunking, up to 5 sequential LLM attempts per
+ * chunk, dedup/anti-generic filtering, template padding) built for real
+ * hiring assessments. That pipeline is what made "Take Knowledge Quiz" feel
+ * slow: several sequential round-trips before a fresh module session ever
+ * showed a question, with a `Date.now()`-based seed that also defeated any
+ * caching. A single fast generation + a stable cache key (this session's
+ * content never changes) fixes both the latency and the wasted repeat calls
+ * across employees taking the same session.
  */
 router.post('/generate', authenticate, llmLimiter, async (req, res) => {
   try {
@@ -1767,14 +1778,40 @@ router.post('/generate', authenticate, llmLimiter, async (req, res) => {
     const topicsStr = Array.isArray(sessionTopics) && sessionTopics.length > 0
       ? sessionTopics.join(', ')
       : (Array.isArray(skills) && skills.length > 0 ? skills.join(', ') : 'core concepts');
+    const keyPointsStr = Array.isArray(sessionKeyPoints) ? sessionKeyPoints.join('. ') : '';
 
-    const questions = await generateQuestionsFromJD({
-      jobRole: moduleTitle || 'Learning Module',
-      jobDescription: [moduleDescription, topicsStr, Array.isArray(sessionKeyPoints) ? sessionKeyPoints.join('. ') : ''].filter(Boolean).join('. '),
-      questionCount: num,
-      questionTypes: types,
-      employeeSeed: `module-${Date.now()}`,
-    });
+    const cacheKey = `module_quiz_${LLMCache.hash([moduleTitle, sessionTitle, topicsStr, num].join('|'))}`;
+    let questions = LLMCache.get(cacheKey);
+
+    if (!questions) {
+      const prompt = `Create exactly ${num} quiz questions testing comprehension of this training session's content.
+
+Module: ${moduleTitle || 'Learning Module'}
+Session: ${sessionTitle || 'Session'}
+Topics covered: ${topicsStr}
+${moduleDescription ? `Module context: ${moduleDescription}` : ''}
+${keyPointsStr ? `Key points taught in this session: ${keyPointsStr}` : ''}
+
+Return ONLY a JSON object: { "questions": [ { "type": "mcq"|"fill_blank"|"subjective", "question": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."] (mcq only), "answer": "...", "explanation": "..." } ] }
+Mix of types: mostly mcq, a couple fill_blank, one subjective. Questions must be specific to the topics/key points above, not generic.`;
+
+      try {
+        const result = await GeminiService.generateJSON(prompt, '', { maxTokens: 2500 });
+        const list = Array.isArray(result?.questions) ? result.questions : (Array.isArray(result) ? result : []);
+        if (list.length >= Math.min(3, num)) {
+          questions = list.slice(0, num);
+          LLMCache.set(cacheKey, questions, LLMCache.TTL.QUIZ);
+        }
+      } catch (err) {
+        console.warn('[assessments/generate module-quiz] LLM failed:', err.message);
+      }
+    }
+
+    if (!questions) {
+      // AI unavailable — let the client fall back to its own deterministic
+      // template questions rather than blocking the session on a slow retry.
+      return res.json({ success: true, data: [], error: null });
+    }
 
     res.json({ success: true, data: questions, error: null });
   } catch (e) {
