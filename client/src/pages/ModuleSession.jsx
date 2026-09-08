@@ -470,7 +470,23 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
   // Once submitted, parent ModuleSession takes over with ScorePhase
   if (submitted) return null;
 
-  const q = questions[currentQ];
+  const rawQ = questions[currentQ];
+  // Embedded module-session quizzes (generated server-side and stored on the
+  // session/assignment) are produced by several different code paths, none
+  // of which stamp a `type` field on each question — only `question`/
+  // `options`/`answer`. Gating strictly on `q.type === 'mcq'` meant EVERY
+  // such question fell through every render branch: the header badge
+  // defaulted to showing "Multiple Choice" (a separate default-label bug),
+  // while the actual answer area — options, fill-blank input, subjective
+  // textarea — rendered nothing at all, making the quiz uncompletable.
+  // Infer the real type from shape instead of trusting a field that's
+  // usually absent: an options array means MCQ regardless of what (if
+  // anything) `type` says; otherwise fall back to the stated type.
+  const KNOWN_TYPES = new Set(['mcq', 'fill_blank', 'subjective']);
+  const hasOptions = Array.isArray(rawQ?.options) && rawQ.options.length > 0;
+  const q = rawQ && (!KNOWN_TYPES.has(rawQ.type))
+    ? { ...rawQ, type: hasOptions ? 'mcq' : (rawQ.type === 'fill' ? 'fill_blank' : 'subjective') }
+    : rawQ;
   if (!q) return null;
 
   return (

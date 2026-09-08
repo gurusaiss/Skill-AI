@@ -609,6 +609,27 @@ IMPORTANT: Create exactly ${numSessions} sessions. All content must be specific 
       };
     }
 
+    // Normalize embedded quiz question types — the LLM prompt asks for MCQ
+    // questions but doesn't reliably stamp a `type` field on the JSON it
+    // returns, and neither did the deterministic fallback above. The
+    // employee-facing quiz renderer (ModuleSession.jsx) gates strictly on
+    // `type === 'mcq'`/`'fill_blank'`/`'subjective'` to decide what to show;
+    // without this, a question with real options but no `type` rendered a
+    // "Multiple Choice" header with a completely blank, unanswerable answer
+    // area. Client-side also normalizes defensively, but fixing it at the
+    // source means the persisted data is correct for any future consumer.
+    const KNOWN_QUIZ_TYPES = new Set(['mcq', 'fill_blank', 'subjective']);
+    if (Array.isArray(generated.sessions)) {
+      generated.sessions.forEach(session => {
+        if (!Array.isArray(session.quiz)) return;
+        session.quiz.forEach(q => {
+          if (!KNOWN_QUIZ_TYPES.has(q.type)) {
+            q.type = Array.isArray(q.options) && q.options.length > 0 ? 'mcq' : 'subjective';
+          }
+        });
+      });
+    }
+
     // Save generated content to module via Supabase
     await db.updateModule(id, {
       sessions: generated.sessions,
@@ -764,6 +785,18 @@ Return JSON:
         const result = await GeminiService.generateJSON(prompt, '', { maxTokens: 4000 });
         if (result?.sessions && Array.isArray(result.sessions)) {
           moduleContent = result;
+          // Same quiz-type normalization as /generate-content — see comment
+          // there. This module's sessions get copied verbatim into the
+          // final module on approval without going through that route again.
+          const KNOWN_QUIZ_TYPES = new Set(['mcq', 'fill_blank', 'subjective']);
+          moduleContent.sessions.forEach(session => {
+            if (!Array.isArray(session.quiz)) return;
+            session.quiz.forEach(q => {
+              if (!KNOWN_QUIZ_TYPES.has(q.type)) {
+                q.type = Array.isArray(q.options) && q.options.length > 0 ? 'mcq' : 'subjective';
+              }
+            });
+          });
         }
     } catch (e) { console.warn('[auto-generate] AI failed:', e.message); }
 

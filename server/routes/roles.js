@@ -545,9 +545,11 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
     // Prevent EXACT duplicates only — findByName is intentionally fuzzy
     // (used elsewhere for JD/job-title auto-matching) and must not be used
     // here, since "Quality Analyst – IT Infra" and "Quality Analyst – LPO"
-    // are legitimately different roles that happen to share words.
-    const existing = await RoleLibrary.findExactDuplicate(roleName, companyId);
-    if (existing) return res.status(409).json({ success: false, error: `Role "${roleName}" already exists in your company` });
+    // are legitimately different roles that happen to share words. Scoped by
+    // department too — the same title in two different departments is a
+    // legitimately distinct role.
+    const existing = await RoleLibrary.findExactDuplicate(roleName, companyId, { department });
+    if (existing) return res.status(409).json({ success: false, error: `Role "${roleName}"${department ? ` in ${department}` : ''} already exists in your company` });
 
     // Derive combined JD text: prefer jdFiles content, fall back to plain jobDescription
     const combinedJDText = Array.isArray(jdFiles) && jdFiles.length > 0
@@ -709,6 +711,17 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
     if (!existing) return res.status(404).json({ success: false, error: 'Role not found' });
 
     const { roleName, department, jobDescription, skills, status, jdFiles, supportingFiles, jdSources, supportingDocs } = req.body;
+
+    // Renaming a role (or moving it to a different department) had NO
+    // duplicate check at all — could silently create a second role with the
+    // same company+department+name as an existing one. Only check when the
+    // name or department is actually changing.
+    if (roleName !== undefined || department !== undefined) {
+      const checkName = roleName !== undefined ? roleName : existing.roleName;
+      const checkDept = department !== undefined ? department : existing.department;
+      const dupe = await RoleLibrary.findExactDuplicate(checkName, existing.companyId || 'default', { department: checkDept, excludeId: existing.id });
+      if (dupe) return res.status(409).json({ success: false, error: `Role "${checkName}"${checkDept ? ` in ${checkDept}` : ''} already exists in your company` });
+    }
 
     // Derive combined JD text from jdFiles when provided
     let rawJDForExtract = jobDescription;
@@ -1019,6 +1032,12 @@ router.post('/bulk-generate-assessments', authenticate, requireRole('admin'), as
     const companyId = req.user.companyId || 'default';
     const roles = await RoleLibrary.getByCompany(companyId);
     const activeRoles = roles.filter(r => r.status !== 'inactive' && !r.assessmentTemplateId);
+    // Match the single-role generate-assessment endpoint's default (50) and
+    // allow the caller to override it — this used to hardcode 10 with no way
+    // to configure it, so every role bulk-generated through this endpoint
+    // started life capped at 10 questions regardless of the platform's real
+    // target assessment size.
+    const { questionCount = 50, questionTypes = ['mcq', 'fill_blank', 'subjective'] } = req.body;
 
     res.json({ success: true, data: { queued: activeRoles.length, message: 'Generation started in background' } });
 
@@ -1031,8 +1050,8 @@ router.post('/bulk-generate-assessments', authenticate, requireRole('admin'), as
             jobRole:        role.roleName,
             jobDescription: role.jobDescription || '',
             jdSkills:       role.skills || [],
-            questionCount:  10,
-            questionTypes:  ['mcq'],
+            questionCount,
+            questionTypes,
             employeeSeed:   `role-${role.id}-bulk-${Date.now()}`,
             supportingDocs: role.supportingDocs || [],
           });
