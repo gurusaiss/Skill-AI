@@ -309,6 +309,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
     const jobDescription = sanitizeText(raw.jobDescription, 5000);
     const companyName = sanitizeText(raw.companyName, 200);
     const password    = raw.password; // passwords must not be stripped
+    const managerEmail = sanitizeEmail(raw.managerEmail || '');
 
     if (!email || !name) {
       return res.status(400).json({ success: false, data: null, error: { code: 'USER_INVALID_INPUT', message: 'Email and name are required' } });
@@ -323,6 +324,19 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
     const existing = await UserStore.getUserByEmail(email);
     if (existing) {
       return res.status(409).json({ success: false, data: null, error: { code: 'USER_EMAIL_EXISTS', message: 'Email already registered' } });
+    }
+
+    // Validate manager reference up-front (before creating the user) so a
+    // bad manager email fails loudly instead of silently creating a broken
+    // relationship — same validation the bulk-import path already applies.
+    let managerRecord = null;
+    let managerError = null;
+    if (managerEmail) {
+      managerRecord = await UserStore.getUserByEmail(managerEmail);
+      if (!managerRecord || !['manager', 'admin'].includes(managerRecord.role)) {
+        managerError = `Manager "${raw.managerEmail}" not found or not a manager role`;
+        managerRecord = null;
+      }
     }
 
     // Managers can only create employees
@@ -349,6 +363,16 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
     // Best-effort: mark forced-password-change (new optional column — must not
     // block user creation if the migration hasn't been applied yet).
     UserStore.updateUser(user.userId, { mustChangePassword: true }).catch(() => {});
+
+    if (managerRecord) {
+      try {
+        await UserStore.updateUser(user.userId, { managerId: managerRecord.userId });
+        await UserStore.assignEmployeesToManager(managerRecord.userId, [user.userId], req.user.userId).catch(() => {});
+        user.managerId = managerRecord.userId;
+      } catch (e) {
+        managerError = e.message;
+      }
+    }
 
     await UserStore.logAuthEvent('user_created_by_admin', user.userId, {
       createdBy: req.user.userId,
@@ -397,6 +421,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
         ...sanitizeUser(user),
         emailSent,
         emailError,
+        managerError,
         activationUrl,
         tempPassword,
       },

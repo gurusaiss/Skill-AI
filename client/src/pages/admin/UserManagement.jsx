@@ -1015,8 +1015,9 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
 
 // ─── Create User Modal ────────────────────────────────────────────────────────
 
-function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
-  const [form, setForm] = useState({ name: '', email: '', role: 'employee', jobRole: '', department: '', jobDescription: '', companyName: '' });
+function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users = [] }) {
+  const [form, setForm] = useState({ name: '', email: '', role: 'employee', jobRole: '', department: '', jobDescription: '', companyName: '', managerEmail: '' });
+  const managerOptions = useMemo(() => users.filter(u => u.role === 'manager'), [users]);
   const [saving, setSaving] = useState(false);
   const [roleOptions, setRoleOptions] = useState([]);
   const [additionalRoles, setAdditionalRoles] = useState([]);
@@ -1050,6 +1051,7 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
         } catch (e) { console.warn('Failed to add extra role:', ar.roleName, e.message); }
       }
       onCreated(user);
+      if (user.managerError) setToast({ message: user.managerError, type: 'error' });
       // Show credentials instead of closing immediately — admin picks what to share.
       setCreatedResult({ user, tempPassword: user.tempPassword, activationUrl: user.activationUrl });
     } catch (err) { setToast({ message: err.message, type: 'error' }); }
@@ -1204,6 +1206,15 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole }) {
                 <option value="employee">Employee</option>
                 <option value="manager">Manager</option>
                 <option value="admin">Admin</option>
+              </select>
+            </div>
+          )}
+          {form.role === 'employee' && managerOptions.length > 0 && (
+            <div>
+              <FieldLabel>Manager</FieldLabel>
+              <select value={form.managerEmail} onChange={f('managerEmail')} aria-label="Manager" className={selectCls}>
+                <option value="">— None —</option>
+                {managerOptions.map(m => <option key={m.userId} value={m.email}>{m.name}</option>)}
               </select>
             </div>
           )}
@@ -2063,7 +2074,7 @@ export default function UserManagement() {
           onClose={() => setEditUser(null)} onSaved={fetchData} setToast={setToast} currentUserRole={currentUserRole} />
       )}
       {showCreate && (
-        <CreateUserModal onClose={() => setShowCreate(false)} onCreated={handleUserCreated} setToast={setToast} currentUserRole={currentUserRole} />
+        <CreateUserModal onClose={() => setShowCreate(false)} onCreated={handleUserCreated} setToast={setToast} currentUserRole={currentUserRole} users={users} />
       )}
       {showImport && (
         <ImportModal onClose={() => setShowImport(false)} onImported={fetchData} setToast={setToast} />
