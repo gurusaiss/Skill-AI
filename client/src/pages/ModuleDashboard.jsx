@@ -514,7 +514,12 @@ function ModuleNavbar({ moduleId, assignmentId, activeTab, onTabChange }) {
     { id: 'sessions', label: 'Sessions', icon: '📚' },
     { id: 'progress', label: 'Progress', icon: '📈' },
     { id: 'plan', label: 'Plan', icon: '🗺️' },
-    { id: 'build', label: 'Build', icon: '🔨' },
+    // Renamed from "Build" — the tab shows realistic practical
+    // projects/resources for the employee's actual role (not a
+    // software-engineering "build a project" implication), and the old
+    // label + hammer icon read as exactly that, for every domain including
+    // non-technical roles (HR, Finance, Operations, etc).
+    { id: 'build', label: 'Projects & Resources', icon: '🎯' },
   ];
 
   // Pass moduleId + assignmentId so each tool page can load module context
