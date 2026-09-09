@@ -16,6 +16,7 @@ import { randomUUID } from 'crypto';
 import { PendingModules, ModuleAssignments, Groups } from '../services/DataStore.js';
 import GeminiService from '../services/GeminiService.js';
 import LLMCache from '../services/LLMCache.js';
+import { ensureAllSessionQuizzes } from '../services/SessionQuizGenerator.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -192,6 +193,25 @@ router.get('/:id', authenticate, async (req, res) => {
     }
     if (!canAccessModule(req.user, module)) {
       return res.status(403).json({ success: false, error: { message: 'Access denied' } });
+    }
+
+    // Self-heal legacy modules created before quizzes were guaranteed at
+    // creation time: kick off a non-blocking backfill so the FIRST day an
+    // employee opens still has to fall back to a live generation, but every
+    // subsequent day (and every other employee on this module) no longer
+    // does once this completes and persists — instead of every single day
+    // permanently requiring its own live call forever.
+    const sessionsToCheck = module.sessions || module.content?.sessions || [];
+    const needsBackfill = !module._isPending && sessionsToCheck.some(s => !Array.isArray(s.quiz) || s.quiz.length < 3);
+    if (needsBackfill) {
+      setImmediate(async () => {
+        try {
+          const filled = await ensureAllSessionQuizzes(sessionsToCheck, { moduleTitle: module.title, moduleDescription: module.description });
+          await db.updateModule(id, { sessions: filled, content: { ...(module.content || {}), sessions: filled } });
+        } catch (e) {
+          console.warn(`[modules/:id backfill] Failed for module ${id}:`, e.message);
+        }
+      });
     }
 
     res.json({ success: true, data: module });
@@ -616,6 +636,14 @@ IMPORTANT: Create exactly ${numSessions} sessions. All content must be specific 
           }
         });
       });
+
+      // Top up any session whose quiz came back missing/short (the single
+      // big content-generation call above can truncate or omit a session's
+      // quiz once the response nears its token budget) — in parallel, so
+      // every day already has a real quiz saved before any employee opens a
+      // specific day, instead of that day falling back to a live "Generating
+      // your knowledge quiz…" LLM call on first open.
+      generated.sessions = await ensureAllSessionQuizzes(generated.sessions, { moduleTitle: title, moduleDescription: description });
     }
 
     // Save generated content to module via Supabase
@@ -785,6 +813,11 @@ Return JSON:
               }
             });
           });
+          // Top up any session whose quiz came back missing/short — see the
+          // matching comment in /:id/generate-content. This module gets
+          // copied verbatim into the real module on approval, so this is the
+          // only chance to fill gaps before an employee ever sees a day.
+          moduleContent.sessions = await ensureAllSessionQuizzes(moduleContent.sessions, { moduleTitle: moduleContent.title, moduleDescription: moduleContent.description });
         }
     } catch (e) { console.warn('[auto-generate] AI failed:', e.message); }
 
