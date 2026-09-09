@@ -374,7 +374,10 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
     }).catch(() => {});
   }, []);
 
-  const managers = useMemo(() => users.filter(u => u.role === 'manager' && u.userId !== user.userId), [users, user.userId]);
+  // Include users granted "manager" as an additional access, not just those
+  // whose primary role is manager — otherwise anyone given manager access
+  // via Manage Access silently never appears as an assignable manager.
+  const managers = useMemo(() => users.filter(u => (u.role === 'manager' || (u.accesses || []).includes('manager')) && u.userId !== user.userId), [users, user.userId]);
   const isEmployee = form.role === 'employee';
   const isAdmin = currentUserRole === 'admin';
 
@@ -1017,7 +1020,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
 
 function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users = [] }) {
   const [form, setForm] = useState({ name: '', email: '', role: 'employee', jobRole: '', department: '', jobDescription: '', companyName: '', managerEmail: '' });
-  const managerOptions = useMemo(() => users.filter(u => u.role === 'manager'), [users]);
+  const managerOptions = useMemo(() => users.filter(u => u.role === 'manager' || (u.accesses || []).includes('manager')), [users]);
   const [saving, setSaving] = useState(false);
   const [roleOptions, setRoleOptions] = useState([]);
   const [additionalRoles, setAdditionalRoles] = useState([]);

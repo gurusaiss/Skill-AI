@@ -64,8 +64,9 @@ export const authFetch = async (path, options = {}) => {
         const raw = typeof data?.error === 'string'
           ? data.error
           : (data?.error?.message || data?.message || `Request failed (${res.status})`);
-        // HTTP errors are not retried
-        throw new Error(sanitizeError(raw));
+        const httpErr = new Error(sanitizeError(raw));
+        httpErr.status = res.status;
+        throw httpErr;
       }
 
       return data?.data ?? data;
@@ -76,9 +77,15 @@ export const authFetch = async (path, options = {}) => {
       const isNetworkError = err.name === 'AbortError'
         || err.name === 'TypeError'
         || err.message.includes('fetch');
+      // A 5xx is the server's own fault (a transient DB blip, a cold-start
+      // race), not a permission/validation problem — retrying costs nothing
+      // and fixes exactly the "one concurrent request in a multi-fetch
+      // dashboard load happens to land during a hiccup" case. A 4xx is never
+      // retried — retrying a bad request or a genuine permission denial would
+      // just repeat the same failure.
+      const isRetryableServerError = typeof err.status === 'number' && err.status >= 500;
 
-      // Retry only network errors, not HTTP errors
-      if (!isNetworkError || attempt >= MAX_NETWORK_RETRIES) {
+      if ((!isNetworkError && !isRetryableServerError) || attempt >= MAX_NETWORK_RETRIES) {
         if (err.name === 'AbortError') {
           throw new Error('Request timed out. The server may be waking up — please try again.');
         }

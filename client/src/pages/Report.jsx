@@ -1068,7 +1068,7 @@ ${allWeaknesses.length > 0 ? `<h2>Areas to Improve</h2><ul>${allWeaknesses.map(s
 
 // ─── Main Export ──────────────────────────────────────────────────────────────
 export default function Report() {
-  const { user, hasRole } = useAuth();
+  const { user, activeRole } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
@@ -1081,7 +1081,14 @@ export default function Report() {
 
   if (!user) return null;
 
-  const isAdminOrManager = hasRole(['admin', 'manager']);
+  // Route by the CURRENTLY ACTIVE view, not whether the user merely holds
+  // admin/manager access somewhere on their profile — hasRole(['admin',
+  // 'manager']) checks the raw accesses list regardless of which view is
+  // active, so an employee who'd been granted manager/admin access (but is
+  // currently switched to Employee View) was always sent to the shared
+  // admin/manager report screen instead of their own, no matter which view
+  // they were actually looking at.
+  const isAdminOrManager = activeRole === 'admin' || activeRole === 'manager' || activeRole === 'superadmin';
 
   // Employee accessing report from inside a module (via URL params)
   if (!isAdminOrManager && assignmentId) {
