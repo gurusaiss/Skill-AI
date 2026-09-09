@@ -2176,6 +2176,31 @@ Return ONLY valid JSON matching exactly this structure:
         const moduleTitle = moduleContent?.title || `${classification} Training Plan: ${skills.slice(0, 2).join(' & ')}`;
         console.log(`[auto-assign] Creating module "${moduleTitle}" (${sessions.length} sessions, ${depth.difficulty})`);
 
+        // Derived from this employee's ACTUAL generated sessions (not a
+        // separate LLM call) — the Plan/Roadmap tab previously showed
+        // nothing for auto-assigned modules because this pipeline never
+        // populated a `roadmap` field at all, even though the module-level
+        // objectives/expectedOutcomes/pathType below were already being
+        // generated per-employee and simply never surfaced anywhere.
+        const phaseSplit = Math.max(1, Math.ceil(sessions.length / 3));
+        const roadmap = [
+          {
+            title: 'Foundation',
+            description: `Days 1-${Math.min(phaseSplit, sessions.length)}: ${sessions.slice(0, phaseSplit).map(s => s.title).join('; ')}`,
+            duration: `Day${phaseSplit > 1 ? 's' : ''} 1-${Math.min(phaseSplit, sessions.length)}`,
+          },
+          ...(sessions.length > phaseSplit ? [{
+            title: 'Application',
+            description: `Days ${phaseSplit + 1}-${Math.min(phaseSplit * 2, sessions.length)}: ${sessions.slice(phaseSplit, phaseSplit * 2).map(s => s.title).join('; ')}`,
+            duration: `Days ${phaseSplit + 1}-${Math.min(phaseSplit * 2, sessions.length)}`,
+          }] : []),
+          ...(sessions.length > phaseSplit * 2 ? [{
+            title: 'Mastery',
+            description: `Days ${phaseSplit * 2 + 1}-${sessions.length}: ${sessions.slice(phaseSplit * 2).map(s => s.title).join('; ')}`,
+            duration: `Days ${phaseSplit * 2 + 1}-${sessions.length}`,
+          }] : []),
+        ];
+
         // Create module in DB (null createdBy avoids FK issues)
         const newModule = await db.createModule({
           title: moduleTitle,
@@ -2197,6 +2222,7 @@ Return ONLY valid JSON matching exactly this structure:
             sessions,
             objectives: moduleContent?.objectives || skills.map(s => `Master ${s} skills`),
             expectedOutcomes: moduleContent?.expectedOutcomes || skills.map(s => `Apply ${s} confidently in day-to-day ${jobRole} work`),
+            roadmap,
             pathType: depth.pathType,
             dailyMinutes: depth.dailyMinutes,
             estimatedMinutesTotal: depth.dailyMinutes * sessions.length,
