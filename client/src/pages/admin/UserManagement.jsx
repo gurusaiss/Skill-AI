@@ -5,6 +5,10 @@ import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 
+// Needed for the raw fetch that downloads the .xlsx template — authFetch
+// parses JSON, which a binary spreadsheet response is not.
+const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function getAvatarInitials(name) {
@@ -1319,16 +1323,17 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
 
 // ─── Bulk Import Modal ────────────────────────────────────────────────────────
 
-const IMPORT_TEMPLATE_CSV = `name,email,system_role,employee_id,job_role_1,job_role_2,job_role_3,job_role_4,department,job_description,company_name,password,phone,manager_email
-# MANDATORY: name, email
-# OPTIONAL: system_role (admin/manager/employee - default: employee), employee_id, job_role_1 (primary), job_role_2/3/4 (additional — leave blank if not needed), department, job_description, company_name, password, phone, manager_email
-# IMMUTABLE (never changes after creation): email
-# job_role_1 becomes the primary job role. job_role_2/3/4 are added as additional job roles, in order, and each triggers its own auto-assessment just like adding a role manually.
-# If email already exists -> existing user will be UPDATED with the provided fields
-# If email is new -> a new user will be CREATED
-Jane Smith,jane@company.com,employee,EMP001,Frontend Developer,,,,Engineering,Builds React UIs,Acme Corp,,+91-9876543210,
-John Doe,john@company.com,employee,EMP002,Data Analyst,Reporting Specialist,,,Analytics,Analyzes business data,Acme Corp,,+91-9123456789,
-Sara Lee,sara@company.com,manager,MGR001,Engineering Manager,,,,Engineering,Leads frontend team,Acme Corp,,,
+// Manager columns sit next to the identity fields because they are now
+// mandatory for employee rows. No `#` instruction lines: they parse as data
+// rows and surfaced as bogus "name required" errors in the preview — the
+// guidance lives in the downloaded .xlsx's Instructions sheet and in the
+// on-screen blurb instead. The manager row is listed FIRST so the sample is
+// itself a valid one-file import (employees can reference a manager defined
+// anywhere in the same file).
+const IMPORT_TEMPLATE_CSV = `name,email,system_role,employee_id,manager_name,manager_email,job_role_1,job_role_2,job_role_3,job_role_4,department,job_description,company_name,password,phone
+Sara Lee,sara@company.com,manager,MGR001,,,Engineering Manager,,,,Engineering,Leads the frontend team,Acme Corp,,
+Jane Smith,jane@company.com,employee,EMP001,Sara Lee,sara@company.com,Frontend Developer,,,,Engineering,Builds React UIs,Acme Corp,,+91-9876543210
+John Doe,john@company.com,employee,EMP002,Sara Lee,sara@company.com,Data Analyst,Reporting Specialist,,,Analytics,Analyzes business data,Acme Corp,,+91-9123456789
 `;
 
 function ImportModal({ onClose, onImported, setToast }) {
@@ -1341,14 +1346,34 @@ function ImportModal({ onClose, onImported, setToast }) {
   const [result, setResult] = useState(null);
   const fileRef = useRef(null);
 
-  const downloadTemplate = () => {
-    const blob = new Blob([IMPORT_TEMPLATE_CSV], { type: 'text/csv' });
+  const saveBlob = (blob, filename) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'skillforge-user-import-template.csv';
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Prefers the server-generated .xlsx (has an Instructions sheet and column
+  // widths); falls back to the inline CSV if that request fails, so the button
+  // always produces something usable.
+  const downloadTemplate = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const activeRole = localStorage.getItem('active_role');
+      const res = await fetch(`${BASE_URL}/api/users/bulk-import/template`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(activeRole ? { 'X-Active-Role': activeRole } : {}),
+        },
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      saveBlob(await res.blob(), 'skillforge-user-import-template.xlsx');
+    } catch (e) {
+      console.warn('[import] xlsx template unavailable, falling back to CSV:', e.message);
+      saveBlob(new Blob([IMPORT_TEMPLATE_CSV], { type: 'text/csv' }), 'skillforge-user-import-template.csv');
+    }
   };
 
   const handleFile = (f) => {
@@ -1429,7 +1454,17 @@ function ImportModal({ onClose, onImported, setToast }) {
               <span className="text-2xl">📋</span>
               <div className="flex-1">
                 <p className="text-indigo-300 font-semibold text-sm mb-1">Download the import template first</p>
-                <p className="text-slate-400 text-xs mb-3">Fill in user data following the column headers. Supported columns: name, email, role, employee_id, job_role, department, job_description, company_name, password, phone, manager_email</p>
+                <p className="text-slate-400 text-xs mb-2">
+                  Fill in user data following the column headers. Columns: name, email, system_role, employee_id,
+                  manager_name, manager_email, job_role_1, job_role_2, job_role_3, job_role_4, department,
+                  job_description, company_name, password, phone
+                </p>
+                <p className="text-amber-300/90 text-xs mb-3">
+                  <span className="font-bold">Required:</span> name and email on every row — plus
+                  {' '}<span className="font-bold">manager_name and manager_email on employee rows</span>.
+                  Manager and admin rows do not need a manager. A manager referenced by an employee may be
+                  defined anywhere in the same file.
+                </p>
                 <button onClick={downloadTemplate} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 rounded-lg text-indigo-300 text-xs font-bold transition-colors">
                   ⬇ Download Template (CSV)
                 </button>
@@ -1491,6 +1526,7 @@ function ImportModal({ onClose, onImported, setToast }) {
                     <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">Role</th>
                     <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">Dept</th>
                     <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">Job Role</th>
+                    <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">Manager</th>
                     <th className="py-2 px-3 text-left text-slate-400 font-bold uppercase tracking-wider">Status</th>
                   </tr>
                 </thead>
@@ -1509,6 +1545,14 @@ function ImportModal({ onClose, onImported, setToast }) {
                       </td>
                       <td className="py-2 px-3 text-slate-400">{row.department || '—'}</td>
                       <td className="py-2 px-3 text-slate-400">{row.jobRole || '—'}</td>
+                      <td className="py-2 px-3 text-slate-400">
+                        {row.managerName || row.managerEmail ? (
+                          <>
+                            <span className="block text-slate-300">{row.managerName || '—'}</span>
+                            <span className="block text-slate-500 text-[11px]">{row.managerEmail || ''}</span>
+                          </>
+                        ) : '—'}
+                      </td>
                       <td className="py-2 px-3">
                         {row.status === 'valid'
                           ? <span className="text-emerald-400 font-bold">✓ Ready</span>
