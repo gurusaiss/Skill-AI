@@ -386,8 +386,13 @@ function ProgressTab({ module, assignment, sessionStatuses }) {
 function PlanTab({ module, onRegenerate }) {
   const roadmap = module?.roadmap || module?.content?.roadmap || [];
   const plan = module?.plan || module?.content?.plan || module?.learningPlan || '';
+  const objectives = module?.content?.objectives || module?.objectives || [];
+  const expectedOutcomes = module?.content?.expectedOutcomes || module?.expectedOutcomes || [];
+  const pathType = module?.content?.pathType;
+  const dailyMinutes = module?.content?.dailyMinutes;
+  const assessmentGaps = module?.content?.assessmentGaps || [];
 
-  if (roadmap.length === 0 && !plan) {
+  if (roadmap.length === 0 && !plan && objectives.length === 0 && expectedOutcomes.length === 0) {
     return (
       <div className="text-center py-16">
         <div className="text-5xl mb-4 opacity-30">🗺️</div>
@@ -405,6 +410,41 @@ function PlanTab({ module, onRegenerate }) {
 
   return (
     <div className="space-y-6">
+      {(pathType || dailyMinutes || assessmentGaps.length > 0) && (
+        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5">
+          <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-3">This Plan, For You</h3>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {pathType && <span className="text-xs font-bold px-3 py-1 rounded-full bg-indigo-600/20 border border-indigo-500/30 text-indigo-300">{pathType}</span>}
+            {dailyMinutes && <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-700/40 border border-slate-600/40 text-slate-300">~{dailyMinutes} min/day</span>}
+          </div>
+          {assessmentGaps.length > 0 && (
+            <p className="text-xs text-slate-400">Built around your assessment: <span className="text-slate-200">{assessmentGaps.join(', ')}</span></p>
+          )}
+        </div>
+      )}
+
+      {objectives.length > 0 && (
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+          <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-3">🎯 What This Journey Covers</h3>
+          <ul className="space-y-1.5">
+            {objectives.map((o, i) => (
+              <li key={i} className="text-sm text-slate-200 leading-relaxed flex gap-2"><span className="text-emerald-400 flex-shrink-0">▸</span><span>{typeof o === 'string' ? o : JSON.stringify(o)}</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {expectedOutcomes.length > 0 && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
+          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-widest mb-3">✅ Expected Outcomes</h3>
+          <ul className="space-y-1.5">
+            {expectedOutcomes.map((o, i) => (
+              <li key={i} className="text-sm text-slate-200 leading-relaxed flex gap-2"><span className="text-amber-400 flex-shrink-0">▸</span><span>{typeof o === 'string' ? o : JSON.stringify(o)}</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {roadmap.length > 0 && (
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
           <div className="p-4 border-b border-slate-700/40">
