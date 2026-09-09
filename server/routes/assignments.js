@@ -3,6 +3,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import UserStore from '../services/UserStore.js';
 import * as db from '../db/store.js';
 import { Groups } from '../services/DataStore.js';
+import { getVisibleEmployeeIds } from '../services/ManagerScope.js';
 
 const router = express.Router();
 
@@ -157,29 +158,16 @@ router.get('/manager/:managerId/employees', authenticate, async (req, res) => {
       });
     }
 
-    // Union employees from groups AND the durable managerId/file-mirror path
-    // (UserStore.getManagerEmployees) — this used to be all-or-nothing (any
-    // group present meant durable/file assignments were ignored entirely),
-    // so an employee assigned to a manager via the admin "Assign Manager"
-    // dropdown or bulk-import (which only ever set managerId, never created
-    // a Group) would silently never appear on that manager's dashboard the
-    // moment the manager had even one unrelated group.
-    const myCompany = req.user.companyId || 'default';
-    const allGroups = await Groups.getAll();
-    const managerGroups = allGroups.filter(g =>
-      g.managerId === managerId &&
-      (g.companyId || 'default') === myCompany
-    );
-    const groupMemberIds = [...new Set(managerGroups.flatMap(g => g.employeeIds || []))];
-    const [groupEmployees, directEmployees] = await Promise.all([
-      Promise.all(groupMemberIds.map(id => UserStore.getUserById(id))),
-      UserStore.getManagerEmployees(managerId),
-    ]);
-    const byId = new Map();
-    for (const emp of [...groupEmployees.filter(Boolean), ...directEmployees]) {
-      byId.set(emp.userId || emp.id, emp);
-    }
-    const employees = [...byId.values()];
+    // Union of Groups membership AND the durable manager_id path, via the
+    // shared helper — every manager-scoped read in the app now resolves a
+    // team the same way, so no site can silently see a partial team again.
+    const visibleIds = await getVisibleEmployeeIds({
+      ...req.user,
+      userId: managerId,
+      role: 'manager',
+    });
+    const fetched = await Promise.all([...visibleIds].map(id => UserStore.getUserById(id).catch(() => null)));
+    const employees = fetched.filter(Boolean);
 
     const sanitizedEmployees = employees.map(emp => ({
       userId: emp.userId || emp.id,
@@ -219,7 +207,17 @@ router.get('/employee/:employeeId/manager', authenticate, async (req, res) => {
   try {
     const { employeeId } = req.params;
 
-    if (req.user.userId !== employeeId && req.user.role !== 'admin') {
+    // Self, admin, or a manager who actually has this employee on their team.
+    // The manager case used to 403, so a manager could not look up their own
+    // report's manager and any admin UI reusing this endpoint broke for them.
+    const isSelf = req.user.userId === employeeId;
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    let allowed = isSelf || isAdmin;
+    if (!allowed) {
+      const visible = await getVisibleEmployeeIds(req.user);
+      allowed = visible.has(employeeId);
+    }
+    if (!allowed) {
       return res.status(403).json({
         success: false,
         data: null,

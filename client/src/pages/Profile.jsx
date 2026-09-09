@@ -66,7 +66,10 @@ export default function Profile() {
           });
           if (response.ok) {
             const data = await response.json();
-            setManagerInfo(data.data);
+            // Endpoint returns { employeeId, managers: [...], count } — the
+            // manager is the first entry, not the payload itself. Reading
+            // data.data directly left every `managerInfo.name` undefined.
+            setManagerInfo(data.data?.managers?.[0] || null);
           }
         } else if (user.role === 'manager') {
           // Fetch assigned employees count
@@ -75,7 +78,10 @@ export default function Profile() {
           });
           if (response.ok) {
             const data = await response.json();
-            setEmployeeCount(data.data?.length || 0);
+            // Payload is { managerId, employees: [...], count } — `data.data`
+            // is an object, so `.length` was always undefined and the count
+            // always rendered as 0 no matter how many reports existed.
+            setEmployeeCount(data.data?.count ?? data.data?.employees?.length ?? 0);
           }
         }
       } catch (err) {

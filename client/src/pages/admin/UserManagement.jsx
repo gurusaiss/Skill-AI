@@ -81,8 +81,6 @@ const selectCls = 'w-full px-3 py-2.5 bg-slate-900 border border-slate-700 round
 // ─── Detail Modal ─────────────────────────────────────────────────────────────
 
 function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setToast }) {
-  const [manager, setManager] = useState(null);
-  const [loadingManager, setLoadingManager] = useState(false);
   const [showFullJD, setShowFullJD] = useState(false);
 
   const userAssignments = useMemo(
@@ -90,18 +88,14 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
     [assignments, user.userId]
   );
 
-  useEffect(() => {
-    if (user.role !== 'employee') return;
-    setLoadingManager(true);
-    authFetch(`/api/assignments/employee/${user.userId}/manager`)
-      .then(d => {
-        // Handle various response shapes from the API
-        const mgr = d?.manager || d?.data?.manager || d?.managerData || d;
-        setManager(mgr && (mgr.name || mgr.managerName || mgr.email) ? mgr : null);
-      })
-      .catch(() => setManager(null))
-      .finally(() => setLoadingManager(false));
-  }, [user.userId, user.role]);
+  // The manager now arrives resolved on the user row itself (managerName /
+  // managerEmail from GET /api/users). This replaces a fetch that read
+  // `d.manager` from an endpoint which actually returns `data.managers[]` —
+  // an array — so the lookup always fell through to null and this panel
+  // reported "no manager" even when one was correctly assigned.
+  const manager = user.managerId
+    ? { name: user.managerName, email: user.managerEmail }
+    : null;
 
   const handleDelete = async () => {
     if (!window.confirm(`Delete ${user.name}? This cannot be undone.`)) return;
@@ -250,29 +244,27 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
             )}
           </div>
 
-          {/* Manager */}
-          {user.role === 'employee' && (
-            <div>
-              <h3 className="text-slate-300 font-semibold text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
-                <span className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center text-purple-400 text-xs">👤</span>
-                Manager
-              </h3>
-              <div className="bg-slate-900/60 rounded-xl p-3">
-                {loadingManager ? <div className="h-4 bg-slate-700 rounded animate-pulse w-32" />
-                  : manager ? (
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg border flex items-center justify-center text-sm font-bold ${getAvatarColor('manager')}`}>
-                        {getAvatarInitials(manager.name || manager.managerName)}
-                      </div>
-                      <div>
-                        <p className="text-white text-sm font-medium">{manager.name || manager.managerName}</p>
-                        <p className="text-slate-500 text-xs">{manager.role ? `${manager.role} · ` : ''}{manager.email || ''}</p>
-                      </div>
-                    </div>
-                  ) : <p className="text-slate-500 text-sm italic">No manager assigned</p>}
-              </div>
+          {/* Manager — shown for any user who has one, not just primary-role
+              employees: a manager can report to another manager. */}
+          <div>
+            <h3 className="text-slate-300 font-semibold text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
+              <span className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center text-purple-400 text-xs">👤</span>
+              Manager
+            </h3>
+            <div className="bg-slate-900/60 rounded-xl p-3">
+              {manager ? (
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-lg border flex items-center justify-center text-sm font-bold ${getAvatarColor('manager')}`}>
+                    {getAvatarInitials(manager.name || '?')}
+                  </div>
+                  <div>
+                    <p className="text-white text-sm font-medium">{manager.name || 'Unknown'}</p>
+                    <p className="text-slate-500 text-xs">{manager.email || ''}</p>
+                  </div>
+                </div>
+              ) : <p className="text-slate-500 text-sm italic">No manager assigned</p>}
             </div>
-          )}
+          </div>
         </div>
 
         <div className="px-6 pb-6 flex gap-3">
