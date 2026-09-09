@@ -25,6 +25,7 @@ import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
 import { getApprovedBankCached } from '../services/QuestionBankCache.js';
 import GeminiService from '../services/GeminiService.js';
 import LLMCache from '../services/LLMCache.js';
+import { generateSessionQuiz, ensureAllSessionQuizzes } from '../services/SessionQuizGenerator.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -1778,48 +1779,17 @@ router.post('/export-filtered-reports', authenticate, async (req, res) => {
  */
 router.post('/generate', authenticate, llmLimiter, async (req, res) => {
   try {
-    const { moduleTitle, moduleDescription, skills, numQuestions, questionTypes, sessionTitle, sessionTopics, sessionKeyPoints } = req.body;
-    const num = Math.min(Math.max(parseInt(numQuestions) || 5, 2), 20);
-    const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
-    const topicsStr = Array.isArray(sessionTopics) && sessionTopics.length > 0
-      ? sessionTopics.join(', ')
-      : (Array.isArray(skills) && skills.length > 0 ? skills.join(', ') : 'core concepts');
-    const keyPointsStr = Array.isArray(sessionKeyPoints) ? sessionKeyPoints.join('. ') : '';
+    const { moduleTitle, moduleDescription, skills, numQuestions, sessionTitle, sessionTopics, sessionKeyPoints } = req.body;
+    const topics = Array.isArray(sessionTopics) && sessionTopics.length > 0 ? sessionTopics : skills;
 
-    const cacheKey = `module_quiz_${LLMCache.hash([moduleTitle, sessionTitle, topicsStr, num].join('|'))}`;
-    let questions = LLMCache.get(cacheKey);
+    const questions = await generateSessionQuiz({
+      moduleTitle, moduleDescription, sessionTitle,
+      topics, keyPoints: sessionKeyPoints, numQuestions: numQuestions || 5,
+    });
 
-    if (!questions) {
-      const prompt = `Create exactly ${num} quiz questions testing comprehension of this training session's content.
-
-Module: ${moduleTitle || 'Learning Module'}
-Session: ${sessionTitle || 'Session'}
-Topics covered: ${topicsStr}
-${moduleDescription ? `Module context: ${moduleDescription}` : ''}
-${keyPointsStr ? `Key points taught in this session: ${keyPointsStr}` : ''}
-
-Return ONLY a JSON object: { "questions": [ { "type": "mcq"|"fill_blank"|"subjective", "question": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."] (mcq only), "answer": "...", "explanation": "..." } ] }
-Mix of types: mostly mcq, a couple fill_blank, one subjective. Questions must be specific to the topics/key points above, not generic.`;
-
-      try {
-        const result = await GeminiService.generateJSON(prompt, '', { maxTokens: 2500 });
-        const list = Array.isArray(result?.questions) ? result.questions : (Array.isArray(result) ? result : []);
-        if (list.length >= Math.min(3, num)) {
-          questions = list.slice(0, num);
-          LLMCache.set(cacheKey, questions, LLMCache.TTL.QUIZ);
-        }
-      } catch (err) {
-        console.warn('[assessments/generate module-quiz] LLM failed:', err.message);
-      }
-    }
-
-    if (!questions) {
-      // AI unavailable — let the client fall back to its own deterministic
-      // template questions rather than blocking the session on a slow retry.
-      return res.json({ success: true, data: [], error: null });
-    }
-
-    res.json({ success: true, data: questions, error: null });
+    // AI unavailable — let the client fall back to its own deterministic
+    // template questions rather than blocking the session on a slow retry.
+    res.json({ success: true, data: questions || [], error: null });
   } catch (e) {
     console.error('[assessments generate-from-jd variant]', e.message);
     res.status(500).json({ success: false, data: null, error: 'Failed to load questions' });
@@ -2162,12 +2132,21 @@ Return ONLY valid JSON matching exactly this structure:
           });
         });
 
-        const sessions = rawSessions.map((s, i) => {
+        let sessions = rawSessions.map((s, i) => {
           const dayNumber = s.dayNumber || (i + 1);
           const unlockDate = new Date(startDate);
           unlockDate.setDate(unlockDate.getDate() + (dayNumber - 1));
           return { ...s, dayNumber, sessionIndex: i, unlockDate: unlockDate.toISOString() };
         });
+
+        // Generate every remaining day's Knowledge Quiz NOW, in parallel, so
+        // it's already sitting in the DB before this employee ever opens any
+        // specific day — the main content-generation call above can omit or
+        // truncate a session's quiz if the response nears its token budget,
+        // and this closes that gap regardless of cause. Without this, the
+        // first time a day without an embedded quiz was opened, the employee
+        // sat on a live "Generating your knowledge quiz…" LLM call.
+        sessions = await ensureAllSessionQuizzes(sessions, { moduleTitle: moduleContent?.title, moduleDescription: moduleContent?.description });
 
         const estimatedDays = sessions.length;
         const endDate = new Date(startDate);
