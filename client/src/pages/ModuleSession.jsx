@@ -15,61 +15,195 @@ import { authFetch } from '../utils/authFetch.js';
 
 // ─── Content phase ────────────────────────────────────────────────────────────
 
-function downloadSessionNotes(session, sessionIndex, moduleTitle) {
+// Real PDF export (jsPDF, text/vector only — no HTML rendering) covering the
+// full session: definitions, key points, explanation, and the quiz results
+// when the session has already been completed. jsPDF is loaded on demand
+// (dynamic import) rather than at module load — its package pulls in
+// html2canvas/svg2pdf as part of the same bundle graph even though this code
+// never uses the .html() feature, which would otherwise add ~140KB gzipped
+// to every employee's initial load of this route just to support a button
+// most sessions won't click every time.
+async function downloadSessionNotesPDF(session, sessionIndex, moduleTitle, quizResults) {
+  const { jsPDF } = await import('jspdf');
   const title = session.title || session.topic || `Day ${sessionIndex + 1}`;
   const keyPoints = session.keyPoints || session.key_points || session.topics || [];
   const definitions = session.definitions || [];
   const notes = session.notes || session.content || '';
   const explanation = session.explanation || '';
+  const learningObjectives = session.learningObjectives || [];
 
-  const pointsHtml = keyPoints.length > 0
-    ? `<h2>Key Points</h2><ol>${keyPoints.map(p => `<li>${typeof p === 'string' ? p : p.title || p.point || ''}</li>`).join('')}</ol>`
-    : '';
-  const defsHtml = definitions.length > 0
-    ? `<h2>Key Definitions</h2><dl>${definitions.map(d => `<dt><strong>${typeof d === 'string' ? d : d.term || ''}</strong></dt>${d.definition ? `<dd>${d.definition}</dd>` : ''}`).join('')}</dl>`
-    : '';
-  const notesHtml = (explanation || notes)
-    ? `<h2>Explanation & Notes</h2><div style="white-space:pre-wrap">${explanation || notes}</div>`
-    : '';
-  const sop = session.sopSteps;
-  const sopHtml = (sop && Array.isArray(sop.steps) && sop.steps.length > 0)
-    ? `<h2>SOP: ${sop.title || ''}</h2>${sop.purpose ? `<p style="color:#475569;font-size:13px">${sop.purpose}</p>` : ''}<ol>${sop.steps.map(s => `<li><strong>${s.action}</strong>${s.detail ? `<br><span style="color:#64748b;font-size:12px">${s.detail}</span>` : ''}</li>`).join('')}</ol>${sop.expectedOutcome ? `<p><strong>Expected Outcome:</strong> ${sop.expectedOutcome}</p>` : ''}`
-    : '';
-  const pt = session.practicalTask;
-  const ptHtml = (pt && Array.isArray(pt.steps) && pt.steps.length > 0)
-    ? `<h2>Hands-On Task: ${pt.title || ''}</h2>${pt.scenario ? `<p style="background:#f1f5f9;padding:10px;border-radius:6px;font-size:13px">${pt.scenario}</p>` : ''}<ol>${pt.steps.map(s => `<li>${s.instruction}${s.hint ? `<br><em style="font-size:12px;color:#64748b">💡 ${s.hint}</em>` : ''}</li>`).join('')}</ol>${pt.updateChallenge ? `<p style="background:#fef3c7;padding:10px;border-radius:6px"><strong>✍️ Update Challenge:</strong> ${pt.updateChallenge}</p>` : ''}${pt.successCriteria ? `<p><strong>Success Criteria:</strong> ${pt.successCriteria}</p>` : ''}`
-    : '';
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 48;
+  const maxWidth = pageWidth - margin * 2;
+  let y = margin;
 
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title} — Learning Notes</title>
-<style>
-  body{font-family:'Segoe UI',Arial,sans-serif;max-width:800px;margin:40px auto;padding:0 32px;color:#1e293b;line-height:1.7}
-  h1{color:#1e40af;font-size:24px;border-bottom:3px solid #e2e8f0;padding-bottom:12px}
-  h2{color:#334155;font-size:16px;margin:28px 0 10px;border-bottom:1px solid #e2e8f0;padding-bottom:6px}
-  .meta{font-size:12px;color:#64748b;margin-bottom:24px}
-  ol,ul{padding-left:20px}
-  li{margin-bottom:8px;font-size:14px}
-  dt{font-weight:700;font-size:14px;margin-top:10px}
-  dd{font-size:13px;color:#475569;margin-left:16px}
-  div[style]{font-size:14px;color:#334155}
-  .footer{margin-top:40px;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px}
-</style></head><body>
-<div class="meta">Module: <strong>${moduleTitle || 'Learning Module'}</strong></div>
-<h1>Day ${sessionIndex + 1}: ${title}</h1>
-${session.description ? `<p style="color:#475569">${session.description}</p>` : ''}
-${defsHtml}${pointsHtml}${notesHtml}${sopHtml}${ptHtml}
-<div class="footer">Downloaded from SkillForge AI &nbsp;|&nbsp; ${new Date().toLocaleDateString()}</div>
-</body></html>`;
+  const ensureSpace = (needed) => {
+    if (y + needed > pageHeight - margin) { doc.addPage(); y = margin; }
+  };
+  const heading = (text) => {
+    ensureSpace(28);
+    doc.setFont('helvetica', 'bold').setFontSize(13).setTextColor(30, 41, 59);
+    doc.text(text, margin, y);
+    y += 8;
+    doc.setDrawColor(226, 232, 240).line(margin, y, pageWidth - margin, y);
+    y += 16;
+  };
+  const paragraph = (text, { bold = false, size = 10, color = [51, 65, 85], gap = 6 } = {}) => {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal').setFontSize(size).setTextColor(...color);
+    const lines = doc.splitTextToSize(text, maxWidth);
+    lines.forEach(line => {
+      ensureSpace(size * 1.4);
+      doc.text(line, margin, y);
+      y += size * 1.4;
+    });
+    y += gap;
+  };
+  const bullet = (text, indent = 14) => {
+    doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(51, 65, 85);
+    const lines = doc.splitTextToSize(text, maxWidth - indent);
+    lines.forEach((line, i) => {
+      ensureSpace(14);
+      doc.text(i === 0 ? `•  ${line}` : `   ${line}`, margin, y);
+      y += 14;
+    });
+  };
 
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `Day${sessionIndex + 1}-${title.replace(/[^a-z0-9]/gi, '-')}-Notes.html`;
-  a.click();
-  URL.revokeObjectURL(url);
+  doc.setFont('helvetica', 'bold').setFontSize(9).setTextColor(99, 102, 241);
+  doc.text((moduleTitle || 'Learning Module').toUpperCase(), margin, y);
+  y += 22;
+  doc.setFont('helvetica', 'bold').setFontSize(19).setTextColor(15, 23, 42);
+  doc.text(`Day ${sessionIndex + 1}: ${title}`, margin, y);
+  y += 24;
+  if (session.description) paragraph(session.description, { color: [71, 85, 105], gap: 12 });
+
+  if (learningObjectives.length > 0) {
+    heading('Learning Objectives');
+    learningObjectives.forEach(o => bullet(typeof o === 'string' ? o : JSON.stringify(o)));
+    y += 8;
+  }
+
+  if (definitions.length > 0) {
+    heading('Key Definitions');
+    definitions.forEach(d => {
+      const term = typeof d === 'string' ? d : d.term || d.word || '';
+      paragraph(term, { bold: true, size: 10.5, color: [15, 23, 42], gap: 2 });
+      if (d.definition) paragraph(d.definition, { size: 10, color: [71, 85, 105], gap: 10 });
+    });
+  }
+
+  if (keyPoints.length > 0) {
+    heading('Key Points');
+    keyPoints.forEach(p => bullet(typeof p === 'string' ? p : p.title || p.point || JSON.stringify(p)));
+    y += 8;
+  }
+
+  if (explanation || notes) {
+    heading('Explanation & Notes');
+    paragraph(explanation || notes, { gap: 12 });
+  }
+
+  if (Array.isArray(quizResults) && quizResults.length > 0) {
+    heading('Knowledge Quiz Results');
+    quizResults.forEach((r, i) => {
+      paragraph(`${i + 1}. ${r.question}`, { bold: true, size: 10, color: [15, 23, 42], gap: 2 });
+      paragraph(`${r.isCorrect ? '✓ Correct' : '✗ Incorrect'} — your answer: ${r.userAnswer || '(no answer)'}${!r.isCorrect ? `  |  correct: ${r.answer}` : ''}`,
+        { size: 9.5, color: r.isCorrect ? [16, 128, 87] : [190, 40, 40], gap: r.explanation ? 2 : 10 });
+      if (r.explanation) paragraph(r.explanation, { size: 9.5, color: [100, 116, 139], gap: 12 });
+    });
+  }
+
+  doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(148, 163, 184);
+  doc.text(`Downloaded from SkillForge AI · ${new Date().toLocaleDateString()}`, margin, pageHeight - 24);
+
+  doc.save(`Day${sessionIndex + 1}-${title.replace(/[^a-z0-9]/gi, '-')}-Notes.pdf`);
 }
 
-function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
+// Lightweight, dependency-free chart/diagram rendering for session content —
+// flowchart as a connected step list, bar/pie via plain CSS (no charting
+// library needed for a handful of values, keeps this route's bundle light).
+const CHART_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#ec4899'];
+
+function SessionVisual({ visual }) {
+  if (!visual || visual.type === 'none' || !visual.type) return null;
+
+  if (visual.type === 'flowchart' && Array.isArray(visual.flowSteps) && visual.flowSteps.length > 0) {
+    return (
+      <section className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-5">
+        {visual.title && <h2 className="text-xs font-bold text-cyan-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span>🔀</span> {visual.title}</h2>}
+        <div className="space-y-0">
+          {visual.flowSteps.map((step, i) => (
+            <div key={i} className="flex gap-3">
+              <div className="flex flex-col items-center flex-shrink-0">
+                <span className="w-8 h-8 rounded-full bg-cyan-600/25 border border-cyan-500/40 flex items-center justify-center text-xs font-black text-cyan-300">{i + 1}</span>
+                {i < visual.flowSteps.length - 1 && <span className="w-px flex-1 bg-cyan-500/30 my-1" style={{ minHeight: '1.25rem' }} />}
+              </div>
+              <p className="text-sm text-slate-200 leading-relaxed pb-4">{typeof step === 'string' ? step : step.label || JSON.stringify(step)}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if ((visual.type === 'bar' || visual.type === 'pie') && Array.isArray(visual.data) && visual.data.length > 0) {
+    const data = visual.data.filter(d => d && typeof d.value === 'number').slice(0, 8);
+    if (data.length === 0) return null;
+    const max = Math.max(...data.map(d => d.value), 1);
+    const total = data.reduce((s, d) => s + d.value, 0) || 1;
+
+    if (visual.type === 'pie') {
+      let acc = 0;
+      const stops = data.map((d, i) => {
+        const start = (acc / total) * 360;
+        acc += d.value;
+        const end = (acc / total) * 360;
+        return `${CHART_COLORS[i % CHART_COLORS.length]} ${start}deg ${end}deg`;
+      }).join(', ');
+      return (
+        <section className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-5">
+          {visual.title && <h2 className="text-xs font-bold text-purple-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span>🥧</span> {visual.title}</h2>}
+          <div className="flex flex-col sm:flex-row items-center gap-6">
+            <div className="w-36 h-36 rounded-full flex-shrink-0" style={{ background: `conic-gradient(${stops})` }} />
+            <ul className="space-y-1.5 w-full">
+              {data.map((d, i) => (
+                <li key={i} className="flex items-center gap-2 text-xs text-slate-300">
+                  <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                  <span className="flex-1">{d.label}</span>
+                  <span className="text-slate-500 font-semibold">{Math.round((d.value / total) * 100)}%</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      );
+    }
+
+    return (
+      <section className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-5">
+        {visual.title && <h2 className="text-xs font-bold text-purple-400 uppercase tracking-widest mb-4 flex items-center gap-2"><span>📊</span> {visual.title}</h2>}
+        <div className="space-y-2.5">
+          {data.map((d, i) => (
+            <div key={i}>
+              <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
+                <span>{d.label}</span>
+                <span className="text-slate-500 font-semibold">{d.value}</span>
+              </div>
+              <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{ width: `${(d.value / max) * 100}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return null;
+}
+
+function ContentPhase({ session, sessionIndex, module, onStartQuiz, onOpenNotes, onHome }) {
   const [readProgress, setReadProgress] = useState(0);
   const contentRef = useRef(null);
 
@@ -93,10 +227,7 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
   const notes = session.notes || session.content || '';
   const explanation = session.explanation || '';
   const learningObjectives = session.learningObjectives || [];
-  const exercise = session.exercise && (session.exercise.instructions || session.exercise.title) ? session.exercise : null;
-  const caseStudy = session.caseStudy && session.caseStudy.scenario ? session.caseStudy : null;
-  const sopSteps = session.sopSteps && Array.isArray(session.sopSteps.steps) && session.sopSteps.steps.length > 0 ? session.sopSteps : null;
-  const practicalTask = session.practicalTask && Array.isArray(session.practicalTask.steps) && session.practicalTask.steps.length > 0 ? session.practicalTask : null;
+  const visual = session.visual;
   const isCapstone = session.type === 'capstone';
 
   return (
@@ -107,11 +238,20 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
       </div>
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-xs text-slate-500 mb-6">
-          <span>Module</span>
-          <span>/</span>
-          <span className="text-slate-300">{title}</span>
+        {/* Breadcrumb + Home */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span>{module?.title || 'Module'}</span>
+            <span>/</span>
+            <span className="text-slate-300">{title}</span>
+          </div>
+          <button
+            onClick={onHome}
+            title="Module Home"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700/60 bg-slate-800/50 hover:bg-slate-700/60 text-slate-400 hover:text-white text-xs font-semibold transition-all"
+          >
+            <span>🏠</span> Module Home
+          </button>
         </div>
 
         {/* Header */}
@@ -185,6 +325,9 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
             </section>
           )}
 
+          {/* Visual: flowchart / bar / pie — only when the content genuinely has one */}
+          <SessionVisual visual={visual} />
+
           {/* Main explanation / notes */}
           {(notes || explanation) && (
             <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
@@ -208,147 +351,15 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
             </section>
           )}
 
-          {/* SOP Documentation Steps */}
-          {sopSteps && (
-            <section className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-5">
-              <h2 className="text-xs font-bold text-cyan-400 uppercase tracking-widest mb-1 flex items-center gap-2">
-                <span>📋</span> Standard Operating Procedure
-              </h2>
-              <p className="text-sm font-bold text-white mb-1">{sopSteps.title}</p>
-              {sopSteps.purpose && <p className="text-xs text-slate-400 mb-4 leading-relaxed">{sopSteps.purpose}</p>}
-              <ol className="space-y-3">
-                {sopSteps.steps.map((s, i) => (
-                  <li key={i} className="flex gap-3">
-                    <span className="w-6 h-6 rounded-full bg-cyan-600/25 border border-cyan-500/40 flex items-center justify-center text-xs font-black text-cyan-300 flex-shrink-0 mt-0.5">
-                      {s.step || i + 1}
-                    </span>
-                    <div>
-                      <p className="text-sm font-semibold text-white">{s.action}</p>
-                      {s.detail && <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{s.detail}</p>}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-              {sopSteps.expectedOutcome && (
-                <div className="mt-4 rounded-lg bg-cyan-900/20 border border-cyan-500/20 px-3 py-2">
-                  <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">Expected Outcome: </span>
-                  <span className="text-xs text-slate-300">{sopSteps.expectedOutcome}</span>
-                </div>
-              )}
-              {sopSteps.commonErrors && sopSteps.commonErrors.length > 0 && (
-                <div className="mt-2 rounded-lg bg-red-900/15 border border-red-500/20 px-3 py-2">
-                  <p className="text-xs font-bold text-red-400 uppercase tracking-wider mb-1">Common Mistakes to Avoid</p>
-                  <ul className="space-y-0.5">
-                    {sopSteps.commonErrors.map((e, i) => (
-                      <li key={i} className="text-xs text-slate-300 flex gap-1.5"><span className="text-red-400 flex-shrink-0">✕</span>{e}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Practical Task */}
-          {practicalTask && (
-            <section className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-5">
-              <h2 className="text-xs font-bold text-violet-400 uppercase tracking-widest mb-1 flex items-center gap-2">
-                <span>🖥️</span> Hands-On Practice Task
-              </h2>
-              <p className="text-sm font-bold text-white mb-1">{practicalTask.title}</p>
-              {practicalTask.scenario && (
-                <div className="rounded-lg bg-violet-900/20 border border-violet-500/20 px-3 py-2 mb-4">
-                  <p className="text-xs font-bold text-violet-300 mb-0.5">Scenario</p>
-                  <p className="text-xs text-slate-300 leading-relaxed">{practicalTask.scenario}</p>
-                </div>
-              )}
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Your Steps</p>
-              <ol className="space-y-3 mb-4">
-                {practicalTask.steps.map((s, i) => (
-                  <li key={i} className="rounded-lg bg-slate-800/50 border border-slate-700/50 p-3">
-                    <div className="flex gap-2 items-start">
-                      <span className="w-5 h-5 rounded-full bg-violet-600/30 border border-violet-500/40 flex items-center justify-center text-xs font-black text-violet-300 flex-shrink-0">
-                        {s.step || i + 1}
-                      </span>
-                      <div>
-                        <p className="text-sm text-white">{s.instruction}</p>
-                        {s.hint && <p className="text-xs text-slate-500 mt-0.5 italic">💡 {s.hint}</p>}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-              {practicalTask.updateChallenge && (
-                <div className="rounded-lg bg-amber-900/20 border border-amber-500/30 px-4 py-3 mb-3">
-                  <p className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-1">✍️ Update Challenge</p>
-                  <p className="text-sm text-slate-200 leading-relaxed">{practicalTask.updateChallenge}</p>
-                </div>
-              )}
-              {practicalTask.successCriteria && (
-                <div className="rounded-lg bg-emerald-900/15 border border-emerald-500/20 px-3 py-2">
-                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Success Criteria: </span>
-                  <span className="text-xs text-slate-300">{practicalTask.successCriteria}</span>
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Practical Exercise */}
-          {exercise && (
-            <section className="rounded-xl border border-teal-500/20 bg-teal-500/5 p-5">
-              <h2 className="text-xs font-bold text-teal-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                <span>🛠️</span> Practical Exercise
-              </h2>
-              {exercise.title && <p className="text-sm font-bold text-white mb-2">{exercise.title}</p>}
-              {exercise.instructions && <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{exercise.instructions}</p>}
-              {exercise.deliverable && (
-                <div className="mt-3 rounded-lg bg-slate-900/60 border border-teal-500/15 px-3 py-2">
-                  <span className="text-xs font-bold text-teal-400 uppercase tracking-wider">Deliverable: </span>
-                  <span className="text-xs text-slate-300">{exercise.deliverable}</span>
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Case Study */}
-          {caseStudy && (
-            <section className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
-              <h2 className="text-xs font-bold text-amber-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                <span>💼</span> Case Study
-              </h2>
-              <p className="text-sm text-slate-200 leading-relaxed italic">"{caseStudy.scenario}"</p>
-              {(caseStudy.discussionPoints || []).length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Think through:</p>
-                  <ul className="space-y-1">
-                    {caseStudy.discussionPoints.map((p, i) => (
-                      <li key={i} className="text-sm text-slate-300 flex gap-2"><span className="text-amber-400 flex-shrink-0">{i + 1}.</span><span>{p}</span></li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Tips */}
-          <section className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-5">
-            <h2 className="text-xs font-bold text-purple-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-              <span>🎯</span> Learning Tips
-            </h2>
-            <ul className="space-y-1.5 text-xs text-slate-300">
-              <li>• Take notes as you read — writing reinforces memory</li>
-              <li>• Try to relate concepts to real-world scenarios you know</li>
-              <li>• The quiz below has 10 questions — answer all questions to complete this session</li>
-            </ul>
-          </section>
         </div>
 
         {/* CTA */}
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
           <button
-            onClick={() => downloadSessionNotes(session, sessionIndex, module?.title)}
+            onClick={onOpenNotes}
             className="px-6 py-3 rounded-2xl border border-slate-600/60 bg-slate-800/60 hover:bg-slate-700/60 text-slate-300 hover:text-white font-semibold text-sm transition-all flex items-center gap-2"
           >
-            📥 Download Notes
+            📝 View Notes
           </button>
           <button
             onClick={onStartQuiz}
@@ -356,6 +367,145 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz }) {
           >
             Take Knowledge Quiz →
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Notes phase ──────────────────────────────────────────────────────────────
+// A dedicated, read-optimized view of everything from this session — separate
+// from the main learning flow so an employee can jump back to review without
+// re-reading through Learning Objectives/quiz CTAs, with a real PDF export.
+
+function NotesPhase({ session, sessionIndex, module, quizResults, onBack, onHome }) {
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const title = session.title || session.topic || `Day ${sessionIndex + 1}`;
+  const keyPoints = session.keyPoints || session.key_points || session.topics || [];
+  const definitions = session.definitions || [];
+  const notes = session.notes || session.content || '';
+  const explanation = session.explanation || '';
+  const learningObjectives = session.learningObjectives || [];
+
+  const handleDownload = async () => {
+    setDownloadingPdf(true);
+    try {
+      await downloadSessionNotesPDF(session, sessionIndex, module?.title, quizResults);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0F172A]">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
+        <div className="flex items-center justify-between mb-6">
+          <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-white transition-colors">
+            <span>←</span> Back to Session
+          </button>
+          <button
+            onClick={onHome}
+            title="Module Home"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700/60 bg-slate-800/50 hover:bg-slate-700/60 text-slate-400 hover:text-white text-xs font-semibold transition-all"
+          >
+            <span>🏠</span> Module Home
+          </button>
+        </div>
+
+        <div className="flex items-start justify-between gap-4 mb-8">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold mb-3 bg-purple-600/15 border border-purple-500/25 text-purple-300">
+              <span>📝</span> Day {sessionIndex + 1} Notes
+            </div>
+            <h1 className="text-2xl font-black text-white leading-tight">{title}</h1>
+          </div>
+          <button
+            onClick={handleDownload}
+            disabled={downloadingPdf}
+            className="flex-shrink-0 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-sm font-bold transition-all flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+          >
+            {downloadingPdf ? <><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Preparing…</> : <>📄 Download PDF</>}
+          </button>
+        </div>
+
+        <div className="space-y-6">
+          {learningObjectives.length > 0 && (
+            <section className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+              <h2 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-3">🎯 Learning Objectives</h2>
+              <ul className="space-y-1.5">
+                {learningObjectives.map((o, i) => (
+                  <li key={i} className="text-sm text-slate-200 leading-relaxed flex gap-2">
+                    <span className="text-emerald-400 flex-shrink-0">▸</span>
+                    <span>{typeof o === 'string' ? o : JSON.stringify(o)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {definitions.length > 0 && (
+            <section className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
+              <h2 className="text-xs font-bold text-amber-400 uppercase tracking-widest mb-4">📖 Key Definitions</h2>
+              <dl className="space-y-3">
+                {definitions.map((def, i) => (
+                  <div key={i}>
+                    <dt className="text-sm font-bold text-white">{typeof def === 'string' ? def : def.term || def.word || `Term ${i + 1}`}</dt>
+                    {def.definition && <dd className="text-sm text-slate-400 mt-0.5 ml-3">{def.definition}</dd>}
+                  </div>
+                ))}
+              </dl>
+            </section>
+          )}
+
+          {keyPoints.length > 0 && (
+            <section className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5">
+              <h2 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4">✅ Key Points</h2>
+              <ul className="space-y-2">
+                {keyPoints.map((point, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="w-5 h-5 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-400 flex-shrink-0 mt-0.5">{i + 1}</span>
+                    <span className="text-sm text-slate-200 leading-relaxed">{typeof point === 'string' ? point : point.title || point.point || JSON.stringify(point)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <SessionVisual visual={session.visual} />
+
+          {(notes || explanation) && (
+            <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
+              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">💡 Explanation & Notes</h2>
+              <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{explanation || notes}</div>
+            </section>
+          )}
+
+          {Array.isArray(quizResults) && quizResults.length > 0 && (
+            <section className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
+              <div className="p-4 border-b border-slate-700/40">
+                <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest">📋 Knowledge Quiz Results</h2>
+              </div>
+              <div className="divide-y divide-slate-700/30">
+                {quizResults.map((r, i) => (
+                  <div key={i} className={`p-4 ${r.isCorrect ? 'bg-emerald-500/5' : 'bg-rose-500/5'}`}>
+                    <div className="flex gap-3">
+                      <span className={`flex-shrink-0 text-sm ${r.isCorrect ? 'text-emerald-400' : 'text-rose-400'}`}>{r.isCorrect ? '✓' : '✗'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-white font-semibold mb-1">{r.question}</p>
+                        {!r.isCorrect && (
+                          <>
+                            <p className="text-xs text-rose-400">Your answer: {r.userAnswer || '(no answer)'}</p>
+                            <p className="text-xs text-emerald-400">Correct: {r.answer}</p>
+                          </>
+                        )}
+                        {r.explanation && <p className="text-xs text-slate-500 mt-1 italic">{r.explanation}</p>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </div>
@@ -635,7 +785,7 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
 
 // ─── Score phase ──────────────────────────────────────────────────────────────
 
-function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatch, onRetryQuiz, onNextSession, onDashboard, saving, saveError, onRetrySave }) {
+function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatch, onRetryQuiz, onNextSession, onDashboard, saving, saveError, onRetrySave, onOpenNotes }) {
   const { pct, correct, total, results } = score;
   const passed = pct >= 70;
   const hasNext = sessionIndex + 1 < totalSessions;
@@ -740,6 +890,13 @@ function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatc
             <span className="text-xs text-slate-500 font-normal">Try for a higher score</span>
           </button>
         </div>
+
+        <button
+          onClick={onOpenNotes}
+          className="w-full mb-6 py-3 rounded-xl border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 hover:text-purple-200 text-sm font-semibold transition-all flex items-center justify-center gap-2"
+        >
+          <span>📝</span> View Notes (includes quiz results, downloadable as PDF)
+        </button>
 
         <div className="flex flex-col gap-3">
           {hasNext && (
@@ -1005,6 +1162,21 @@ export default function ModuleSession() {
         sessionIndex={sessionIndex}
         module={module}
         onStartQuiz={() => setPhase('quiz')}
+        onOpenNotes={() => setPhase('notes')}
+        onHome={goToDashboard}
+      />
+    );
+  }
+
+  if (phase === 'notes') {
+    return (
+      <NotesPhase
+        session={session}
+        sessionIndex={sessionIndex}
+        module={module}
+        quizResults={quizScore?.results}
+        onBack={() => setPhase(quizScore ? 'score' : 'content')}
+        onHome={goToDashboard}
       />
     );
   }
@@ -1035,6 +1207,7 @@ export default function ModuleSession() {
         onRetryQuiz={handleRetryQuiz}
         onNextSession={goToNextSession}
         onDashboard={goToDashboard}
+        onOpenNotes={() => setPhase('notes')}
       />
     );
   }

@@ -2057,11 +2057,14 @@ ${skills.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 4. Progressive structure: Day 1 = foundations of the weakest area; middle days = applied practice per gap; the FINAL session = capstone that integrates all gaps (mark it "type": "capstone") with a realistic workplace case study and a slightly harder final quiz.
 5. Each session MUST include:
    - learningObjectives: 2-3 specific "By the end of this session you will be able to..." statements
-   - topics, keyPoints (3-5 practical takeaways)
-   - exercise: ONE practical workplace exercise the employee can actually do on the job (title + instructions + expected deliverable)
+   - topics, keyPoints (6-8 substantial, specific takeaways — this is the core content, not a summary afterthought)
+   - definitions: 3-4 domain-specific terms this employee needs for this exact topic, each with a precise definition
+   - explanation: 2-3 paragraphs teaching the material like a subject-matter expert briefing this specific employee — reference their actual JD wording or assessment gap wording where relevant, not generic industry boilerplate
+   - visual: ONLY when genuinely natural for this session's content — a flowchart for a real sequential process, or a bar/pie chart for genuinely comparable/proportional data; set type "none" and omit flowSteps/data otherwise. Never force one.
    - quiz: 3-5 scenario-based multiple-choice questions on that day's topic
-6. Include a caseStudy (short realistic workplace scenario + 2-3 discussion points) on the capstone session and on at least one mid-journey session.
-7. Module-level: objectives (what the journey covers) and expectedOutcomes (observable on-the-job behaviors after completion).
+6. Do NOT include a practical exercise or case study — the platform's quiz already handles applied assessment; keep this response focused on explanation/keyPoints/definitions/visual/quiz.
+7. Vary sentence structure and phrasing across sessions and avoid interchangeable filler ("plays a crucial role", "in today's fast-paced environment") — every session should read like it could only apply to THIS employee's actual role and gaps, not be reusable verbatim for a different one.
+8. Module-level: objectives (what the journey covers) and expectedOutcomes (observable on-the-job behaviors after completion).
 
 Return ONLY valid JSON matching exactly this structure:
 {
@@ -2079,8 +2082,14 @@ Return ONLY valid JSON matching exactly this structure:
       "learningObjectives": ["By the end of this session...", ...],
       "topics": ["string", ...],
       "keyPoints": ["string", ...],
-      "exercise": { "title": "string", "instructions": "string", "deliverable": "string" },
-      "caseStudy": { "scenario": "string", "discussionPoints": ["string", ...] },
+      "definitions": [{"term": "string", "definition": "string"}, ...],
+      "explanation": "2-3 paragraphs, specific to this employee's role/gap/JD",
+      "visual": {
+        "type": "flowchart | bar | pie | none",
+        "title": "string",
+        "flowSteps": ["only when type is flowchart"],
+        "data": [{"label": "string", "value": 0}]
+      },
       "quiz": [
         {
           "question": "scenario-based question",
@@ -2091,8 +2100,7 @@ Return ONLY valid JSON matching exactly this structure:
       ]
     }
   ]
-}
-Note: "caseStudy" may be null on sessions that don't need one, but MUST be present on the capstone.`;
+}`;
 
             const cacheKey = `autoassign_module_${LLMCache.hash(jobRole + skills.join(',') + classification + depth.numSessions + jdContext.slice(0, 100))}`;
             const cached = LLMCache.get(cacheKey);
@@ -2127,16 +2135,10 @@ Note: "caseStudy" may be null on sessions that don't need one, but MUST be prese
                   ? [`By the end of this session you will be able to integrate ${skills.slice(0, 3).join(', ')} in a realistic ${jobRole} scenario`]
                   : [`By the end of this session you will be able to explain the core principles of ${s}`, `By the end of this session you will be able to apply ${s} in your daily ${jobRole} work`],
                 topics: [s],
-                keyPoints: [`Understanding ${s}`, `Applying ${s} in ${jobRole} context`, `Common pitfalls with ${s}`],
-                exercise: {
-                  title: `Practice: ${s}`,
-                  instructions: `Identify one real situation from your current work where ${s} applies. Document how you would handle it step by step.`,
-                  deliverable: `A short written walkthrough (5-10 lines) of your approach.`,
-                },
-                caseStudy: isCapstone ? {
-                  scenario: `A ${jobRole} on your team is facing a situation that requires ${skills.slice(0, 2).join(' and ')} simultaneously under a tight deadline.`,
-                  discussionPoints: ['What should be prioritized first and why?', 'Which stakeholders need to be informed?', 'How would you measure whether the outcome was successful?'],
-                } : null,
+                keyPoints: [`Understanding ${s}`, `Applying ${s} in ${jobRole} context`, `Common pitfalls with ${s}`, `How ${s} connects to your day-to-day ${jobRole} responsibilities`],
+                definitions: [{ term: s, definition: `A skill area identified in your assessment as needing development, specific to the ${jobRole} role.` }],
+                explanation: `This session focuses on ${s}, one of the gap areas identified in your recent assessment. Strengthening ${s} directly supports your effectiveness as a ${jobRole}, and the concepts here build toward the capstone session where you'll apply everything together.`,
+                visual: { type: 'none' },
                 quiz: [{
                   question: `What is the most important aspect of ${s} for a ${jobRole}?`,
                   options: ['A) Memorizing theory only', `B) Applying ${s} practically`, 'C) Avoiding it entirely', 'D) Delegating to others'],

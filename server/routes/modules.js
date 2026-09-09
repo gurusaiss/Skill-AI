@@ -453,7 +453,8 @@ CRITICAL RULES:
 2. All sessions must directly address skills and knowledge gaps relevant to this exact role and module topic.
 3. Examples, scenarios, and definitions must come from the correct industry/domain.
 4. Build sessions progressively: foundational → applied → advanced.
-5. Always return valid JSON.`;
+5. Write like a specific subject-matter expert briefing one named employee, not a generic corporate-training template. Reference the actual job description wording, the actual assessment gap wording, or the actual role's real tools/systems/terminology wherever they were given — avoid interchangeable filler phrasing ("plays a crucial role", "in today's fast-paced environment", "it is important to note") that could be pasted into any other role's module unchanged.
+6. Always return valid JSON.`;
 
     const userPrompt = `Create a complete learning curriculum for this training module.
 
@@ -470,10 +471,12 @@ ${jdContext ? `Job Description context:\n${jdContext}` : ''}
 === GENERATION INSTRUCTIONS ===
 1. Every session must address a specific skill, competency, or knowledge area from the module's domain.
 2. Content must be immediately applicable — not abstract theory.
-3. Scenarios, examples, and case studies must match the role's industry and day-to-day responsibilities.
+3. Examples must match the role's industry and day-to-day responsibilities, and should reference specifics from the job description / assessment gaps above where possible rather than generic industry examples.
 4. Definitions should be real domain-specific terms (not generic management jargon unless that IS the domain).
-5. If assessment gaps are provided, structure early sessions to address the most critical gaps first.
+5. If assessment gaps are provided, structure early sessions to address the most critical gaps first — and vary which gap each session targets, so sessions don't repeat the same one or two skills across the whole module.
 6. Build sessions progressively so each builds on the previous.
+7. "visual": include one ONLY when it genuinely helps this session's specific content — a flowchart for a real sequential process in this domain, a bar/pie chart only for genuinely comparable/proportional data relevant to the topic (e.g. time allocation, category breakdown, relative frequency). Set "type": "none" and omit flowSteps/data when neither fits naturally — do not force a chart onto content that has no real comparative or sequential structure.
+8. Do not include a hands-on exercise, case study, or generic "learning tips" section — the platform renders those separately; focus this response entirely on explanation/keyPoints/definitions/visual/quiz.
 
 Generate a JSON object:
 {
@@ -488,39 +491,24 @@ Generate a JSON object:
         "Key insight 2",
         "Key insight 3",
         "Key insight 4",
-        "Key insight 5"
+        "Key insight 5",
+        "Key insight 6",
+        "Key insight 7"
       ],
       "definitions": [
-        {"term": "Domain-specific term", "definition": "Clear, accurate definition from this field"},
-        {"term": "Another term", "definition": "Explanation"}
+        {"term": "Domain-specific term", "definition": "Clear, accurate definition from this field, in this role's own vocabulary"},
+        {"term": "Another term", "definition": "Explanation"},
+        {"term": "A third term", "definition": "Explanation"},
+        {"term": "A fourth term", "definition": "Explanation"}
       ],
       "explanation": "2-3 paragraphs written like a subject-matter expert mentoring someone in this specific role. Include real-world context from the correct industry, why this matters for job performance, and practical application examples from the actual domain.",
       "notes": "Practical tips, common mistakes professionals in this role make, and how to avoid them.",
       "duration": "45 min",
-      "sopSteps": {
-        "title": "How to: [specific procedure in this role's domain — must be a real task this job role performs]",
-        "purpose": "Why this procedure matters and when it is triggered in day-to-day work",
-        "steps": [
-          {"step": 1, "action": "First specific action", "detail": "Exact guidance: which system/tool/form/menu to use, what to enter, what to check — enough detail that someone can follow without prior knowledge"},
-          {"step": 2, "action": "Second action", "detail": "Specific guidance including any conditions, validations, or approvals needed"},
-          {"step": 3, "action": "Third action", "detail": "Continue with granular steps"},
-          {"step": 4, "action": "Fourth action", "detail": "Include confirmation/verification step"},
-          {"step": 5, "action": "Final action and sign-off", "detail": "How to confirm completion and document the outcome"}
-        ],
-        "expectedOutcome": "What the completed result looks like — specific record, status, or output that proves it was done correctly",
-        "commonErrors": ["Specific mistake #1 this role makes and how to prevent it", "Specific mistake #2"]
-      },
-      "practicalTask": {
-        "title": "Hands-On Task: [name of the system/real-world task]",
-        "scenario": "A realistic workplace situation that requires the learner to apply what they just read — be specific to this role and industry",
-        "steps": [
-          {"step": 1, "instruction": "First thing to do in the system/tool/process", "hint": "Tip if stuck: where to find this, what to look for"},
-          {"step": 2, "instruction": "Second action", "hint": "Hint"},
-          {"step": 3, "instruction": "Third action", "hint": "Hint"},
-          {"step": 4, "instruction": "Fourth action", "hint": "Hint"}
-        ],
-        "updateChallenge": "After completing the steps, update or document the following: [specific record, field, log entry, or report the learner must fill in to demonstrate they completed the task — this is the evaluation point]",
-        "successCriteria": "How the learner knows they did it correctly — specific visible result or output to check"
+      "visual": {
+        "type": "flowchart | bar | pie | none",
+        "title": "Short title for this visual, specific to the session topic",
+        "flowSteps": ["Only when type is flowchart: 3-6 short sequential step labels representing a real process in this domain"],
+        "data": [{"label": "Only when type is bar or pie: short category label", "value": 0}]
       },
       "quiz": [
         {"question": "Scenario-based MCQ testing this session's topic in this role's context", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "A", "explanation": "Why A is correct"},
