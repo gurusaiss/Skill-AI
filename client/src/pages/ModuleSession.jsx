@@ -855,6 +855,20 @@ export default function ModuleSession() {
       const sess = sessions[sessionIndex];
       if (!sess) throw new Error(`Session ${sessionIndex + 1} not found`);
       setSession(sess);
+
+      // If this session was already completed, restore its saved review
+      // instead of dropping the employee back at the content phase — without
+      // this, reopening (or even just refreshing) a finished day permanently
+      // lost the correct/incorrect breakdown and explanations, since `phase`
+      // otherwise always resets to 'content' on load.
+      const assignment = assignRes.status === 'fulfilled' ? assignRes.value : null;
+      const sessionProgress = assignment?.sessionProgress || assignment?.session_progress || {};
+      const savedReport = assignment?.progress_data?.sessionReports?.[sessionIndex]
+        || assignment?.progressData?.sessionReports?.[sessionIndex];
+      if (sessionProgress[sessionIndex] === 'completed' && Array.isArray(savedReport?.results)) {
+        setQuizScore({ correct: savedReport.correct, total: savedReport.total, pct: savedReport.score, results: savedReport.results });
+        setPhase('score');
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -901,7 +915,11 @@ export default function ModuleSession() {
       const allDone = allSessions.length > 0 && completedCount >= allSessions.length;
       const newStatus = allDone ? 'completed' : 'in_progress';
 
-      // Build per-session report for analytics/reports
+      // Build per-session report for analytics/reports. `results` is the full
+      // per-question breakdown (question, options, userAnswer, correct answer,
+      // isCorrect, explanation) — persisted in full so reopening this session
+      // later restores the exact same review the employee saw right after
+      // submitting, not just the truncated strengths/weaknesses summary.
       const sessionReport = {
         score: score.pct,
         correct: score.correct,
@@ -910,6 +928,7 @@ export default function ModuleSession() {
         sessionTitle: session?.title || session?.topic || `Day ${sessionIndex + 1}`,
         strengths: score.results.filter(r => r.isCorrect).map(r => r.question).slice(0, 3),
         weaknesses: score.results.filter(r => !r.isCorrect).map(r => r.question).slice(0, 3),
+        results: score.results,
       };
 
       await authFetch(`/api/assignments/${assignmentId}`, {
