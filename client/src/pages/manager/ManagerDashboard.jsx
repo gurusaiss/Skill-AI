@@ -5,7 +5,14 @@ import { useNotification } from '../../contexts/NotificationContext.jsx';
 
 const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
-const fetchJSON = async (path) => {
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Retries once on a 5xx — the server's own fault (a transient DB blip, a
+// cold-start race), not a permission/validation problem. Without this, one
+// concurrent request in this dashboard's multi-fetch load landing during a
+// momentary hiccup was enough to trip the "Failed to load dashboard data"
+// screen for the whole page, even though a simple retry would have worked.
+const fetchJSON = async (path, attempt = 0) => {
   const token = localStorage.getItem('auth_token');
   const activeRole = localStorage.getItem('active_role');
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -20,6 +27,10 @@ const fetchJSON = async (path) => {
       localStorage.removeItem('auth_token');
       window.location.href = '/';
       return null;
+    }
+    if (res.status >= 500 && attempt < 1) {
+      await sleep(1000);
+      return fetchJSON(path, attempt + 1);
     }
     const body = await res.text();
     let msg = `Request failed (${res.status})`;

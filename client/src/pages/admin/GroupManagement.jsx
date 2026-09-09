@@ -352,8 +352,12 @@ export default function GroupManagement() {
         : [];
 
       setGroups(grps);
-      setManagers(users.filter(u => u.role === 'manager'));
-      setEmployees(users.filter(u => u.role === 'employee'));
+      // A user can hold "manager"/"employee" as a GRANTED ADDITIONAL access
+      // (via Manage Access) without it being their primary role — filtering
+      // on role alone silently hid every such user from these dropdowns even
+      // though they can genuinely act as a manager/employee.
+      setManagers(users.filter(u => u.role === 'manager' || (u.accesses || []).includes('manager')));
+      setEmployees(users.filter(u => u.role === 'employee' || (u.accesses || []).includes('employee')));
 
       const failed = [
         groupsData.status === 'rejected' && 'groups',
