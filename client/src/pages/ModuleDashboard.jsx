@@ -480,70 +480,6 @@ function PlanTab({ module, onRegenerate }) {
   );
 }
 
-function BuildTab({ module }) {
-  const projects = module?.projects || module?.content?.projects || module?.challenges || module?.content?.challenges || [];
-  const resources = module?.resources || module?.content?.resources || [];
-
-  return (
-    <div className="space-y-6">
-      {projects.length > 0 ? (
-        <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
-          <div className="p-4 border-b border-slate-700/40">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Projects & Challenges</h3>
-          </div>
-          <div className="divide-y divide-slate-700/30">
-            {projects.map((p, i) => (
-              <div key={i} className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-sm flex-shrink-0">🔨</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-white">{typeof p === 'string' ? p : p.title || p.name || `Project ${i + 1}`}</p>
-                    {p.description && <p className="text-xs text-slate-500 mt-0.5">{p.description}</p>}
-                    {p.difficulty && (
-                      <span className={`inline-block mt-1 text-xs font-bold px-2 py-0.5 rounded-full border ${getDifficultyColor(p.difficulty)}`}>
-                        {p.difficulty}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="text-center py-16 text-slate-500">
-          <div className="text-5xl mb-4 opacity-30">🔨</div>
-          <p className="text-lg font-bold text-slate-400 mb-2">No Projects Yet</p>
-          <p className="text-sm text-slate-600">Build projects will appear here once configured.</p>
-        </div>
-      )}
-
-      {resources.length > 0 && (
-        <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
-          <div className="p-4 border-b border-slate-700/40">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Resources</h3>
-          </div>
-          <div className="divide-y divide-slate-700/30">
-            {resources.map((r, i) => (
-              <div key={i} className="p-4 flex items-center gap-3">
-                <span className="text-lg">📎</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white">{typeof r === 'string' ? r : r.title || r.name || `Resource ${i + 1}`}</p>
-                  {r.url && (
-                    <a href={r.url} target="_blank" rel="noreferrer" className="text-xs text-indigo-400 hover:text-indigo-300 hover:underline transition-colors">
-                      {r.url}
-                    </a>
-                  )}
-                  {r.type && <span className="text-xs text-slate-600 block">{r.type}</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── Module Navbar (inside-module) ───────────────────────────────────────────
 
@@ -554,12 +490,6 @@ function ModuleNavbar({ moduleId, assignmentId, activeTab, onTabChange }) {
     { id: 'sessions', label: 'Sessions', icon: '📚' },
     { id: 'progress', label: 'Progress', icon: '📈' },
     { id: 'plan', label: 'Plan', icon: '🗺️' },
-    // Renamed from "Build" — the tab shows realistic practical
-    // projects/resources for the employee's actual role (not a
-    // software-engineering "build a project" implication), and the old
-    // label + hammer icon read as exactly that, for every domain including
-    // non-technical roles (HR, Finance, Operations, etc).
-    { id: 'build', label: 'Projects & Resources', icon: '🎯' },
   ];
 
   // Pass moduleId + assignmentId so each tool page can load module context
@@ -569,7 +499,6 @@ function ModuleNavbar({ moduleId, assignmentId, activeTab, onTabChange }) {
   const qs = q.toString() ? `?${q.toString()}` : '';
 
   const toolLinks = [
-    { label: 'Digital Twin', icon: '🧬', path: `/career-twin${qs}` },
     { label: 'Report', icon: '📄', path: `/report${qs}` },
   ];
 
@@ -852,9 +781,6 @@ export default function ModuleDashboard() {
         )}
         {activeTab === 'plan' && (
           <PlanTab module={module} onRegenerate={() => generateContent(module)} />
-        )}
-        {activeTab === 'build' && (
-          <BuildTab module={module} />
         )}
       </div>
     </div>
