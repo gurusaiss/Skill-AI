@@ -15,6 +15,7 @@ import { autoAssignPreAssessment } from '../services/AssessmentAutoAssign.js';
 import { randomBytes } from 'crypto';
 import { getGroups } from '../db/store.js';
 import { buildTypeSequence } from '../services/QuestionMix.js';
+import { canActAsManager, linkEmployeeToManager } from '../services/ManagerScope.js';
 
 // ── Authorization helper: can `actor` (req.user) access `target` user record? ──
 // Rules (additive, preserves existing single-tenant 'default' behavior):
@@ -102,7 +103,10 @@ const COL_MAP = {
   password: 'password', temp_password: 'password', 'temp password': 'password',
   phone: 'phone', phone_number: 'phone', 'phone number': 'phone',
   status: 'status',
-  manager_email: 'managerEmail', 'manager email': 'managerEmail',
+  manager_email: 'managerEmail', 'manager email': 'managerEmail', manageremail: 'managerEmail',
+  reports_to: 'managerEmail', 'reports to': 'managerEmail', reportsto: 'managerEmail',
+  manager_name: 'managerName', 'manager name': 'managerName', managername: 'managerName',
+  manager: 'managerName',
 };
 
 function normaliseRow(raw) {
@@ -112,6 +116,122 @@ function normaliseRow(raw) {
     if (canon) out[canon] = String(v ?? '').trim();
   }
   return out;
+}
+
+// A template's `#` instruction lines parse as data rows. They used to survive
+// only because unmapped columns are dropped, but they still surfaced as bogus
+// "name required" error rows in the preview.
+function isCommentRow(raw) {
+  const first = Object.values(raw || {})[0];
+  return String(first ?? '').trim().startsWith('#');
+}
+
+const IMPORT_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const IMPORT_ROLES = ['employee', 'manager', 'admin'];
+
+/**
+ * The single validator used by BOTH /bulk-import/preview and /bulk-import.
+ *
+ * Previously each endpoint had its own rules, so a row could show as "valid"
+ * in the preview and then be silently skipped on import. Any change to import
+ * rules must happen here so the two can never drift apart again.
+ *
+ * `ctx.managerIndex` is a Map of lowercased email → user for every existing
+ * user, and `ctx.batchManagers` is a Set of lowercased emails belonging to
+ * manager/admin rows appearing anywhere in the same file — so a single file
+ * can create a manager and their reports together.
+ */
+function validateImportRow(row, ctx) {
+  const { existingEmails, existingEmpIds, seenInBatch, managerIndex, batchManagers } = ctx;
+  const errors = [];
+  const warnings = [];
+
+  const emailLc = row.email ? row.email.toLowerCase() : '';
+  const isExisting = Boolean(emailLc && existingEmails.has(emailLc));
+
+  if (!row.name) errors.push('name required');
+  if (!row.email) errors.push('email required');
+  else if (!IMPORT_EMAIL_RE.test(row.email)) errors.push('invalid email format');
+  else if (seenInBatch.has(emailLc)) errors.push('duplicate email in file');
+  else seenInBatch.add(emailLc);
+
+  if (row.employeeId && existingEmpIds.has(row.employeeId) && !isExisting) {
+    errors.push('employee ID already exists');
+  }
+  if (row.role && !IMPORT_ROLES.includes(row.role.toLowerCase())) {
+    errors.push(`invalid role "${row.role}" — use employee/manager/admin`);
+  }
+
+  // Manager linkage is mandatory for employees — every employee must have a
+  // manager, which is the whole point of collecting these columns. Manager and
+  // admin rows are exempt because they sit at the top of the chain (requiring
+  // it there would make importing your first manager impossible).
+  const effectiveRole = (row.role || 'employee').toLowerCase();
+  if (effectiveRole === 'employee') {
+    if (!row.managerName) errors.push('manager_name required for employee rows');
+    if (!row.managerEmail) errors.push('manager_email required for employee rows');
+  }
+
+  if (row.managerEmail) {
+    if (!IMPORT_EMAIL_RE.test(row.managerEmail)) {
+      errors.push('invalid manager_email format');
+    } else {
+      const mgrLc = row.managerEmail.toLowerCase();
+      if (mgrLc === emailLc) {
+        errors.push('manager_email cannot be the user\'s own email');
+      } else {
+        const existingMgr = managerIndex.get(mgrLc);
+        const inBatch = batchManagers.has(mgrLc);
+        if (!existingMgr && !inBatch) {
+          errors.push(`manager_email "${row.managerEmail}" not found — add that manager first or include them in this file`);
+        } else if (existingMgr && !canActAsManager(existingMgr)) {
+          errors.push(`"${row.managerEmail}" exists but is not a manager`);
+        } else if (existingMgr && row.managerName) {
+          // The email is the key; a name mismatch is informational only, so a
+          // typo in a display name never blocks an otherwise-correct import.
+          const a = row.managerName.toLowerCase().replace(/\s+/g, ' ').trim();
+          const b = String(existingMgr.name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+          if (a && b && a !== b) warnings.push(`manager_name "${row.managerName}" does not match "${existingMgr.name}" on record`);
+        }
+      }
+    }
+  }
+
+  return { errors, warnings, isExisting };
+}
+
+/**
+ * Builds the lookup context validateImportRow needs, in one pass over the
+ * file plus one user fetch — so validation costs the same whether the file
+ * has 5 rows or 5000.
+ */
+async function buildImportContext(rawRows) {
+  const allUsers = await UserStore.getAllUsers({});
+  const managerIndex = new Map();
+  for (const u of allUsers) {
+    const key = String(u.email || '').toLowerCase().trim();
+    if (key) managerIndex.set(key, u);
+  }
+  // Emails of manager/admin rows anywhere in this same file, so a file that
+  // creates a manager and then their reports validates in one pass regardless
+  // of row order.
+  const batchManagers = new Set();
+  for (const raw of rawRows) {
+    if (isCommentRow(raw)) continue;
+    const r = normaliseRow(raw);
+    const role = (r.role || 'employee').toLowerCase();
+    if ((role === 'manager' || role === 'admin') && r.email) {
+      batchManagers.add(r.email.toLowerCase());
+    }
+  }
+  return {
+    allUsers,
+    managerIndex,
+    existingEmails: new Set(managerIndex.keys()),
+    existingEmpIds: new Set(allUsers.map(u => u.employeeId).filter(Boolean)),
+    seenInBatch: new Set(),
+    batchManagers,
+  };
 }
 
 // ── Multer setup for JD file uploads ─────────────────────────────────────────
@@ -1103,6 +1223,65 @@ router.get('/:userId/jd-file', authenticate, async (req, res) => {
 });
 
 /**
+ * GET /api/users/bulk-import/template
+ * A real .xlsx template with a second Instructions sheet. Replaces a raw CSV
+ * blob whose `#` guidance lines parsed as data rows, and carries the
+ * role-conditional mandatory-field rules where an admin will actually read
+ * them. Reuses the same SheetJS path already proven by the credential export.
+ */
+router.get('/bulk-import/template', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const XLSX = await import('xlsx');
+    const headers = [
+      'name', 'email', 'system_role', 'employee_id', 'manager_name', 'manager_email',
+      'job_role_1', 'job_role_2', 'job_role_3', 'job_role_4',
+      'department', 'job_description', 'company_name', 'password', 'phone',
+    ];
+    // The manager row comes first so this sample file is itself a valid
+    // import: the employee rows below reference a manager defined in it.
+    const samples = [
+      ['Sara Lee', 'sara@company.com', 'manager', 'MGR001', '', '', 'Engineering Manager', '', '', '', 'Engineering', 'Leads the frontend team', 'Acme Corp', '', ''],
+      ['Jane Smith', 'jane@company.com', 'employee', 'EMP001', 'Sara Lee', 'sara@company.com', 'Frontend Developer', '', '', '', 'Engineering', 'Builds React UIs', 'Acme Corp', '', '+91-9876543210'],
+      ['John Doe', 'john@company.com', 'employee', 'EMP002', 'Sara Lee', 'sara@company.com', 'Data Analyst', 'Reporting Specialist', '', '', 'Analytics', 'Analyzes business data', 'Acme Corp', '', '+91-9123456789'],
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const usersSheet = XLSX.utils.aoa_to_sheet([headers, ...samples]);
+    usersSheet['!cols'] = headers.map(h => ({ wch: Math.max(14, h.length + 4) }));
+    XLSX.utils.book_append_sheet(wb, usersSheet, 'Users');
+
+    const instructions = [
+      ['SkillForge AI — User Import Template'],
+      [],
+      ['REQUIRED for every row', 'name, email'],
+      ['REQUIRED for employee rows', 'manager_name AND manager_email — an employee must have a manager'],
+      ['Not required for manager/admin rows', 'manager_name, manager_email (they sit at the top of the chain)'],
+      [],
+      ['system_role', 'employee | manager | admin. Blank means employee.'],
+      ['manager_email', 'Must match an existing manager/admin, OR a manager row inside this same file (any order).'],
+      ['manager_name', 'For your readability. A mismatch against the record is a warning, not an error — the email is what links.'],
+      ['email', 'Immutable. If the email already exists the user is UPDATED; if new, the user is CREATED.'],
+      ['job_role_1', 'The primary job role.'],
+      ['job_role_2/3/4', 'Additional job roles, applied in order. Each triggers its own auto-assessment, exactly as adding one manually does.'],
+      ['password', 'Leave blank — a secure password is generated and returned to you in a credentials file.'],
+      [],
+      ['Note', 'Do not add comment or instruction rows to the Users sheet; every row there is treated as data.'],
+    ];
+    const insSheet = XLSX.utils.aoa_to_sheet(instructions);
+    insSheet['!cols'] = [{ wch: 36 }, { wch: 100 }];
+    XLSX.utils.book_append_sheet(wb, insSheet, 'Instructions');
+
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="skillforge-user-import-template.xlsx"');
+    return res.send(buf);
+  } catch (e) {
+    console.error('[bulk-import/template]', e.message);
+    return res.status(500).json({ success: false, error: 'Failed to build template' });
+  }
+});
+
+/**
  * POST /api/users/bulk-import/preview
  * Parse an import file and return preview rows with validation — no DB writes.
  */
@@ -1126,38 +1305,21 @@ router.post('/bulk-import/preview', authenticate, requireRole('admin', 'manager'
       return res.status(400).json({ success: false, error: 'File is empty or has no data rows' });
     }
 
-    const allUsers = await UserStore.getAllUsers({});
-    const existingEmailMap = Object.fromEntries(allUsers.map(u => [u.email?.toLowerCase(), u]));
-    const existingEmails = new Set(Object.keys(existingEmailMap));
-    const existingEmpIds = new Set(allUsers.map(u => u.employeeId).filter(Boolean));
-    const seenInBatch = new Set();
+    const ctx = await buildImportContext(rawRows);
+    const dataRows = rawRows.filter(raw => !isCommentRow(raw));
 
-    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const preview = rawRows.map((raw, idx) => {
+    const preview = dataRows.map((raw, idx) => {
       const row = normaliseRow(raw);
-      const errors = [];
-
-      const isExisting = row.email && existingEmails.has(row.email.toLowerCase());
-
-      if (!row.name) errors.push('name required');
-      if (!row.email) errors.push('email required');
-      else if (!EMAIL_RE.test(row.email)) errors.push('invalid email format');
-      else if (seenInBatch.has(row.email.toLowerCase())) errors.push('duplicate email in file');
-      else seenInBatch.add(row.email.toLowerCase());
-
-      if (row.employeeId && existingEmpIds.has(row.employeeId) && !isExisting) errors.push('employee ID already exists');
-      if (row.role && !['employee', 'manager', 'admin'].includes(row.role.toLowerCase())) {
-        errors.push(`invalid role "${row.role}" — use employee/manager/admin`);
-      }
-
+      const { errors, warnings, isExisting } = validateImportRow(row, ctx);
       return {
         rowNum: idx + 2, // +2 because row 1 = header
         ...row,
         role: row.role?.toLowerCase() || 'employee',
         status: errors.length ? 'error' : (isExisting ? 'update' : 'valid'),
         errors,
+        warnings,
         _isUpdate: isExisting,
-        _existingUserId: isExisting ? existingEmailMap[row.email.toLowerCase()]?.userId : undefined,
+        _existingUserId: isExisting ? ctx.managerIndex.get(row.email.toLowerCase())?.userId : undefined,
       };
     });
 
@@ -1185,13 +1347,21 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
     }
 
     const companyId  = req.user.companyId || 'default';
-    const allUsers   = await UserStore.getAllUsers({});
-    const existingEmails = new Set(allUsers.map(u => u.email?.toLowerCase()));
+    // Re-validate server-side with the SAME validator the preview used, so a
+    // hand-crafted or stale client payload cannot bypass the rules and so
+    // "valid in preview" can never turn into a silent skip on import.
+    const ctx = await buildImportContext(rows);
+    const allUsers = ctx.allUsers;
+    const existingEmails = ctx.existingEmails;
 
     const created = [], updated = [], skipped = [], failed = [];
 
     for (const row of rows) {
-      if (!row.email || !row.name) { skipped.push({ row, reason: 'Missing name or email' }); continue; }
+      const { errors } = validateImportRow(row, ctx);
+      if (errors.length > 0) {
+        failed.push({ row: { name: row.name, email: row.email }, reason: errors.join('; ') });
+        continue;
+      }
 
       const existingUser = allUsers.find(u => u.email?.toLowerCase() === row.email.toLowerCase());
 
@@ -1224,7 +1394,11 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
             if (role) addedExtraRoles.push(role.roleName);
           }
 
-          updated.push({ userId: existingUser.userId || existingUser.id, email: existingUser.email, name: existingUser.name, updated: Object.keys(updateFields), additionalRolesAdded: addedExtraRoles });
+          // managerEmail carried forward so the manager-linking pass below
+          // applies to updated users too — it previously ran only over
+          // `created`, so re-importing an existing employee with a manager
+          // column silently left their manager unset.
+          updated.push({ userId: existingUser.userId || existingUser.id, email: existingUser.email, name: existingUser.name, managerEmail: row.managerEmail || '', updated: Object.keys(updateFields), additionalRolesAdded: addedExtraRoles });
           continue;
         } catch (e) {
           failed.push({ row, reason: e.message });
@@ -1325,25 +1499,30 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
     // ── Manager linking pass ──────────────────────────────────────────────────
     // Re-fetch all users so newly created ones are visible
     const managerLinked = [], managerFailed = [];
-    const needsManager = created.filter(u => u.managerEmail);
+    // Covers BOTH created and updated users. Running over `created` alone was
+    // why re-importing an existing employee never applied their manager.
+    // Re-fetched after the create loop so a manager created earlier in this
+    // same file is resolvable by the employees that report to them.
+    const needsManager = [...created, ...updated].filter(u => u.managerEmail);
     if (needsManager.length > 0) {
       const freshUsers = await UserStore.getAllUsers({});
       const byEmail = Object.fromEntries(freshUsers.map(u => [u.email?.toLowerCase(), u]));
 
       for (const emp of needsManager) {
-        const managerEmail = emp.managerEmail.toLowerCase();
-        const manager = byEmail[managerEmail];
-        if (!manager || !['manager', 'admin'].includes(manager.role)) {
-          managerFailed.push({ email: emp.email, reason: `Manager "${emp.managerEmail}" not found or not a manager role` });
+        const manager = byEmail[emp.managerEmail.toLowerCase()];
+        if (!manager || !canActAsManager(manager)) {
+          managerFailed.push({ email: emp.email, reason: `Manager "${emp.managerEmail}" not found or lacks manager capability` });
           continue;
         }
-        try {
-          await UserStore.updateUser(emp.userId, { managerId: manager.userId });
-          await UserStore.assignEmployeesToManager(manager.userId, [emp.userId], req.user.userId).catch(() => {});
-          managerLinked.push({ email: emp.email, manager: manager.email });
-        } catch (e) {
-          managerFailed.push({ email: emp.email, reason: e.message });
-        }
+        // Shared helper: writes the durable managerId and maintains the
+        // group/file mirror, identically to every other manager-link path.
+        const { ok, reason } = await linkEmployeeToManager({
+          employeeUserId: emp.userId,
+          managerUserId: manager.userId,
+          actorUserId: req.user.userId,
+        });
+        if (ok) managerLinked.push({ email: emp.email, manager: manager.email });
+        else managerFailed.push({ email: emp.email, reason });
       }
     }
 
@@ -1383,6 +1562,9 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
         skipped: skipped.length,
         failed:  failed.length,
         managerLinked: managerLinked.length,
+        // Surfaced at the top level so a failed manager link is visible in the
+        // summary, not only buried in results.managerFailed.
+        managerFailed: managerFailed.length,
         credentialExcel: credentialExcelB64,   // base64 xlsx — frontend triggers download
         results: {
           created: created.map(({ managerEmail: _m, _emailPayload: _ep, _userObj: _u, ...u }) => u),
