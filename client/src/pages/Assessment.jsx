@@ -93,6 +93,10 @@ const MiniBar = ({ label, value, max }) => {
   );
 };
 
+// Papers longer than this are split into pages. Chosen so a page fits a
+// normal screen without scrolling being the primary navigation.
+const QUESTIONS_PER_PAGE = 10;
+
 // ── main component ────────────────────────────────────────────────────────────
 
 export default function Assessment() {
@@ -106,6 +110,7 @@ export default function Assessment() {
 
   // answers: { questionIndex: string }
   const [answers, setAnswers] = useState({});
+  const [page, setPage] = useState(0);
 
   // submission state
   const [showConfirm, setShowConfirm] = useState(false);
@@ -178,8 +183,32 @@ export default function Assessment() {
 
   // ── answer handling ──────────────────────────────────────────────────────
 
+  // A paper can now be hundreds of questions spread over many pages, so an
+  // accidental refresh or closed tab must not discard the work. Kept local
+  // (no server round-trip per keystroke); cleared once submitted.
+  const draftKey = assessment?.id ? `assessment_draft_${assessment.id}` : null;
+
+  useEffect(() => {
+    if (!draftKey || report) return;
+    try {
+      const saved = localStorage.getItem(draftKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          setAnswers(prev => (Object.keys(prev).length > 0 ? prev : parsed));
+        }
+      }
+    } catch { /* corrupt draft — start clean rather than blocking the page */ }
+  }, [draftKey, report]);
+
   const handleAnswer = (idx, value) => {
-    setAnswers(prev => ({ ...prev, [idx]: value }));
+    setAnswers(prev => {
+      const next = { ...prev, [idx]: value };
+      if (draftKey) {
+        try { localStorage.setItem(draftKey, JSON.stringify(next)); } catch { /* quota/private mode */ }
+      }
+      return next;
+    });
   };
 
   const allAnswered = () => {
@@ -214,6 +243,8 @@ export default function Assessment() {
       // Backend returns { report, scoring } — try both paths
       const scoring = result?.scoring || result?.report || result;
       setReport(scoring);
+      // Submitted successfully — the local draft has served its purpose.
+      if (draftKey) { try { localStorage.removeItem(draftKey); } catch { /* ignore */ } }
 
       // Module generation + assignment now happens automatically on the server after submit
     } catch (e) {
@@ -595,6 +626,22 @@ export default function Assessment() {
   }).length;
   const progressPct = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
 
+  // Now that an employee receives their role's ENTIRE approved bank, a paper
+  // can legitimately be hundreds of questions. Rendering them all at once
+  // (the previous behaviour) meant a single page with thousands of
+  // interactive elements. Short papers stay on one page so nothing changes
+  // for the common case.
+  const totalPages = Math.max(1, Math.ceil(questions.length / QUESTIONS_PER_PAGE));
+  const paginated = questions.length > QUESTIONS_PER_PAGE;
+  const safePage = Math.min(page, totalPages - 1);
+  const pageStart = paginated ? safePage * QUESTIONS_PER_PAGE : 0;
+  const pageEnd = paginated ? Math.min(pageStart + QUESTIONS_PER_PAGE, questions.length) : questions.length;
+  const visibleQuestions = questions.slice(pageStart, pageEnd);
+  const unansweredOnPage = visibleQuestions.filter((_, i) => {
+    const a = answers[pageStart + i];
+    return a === undefined || a === null || String(a).trim() === '';
+  }).length;
+
   // ── assessment view ──────────────────────────────────────────────────────
 
   return (
@@ -668,7 +715,21 @@ export default function Assessment() {
           </div>
         ) : (
           <div className="space-y-4">
-            {questions.map((q, idx) => (
+            {paginated && (
+              <div className="flex items-center justify-between rounded-xl border border-slate-700/40 bg-[#1E293B] px-4 py-2.5 text-xs">
+                <span className="text-slate-400">
+                  Page <span className="text-white font-bold">{safePage + 1}</span> of {totalPages}
+                  <span className="text-slate-600"> · </span>
+                  questions <span className="text-white font-semibold">{pageStart + 1}–{pageEnd}</span> of {questions.length}
+                </span>
+                <span className={unansweredOnPage > 0 ? 'text-amber-400 font-semibold' : 'text-emerald-400 font-semibold'}>
+                  {unansweredOnPage > 0 ? `${unansweredOnPage} unanswered on this page` : 'page complete'}
+                </span>
+              </div>
+            )}
+            {visibleQuestions.map((q, i) => {
+              const idx = pageStart + i;
+              return (
               <div key={idx} className="rounded-2xl border border-slate-700/40 bg-[#1E293B] p-5 sm:p-6">
                 <div className="flex items-start gap-3 mb-4">
                   <span className="flex-shrink-0 w-7 h-7 rounded-lg bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 text-xs flex items-center justify-center font-black">
@@ -688,7 +749,55 @@ export default function Assessment() {
                 </div>
                 {renderQuestion(q, idx)}
               </div>
-            ))}
+              );
+            })}
+
+            {paginated && (
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <button
+                  onClick={() => { setPage(p => Math.max(0, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                  disabled={safePage === 0}
+                  className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 text-sm font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  ← Previous
+                </button>
+                <div className="flex flex-wrap items-center justify-center gap-1.5 max-w-md">
+                  {Array.from({ length: totalPages }, (_, p) => {
+                    const from = p * QUESTIONS_PER_PAGE;
+                    const to = Math.min(from + QUESTIONS_PER_PAGE, questions.length);
+                    let done = 0;
+                    for (let k = from; k < to; k++) {
+                      const a = answers[k];
+                      if (a !== undefined && a !== null && String(a).trim() !== '') done++;
+                    }
+                    const complete = done === (to - from);
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                        title={`Questions ${from + 1}–${to} · ${done}/${to - from} answered`}
+                        className={`w-8 h-8 rounded-lg text-xs font-black transition-all border ${
+                          p === safePage
+                            ? 'bg-indigo-600 text-white border-indigo-500'
+                            : complete
+                              ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-600/30'
+                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                        }`}
+                      >
+                        {p + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={() => { setPage(p => Math.min(totalPages - 1, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                  disabled={safePage >= totalPages - 1}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
           </div>
         )}
 
