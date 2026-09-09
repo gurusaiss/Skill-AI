@@ -288,6 +288,31 @@ router.post('/content', authenticate, async (req, res) => {
       });
     }
 
+    // A manager may only assign within their own team. There was previously no
+    // such check, so any manager could assign content to any user in the
+    // company. Admins keep company-wide reach.
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+      const visible = await getVisibleEmployeeIds(req.user);
+      if (assignedToUser && !visible.has(assignedToUser)) {
+        return res.status(403).json({
+          success: false,
+          data: null,
+          error: { code: 'ASSIGNMENT_OUT_OF_SCOPE', message: 'You can only assign content to employees on your own team' },
+        });
+      }
+      if (assignedToGroup) {
+        const groups = await Groups.getAll().catch(() => []);
+        const target = (groups || []).find(g => g.id === assignedToGroup);
+        if (!target || target.managerId !== req.user.userId) {
+          return res.status(403).json({
+            success: false,
+            data: null,
+            error: { code: 'ASSIGNMENT_OUT_OF_SCOPE', message: 'You can only assign content to groups you manage' },
+          });
+        }
+      }
+    }
+
     const assignment = await UserStore.createAssignment({
       type,
       assignable_id: assignableId,

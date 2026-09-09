@@ -484,6 +484,29 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
 
     userIds = [...new Set(userIds)];
 
+    // A manager may only assess their own team. Enforced here, after every
+    // target path (explicit targetUsers, targetType 'all'/'department',
+    // targetGroup) has been resolved, so one check covers all of them —
+    // previously there was no scoping at all and targetType:'all' let a
+    // manager assess every employee in the company.
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+      const visible = await getVisibleEmployeeIds(req.user);
+      const explicit = Array.isArray(targetUsers) ? targetUsers : [];
+      // An explicitly named user outside the team is an error worth telling
+      // the manager about, rather than silently dropping them.
+      const rejected = explicit.filter(id => !visible.has(id));
+      if (rejected.length > 0) {
+        return res.status(403).json({
+          success: false,
+          data: null,
+          error: `You can only assess employees on your own team (${rejected.length} selected user(s) are not).`,
+        });
+      }
+      // The broad selectors legitimately mean "everyone I can reach", so
+      // narrow them rather than failing.
+      userIds = userIds.filter(id => visible.has(id));
+    }
+
     // Batch-fetch all target users in ONE query instead of N individual queries
     const allUsers = await UserStore.getAllUsers({});
     const userMap = new Map(allUsers.map(u => [u.userId || u.id, u]));
@@ -647,6 +670,20 @@ router.post('/manual', authenticate, requireRole('admin', 'manager'), async (req
     }
 
     const userIds = [...new Set(Array.isArray(targetUsers) ? targetUsers : [])];
+
+    // Same team-scoping rule as POST / — a manager may only assign a manual
+    // assessment to their own team.
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+      const visible = await getVisibleEmployeeIds(req.user);
+      const rejected = userIds.filter(id => !visible.has(id));
+      if (rejected.length > 0) {
+        return res.status(403).json({
+          success: false,
+          data: null,
+          error: `You can only assign assessments to employees on your own team (${rejected.length} selected user(s) are not).`,
+        });
+      }
+    }
 
     // Determine if questions is an array-of-arrays (per-user) or flat (shared)
     const isPerUser = Array.isArray(rawQuestions[0]);
