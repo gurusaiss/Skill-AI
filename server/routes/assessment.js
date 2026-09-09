@@ -27,6 +27,7 @@ import GeminiService from '../services/GeminiService.js';
 import LLMCache from '../services/LLMCache.js';
 import { generateSessionQuiz, ensureAllSessionQuizzes } from '../services/SessionQuizGenerator.js';
 import { getVisibleEmployeeIds } from '../services/ManagerScope.js';
+import { QUIZ_MIX, normalizeTypeName } from '../services/QuestionMix.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -1850,12 +1851,32 @@ router.post('/export-filtered-reports', authenticate, async (req, res) => {
  */
 router.post('/generate', authenticate, llmLimiter, async (req, res) => {
   try {
-    const { moduleTitle, moduleDescription, skills, numQuestions, sessionTitle, sessionTopics, sessionKeyPoints } = req.body;
+    const { moduleTitle, moduleDescription, skills, numQuestions, questionTypes, sessionTitle, sessionTopics, sessionKeyPoints } = req.body;
     const topics = Array.isArray(sessionTopics) && sessionTopics.length > 0 ? sessionTopics : skills;
+
+    // `questionTypes` was previously not destructured at all, so the mix the
+    // client sent was silently discarded. Derive the ratio from it when
+    // supplied, otherwise use the platform's Knowledge Quiz mix (7/2/1).
+    let mix = QUIZ_MIX;
+    if (Array.isArray(questionTypes) && questionTypes.length > 0) {
+      const tally = questionTypes.reduce((acc, t) => {
+        const key = normalizeTypeName(t);
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+      const total = questionTypes.length;
+      mix = {
+        mcq: (tally.mcq || 0) / total,
+        subjective: (tally.subjective || 0) / total,
+        fill_blank: (tally.fill_blank || 0) / total,
+      };
+    }
 
     const questions = await generateSessionQuiz({
       moduleTitle, moduleDescription, sessionTitle,
-      topics, keyPoints: sessionKeyPoints, numQuestions: numQuestions || 5,
+      // The in-module quiz is deliberately 10 questions (that is the
+      // requirement) — this used to fall back to 5.
+      topics, keyPoints: sessionKeyPoints, numQuestions: numQuestions || 10, mix,
     });
 
     // AI unavailable — let the client fall back to its own deterministic

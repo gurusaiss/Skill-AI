@@ -525,7 +525,7 @@ const FALLBACK_QUESTIONS = (sessionTitle, topics = []) => {
     { type: 'subjective', question: `Describe how ${topicStr} from "${sessionTitle}" would be applied to solve a real problem in your organization.`, answer: `Apply ${topicStr} by first identifying the specific problem, then systematically implementing the concepts from this session, measuring outcomes, and iterating based on results.`, explanation: 'Application to real organizational problems demonstrates genuine understanding.' },
     { type: 'mcq', question: `Which stakeholder group benefits most directly from ${topicStr}?`, options: ['A) Only the IT department', 'B) Executive leadership exclusively', 'C) The teams directly working in the relevant processes', 'D) External vendors only'], answer: 'C', explanation: 'Teams directly working in the relevant processes see the most immediate benefit.' },
     { type: 'mcq', question: `What measurement indicates successful implementation of ${topicStr}?`, options: ['A) The number of meetings held', 'B) Time spent in training', 'C) Measurable improvement in targeted outcomes', 'D) Number of tools purchased'], answer: 'C', explanation: 'Measurable improvement in targeted outcomes is the definitive success indicator.' },
-    { type: 'fill_blank', question: `Effective use of ${topicStr} requires both technical knowledge and ______ skills.`, answer: 'practical', explanation: 'Combining technical knowledge with practical application skills is essential for real-world effectiveness.' },
+    { type: 'subjective', question: `What is one risk or limitation of ${topicStr} that someone in your role should watch for, and how would you mitigate it?`, answer: `A common risk is applying ${topicStr} inconsistently or without understanding the underlying context, which produces unreliable outcomes. Mitigate it by confirming the prerequisites are in place, applying the concept deliberately rather than mechanically, and reviewing the result against the intended outcome.`, explanation: 'Identifying limitations and mitigations shows understanding beyond memorisation.' },
     { type: 'mcq', question: `What is the relationship between ${topicStr} and the broader ${sessionTitle} discipline?`, options: [`A) ${topicStr} is an isolated concept with no connections`, `B) ${topicStr} is a foundational element that supports the broader discipline`, 'C) They are unrelated topics', 'D) The broader discipline depends on ignoring this concept'], answer: 'B', explanation: `${topicStr} serves as a foundational building block within the broader ${sessionTitle} framework.` },
   ];
 };
@@ -566,7 +566,9 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
           moduleDescription: session?.description || session?.objective || module?.description || '',
           skills: session?.topics || module?.skills || [],
           numQuestions: 10,
-          questionTypes: ['mcq', 'mcq', 'mcq', 'mcq', 'mcq', 'mcq', 'mcq', 'subjective', 'fill_blank', 'fill_blank'],
+          // 7 MCQ / 2 subjective / 1 fill-in-blank. The server derives the mix
+          // from this array and enforces it deterministically after generation.
+          questionTypes: ['mcq', 'mcq', 'mcq', 'mcq', 'mcq', 'mcq', 'mcq', 'subjective', 'subjective', 'fill_blank'],
           sessionTitle,
           sessionTopics,
           sessionKeyPoints,

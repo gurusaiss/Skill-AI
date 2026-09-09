@@ -14,6 +14,7 @@ import { ActivationTokens, Assessments, RoleLibrary, GeneratedContent, Groups } 
 import { autoAssignPreAssessment } from '../services/AssessmentAutoAssign.js';
 import { randomBytes } from 'crypto';
 import { getGroups } from '../db/store.js';
+import { buildTypeSequence } from '../services/QuestionMix.js';
 
 // ── Authorization helper: can `actor` (req.user) access `target` user record? ──
 // Rules (additive, preserves existing single-tenant 'default' behavior):
@@ -1652,7 +1653,9 @@ async function addAdditionalJobRole(user, { roleName, department, jobDescription
           jobDescription,
           jdSkills: newRole.jdSkills,
           questionCount: 20,
-          questionTypes: ['mcq', 'fill_blank', 'subjective'],
+          // Full-length sequence, not a flat 3-element array — the latter
+          // made the generator round-robin to ~33/33/33.
+          questionTypes: buildTypeSequence(20),
           employeeSeed: user.userId.slice(-6),
         });
 

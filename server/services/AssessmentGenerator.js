@@ -6,6 +6,7 @@
 import { randomUUID } from 'crypto';
 import { classifyJDVsProcessSections } from '../utils/textPreprocessor.js';
 import GeminiService from './GeminiService.js';
+import { ASSESSMENT_MIX, mixCounts, buildTypeSequence, typeDeficit as typeDeficitFor } from './QuestionMix.js';
 
 // Groq's free/on-demand tier enforces a hard per-REQUEST token budget (prompt
 // tokens + requested max_tokens combined) — observed limit: 12,000 TPM for
@@ -920,7 +921,15 @@ function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyD
       ...Array(Math.max(0, typeDeficit.fill_blank || 0)).fill('fill_blank'),
       ...Array(Math.max(0, typeDeficit.subjective || 0)).fill('subjective'),
     ];
-    while (typeSeq.length < count) typeSeq.push(['mcq', 'fill_blank', 'subjective'][typeSeq.length % 3]);
+  }
+  // Any remaining slots (no deficit supplied, or the deficit was smaller than
+  // `count`) follow the platform's target ratio. This line previously read
+  // `[...][typeSeq.length % 3]`, a flat round-robin that forced ~33/33/33 and
+  // silently destroyed whatever mix the caller asked for — it is why fixing
+  // the ratio anywhere else had no visible effect.
+  if (!typeSeq || typeSeq.length < count) {
+    const filled = typeSeq || [];
+    typeSeq = [...filled, ...buildTypeSequence(count - filled.length, ASSESSMENT_MIX)];
   }
 
   return Array.from({ length: count }, (_, i) => {
@@ -1189,11 +1198,11 @@ function fillEmergencyGap(existing, num, { types, skillsList, jobRole }) {
     const curSubj = combined.filter(q => q.type === 'subjective').length;
     const batch = buildFallbackQuestions(gap, {
       types, skillsList, jobRole, comboCounters,
-      typeDeficit: {
-        mcq: Math.max(0, Math.ceil(num * 0.50) - curMcq),
-        fill_blank: Math.max(0, Math.round(num * 0.25) - curFill),
-        subjective: Math.max(0, num - Math.ceil(num * 0.50) - Math.round(num * 0.25) - curSubj),
-      },
+      typeDeficit: typeDeficitFor([
+        ...Array(curMcq).fill({ type: 'mcq' }),
+        ...Array(curFill).fill({ type: 'fill_blank' }),
+        ...Array(curSubj).fill({ type: 'subjective' }),
+      ], num, ASSESSMENT_MIX),
     });
     combined = mergeFallbackUnique(combined, batch);
     comboCounters = { easy: comboCounters.easy + 1000, medium: comboCounters.medium + 1000, hard: comboCounters.hard + 1000 };
@@ -1339,9 +1348,8 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     const targetEasy = Math.round(num * 0.35);
     const targetMedium = Math.round(num * 0.45);
     const targetHard = Math.max(1, num - targetEasy - targetMedium);
-    const targetMcqCount  = Math.ceil(num * 0.50);
-    const targetFillCount = Math.round(num * 0.25);
-    const targetSubjCount = Math.max(0, num - targetMcqCount - targetFillCount);
+    const { mcq: targetMcqCount, fill_blank: targetFillCount, subjective: targetSubjCount } =
+      mixCounts(num, ASSESSMENT_MIX);
 
     let attempt = 0;
     while (pool.length < num && attempt < 30) {
@@ -1527,9 +1535,8 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
     const targetEasy   = Math.round(num * 0.35);
     const targetMedium = Math.round(num * 0.45);
     const targetHard   = Math.max(1, num - targetEasy - targetMedium);
-    const targetMcqCount  = Math.ceil(num * 0.50);
-    const targetFillCount = Math.round(num * 0.25);
-    const targetSubjCount = Math.max(0, num - targetMcqCount - targetFillCount);
+    const { mcq: targetMcqCount, fill_blank: targetFillCount, subjective: targetSubjCount } =
+      mixCounts(num, ASSESSMENT_MIX);
     let att = 0;
     while (pool.length < num && att < 30) {
       const remaining = num - pool.length;
@@ -1574,10 +1581,10 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
 // with cross-file deduplication. The result length equals the sum of all
 // per-file questionCount values.
 
+// Kept as a named local so the per-file call sites below read unchanged; the
+// ratio itself is the shared one (was a 5th copy of the old 50/25/25 math).
 function buildTypeSeqLocal(num) {
-  const m = Math.ceil(num * 0.50);
-  const f = Math.round(num * 0.25);
-  return [...Array(m).fill('mcq'), ...Array(Math.max(0, f)).fill('fill_blank'), ...Array(Math.max(0, num - m - f)).fill('subjective')];
+  return buildTypeSequence(num, ASSESSMENT_MIX);
 }
 
 // When a single uploaded file mixes JD-like content and process/SOP-like
@@ -1748,9 +1755,8 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
         : docKeywordsForPad.length > 0
           ? docKeywordsForPad
           : (srcSkills.length > 0 ? srcSkills : [SAFE_FALLBACK_TOPIC]);
-      const targetMcqCount  = Math.ceil(count * 0.50);
-      const targetFillCount = Math.round(count * 0.25);
-      const targetSubjCount = Math.max(0, count - targetMcqCount - targetFillCount);
+      const { mcq: targetMcqCount, fill_blank: targetFillCount, subjective: targetSubjCount } =
+        mixCounts(count, ASSESSMENT_MIX);
 
       let hash = 0;
       const hashSeed = `${source.name || ''}-${sourceIdx}`;
