@@ -761,11 +761,52 @@ function ModuleReport({ moduleId, assignmentId, user, navigate }) {
       .finally(() => setLoading(false));
   }, [moduleId, assignmentId]);
 
+  // Full per-day breakdown, built from sessions + persisted sessionReports —
+  // the same data ModuleSession.jsx's NotesPhase/ScorePhase already save.
+  const mod = moduleData || {};
+  const asn = assignmentData || {};
+  const sessions = mod.sessions || mod.content?.sessions || [];
+  const sessionProgress = asn.sessionProgress || {};
+  const sessionReports = asn.progressData?.sessionReports || {};
+
+  const dayRows = sessions.map((s, i) => {
+    const report = sessionReports[i];
+    const status = sessionProgress[i] === 'completed' ? 'completed' : (report ? 'completed' : 'not started');
+    return {
+      day: i + 1,
+      title: s.title || s.topic || `Day ${i + 1}`,
+      status,
+      score: report?.score ?? null,
+      correct: report?.correct ?? null,
+      total: report?.total ?? null,
+      completedAt: report?.completedAt || null,
+      strengths: report?.strengths || [],
+      weaknesses: report?.weaknesses || [],
+    };
+  });
+
+  const completedRows = dayRows.filter(r => r.score !== null);
+  const avgScore = completedRows.length > 0
+    ? Math.round(completedRows.reduce((s, r) => s + r.score, 0) / completedRows.length)
+    : null;
+  const totalQuestions = completedRows.reduce((s, r) => s + (r.total || 0), 0);
+  const totalCorrect = completedRows.reduce((s, r) => s + (r.correct || 0), 0);
+  const allStrengths = [...new Set(completedRows.flatMap(r => r.strengths))];
+  const allWeaknesses = [...new Set(completedRows.flatMap(r => r.weaknesses))];
+  const bestDay = completedRows.length > 0 ? completedRows.reduce((a, b) => (b.score > a.score ? b : a)) : null;
+  const worstDay = completedRows.length > 0 ? completedRows.reduce((a, b) => (b.score < a.score ? b : a)) : null;
+
   const downloadModuleReportPDF = () => {
-    const mod = moduleData || {};
-    const asn = assignmentData || {};
-    const sessionsCompleted = Object.values(asn.sessionProgress || {}).filter(s => s === 'completed').length;
-    const totalSessions = (mod.sessions || []).length;
+    const sessionsCompleted = dayRows.filter(r => r.status === 'completed').length;
+    const totalSessions = sessions.length;
+    const rowsHtml = dayRows.map(r => `<tr>
+      <td>Day ${r.day}</td>
+      <td>${r.title}</td>
+      <td><span class="badge ${r.status === 'completed' ? 'badge-completed' : 'badge-assigned'}">${r.status}</span></td>
+      <td>${r.score !== null ? r.score + '%' : '—'}</td>
+      <td>${r.correct !== null ? `${r.correct}/${r.total}` : '—'}</td>
+      <td>${r.completedAt ? new Date(r.completedAt).toLocaleDateString() : '—'}</td>
+    </tr>`).join('');
     const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -775,10 +816,18 @@ function ModuleReport({ moduleId, assignmentId, user, navigate }) {
   body { font-family: Arial, sans-serif; color: #1e293b; padding: 40px; max-width: 800px; margin: 0 auto; }
   h1 { color: #4f46e5; font-size: 24px; margin-bottom: 4px; }
   .meta { color: #64748b; font-size: 14px; margin-bottom: 24px; }
-  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
   .stat { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; text-align: center; }
-  .stat-val { font-size: 28px; font-weight: 900; color: #4f46e5; }
+  .stat-val { font-size: 24px; font-weight: 900; color: #4f46e5; }
   .stat-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  h2 { font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; background: #f1f5f9; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+  .badge-completed { background: #d1fae5; color: #065f46; }
+  .badge-assigned { background: #dbeafe; color: #1e40af; }
+  ul { margin: 4px 0; padding-left: 18px; font-size: 12px; }
   .footer { margin-top: 40px; text-align: center; color: #94a3b8; font-size: 11px; }
   @media print { body { padding: 20px; } }
 </style>
@@ -788,10 +837,17 @@ function ModuleReport({ moduleId, assignmentId, user, navigate }) {
 <div class="meta">${mod.title || 'Module'} · ${user?.name || user?.email || ''} · Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
 <div class="stat-grid">
   <div class="stat"><div class="stat-val">${asn.progress || 0}%</div><div class="stat-label">Progress</div></div>
-  <div class="stat"><div class="stat-val">${sessionsCompleted}/${totalSessions || '—'}</div><div class="stat-label">Sessions Completed</div></div>
-  <div class="stat"><div class="stat-val">${asn.status || 'assigned'}</div><div class="stat-label">Status</div></div>
+  <div class="stat"><div class="stat-val">${sessionsCompleted}/${totalSessions || '—'}</div><div class="stat-label">Days Completed</div></div>
+  <div class="stat"><div class="stat-val">${avgScore !== null ? avgScore + '%' : '—'}</div><div class="stat-label">Avg Quiz Score</div></div>
+  <div class="stat"><div class="stat-val">${totalCorrect}/${totalQuestions || '—'}</div><div class="stat-label">Questions Correct</div></div>
 </div>
-${asn.dueDate ? `<p>Due Date: ${new Date(asn.dueDate).toLocaleDateString()}</p>` : ''}
+<h2>Day-by-Day Performance</h2>
+<table>
+<thead><tr><th>Day</th><th>Title</th><th>Status</th><th>Score</th><th>Correct</th><th>Completed</th></tr></thead>
+<tbody>${rowsHtml}</tbody>
+</table>
+${allStrengths.length > 0 ? `<h2>Strengths</h2><ul>${allStrengths.map(s => `<li>${s}</li>`).join('')}</ul>` : ''}
+${allWeaknesses.length > 0 ? `<h2>Areas to Improve</h2><ul>${allWeaknesses.map(s => `<li>${s}</li>`).join('')}</ul>` : ''}
 <div class="footer">SkillForge AI · Corporate Training Platform · Confidential</div>
 </body>
 </html>`;
@@ -816,10 +872,8 @@ ${asn.dueDate ? `<p>Due Date: ${new Date(asn.dueDate).toLocaleDateString()}</p>`
     );
   }
 
-  const mod = moduleData || {};
-  const asn = assignmentData || {};
-  const sessionsCompleted = Object.values(asn.sessionProgress || {}).filter(s => s === 'completed').length;
-  const totalSessions = (mod.sessions || []).length;
+  const sessionsCompleted = dayRows.filter(r => r.status === 'completed').length;
+  const totalSessions = sessions.length;
   const progress = asn.progress || 0;
   const statusColor = asn.status === 'completed' ? 'text-emerald-400' : asn.status === 'in_progress' ? 'text-amber-400' : 'text-slate-400';
 
@@ -853,42 +907,40 @@ ${asn.dueDate ? `<p>Due Date: ${new Date(asn.dueDate).toLocaleDateString()}</p>`
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-5">
           <p className="text-xs text-indigo-400 font-bold uppercase tracking-widest mb-1">Overall Progress</p>
-          <p className="text-4xl font-black text-white">{progress}<span className="text-2xl text-indigo-400">%</span></p>
+          <p className="text-3xl font-black text-white">{progress}<span className="text-xl text-indigo-400">%</span></p>
         </div>
-        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6">
-          <p className="text-xs text-emerald-400 font-bold uppercase tracking-widest mb-1">Sessions Completed</p>
-          <p className="text-4xl font-black text-white">{sessionsCompleted}<span className="text-2xl text-slate-400">/{totalSessions || '—'}</span></p>
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+          <p className="text-xs text-emerald-400 font-bold uppercase tracking-widest mb-1">Days Completed</p>
+          <p className="text-3xl font-black text-white">{sessionsCompleted}<span className="text-xl text-slate-400">/{totalSessions || '—'}</span></p>
         </div>
-        <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-6">
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+          <p className="text-xs text-amber-400 font-bold uppercase tracking-widest mb-1">Avg Quiz Score</p>
+          <p className="text-3xl font-black text-white">{avgScore !== null ? <>{avgScore}<span className="text-xl text-amber-400">%</span></> : '—'}</p>
+        </div>
+        <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-5">
           <p className="text-xs text-purple-400 font-bold uppercase tracking-widest mb-1">Status</p>
-          <p className={`text-2xl font-black capitalize ${statusColor}`}>{asn.status || 'assigned'}</p>
+          <p className={`text-xl font-black capitalize ${statusColor}`}>{asn.status || 'assigned'}</p>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-8 mb-6">
-        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Module Details</h3>
-        <div className="text-lg font-bold text-white mb-1">{mod.title}</div>
-        {mod.description && <div className="text-sm text-slate-400 mb-3">{mod.description}</div>}
-        {mod.skills?.length > 0 && (
-          <div className="flex flex-wrap gap-2 mt-2">
-            {mod.skills.map((skill, i) => (
-              <span key={i} className="px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold">
-                {skill}
-              </span>
-            ))}
-          </div>
-        )}
-        {asn.dueDate && (
-          <div className="mt-4 text-sm text-slate-400">
-            Due: <span className="text-slate-200 font-semibold">{new Date(asn.dueDate).toLocaleDateString()}</span>
-          </div>
-        )}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-4">
+          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Questions Answered</p>
+          <p className="text-xl font-black text-white">{totalCorrect}<span className="text-sm text-slate-500">/{totalQuestions || '—'} correct</span></p>
+        </div>
+        <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-4">
+          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Best Day</p>
+          <p className="text-sm font-bold text-white truncate">{bestDay ? `Day ${bestDay.day} — ${bestDay.score}%` : '—'}</p>
+        </div>
+        <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-4">
+          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Needs Review</p>
+          <p className="text-sm font-bold text-white truncate">{worstDay ? `Day ${worstDay.day} — ${worstDay.score}%` : '—'}</p>
+        </div>
       </div>
 
-      {/* Progress bar */}
       <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-6 mb-6">
         <div className="flex justify-between text-sm mb-2">
           <span className="text-slate-400 font-medium">Module Completion</span>
@@ -901,6 +953,113 @@ ${asn.dueDate ? `<p>Due Date: ${new Date(asn.dueDate).toLocaleDateString()}</p>`
           />
         </div>
       </div>
+
+      {mod.description || mod.skills?.length > 0 ? (
+        <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-6 mb-6">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Module Details</h3>
+          {mod.description && <div className="text-sm text-slate-400 mb-3">{mod.description}</div>}
+          {mod.skills?.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {mod.skills.map((skill, i) => (
+                <span key={i} className="px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold">
+                  {skill}
+                </span>
+              ))}
+            </div>
+          )}
+          {asn.dueDate && (
+            <div className="mt-4 text-sm text-slate-400">
+              Due: <span className="text-slate-200 font-semibold">{new Date(asn.dueDate).toLocaleDateString()}</span>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {/* Score trend across completed days */}
+      {completedRows.length > 0 && (
+        <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-6 mb-6">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Quiz Score by Day</h3>
+          <div className="space-y-2.5">
+            {completedRows.map(r => (
+              <div key={r.day}>
+                <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
+                  <span>Day {r.day} — {r.title}</span>
+                  <span className="text-slate-500 font-semibold">{r.score}%</span>
+                </div>
+                <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${r.score >= 70 ? 'bg-emerald-500' : r.score >= 40 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                    style={{ width: `${r.score}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Day-by-day breakdown table */}
+      <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 overflow-hidden mb-6">
+        <div className="p-4 border-b border-slate-700/40">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Day-by-Day Breakdown</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-500 uppercase tracking-wider border-b border-slate-700/40">
+                <th className="px-4 py-2.5">Day</th>
+                <th className="px-4 py-2.5">Session</th>
+                <th className="px-4 py-2.5">Status</th>
+                <th className="px-4 py-2.5">Score</th>
+                <th className="px-4 py-2.5">Correct</th>
+                <th className="px-4 py-2.5">Completed</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/30">
+              {dayRows.map(r => (
+                <tr key={r.day}>
+                  <td className="px-4 py-2.5 text-slate-400 font-semibold">{r.day}</td>
+                  <td className="px-4 py-2.5 text-white font-medium max-w-xs truncate">{r.title}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${r.status === 'completed' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-700/40 border-slate-600/40 text-slate-400'}`}>
+                      {r.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-300">{r.score !== null ? `${r.score}%` : '—'}</td>
+                  <td className="px-4 py-2.5 text-slate-300">{r.correct !== null ? `${r.correct}/${r.total}` : '—'}</td>
+                  <td className="px-4 py-2.5 text-slate-500 text-xs">{r.completedAt ? new Date(r.completedAt).toLocaleDateString() : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Strengths & weaknesses, aggregated across every completed day */}
+      {(allStrengths.length > 0 || allWeaknesses.length > 0) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+          {allStrengths.length > 0 && (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+              <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-3">💪 Strengths</h3>
+              <ul className="space-y-1.5">
+                {allStrengths.map((s, i) => (
+                  <li key={i} className="text-xs text-slate-300 leading-snug flex gap-2"><span className="text-emerald-400 flex-shrink-0">✓</span><span>{s}</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {allWeaknesses.length > 0 && (
+            <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-5">
+              <h3 className="text-xs font-bold text-rose-400 uppercase tracking-widest mb-3">🎯 Areas to Review</h3>
+              <ul className="space-y-1.5">
+                {allWeaknesses.map((s, i) => (
+                  <li key={i} className="text-xs text-slate-300 leading-snug flex gap-2"><span className="text-rose-400 flex-shrink-0">✗</span><span>{s}</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="text-center text-xs text-slate-500">SkillForge AI · Corporate Training Platform · Confidential</div>
     </div>
