@@ -244,11 +244,13 @@ function scoreSubmission(questions, responses) {
       questionIndex: i,
       question: q.question,
       type: q.type,
+      options: q.options || null,
       userAnswer: userAnswer || null,      // null = no answer (displayed as "(no answer)")
       correctAnswer: q.answer,
       correctOptionText,
       isCorrect,
       skillArea: q.skillArea || 'General',
+      explanation: q.explanation || '',
     });
   });
 
@@ -1015,22 +1017,26 @@ async function buildFullReportData({ ea, report, assessment, userId, req }) {
     index: i + 1,
     question: b.question || '',
     type: b.type || 'mcq',
+    options: b.options || null,
     userAnswer: b.userAnswer ?? '',
-    correctAnswer: b.correctAnswer ?? '',
+    correctAnswer: b.correctOptionText || b.correctAnswer || '',
     isCorrect: !!b.isCorrect,
     marks: b.marks ?? (b.isCorrect ? 1 : 0),
     skillArea: b.skillArea || '',
+    explanation: b.explanation || '',
   }));
   if (questions.length === 0 && Array.isArray(ea.questions)) {
     questions = ea.questions.map((q, i) => ({
       index: i + 1,
       question: q.question || '',
       type: q.type || 'mcq',
+      options: q.options || null,
       userAnswer: ea.responses?.[i]?.answer ?? '',
       correctAnswer: q.answer ?? '',
       isCorrect: null,
       marks: null,
       skillArea: q.skillArea || '',
+      explanation: q.explanation || '',
     }));
   }
 

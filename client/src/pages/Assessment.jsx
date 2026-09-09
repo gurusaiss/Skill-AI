@@ -481,6 +481,14 @@ export default function Assessment() {
                         </div>
                       )}
 
+                      {/* Explanation — why the correct answer is correct */}
+                      {b.explanation && (
+                        <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2 bg-indigo-500/10 text-indigo-200 border border-indigo-500/20">
+                          <span className="shrink-0">💡</span>
+                          <span>{b.explanation}</span>
+                        </div>
+                      )}
+
                       {/* Skill area tag */}
                       {b.skillArea && b.skillArea !== 'General' && (
                         <span className="inline-block text-xs px-2 py-0.5 rounded-md bg-slate-700/60 text-slate-400 border border-slate-600/40 mt-1">
