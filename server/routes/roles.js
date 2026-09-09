@@ -963,7 +963,9 @@ router.post('/:id/generate-assessment', authenticate, requireRole('admin'), asyn
     const role = await RoleLibrary.getById(req.params.id);
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
 
-    const { questionCount = 10, questionTypes = ['mcq'] } = req.body;
+    // 50 matches the bulk-generate default below; the old 10 here was part of
+    // the platform-wide "everyone gets 10 questions" problem.
+    const { questionCount = 50, questionTypes } = req.body;
     const companyId = req.user.companyId || 'default';
 
     const questions = await generateQuestionsFromJD({

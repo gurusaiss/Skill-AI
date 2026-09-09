@@ -72,21 +72,82 @@ function stripInternalMetadata(q) {
 // on read for privileged callers, without ever writing it back to storage.
 async function hydrateAssignmentsForAdmin(assessment) {
   if (!assessment?.questionBankVersionId || !Array.isArray(assessment.employeeAssignments)) return assessment;
-  const needsHydration = assessment.employeeAssignments.some(ea => !Array.isArray(ea.questions));
-  if (!needsHydration) return assessment;
   const version = await getApprovedBankCached(assessment.questionBankVersionId);
-  if (!version) return assessment;
+  if (!version?.questions?.length) return assessment;
   const byId = new Map(version.questions.map(q => [q.id, q]));
   const eaaRows = await EmployeeAssessmentAssignments.getByAssessment(assessment.id);
   const orderByUser = new Map(eaaRows.map(r => [r.user_id, r.question_order]));
   return {
     ...assessment,
     employeeAssignments: assessment.employeeAssignments.map(ea => {
-      if (Array.isArray(ea.questions)) return ea;
+      // Mirrors resolveEmployeeQuestions' precedence so an admin previewing an
+      // employee's paper sees exactly what that employee gets: a locked
+      // (started/submitted) assignment keeps its embedded set; anything else
+      // resolves against the current approved bank. Previously this returned
+      // early on any embedded array, so admin previews kept showing a stale
+      // 10-question set for employees who will actually receive the full bank.
+      if (isAssignmentLocked(ea) && Array.isArray(ea.questions)) return ea;
       const order = orderByUser.get(ea.userId) || version.questions.map(q => q.id);
-      return { ...ea, questions: order.map(qid => byId.get(qid)).filter(Boolean) };
+      const resolved = order.map(qid => byId.get(qid)).filter(Boolean);
+      return resolved.length > 0 ? { ...ea, questions: resolved } : ea;
     }),
   };
+}
+
+/**
+ * Single source of truth for "which questions does this employee actually get".
+ *
+ * The versioned Role Library flow stores the frozen bank + this employee's
+ * shuffle order in question_bank_versions / employee_assessment_assignments,
+ * and stores NO question text on the roster entry. The legacy ad-hoc flow
+ * (POST /api/assessments) embeds `questions` directly on the assignment —
+ * historically capped at 10 by that route's `questionCount` default.
+ *
+ * The bug this fixes: every read site checked the embedded array FIRST, so a
+ * stale 10-question embed permanently shadowed a 320-question approved bank,
+ * and re-approving the role changed nothing for that employee.
+ *
+ * The started/submitted guard is NOT defensive politeness — it is required for
+ * correctness. normaliseResponses() and scoreSubmission() index answers
+ * POSITIONALLY, so swapping the question set under someone who has already
+ * started would misalign every stored answer and silently corrupt their score.
+ * Only not-yet-started assignments are re-pointed at the full approved bank.
+ */
+function isAssignmentLocked(assignment) {
+  if (!assignment) return false;
+  return Boolean(assignment.startedAt) || ['in_progress', 'submitted'].includes(assignment.status);
+}
+
+async function resolveEmployeeQuestions(assessment, assignment, userId) {
+  if (!assignment) return { questions: null, source: null };
+
+  const embedded = Array.isArray(assignment.questions)
+    ? assignment.questions.map(stripInternalMetadata)
+    : null;
+
+  // A locked (started/submitted) assignment keeps exactly what it was served.
+  if (isAssignmentLocked(assignment)) {
+    return embedded ? { questions: embedded, source: 'embedded' } : { questions: null, source: null };
+  }
+
+  if (assessment?.questionBankVersionId) {
+    try {
+      const [eaa, version] = await Promise.all([
+        EmployeeAssessmentAssignments.getOne(assessment.id, userId),
+        getApprovedBankCached(assessment.questionBankVersionId),
+      ]);
+      if (version?.questions?.length) {
+        const byId = new Map(version.questions.map(q => [q.id, q]));
+        const order = eaa?.question_order?.length ? eaa.question_order : version.questions.map(q => q.id);
+        const resolved = order.map(qid => byId.get(qid)).filter(Boolean).map(stripInternalMetadata);
+        if (resolved.length > 0) return { questions: resolved, source: 'version' };
+      }
+    } catch (e) {
+      console.warn(`[assessment] Version resolve failed for ${assessment.id}/${userId}:`, e.message);
+    }
+  }
+
+  return embedded ? { questions: embedded, source: 'embedded' } : { questions: null, source: null };
 }
 
 // ── Normalise answers from frontend into a dense array indexed by question pos ─
@@ -353,8 +414,12 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       targetUsers = [],
       targetGroup: _targetGroup,
       groupId,
-      questionCount = 10,
-      questionTypes = ['mcq'],
+      // No default: absent means "deliver the role's ENTIRE approved bank".
+      // This used to default to 10, which silently cut a 320-question approved
+      // bank down to 10 for every employee — the single most-reported bug.
+      // An explicit value is still honoured as a deliberate admin-chosen cap.
+      questionCount,
+      questionTypes,
       assessmentDate,
       deadline,
       duration = 30,
@@ -441,7 +506,11 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
         if (fullBank.length > 0) {
           const pctEasy   = easyPct   != null ? Number(easyPct)   : 34;
           const pctMedium = mediumPct != null ? Number(mediumPct) : 33;
-          const target    = Math.min(questionCount, fullBank.length);
+          // Absent questionCount ⇒ the whole approved bank (see the parameter
+          // comment above). Only an explicit value caps it.
+          const target    = questionCount != null
+            ? Math.min(Number(questionCount) || fullBank.length, fullBank.length)
+            : fullBank.length;
           const nEasy   = Math.round(target * pctEasy   / 100);
           const nMedium = Math.round(target * pctMedium / 100);
           const nHard   = target - nEasy - nMedium;
@@ -487,11 +556,15 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
           if (sharedSubset) questions = shuffle(sharedSubset);
         }
         if (!questions) {
+          // Reached only when the role has NO approved bank at all, so there
+          // is no approved count to honour here — a modest generation default
+          // is correct and unrelated to the "deliver the full approved bank"
+          // rule that governs the bank path above.
           questions = await generateQuestionsFromJD({
             jobRole: user.jobRole || 'Employee',
             jobDescription: resolvedJD,
             jdSkills: resolvedSkills,
-            questionCount,
+            questionCount: questionCount ?? 10,
             questionTypes,
             employeeSeed: `${userId}-${Date.now()}`,
           });
@@ -517,8 +590,13 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       targetGroup: targetGroup || null,
       targetUsers: userIds,
       employeeAssignments,
-      questionCount,
-      questionTypes,
+      // Store the count actually delivered, not the requested one — this field
+      // is what the Job Library assignment-history panel displays, so an
+      // undefined/stale value there misreports what employees received.
+      questionCount: employeeAssignments[0]?.questions?.length ?? questionCount ?? 0,
+      questionTypes: questionTypes?.length
+        ? questionTypes
+        : [...new Set((employeeAssignments[0]?.questions || []).map(q => q.type).filter(Boolean))],
       difficulty: difficulty || null,
       assessmentDate: assessmentDate || null,
       deadline: deadline || null,
@@ -1439,16 +1517,7 @@ router.get('/my', authenticate, async (req, res) => {
       // backward compatibility.
       let questions = null;
       if (isVisible && myAssignment) {
-        if (Array.isArray(myAssignment.questions)) {
-          questions = myAssignment.questions.map(stripInternalMetadata);
-        } else if (a.questionBankVersionId) {
-          const eaa = await EmployeeAssessmentAssignments.getOne(a.id, req.user.userId);
-          const version = await getApprovedBankCached(a.questionBankVersionId);
-          if (eaa && version) {
-            const byId = new Map(version.questions.map(q => [q.id, q]));
-            questions = eaa.question_order.map(qid => byId.get(qid)).filter(Boolean).map(stripInternalMetadata);
-          }
-        }
+        ({ questions } = await resolveEmployeeQuestions(a, myAssignment, req.user.userId));
       }
 
       return {
@@ -1809,21 +1878,8 @@ router.get('/:id', authenticate, async (req, res) => {
     if (!isPrivileged) {
       const myAssignment = assessment.employeeAssignments?.find(ea => ea.userId === req.user.userId);
       if (!myAssignment) return res.status(403).json({ success: false, data: null, error: 'Access denied' });
-      let resolved = myAssignment;
-      if (!Array.isArray(myAssignment.questions) && assessment.questionBankVersionId) {
-        const eaa = await EmployeeAssessmentAssignments.getOne(assessment.id, req.user.userId);
-        const version = await getApprovedBankCached(assessment.questionBankVersionId);
-        if (eaa && version) {
-          const byId = new Map(version.questions.map(q => [q.id, q]));
-          resolved = { ...myAssignment, questions: eaa.question_order.map(qid => byId.get(qid)).filter(Boolean).map(stripInternalMetadata) };
-        }
-      } else if (Array.isArray(myAssignment.questions)) {
-        // Legacy/ad-hoc assessments embed questions directly — apply the same
-        // internal-metadata stripping (source file/section, generation
-        // provenance) that the versioned path above already applies, for
-        // consistency between the two question-resolution paths.
-        resolved = { ...myAssignment, questions: myAssignment.questions.map(stripInternalMetadata) };
-      }
+      const { questions: resolvedQuestions } = await resolveEmployeeQuestions(assessment, myAssignment, req.user.userId);
+      const resolved = resolvedQuestions ? { ...myAssignment, questions: resolvedQuestions } : myAssignment;
       return res.json({ success: true, data: { ...assessment, employeeAssignments: [resolved] }, error: null });
     }
 
@@ -1865,19 +1921,35 @@ router.post('/:id/submit', authenticate, async (req, res) => {
       return res.status(403).json({ success: false, data: null, error: 'Submission deadline has passed' });
     }
 
-    // Resolve questions the same way GET /my does: embedded (legacy/ad-hoc
-    // assessments) or version+order-derived (Role Library approved-bank flow).
-    let questions = Array.isArray(assignment.questions) ? assignment.questions : null;
-    let eaaRow = null;
-    if (!questions && assessment.questionBankVersionId) {
-      eaaRow = await EmployeeAssessmentAssignments.getOne(assessment.id, req.user.userId);
-      const version = await getApprovedBankCached(assessment.questionBankVersionId);
-      if (eaaRow && version) {
-        const byId = new Map(version.questions.map(q => [q.id, q]));
-        questions = eaaRow.question_order.map(qid => byId.get(qid)).filter(Boolean);
-      }
+    // Resolve through the SAME helper GET /my and GET /:id use, so the set
+    // being scored is always identical to the set that was served.
+    const { questions: resolvedForScoring } = await resolveEmployeeQuestions(assessment, assignment, req.user.userId);
+    const questions = resolvedForScoring || [];
+
+    // Needed below to stamp the submission onto the versioned assignment row.
+    // Fetched whenever the assessment is version-backed (previously only when
+    // the embedded array was absent, so a version-backed assessment that also
+    // carried a legacy embedded array never recorded its submission here).
+    const eaaRow = assessment.questionBankVersionId
+      ? await EmployeeAssessmentAssignments.getOne(assessment.id, req.user.userId).catch(() => null)
+      : null;
+
+    // Safety net against the exact class of bug being fixed here: if the
+    // client answered more questions than we just resolved, the two sides
+    // disagree about the question set and scoring positionally would silently
+    // drop answers and compute against the wrong denominator. Refuse rather
+    // than record a wrong score.
+    const highestAnsweredIndex = Array.isArray(answers)
+      ? answers.reduce((max, a) => (typeof a?.questionIndex === 'number' && a.questionIndex > max ? a.questionIndex : max), -1)
+      : (Array.isArray(rawResponses) ? rawResponses.length - 1 : -1);
+    if (highestAnsweredIndex >= questions.length) {
+      console.error(`[submit] Question-set mismatch for ${req.params.id}/${req.user.userId}: client answered up to index ${highestAnsweredIndex} but server resolved ${questions.length} questions`);
+      return res.status(409).json({
+        success: false,
+        data: null,
+        error: 'This assessment was updated while you were taking it. Please reload and start again — your answers were not scored.',
+      });
     }
-    questions = (questions || []).map(stripInternalMetadata);
 
     // Normalise answers into dense array: responses[i] = { answer: string }
     const responses = normaliseResponses(answers, rawResponses, questions.length);

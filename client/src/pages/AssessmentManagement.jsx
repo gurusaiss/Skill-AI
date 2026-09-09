@@ -141,7 +141,11 @@ const EMPTY_MODAL = {
   selectedUsers: [],
   selectedGroup: '',
   department: '',
-  questionCount: 10,
+  // null + useAllApproved means "send the role's entire approved bank".
+  // A hardcoded 10 here was capping every assessment at 10 questions
+  // regardless of how many were approved in the Job Library.
+  questionCount: null,
+  useAllApproved: true,
   questionTypes: ['mcq'],
   difficulty: '',
   easyPct: 34,
@@ -320,7 +324,8 @@ export default function AssessmentManagement() {
   };
 
   const canProceedStep2 = () => {
-    return modal.assessmentDate && modal.questionCount >= 1 && modal.title.trim();
+    const countOk = modal.useAllApproved || modal.questionCount >= 1;
+    return modal.assessmentDate && countOk && modal.title.trim();
   };
 
   const handleCreate = async () => {
@@ -334,7 +339,9 @@ export default function AssessmentManagement() {
         title: modal.title.trim(),
         targetUsers,
         targetType: modal.targetType,
-        questionCount: modal.questionCount,
+        // Omitted entirely when using the full approved bank — the server
+        // treats an absent questionCount as "deliver the whole bank".
+        questionCount: modal.useAllApproved ? undefined : modal.questionCount,
         questionTypes: modal.questionTypes,
         difficulty: modal.difficulty || undefined,
         easyPct: modal.easyPct,
@@ -982,17 +989,35 @@ export default function AssessmentManagement() {
                 {/* Question Count */}
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
-                    Question Count: <span className="text-indigo-400">{modal.questionCount}</span>
+                    Question Count
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={500}
-                    value={modal.questionCount}
-                    onChange={e => updateModal({ questionCount: Math.max(1, parseInt(e.target.value) || 1) })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
-                  />
-                  <p className="text-xs text-slate-500 mt-1">Questions pulled from role's approved question bank. If fewer questions available, all available questions will be used.</p>
+                  <label className="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all mb-2 border-emerald-500/40 bg-emerald-500/5">
+                    <input
+                      type="checkbox"
+                      checked={modal.useAllApproved}
+                      onChange={e => updateModal({ useAllApproved: e.target.checked, questionCount: e.target.checked ? null : 25 })}
+                      className="mt-0.5 accent-emerald-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-emerald-300">Use every approved question (recommended)</span>
+                      <span className="block text-xs text-slate-400 mt-0.5">
+                        Each employee receives their role's full approved bank from the Job Library. Selected employees can hold different roles, so each gets their own role's approved count.
+                      </span>
+                    </span>
+                  </label>
+                  {!modal.useAllApproved && (
+                    <>
+                      <input
+                        type="number"
+                        min={1}
+                        max={500}
+                        value={modal.questionCount ?? ''}
+                        onChange={e => updateModal({ questionCount: Math.max(1, parseInt(e.target.value) || 1) })}
+                        className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Caps each employee at this many questions. If a role's approved bank holds fewer, all available are used.</p>
+                    </>
+                  )}
                 </div>
 
                 {/* Difficulty Distribution */}
@@ -1018,9 +1043,15 @@ export default function AssessmentManagement() {
                     ))}
                   </div>
                   <p className="text-xs text-slate-500 mt-1.5">
-                    With {modal.questionCount} questions: ~{Math.round(modal.questionCount * modal.easyPct / 100)} easy,
-                    ~{Math.round(modal.questionCount * modal.mediumPct / 100)} medium,
-                    ~{modal.questionCount - Math.round(modal.questionCount * modal.easyPct / 100) - Math.round(modal.questionCount * modal.mediumPct / 100)} hard
+                    {modal.useAllApproved ? (
+                      <>Applied proportionally across each role's full approved bank.</>
+                    ) : (
+                      <>
+                        With {modal.questionCount} questions: ~{Math.round(modal.questionCount * modal.easyPct / 100)} easy,
+                        ~{Math.round(modal.questionCount * modal.mediumPct / 100)} medium,
+                        ~{modal.questionCount - Math.round(modal.questionCount * modal.easyPct / 100) - Math.round(modal.questionCount * modal.mediumPct / 100)} hard
+                      </>
+                    )}
                   </p>
                 </div>
 
@@ -1143,7 +1174,9 @@ export default function AssessmentManagement() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500">Questions each</span>
-                      <span className="text-white font-semibold">{modal.questionCount}</span>
+                      <span className="text-white font-semibold">
+                        {modal.useAllApproved ? "Role's full approved bank" : modal.questionCount}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500">Duration</span>
