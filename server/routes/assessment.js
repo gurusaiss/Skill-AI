@@ -26,6 +26,7 @@ import { getApprovedBankCached } from '../services/QuestionBankCache.js';
 import GeminiService from '../services/GeminiService.js';
 import LLMCache from '../services/LLMCache.js';
 import { generateSessionQuiz, ensureAllSessionQuizzes } from '../services/SessionQuizGenerator.js';
+import { getVisibleEmployeeIds } from '../services/ManagerScope.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -1564,15 +1565,16 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
 
     let allowedIds = companyId === 'default' ? null : companyUserIds;
 
-    // Manager: further restrict to group employees only
+    // Manager: restrict to their own team. This used to consider Groups ONLY,
+    // so every employee linked through the durable manager_id path (the Assign
+    // Manager dropdown, individual creation, bulk import) was invisible here —
+    // the direct cause of "the manager can't see their candidate's details".
+    // getVisibleEmployeeIds unions both mechanisms.
     if (req.user.role === 'manager') {
-      const allGroups = await Groups.getAll();
-      const myGroups = allGroups.filter(g =>
-        g.managerId === req.user.userId &&
-        (g.companyId || 'default') === companyId
-      );
-      const myEmpIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
-      allowedIds = myEmpIds;
+      const myEmpIds = await getVisibleEmployeeIds(req.user);
+      allowedIds = companyId === 'default'
+        ? myEmpIds
+        : new Set([...myEmpIds].filter(id => companyUserIds.has(id)));
     }
 
     const filteredReports = allowedIds === null

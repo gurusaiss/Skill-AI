@@ -2,6 +2,7 @@ import AuthService from '../services/AuthService.js';
 import UserStore from '../services/UserStore.js';
 import rateLimit from 'express-rate-limit';
 import { isBlocklisted } from '../security/tokenBlocklist.js';
+import { getEffectiveAccesses, canActAsManager } from '../services/roleCapability.js';
 
 // Shared by authenticate() below AND routes/auth.js's login/me/password-change
 // responses — these MUST stay in sync. A manager/admin who has never had
@@ -15,13 +16,12 @@ import { isBlocklisted } from '../security/tokenBlocklist.js';
 // did nothing: the client would send X-Active-Role, but the server would
 // reject it (not in the raw accesses list) and keep authorizing as the
 // primary role, with no error and no indication the switch didn't take.
-export function getEffectiveAccesses(user) {
-  const stored = user.accesses || [];
-  if (stored.length > 0) return stored;
-  if (user.role === 'manager') return ['employee'];
-  if (user.role === 'admin') return ['manager', 'employee'];
-  return stored;
-}
+// Implementation now lives in services/roleCapability.js so UserStore and
+// ManagerScope can share it without an import cycle (this middleware imports
+// UserStore, so UserStore cannot import back from here). Re-exported below to
+// keep every existing `import { getEffectiveAccesses } from
+// '../middleware/auth.js'` working unchanged.
+export { getEffectiveAccesses, canActAsManager };
 
 /**
  * Authentication middleware - Verify JWT token

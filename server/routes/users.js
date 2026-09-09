@@ -168,7 +168,13 @@ async function checkFileMime(filePath) {
 }
 
 // ── Sanitize user for response (include all profile fields) ───────────────────
-function sanitizeUser(user) {
+// `managerIndex` (optional) is a Map<userId, {name, email}> supplied by list
+// handlers that have already fetched every user, so the manager's NAME can be
+// resolved with zero extra queries and no N+1. Previously only `managerId`
+// was returned, which is why no screen could show a manager's name without a
+// second round-trip (and the one place that tried was reading the wrong field).
+function sanitizeUser(user, managerIndex) {
+  const mgr = user.managerId && managerIndex ? managerIndex.get(user.managerId) : null;
   return {
     userId: user.userId || user.id,
     email: user.email,
@@ -179,6 +185,8 @@ function sanitizeUser(user) {
     updatedAt: user.updatedAt,
     lastLogin: user.lastLogin,
     managerId: user.managerId || null,
+    managerName: mgr?.name || null,
+    managerEmail: mgr?.email || null,
     learningUUID: user.learningUUID || null,
     // Extended profile
     jobRole: user.jobRole || '',
@@ -285,7 +293,12 @@ router.get('/', authenticate, async (req, res) => {
       }
     }
 
-    const sanitizedUsers = users.map(sanitizeUser);
+    // Built from the full company list already fetched above, so every row
+    // carries its manager's name without any extra query per user.
+    const managerIndex = new Map(
+      allUsers.map(u => [u.userId || u.id, { name: u.name, email: u.email }])
+    );
+    const sanitizedUsers = users.map(u => sanitizeUser(u, managerIndex));
 
     res.json({ success: true, data: { users: sanitizedUsers, count: sanitizedUsers.length }, error: null });
   } catch (error) {

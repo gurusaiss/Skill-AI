@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { createClient } from '@supabase/supabase-js';
 import ws from 'ws';
 import { UserJDProfiles, Groups } from './DataStore.js';
+import { canActAsManager } from './roleCapability.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -429,12 +430,21 @@ class UserStore {
   async assignEmployeesToManager(managerId, employeeIds, assignedBy) {
     const manager = await this.getUserById(managerId);
     if (!manager) throw new Error('Manager not found');
-    if (manager.role !== 'manager') throw new Error('User must have manager role');
+    // Was `manager.role !== 'manager'`, which rejected admins outright AND
+    // rejected anyone granted manager access via Manage Access (primary role
+    // employee, accesses: ['manager']). That disagreed with bulk-import's own
+    // ['manager','admin'] check and was why assigning such a user as a
+    // manager failed silently from the dropdown and from bulk import.
+    if (!canActAsManager(manager)) throw new Error('User must have manager capability');
 
     const employees = await Promise.all(employeeIds.map(id => this.getUserById(id)));
     for (let i = 0; i < employees.length; i++) {
       if (!employees[i]) throw new Error(`Employee ${employeeIds[i]} not found`);
-      if (employees[i].role !== 'employee') throw new Error(`User ${employeeIds[i]} must have employee role`);
+      // Relaxed from `role !== 'employee'`: a manager can legitimately report
+      // to another manager. Only reject targets that cannot sensibly report
+      // (admins) and self-assignment.
+      if (employees[i].role === 'admin') throw new Error(`User ${employeeIds[i]} is an admin and cannot be assigned a manager`);
+      if ((employees[i].userId || employees[i].id) === managerId) throw new Error('A user cannot be their own manager');
     }
 
     // Persist on the employee's own user record (users.manager_id) FIRST —
