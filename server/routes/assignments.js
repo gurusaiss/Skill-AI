@@ -157,21 +157,29 @@ router.get('/manager/:managerId/employees', authenticate, async (req, res) => {
       });
     }
 
-    // Pull employees from groups (primary system) then fall back to old assignments.json
+    // Union employees from groups AND the durable managerId/file-mirror path
+    // (UserStore.getManagerEmployees) — this used to be all-or-nothing (any
+    // group present meant durable/file assignments were ignored entirely),
+    // so an employee assigned to a manager via the admin "Assign Manager"
+    // dropdown or bulk-import (which only ever set managerId, never created
+    // a Group) would silently never appear on that manager's dashboard the
+    // moment the manager had even one unrelated group.
     const myCompany = req.user.companyId || 'default';
     const allGroups = await Groups.getAll();
     const managerGroups = allGroups.filter(g =>
       g.managerId === managerId &&
       (g.companyId || 'default') === myCompany
     );
-    let employees = [];
-    if (managerGroups.length > 0) {
-      const memberIds = [...new Set(managerGroups.flatMap(g => g.employeeIds || []))];
-      const fetched = await Promise.all(memberIds.map(id => UserStore.getUserById(id)));
-      employees = fetched.filter(Boolean);
-    } else {
-      employees = await UserStore.getManagerEmployees(managerId);
+    const groupMemberIds = [...new Set(managerGroups.flatMap(g => g.employeeIds || []))];
+    const [groupEmployees, directEmployees] = await Promise.all([
+      Promise.all(groupMemberIds.map(id => UserStore.getUserById(id))),
+      UserStore.getManagerEmployees(managerId),
+    ]);
+    const byId = new Map();
+    for (const emp of [...groupEmployees.filter(Boolean), ...directEmployees]) {
+      byId.set(emp.userId || emp.id, emp);
     }
+    const employees = [...byId.values()];
 
     const sanitizedEmployees = employees.map(emp => ({
       userId: emp.userId || emp.id,
