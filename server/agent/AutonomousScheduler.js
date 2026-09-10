@@ -37,8 +37,88 @@ class AutonomousScheduler {
     try {
       await this._generateDailyBriefs();
       await this._checkProgressAnomalies();
+      await this._cleanupExpiredData();
     } catch (e) {
       console.error('[AutonomousScheduler] Cycle error:', e.message);
+    }
+  }
+
+  // Retention pass — nothing in the platform previously expired anything,
+  // so activation tokens, abandoned pending modules, and superseded
+  // question-bank drafts accumulated forever. Runs every 6-hour cycle
+  // alongside the other autonomous jobs; each sub-step is independently
+  // try/caught so one failing type never blocks the others.
+  async _cleanupExpiredData() {
+    const now = Date.now();
+    const removed = { activationTokens: 0, pendingModules: 0, draftVersions: 0 };
+
+    try {
+      const { ActivationTokens } = await import('../services/DataStore.js');
+      const all = await ActivationTokens.getAll();
+      for (const t of (all || [])) {
+        if (t.expiresAt && new Date(t.expiresAt).getTime() < now) {
+          await ActivationTokens.delete(t.id);
+          removed.activationTokens++;
+        }
+      }
+    } catch (e) {
+      console.warn('[AutonomousScheduler] activation token cleanup failed:', e.message);
+    }
+
+    try {
+      const { PendingModules } = await import('../services/DataStore.js');
+      const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+      const all = await PendingModules.getAll();
+      for (const m of (all || [])) {
+        if (
+          m.status === 'pending_approval' &&
+          m.createdAt &&
+          (now - new Date(m.createdAt).getTime()) > THIRTY_DAYS_MS
+        ) {
+          // Mark expired rather than delete — an admin should still be able
+          // to see what was auto-generated and never acted on, same as a
+          // rejected module stays visible with its outcome.
+          await PendingModules.update(m.id, { status: 'expired', expiredAt: new Date().toISOString() });
+          removed.pendingModules++;
+        }
+      }
+    } catch (e) {
+      console.warn('[AutonomousScheduler] pending module cleanup failed:', e.message);
+    }
+
+    try {
+      const { QuestionBankVersions } = await import('../services/DataStore.js');
+      const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+      const all = await QuestionBankVersions.getAll();
+      const draftsByRole = new Map();
+      for (const v of (all || [])) {
+        if (v.status !== 'draft') continue;
+        if (!draftsByRole.has(v.role_id)) draftsByRole.set(v.role_id, []);
+        draftsByRole.get(v.role_id).push(v);
+      }
+      // A draft is safe to delete only once a NEWER version exists for the
+      // same role — that's what makes it genuinely superseded, not just
+      // old (a lone in-progress draft, however old, is still live work).
+      for (const drafts of draftsByRole.values()) {
+        if (drafts.length < 2) continue;
+        const maxVersion = Math.max(...drafts.map(d => d.version));
+        for (const d of drafts) {
+          if (
+            d.version < maxVersion &&
+            d.created_at &&
+            (now - new Date(d.created_at).getTime()) > SEVEN_DAYS_MS
+          ) {
+            await QuestionBankVersions.delete(d.id);
+            removed.draftVersions++;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[AutonomousScheduler] question bank draft cleanup failed:', e.message);
+    }
+
+    if (removed.activationTokens || removed.pendingModules || removed.draftVersions) {
+      console.log(`[AutonomousScheduler] Retention cleanup: ${removed.activationTokens} expired activation tokens, ${removed.pendingModules} abandoned pending modules expired, ${removed.draftVersions} superseded question-bank drafts removed`);
     }
   }
 

@@ -1081,6 +1081,32 @@ export const QuestionBankVersions = {
     if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile(QBV_FILE, all); return all[idx]; }
     return null;
   },
+  // Every version across every role — used only by the retention cleanup
+  // job to find superseded drafts. Everyday lookups should use getByRole.
+  async getAll() {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('question_bank_versions').select('*');
+      if (!error) return data || [];
+      console.warn('[DataStore] question_bank_versions.getAll:', error.message);
+    }
+    return readFileRecords(QBV_FILE);
+  },
+  // Permanently removes a version row. Only ever called on superseded
+  // 'draft' rows (never 'approved'/'archived' — those must persist so
+  // historical assignments keep resolving, per approve()'s own comment).
+  async delete(id) {
+    const sb = getSB();
+    if (sb) {
+      const { error } = await sb.from('question_bank_versions').delete().eq('id', id);
+      if (!error) return true;
+      console.warn('[DataStore] question_bank_versions.delete:', error.message);
+    }
+    const all = readFileRecords(QBV_FILE);
+    const next = all.filter(r => r.id !== id);
+    writeFile(QBV_FILE, next);
+    return next.length !== all.length;
+  },
 };
 
 // ── EMPLOYEE ASSESSMENT ASSIGNMENTS ───────────────────────────────────────────
