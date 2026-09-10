@@ -772,7 +772,7 @@ export default function ModuleManagement() {
   const loadModules = async () => {
     setLoading(true);
     try {
-      const res = await authFetch('/api/modules');
+      const res = await authFetch('/api/modules?limit=1000');
       setModules(Array.isArray(res) ? res : (res.modules || []));
     } catch (e) {
       setToast({ message: e.message || 'Failed to load modules', type: 'error' });

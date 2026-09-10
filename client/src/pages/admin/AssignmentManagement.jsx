@@ -72,7 +72,7 @@ export default function AssignmentManagement() {
       const [assignRes, userRes, modRes, grRes] = await Promise.allSettled([
         authFetch('/api/assignments'),
         authFetch('/api/users'),
-        authFetch('/api/modules'),
+        authFetch('/api/modules?limit=1000'),
         authFetch('/api/content/groups'),
       ]);
       if (assignRes.status === 'fulfilled') {
