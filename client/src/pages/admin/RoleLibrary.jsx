@@ -669,6 +669,25 @@ function ViewDocRow({ file, accent = 'indigo', onDelete }) {
 function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
   const { notify: toast } = useNotification();
   const [role, setRole] = useState(initialRole);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+
+  const generateOverview = async (force = false) => {
+    setOverviewLoading(true);
+    try {
+      const res = await authFetch(`/api/roles/${role.id}/generate-overview`, {
+        method: 'POST',
+        body: JSON.stringify({ force }),
+      });
+      const overview = res?.data ?? res;
+      const updated = { ...role, structuredOverview: overview };
+      setRole(updated);
+      if (onRoleUpdated) onRoleUpdated(updated);
+    } catch (e) {
+      toast(e.message || 'Failed to generate role overview', 'error');
+    } finally {
+      setOverviewLoading(false);
+    }
+  };
 
   const handleDeleteDoc = async (file) => {
     if (!file?.id) return toast('This document has no id — remove it via Edit Role instead', 'error');
@@ -701,6 +720,73 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
               <div className="flex flex-wrap gap-2">
                 {role.skills.map(s => <span key={s} className="px-2 py-0.5 rounded-full text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">{s}</span>)}
               </div>
+            </div>
+          )}
+          {role.jobDescription && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium text-slate-400">ROLE OVERVIEW</p>
+                {role.structuredOverview && (
+                  <button
+                    onClick={() => generateOverview(true)}
+                    disabled={overviewLoading}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50"
+                  >
+                    {overviewLoading ? 'Regenerating…' : '↻ Regenerate'}
+                  </button>
+                )}
+              </div>
+              {role.structuredOverview ? (
+                <div className="space-y-3 bg-[#0F172A] rounded-lg p-4 border border-slate-700">
+                  <p className="text-sm text-slate-200 leading-relaxed">{role.structuredOverview.summary}</p>
+                  {role.structuredOverview.keyResponsibilities?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Key Responsibilities</p>
+                      <ul className="space-y-1">
+                        {role.structuredOverview.keyResponsibilities.map((r, i) => (
+                          <li key={i} className="text-sm text-slate-300 flex gap-2"><span className="text-indigo-400 shrink-0">•</span><span>{r}</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {role.structuredOverview.requiredSkills?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Required Skills</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {role.structuredOverview.requiredSkills.map((s, i) => <span key={i} className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">{s}</span>)}
+                      </div>
+                    </div>
+                  )}
+                  {role.structuredOverview.niceToHaveSkills?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nice to Have</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {role.structuredOverview.niceToHaveSkills.map((s, i) => <span key={i} className="px-2 py-0.5 rounded-full text-xs bg-slate-700/50 text-slate-300 border border-slate-600/40">{s}</span>)}
+                      </div>
+                    </div>
+                  )}
+                  {role.structuredOverview.dayInTheLife && (
+                    <div>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">A Day in This Role</p>
+                      <p className="text-sm text-slate-300 leading-relaxed">{role.structuredOverview.dayInTheLife}</p>
+                    </div>
+                  )}
+                  {role.structuredOverview.careerGrowthPath?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Career Growth Path</p>
+                      <p className="text-sm text-slate-300">{role.structuredOverview.careerGrowthPath.join(' → ')}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => generateOverview(false)}
+                  disabled={overviewLoading}
+                  className="w-full py-3 rounded-lg border border-dashed border-indigo-500/40 text-indigo-300 text-sm font-semibold hover:bg-indigo-500/10 transition-all disabled:opacity-50"
+                >
+                  {overviewLoading ? '⏳ Generating overview…' : '✨ Generate AI Overview'}
+                </button>
+              )}
             </div>
           )}
           {(role.jdFiles || []).length > 0 ? (
