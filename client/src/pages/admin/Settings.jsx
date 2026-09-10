@@ -43,17 +43,23 @@ export default function Settings() {
   const [exporting, setExporting] = useState(null); // which export button is in flight
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [auditLimit, setAuditLimit] = useState(50);
+  const [auditEventType, setAuditEventType] = useState('');
 
   useEffect(() => {
     if (activeSection !== 'audit') return;
     let cancelled = false;
     setAuditLoading(true);
-    authFetch('/api/audit/logs?limit=50')
+    const qs = new URLSearchParams({ limit: String(auditLimit) });
+    if (auditEventType) qs.set('eventType', auditEventType);
+    authFetch(`/api/audit/logs?${qs.toString()}`)
       .then(res => { if (!cancelled) setAuditLogs(res?.logs || []); })
       .catch(() => { if (!cancelled) notifyError('Failed to load audit log'); })
       .finally(() => { if (!cancelled) setAuditLoading(false); });
     return () => { cancelled = true; };
-  }, [activeSection]);
+  }, [activeSection, auditLimit, auditEventType]);
+
+  const auditEventTypes = [...new Set(auditLogs.map(r => r.eventType).filter(Boolean))].sort();
 
   // Must come after every hook above — calling hooks conditionally (i.e.
   // after an early return) violates the Rules of Hooks and crashes the page
@@ -390,7 +396,19 @@ export default function Settings() {
             <div className="space-y-5">
               <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
                 <h2 className="text-lg font-black text-white mb-1">Audit Log</h2>
-                <p className="text-sm text-slate-400 mb-6">System-wide event timeline — every admin action is recorded.</p>
+                <p className="text-sm text-slate-400 mb-4">System-wide event timeline — every admin action is recorded.</p>
+
+                <div className="flex items-center gap-3 mb-4">
+                  <select
+                    value={auditEventType}
+                    onChange={(e) => setAuditEventType(e.target.value)}
+                    className="px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-700/50 text-sm text-slate-300 focus:outline-none focus:border-indigo-500/50"
+                  >
+                    <option value="">All event types</option>
+                    {auditEventTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <span className="text-xs text-slate-500">Showing up to {auditLimit} events{auditEventType ? ` · ${auditEventType}` : ''}</span>
+                </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -424,6 +442,16 @@ export default function Settings() {
                     </tbody>
                   </table>
                 </div>
+                {!auditLoading && auditLogs.length >= auditLimit && (
+                  <div className="mt-4 text-center">
+                    <button
+                      onClick={() => setAuditLimit(l => l + 50)}
+                      className="px-4 py-2 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 text-xs font-bold hover:bg-slate-700/60 transition-all"
+                    >
+                      Load 50 more
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
