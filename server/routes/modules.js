@@ -18,6 +18,7 @@ import GeminiService from '../services/GeminiService.js';
 import LLMCache from '../services/LLMCache.js';
 import { ensureAllSessionQuizzes } from '../services/SessionQuizGenerator.js';
 import { startDeepContentJob, generateSessionContent, hasDeepContent } from '../services/SessionContentGenerator.js';
+import { canActAsManager, getVisibleEmployeeIds } from '../services/ManagerScope.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -80,7 +81,7 @@ router.get('/', authenticate, async (req, res) => {
  */
 router.get('/pending', authenticate, async (req, res) => {
   try {
-    if (!['admin', 'manager'].includes(req.user.role)) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && !canActAsManager(req.user)) {
       return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
     }
     const all = await PendingModules.getAll();
@@ -121,13 +122,14 @@ router.get('/my-assignments', authenticate, async (req, res) => {
  */
 router.get('/assignments/all', authenticate, async (req, res) => {
   try {
-    if (!['admin', 'manager'].includes(req.user.role)) {
+    const isAdminReq = req.user.role === 'admin' || req.user.role === 'superadmin';
+    if (!isAdminReq && !canActAsManager(req.user)) {
       return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
     }
     const assignments = await ModuleAssignments.getAll();
     const companyId = req.user?.companyId || 'default';
 
-    if (companyId === 'default') {
+    if (companyId === 'default' && isAdminReq) {
       return res.json({ success: true, data: assignments, error: null });
     }
 
@@ -140,14 +142,11 @@ router.get('/assignments/all', authenticate, async (req, res) => {
 
     let allowedIds = companyUserIds;
 
-    // Manager: restrict further to group employees only
-    if (req.user.role === 'manager') {
-      const allGroups = await Groups.getAll();
-      const myGroups = allGroups.filter(g =>
-        g.managerId === req.user.userId &&
-        (g.companyId || 'default') === companyId
-      );
-      allowedIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
+    // Manager: restrict further to their visible employees (Groups
+    // membership AND the durable manager_id path) — Groups-only left out
+    // employees linked via the Assign Manager dropdown or bulk import.
+    if (!isAdminReq) {
+      allowedIds = await getVisibleEmployeeIds(req.user);
     }
 
     const filtered = assignments.filter(a => allowedIds.has(a.userId || a.assigned_to_user));
@@ -351,7 +350,7 @@ router.post('/', authenticate, async (req, res) => {
   try {
     const user = req.user;
 
-    if (user.role !== 'admin' && user.role !== 'manager') {
+    if (user.role !== 'admin' && user.role !== 'superadmin' && !canActAsManager(user)) {
       return res.status(403).json({ success: false, error: { message: 'Only admins and managers can create modules' } });
     }
 
@@ -393,7 +392,7 @@ router.put('/:id', authenticate, async (req, res) => {
     const user = req.user;
     const { id } = req.params;
 
-    if (user.role !== 'admin' && user.role !== 'manager') {
+    if (user.role !== 'admin' && user.role !== 'superadmin' && !canActAsManager(user)) {
       return res.status(403).json({ success: false, error: { message: 'Only admins and managers can update modules' } });
     }
 
@@ -818,7 +817,7 @@ router.delete('/:id', authenticate, async (req, res) => {
  */
 router.post('/auto-generate', authenticate, async (req, res) => {
   try {
-    if (!['admin', 'manager'].includes(req.user.role)) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && !canActAsManager(req.user)) {
       return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
     }
 
@@ -964,7 +963,7 @@ Return JSON:
  */
 router.post('/pending/:id/approve', authenticate, async (req, res) => {
   try {
-    if (!['admin', 'manager'].includes(req.user.role)) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && !canActAsManager(req.user)) {
       return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
     }
 
@@ -1086,7 +1085,7 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
  */
 router.post('/pending/:id/reject', authenticate, async (req, res) => {
   try {
-    if (!['admin', 'manager'].includes(req.user.role)) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && !canActAsManager(req.user)) {
       return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
     }
     const pending = await PendingModules.getById(req.params.id);
@@ -1110,7 +1109,8 @@ router.post('/pending/:id/reject', authenticate, async (req, res) => {
  */
 router.post('/assign', authenticate, async (req, res) => {
   try {
-    if (!['admin', 'manager'].includes(req.user.role)) {
+    const isAdminActor = req.user.role === 'admin' || req.user.role === 'superadmin';
+    if (!isAdminActor && !canActAsManager(req.user)) {
       return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });
     }
 
@@ -1129,6 +1129,10 @@ router.post('/assign', authenticate, async (req, res) => {
     }
 
     const existingAssignments = await ModuleAssignments.getAll();
+    // O(1) duplicate lookup — the loop below is users × modules, and a
+    // .some() scan of existingAssignments per pair made the whole thing
+    // effectively cubic once assignment history was non-trivial.
+    const existingKeys = new Set(existingAssignments.map(a => `${a.moduleId}|${a.userId}`));
     const created = [];
 
     // Pre-fetch module metadata for embedding into assignments
@@ -1143,8 +1147,7 @@ router.post('/assign', authenticate, async (req, res) => {
     for (const userId of allUserIds) {
       for (const moduleId of moduleIds) {
         // Skip duplicates
-        const exists = existingAssignments.some(a => a.moduleId === moduleId && a.userId === userId);
-        if (exists) continue;
+        if (existingKeys.has(`${moduleId}|${userId}`)) continue;
 
         const mod = moduleMetaMap[moduleId];
         const moduleTitle = mod?.title || `Module ${moduleId}`;
