@@ -1208,4 +1208,50 @@ router.post('/assign', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/modules/:id/career-insight
+ * Employee: a short, personalized "career coach" narrative for the Career
+ * Digital Twin view — previously that page was pure client-side arithmetic
+ * (a fabricated per-skill score derived from overall progress) with no
+ * actual narrative content, unlike every other AI-driven surface in the
+ * platform. Cached per module + progress-decile + skill set so re-opening
+ * the same twin repeatedly doesn't re-call the LLM.
+ */
+router.post('/:id/career-insight', authenticate, async (req, res) => {
+  try {
+    const { moduleTitle, skills = [], progress = 0, sessionsCompleted = 0, totalSessions = 0 } = req.body || {};
+    if (!moduleTitle) {
+      return res.status(400).json({ success: false, error: 'moduleTitle is required' });
+    }
+    const progressBucket = Math.round(progress / 10) * 10;
+    const cacheKey = `career_insight_${LLMCache.hash(`${moduleTitle}|${skills.join(',')}|${progressBucket}|${sessionsCompleted}/${totalSessions}`)}`;
+    let insight = LLMCache.get(cacheKey);
+    if (!insight) {
+      const prompt = `You are a career coach giving a short, encouraging, SPECIFIC take on an employee's progress in a training module.
+
+Module: "${moduleTitle}"
+Skills being built: ${skills.join(', ') || 'general skills for this module'}
+Progress: ${sessionsCompleted}/${totalSessions || '?'} sessions completed (${progress}% overall)
+
+Write 2-3 sentences of genuine, specific coaching commentary — reference the actual module/skills, not generic platitudes like "keep up the good work". If progress is low, be realistic and encouraging; if high, be specific about what capability they're building toward. Return ONLY the narrative text, no JSON, no quotes, no markdown.`;
+      try {
+        insight = (await GeminiService.generateTextFast(prompt))?.trim() || null;
+      } catch (e) {
+        console.warn('[career-insight] LLM call failed:', e.message);
+      }
+      if (insight) LLMCache.set(cacheKey, insight, LLMCache.TTL.MODULE);
+    }
+    if (!insight) {
+      // Deterministic fallback — still references real data, just not LLM-authored.
+      insight = sessionsCompleted === 0
+        ? `You're just getting started with "${moduleTitle}" — complete your first session to start building ${skills[0] || 'these skills'}.`
+        : `You've completed ${sessionsCompleted} session${sessionsCompleted === 1 ? '' : 's'} in "${moduleTitle}" and are ${progress}% through — keep going to build real depth in ${skills.slice(0, 2).join(' and ') || 'these skills'}.`;
+    }
+    res.json({ success: true, data: { insight }, error: null });
+  } catch (e) {
+    console.error('[POST /api/modules/:id/career-insight]', e.message);
+    res.status(500).json({ success: false, error: 'Failed to generate career insight' });
+  }
+});
+
 export default router;
