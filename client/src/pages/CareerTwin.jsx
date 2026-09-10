@@ -86,6 +86,9 @@ function ProgressBar({ value, max = 100, color = '#6366F1', label, sub }) {
 
 // ── Module Career Twin ────────────────────────────────────────────────────────
 function ModuleCareerTwin({ module, assignment, navigate, moduleId, assignmentId }) {
+  // These per-skill numbers are a projection derived from overall module
+  // progress, not a measured per-skill assessment — labeled "Estimated"
+  // throughout so they read as a projection, not a precise score.
   const skills = (module?.skills || []).map((skill, i) => ({
     skill: typeof skill === 'string' ? skill : skill.name,
     current: Math.min(95, 20 + (assignment?.progress || 0) + (i * 5)),
@@ -96,6 +99,31 @@ function ModuleCareerTwin({ module, assignment, navigate, moduleId, assignmentId
   const progress = assignment?.progress || 0;
   const sessionsCompleted = Object.values(assignment?.sessionProgress || {}).filter(s => s === 'completed').length;
   const totalSessions = (module?.sessions || []).length;
+
+  const [insight, setInsight] = useState(null);
+  const [insightLoading, setInsightLoading] = useState(true);
+  useEffect(() => {
+    if (!module?.title) return;
+    const token = localStorage.getItem('auth_token');
+    fetch(`${BASE_URL}/api/modules/${moduleId}/career-insight`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({
+        moduleTitle: module.title,
+        skills: skills.map(s => s.skill).filter(Boolean),
+        progress,
+        sessionsCompleted,
+        totalSessions,
+      }),
+    })
+      .then(r => r.json())
+      .then(res => { if (res?.success) setInsight(res.data?.insight || null); })
+      .catch(() => {})
+      .finally(() => setInsightLoading(false));
+    // Intentionally runs once per module view — progress/sessions are
+    // captured at mount time, not re-triggered on every progress tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moduleId, module?.title]);
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
@@ -119,6 +147,16 @@ function ModuleCareerTwin({ module, assignment, navigate, moduleId, assignmentId
           </div>
         </div>
 
+        {/* Career Coach Insight */}
+        <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 to-transparent p-5 mb-8">
+          <h3 className="text-slate-300 font-semibold mb-2 flex items-center gap-2">🎙️ Career Coach Insight</h3>
+          {insightLoading ? (
+            <div className="h-4 w-3/4 bg-slate-700/40 rounded animate-pulse" />
+          ) : (
+            <p className="text-sm text-slate-300 leading-relaxed">{insight}</p>
+          )}
+        </div>
+
         {/* Stat Cards */}
         <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-5 text-center">
@@ -138,19 +176,21 @@ function ModuleCareerTwin({ module, assignment, navigate, moduleId, assignmentId
         <div className="grid md:grid-cols-2 gap-6">
           {/* Radar Chart */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-5">
-            <h3 className="text-slate-300 font-semibold mb-4">🎯 Competency Radar</h3>
+            <h3 className="text-slate-300 font-semibold mb-1">🎯 Competency Radar</h3>
+            <p className="text-xs text-slate-500 mb-3">Estimated from overall module progress, not a per-skill assessment</p>
             <div className="flex justify-center">
               <RadarChart skills={skills} />
             </div>
             <div className="flex gap-4 justify-center mt-2 text-xs">
-              <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-emerald-400" /> Current</div>
+              <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-emerald-400" /> Estimated</div>
               <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-indigo-400" style={{ borderTop: '1.5px dashed #6366F1', height: 0 }} /> Target</div>
             </div>
           </div>
 
           {/* Skill Breakdown */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-5">
-            <h3 className="text-slate-300 font-semibold mb-4">📊 Skill Progress</h3>
+            <h3 className="text-slate-300 font-semibold mb-1">📊 Skill Progress</h3>
+            <p className="text-xs text-slate-500 mb-3">Estimated — not a measured per-skill score</p>
             <div className="space-y-4">
               {skills.map((s, i) => {
                 const color = s.current >= 75 ? '#10B981' : s.current >= 50 ? '#F59E0B' : '#EF4444';
