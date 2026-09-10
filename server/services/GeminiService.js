@@ -550,6 +550,46 @@ class GeminiService {
     return null;
   }
 
+  /**
+   * generateDeepJSON — same provider ladder as generateQuestionsBatch, but
+   * returns the whole parsed object instead of unwrapping `.questions`.
+   *
+   * Exists because generateJSON's 2048-token default is far too small for a
+   * rich document (a full day of training content), while generateQuestionsBatch
+   * only ever hands back a questions array. Without this, deep per-day content
+   * was impossible: the single-call-for-all-days generators had to share one
+   * 8000-token budget across every day, which is exactly why each day ended up
+   * with 2-4 minutes of reading.
+   *
+   * Default capped at 8000 rather than 16000 on purpose: Cerebras and Groq
+   * clamp to 8192, and when a response hits the output ceiling the JSON is
+   * truncated and the whole batch is DISCARDED (see _geminiJSONOnce's
+   * MAX_TOKENS branch). Asking for more than the weakest tier can deliver
+   * would lose an entire day's content on fallback rather than degrade.
+   */
+  async generateDeepJSON(prompt, system = '', { temperature = 0.8, maxTokens = 8000, timeoutMs = 120000, onThrottle = null } = {}) {
+    if (this.isEnabled()) {
+      const geminiTokens = Math.max(maxTokens, 8192);
+      const maxAttempts = Math.max(1, this.geminiKeys.length);
+      for (let i = 0; i < maxAttempts; i++) {
+        if (i > 0 && this.geminiQuotaBlocked()) break;
+        const parsed = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: geminiTokens, timeoutMs });
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    }
+    if (this.cerebrasEnabled) {
+      const parsed = await this._cerebrasJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192) });
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+    if (this.groqEnabled) {
+      for (const model of ['openai/gpt-oss-120b', 'openai/gpt-oss-20b']) {
+        const parsed = await this._groqJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192), timeoutMs, model, onThrottle });
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    }
+    return null;
+  }
+
   // ── generateJSON: Gemini → Groq fallback ─────────────────────────────────
   /**
    * Generate structured JSON output

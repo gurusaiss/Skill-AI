@@ -17,6 +17,7 @@ import { PendingModules, ModuleAssignments, Groups } from '../services/DataStore
 import GeminiService from '../services/GeminiService.js';
 import LLMCache from '../services/LLMCache.js';
 import { ensureAllSessionQuizzes } from '../services/SessionQuizGenerator.js';
+import { startDeepContentJob, generateSessionContent, hasDeepContent } from '../services/SessionContentGenerator.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -575,10 +576,22 @@ IMPORTANT: Create exactly ${numSessions} sessions. All content must be specific 
     // Structured fallback if AI unavailable
     if (!generated) {
       const sessionTopics = skills.length > 0 ? skills : [title];
+      // Non-wrapping topic distribution. This used to be
+      // `sessionTopics[i % sessionTopics.length]`, which meant a 3-skill,
+      // 12-day module produced each day FOUR times over — the single biggest
+      // source of the "every day looks the same" complaint. Once the distinct
+      // skills are used up, later days get an explicit progression stage
+      // instead of restarting the list.
+      const STAGES = ['Applied', 'Advanced', 'In Practice', 'Review & Integration'];
+      const topicFor = (i) => {
+        if (i < sessionTopics.length) return sessionTopics[i];
+        const cycle = Math.floor(i / sessionTopics.length) - 1;
+        const base = sessionTopics[i % sessionTopics.length];
+        return `${base} — ${STAGES[Math.min(cycle, STAGES.length - 1)]}`;
+      };
       generated = {
         sessions: Array.from({ length: numSessions }, (_, i) => {
-          const topicIdx = i % sessionTopics.length;
-          const topicName = sessionTopics[topicIdx] || title;
+          const topicName = topicFor(i) || title;
           return {
             title: `Day ${i + 1}: ${topicName} ${i === 0 ? 'Fundamentals' : i < numSessions / 2 ? 'Core Concepts' : 'Advanced Application'}`,
             description: `Deep dive into ${topicName} — covering practical techniques and real-world applications.`,
@@ -659,11 +672,97 @@ IMPORTANT: Create exactly ${numSessions} sessions. All content must be specific 
       },
     });
 
+    // Deepen each day in the background — one call per day, so each day gets
+    // its own full token budget rather than 1/Nth of one shared response.
+    // Not awaited: 14 sequential ~8k-token calls would add minutes to this
+    // request, and day-locking means later days aren't reachable yet anyway.
+    startDeepContentJob(id, {
+      moduleTitle: title,
+      moduleDescription: description,
+      jobRole,
+      jdContext,
+      gaps: assessmentGaps,
+      difficulty,
+    });
+
     const updatedModule = await db.getModuleById(id);
     res.json({ success: true, data: updatedModule });
   } catch (error) {
     console.error('[modules/generate-content] Error:', error);
     res.status(500).json({ success: false, error: { message: 'Failed to generate content' } });
+  }
+});
+
+/**
+ * POST /api/modules/:id/sessions/:index/ensure-content
+ * On-demand safety net + legacy self-heal: generates deep content for ONE day
+ * if it is still thin. The background job normally lands content long before
+ * a day unlocks, so this covers only the rare race and pre-existing modules
+ * created before per-day generation existed. Cost is paid only for days
+ * someone actually opens.
+ */
+router.post('/:id/sessions/:index/ensure-content', authenticate, async (req, res) => {
+  try {
+    const { id, index } = req.params;
+    const idx = parseInt(index, 10);
+    if (!Number.isFinite(idx) || idx < 0) {
+      return res.status(400).json({ success: false, error: { message: 'Invalid session index' } });
+    }
+
+    const module = await db.getModuleById(id).catch(() => null);
+    if (!module) return res.status(404).json({ success: false, error: { message: 'Module not found' } });
+    if (!canAccessModule(req.user, module)) {
+      return res.status(403).json({ success: false, error: { message: 'Access denied' } });
+    }
+
+    const sessions = module.content?.sessions || module.sessions || [];
+    const session = sessions[idx];
+    if (!session) return res.status(404).json({ success: false, error: { message: 'Session not found' } });
+
+    if (hasDeepContent(session)) {
+      return res.json({ success: true, data: { session, alreadyDeep: true } });
+    }
+
+    // Earlier days' coverage feeds the avoid-list so a single regenerated day
+    // still doesn't repeat what the employee has already read.
+    const avoid = { titles: [], subtopics: [], coveredTerms: [], companies: [] };
+    sessions.slice(0, idx).forEach(s => {
+      if (s?.title) avoid.titles.push(s.title);
+      (s?.subtopics || []).forEach(st => avoid.subtopics.push(typeof st === 'string' ? st : st?.name));
+      (s?.coveredTerms || []).forEach(t => avoid.coveredTerms.push(t));
+      (s?.blocks || []).filter(b => b?.type === 'example' && b.company).forEach(b => avoid.companies.push(b.company));
+    });
+
+    const content = await generateSessionContent({
+      moduleTitle: module.title,
+      moduleDescription: module.description,
+      jobRole: module.content?.jobRole || module.category || '',
+      jdContext: module.content?.jobDescription || '',
+      gaps: module.content?.assessmentGaps || module.skills || [],
+      difficulty: module.difficulty,
+      dayNumber: session.dayNumber || idx + 1,
+      totalDays: sessions.length,
+      skeleton: session,
+      avoid,
+    });
+
+    if (!content) {
+      // Generation unavailable — the caller keeps rendering the existing
+      // (thin) session rather than being shown an error.
+      return res.json({ success: true, data: { session, generated: false } });
+    }
+
+    const merged = { ...session, ...content, duration: `${content.durationMinutes} min` };
+    const updatedSessions = sessions.map((s, i) => (i === idx ? merged : s));
+    await db.updateModule(id, {
+      sessions: updatedSessions,
+      content: { ...(module.content || {}), sessions: updatedSessions },
+    });
+
+    res.json({ success: true, data: { session: merged, generated: true } });
+  } catch (e) {
+    console.error('[modules/ensure-content]', e.message);
+    res.status(500).json({ success: false, error: { message: 'Failed to prepare session content' } });
   }
 });
 
@@ -912,6 +1011,19 @@ router.post('/pending/:id/approve', authenticate, async (req, res) => {
     if (!moduleId) {
       return res.status(500).json({ success: false, error: { message: 'Module creation failed — no ID returned' } });
     }
+
+    // Now that this pending module is a real, assigned module, deepen its
+    // days in the background. Deliberately NOT done at /auto-generate time:
+    // a pending module may never be approved, so generating 14 days of
+    // content up front would be spent on something nobody ever reads.
+    startDeepContentJob(moduleId, {
+      moduleTitle: pending.module.title,
+      moduleDescription: pending.module.description,
+      jobRole: pending.jobRole || '',
+      jdContext: pending.jobDescription || '',
+      gaps: pending.weakAreas || [],
+      difficulty: pending.module.difficulty,
+    });
 
     // Write module assignment to Supabase via DataStore
     const moduleAssignment = {

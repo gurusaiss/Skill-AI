@@ -20,6 +20,10 @@ export const TTL = {
   EVAL        : 30 * 60 * 1000,        // 30 min  — same challenge + same response
   CHALLENGE   :  4 * 60 * 60 * 1000,   //  4 h    — ChallengeEngine per plan day
   MODULE      :  6 * 60 * 60 * 1000,   //  6 h    — training module content per module+role+gaps
+  DAY_CONTENT :  7 * 24 * 60 * 60 * 1000, // 7 d  — one day's deep content per role+topic+duration
+                                       //          (evergreen: a day's material doesn't change,
+                                       //           and MODULE's 6h is far too short to amortise
+                                       //           an ~8k-token generation across employees)
   QUIZ        : 12 * 60 * 60 * 1000,   // 12 h    — QuizGenerator per domain+skills
   MARKET      : 24 * 60 * 60 * 1000,   // 24 h    — MarketAgent per domain
   INTERVIEW   : 24 * 60 * 60 * 1000,   // 24 h    — InterviewAgent questions per role+skills

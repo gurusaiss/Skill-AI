@@ -28,6 +28,7 @@ import LLMCache from '../services/LLMCache.js';
 import { generateSessionQuiz, ensureAllSessionQuizzes } from '../services/SessionQuizGenerator.js';
 import { getVisibleEmployeeIds } from '../services/ManagerScope.js';
 import { QUIZ_MIX, normalizeTypeName } from '../services/QuestionMix.js';
+import { startDeepContentJob } from '../services/SessionContentGenerator.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -2227,7 +2228,14 @@ Return ONLY valid JSON matching exactly this structure:
           ? moduleContent.sessions
           : Array.from({ length: depth.numSessions }, (_, i) => {
               const isCapstone = i === depth.numSessions - 1;
-              const s = skills[i % skills.length];
+              // Non-wrapping: `skills[i % skills.length]` repeated the same
+              // gap verbatim every few days whenever there were fewer gaps
+              // than days, which is why fallback modules read identically
+              // day to day. Later days get an explicit progression stage.
+              const STAGES = ['Applied', 'Advanced', 'In Practice', 'Review & Integration'];
+              const s = i < skills.length
+                ? skills[i]
+                : `${skills[i % skills.length]} — ${STAGES[Math.min(Math.floor(i / skills.length) - 1, STAGES.length - 1)]}`;
               return {
                 title: isCapstone ? `Day ${i + 1}: Capstone — Applying ${skills.slice(0, 3).join(', ')}` : `Day ${i + 1}: ${s}`,
                 dayNumber: i + 1,
@@ -2386,6 +2394,19 @@ Return ONLY valid JSON matching exactly this structure:
         } catch (verifyErr) {
           console.warn(`[auto-assign] Session verify failed for ${moduleId}:`, verifyErr.message);
         }
+
+        // Deepen each day's content in the background, one day per call, so
+        // every day gets its own full token budget instead of 1/Nth of a
+        // single shared 8k response. Day-locking means day N is not reachable
+        // until day N, so this lands long before anyone can open it.
+        startDeepContentJob(moduleId, {
+          moduleTitle,
+          moduleDescription: moduleContent?.description || '',
+          jobRole,
+          jdContext,
+          gaps: skills,
+          difficulty: depth.difficulty,
+        });
 
         // Create assignment — assigned_by MUST be null (not 'system') due to FK constraint
         await UserStore.createAssignment({
