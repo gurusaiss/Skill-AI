@@ -530,6 +530,62 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/roles/:id/generate-overview
+ * Admin/Manager: turn the role's plain jobDescription text into a
+ * structured overview (responsibilities, required/nice-to-have skills,
+ * growth path, a day-in-the-life narrative) — the Job Library previously
+ * rendered nothing but the raw JD string, with none of the depth already
+ * expected of training-module content. Generated once and persisted on
+ * the role (structuredOverview); pass { force: true } to regenerate.
+ */
+router.post('/:id/generate-overview', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+    if (role.structuredOverview && !req.body?.force) {
+      return res.json({ success: true, data: role.structuredOverview, error: null });
+    }
+    if (!role.jobDescription?.trim()) {
+      return res.status(400).json({ success: false, error: 'This role has no job description to generate an overview from' });
+    }
+
+    const prompt = `You are a career and org-design expert. Given this job description for the role "${role.roleName}"${role.department ? ` in the ${role.department} department` : ''}, produce a structured overview a training platform can show to employees and candidates.
+
+Job Description:
+${role.jobDescription.slice(0, 6000)}
+
+Known skills tagged for this role: ${(role.skills || []).join(', ') || 'none listed'}
+
+Return ONLY valid JSON:
+{
+  "summary": "2-3 sentence overview of what this role actually does day to day and why it matters to the org",
+  "keyResponsibilities": ["4-6 specific, concrete responsibilities — not generic filler"],
+  "requiredSkills": ["4-8 skills genuinely required, most important first"],
+  "niceToHaveSkills": ["2-4 skills that help but aren't mandatory"],
+  "careerGrowthPath": ["2-4 realistic next-role titles someone in this role could grow into, in rough order"],
+  "dayInTheLife": "3-4 sentence narrative walking through a typical day or week in this role — specific, not generic"
+}`;
+
+    let overview = null;
+    try {
+      overview = await GeminiService.generateJSON(prompt, 'You are a career and org-design expert. Return only valid JSON, no markdown fences.');
+    } catch (e) {
+      console.warn('[roles generate-overview] LLM call failed:', e.message);
+    }
+    if (!overview?.summary) {
+      return res.status(502).json({ success: false, error: 'Could not generate an overview right now — try again shortly' });
+    }
+
+    overview.generatedAt = new Date().toISOString();
+    await RoleLibrary.update(role.id, { structuredOverview: overview });
+    res.json({ success: true, data: overview, error: null });
+  } catch (e) {
+    console.error('[POST /api/roles/:id/generate-overview]', e.message);
+    res.status(500).json({ success: false, error: 'Failed to generate role overview' });
+  }
+});
+
 // ── POST /api/roles — create ──────────────────────────────────────────────────
 router.post('/', authenticate, requireRole('admin'), async (req, res) => {
   try {
