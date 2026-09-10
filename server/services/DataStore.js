@@ -844,6 +844,48 @@ export const GeneratedContent = {
   async update(id, updates) { return updateHealed('generated_content', 'generated_content.json', id, updates); },
 };
 
+// ── SESSION CONTENT CACHE ─────────────────────────────────────────────────────
+// A day's deep content costs a full ~8k-token generation, and LLMCache is
+// in-memory only — every server restart would re-pay for content that never
+// changes. This gives it a PERSISTENT tier keyed by a content fingerprint, so
+// a second employee on the same role + gap profile reuses the first
+// employee's day at zero cost, across restarts.
+//
+// Deliberately backed by the existing `generated_content` table rather than a
+// new one, so this needs NO SQL migration to work in production, and keyed
+// under a sentinel companyId that can never equal a real company's — otherwise
+// these rows would show up in the admin Content Review list, which reads
+// GeneratedContent.getByCompany().
+const CONTENT_CACHE_COMPANY = '__cache__';
+const CONTENT_CACHE_PREFIX = 'daycontent_';
+
+export const SessionContentCache = {
+  async get(fingerprint) {
+    if (!fingerprint) return null;
+    try {
+      const row = await GeneratedContent.getById(`${CONTENT_CACHE_PREFIX}${fingerprint}`);
+      return row?.payload || null;
+    } catch {
+      return null;
+    }
+  },
+  async set(fingerprint, payload) {
+    if (!fingerprint || !payload) return;
+    try {
+      await GeneratedContent.create({
+        id: `${CONTENT_CACHE_PREFIX}${fingerprint}`,
+        companyId: CONTENT_CACHE_COMPANY,
+        kind: 'day_content_cache',
+        payload,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      // A cache write must never break generation — worst case we regenerate.
+      console.warn('[SessionContentCache] persist failed:', e.message);
+    }
+  },
+};
+
 // ── ACCESS CODES ─────────────────────────────────────────────────────────────
 // Role-scoped signup codes per company. id = uuid, data = { companyId, code, role, isActive, ... }
 export const AccessCodes = {

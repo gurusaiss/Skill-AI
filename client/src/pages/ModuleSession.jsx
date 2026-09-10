@@ -93,15 +93,117 @@ async function downloadSessionNotesPDF(session, sessionIndex, moduleTitle, quizR
     });
   }
 
+  const subtopics = session.subtopics || [];
+  if (subtopics.length > 0) {
+    heading("What You'll Cover");
+    subtopics.forEach(s => {
+      const name = typeof s === 'string' ? s : s.name;
+      if (!name) return;
+      bullet(name + (s.minutes ? ` (${s.minutes} min)` : ''));
+      if (s.summary) paragraph(s.summary, { size: 9.5, color: [100, 116, 139], gap: 6 });
+    });
+    y += 4;
+  }
+
+  // Explanation and Notes are separate fields — this used to print only
+  // `explanation || notes`, silently dropping Notes whenever Explanation was
+  // present, same bug as the on-screen render before this fix.
+  if (explanation) { heading('Explanation'); paragraph(explanation, { gap: 12 }); }
+  if (notes && notes !== explanation) { heading('Notes'); paragraph(notes, { gap: 12 }); }
+
+  // contentVersion 2 blocks: walk the DATA, not the DOM (charts/tables render
+  // as text grids/lists — cheap, and works identically whether or not the
+  // on-screen block ever rendered).
+  const blocks = Array.isArray(session.blocks) ? session.blocks : [];
+  for (const b of blocks) {
+    if (!b || !b.type) continue;
+    switch (b.type) {
+      case 'prose':
+        if (b.heading) heading(b.heading);
+        if (b.body) paragraph(b.body, { gap: 12 });
+        break;
+      case 'flowchart':
+        heading(b.title || 'Process');
+        (b.steps || []).forEach((s, i) => bullet(`${i + 1}. ${typeof s === 'string' ? s : [s.label, s.detail].filter(Boolean).join(' — ')}`));
+        y += 6;
+        break;
+      case 'bar':
+      case 'pie':
+        heading(b.title || 'Chart');
+        (b.data || []).forEach(d => bullet(`${d.label} — ${d.value}${b.unit ? ` ${b.unit}` : ''}`));
+        if (b.insight) paragraph(b.insight, { size: 9.5, color: [100, 116, 139], gap: 10 });
+        break;
+      case 'comparison':
+        heading(b.title || 'Comparison');
+        paragraph((b.columns || []).join('  |  '), { bold: true, size: 9.5, gap: 4 });
+        (b.rows || []).forEach(r => paragraph(Array.isArray(r) ? r.join('  |  ') : String(r), { size: 9.5, gap: 4 }));
+        y += 6;
+        break;
+      case 'lessonPlan':
+        heading(b.title || "Lesson Plan");
+        (b.rows || []).forEach(r => bullet(`${r.subtopic} — ${r.outcome}${r.minutes ? ` (${r.minutes} min)` : ''}`));
+        y += 6;
+        break;
+      case 'example':
+        heading(b.title || `Example${b.company ? `: ${b.company}` : ''}`);
+        if (b.scenario) paragraph(b.scenario, { size: 9.5, gap: 4 });
+        if (b.action) paragraph(`What they did: ${b.action}`, { size: 9.5, color: [100, 116, 139], gap: 4 });
+        if (b.outcome) paragraph(`Result: ${b.outcome}`, { size: 9.5, color: [100, 116, 139], gap: 4 });
+        if (b.takeaway) paragraph(`→ ${b.takeaway}`, { bold: true, size: 9.5, color: [16, 128, 87], gap: 10 });
+        break;
+      case 'callout':
+        heading(b.title || 'Note');
+        if (b.body) paragraph(b.body, { size: 9.5, gap: 10 });
+        break;
+      case 'checklist':
+        heading(b.title || 'Checklist');
+        (b.items || []).forEach(it => bullet(`☐ ${it}`));
+        y += 6;
+        break;
+      default:
+        break;
+    }
+  }
+
+  const abbreviations = session.abbreviations || [];
+  if (abbreviations.length > 0) {
+    heading('Abbreviations');
+    abbreviations.forEach(a => bullet(`${a.short} — ${a.full}${a.note ? ` (${a.note})` : ''}`));
+    y += 6;
+  }
+
+  const mnemonics = session.mnemonics || [];
+  if (mnemonics.length > 0) {
+    heading('Memory Aids');
+    mnemonics.forEach(m => {
+      paragraph(m.device, { bold: true, size: 11, color: [88, 28, 135], gap: 2 });
+      if (m.expands) paragraph(m.expands, { size: 9.5, gap: 2 });
+      if (m.howToUse) paragraph(m.howToUse, { size: 9, color: [100, 116, 139], gap: 8 });
+    });
+  }
+
+  const keepInMind = session.keepInMind || [];
+  if (keepInMind.length > 0) {
+    heading('Keep In Mind');
+    keepInMind.forEach(p => {
+      bullet(`[${(p.severity || 'important').toUpperCase()}] ${p.point}`);
+      if (p.why) paragraph(p.why, { size: 9, color: [100, 116, 139], gap: 6 });
+    });
+  }
+
+  const cardDeck = session.cardDeck || [];
+  if (cardDeck.length > 0) {
+    heading(`Recall Cards (${cardDeck.length})`);
+    cardDeck.forEach((c, i) => {
+      paragraph(`${i + 1}. ${c.front}`, { bold: true, size: 9.5, color: [15, 23, 42], gap: 2 });
+      if (c.back) paragraph(c.back, { size: 9.5, color: [71, 85, 105], gap: 8 });
+    });
+  }
+
   if (keyPoints.length > 0) {
     heading('Key Points');
     keyPoints.forEach(p => bullet(typeof p === 'string' ? p : p.title || p.point || JSON.stringify(p)));
     y += 8;
-  }
-
-  if (explanation || notes) {
-    heading('Explanation & Notes');
-    paragraph(explanation || notes, { gap: 12 });
   }
 
   if (Array.isArray(quizResults) && quizResults.length > 0) {
@@ -203,7 +305,410 @@ function SessionVisual({ visual }) {
   return null;
 }
 
-function ContentPhase({ session, sessionIndex, module, onStartQuiz, onOpenNotes, onHome }) {
+// ─── Deep content blocks (contentVersion 2) ───────────────────────────────────
+// Each day now arrives as an ordered `blocks` array so the page reads as
+// several varied pages instead of one wall of prose. Rendered with plain
+// CSS/SVG rather than a charting library on purpose: the values are a handful
+// of hand-authored categories, and the PDF exporter walks the DATA (not the
+// DOM), so a canvas-based library would add weight without helping export.
+
+function BlockShell({ tone = 'slate', icon, title, children }) {
+  const tones = {
+    slate:  'border-slate-700/50 bg-slate-800/30',
+    cyan:   'border-cyan-500/20 bg-cyan-500/5',
+    purple: 'border-purple-500/20 bg-purple-500/5',
+    emerald:'border-emerald-500/20 bg-emerald-500/5',
+    amber:  'border-amber-500/20 bg-amber-500/5',
+    rose:   'border-rose-500/20 bg-rose-500/5',
+    indigo: 'border-indigo-500/20 bg-indigo-500/5',
+  };
+  const text = {
+    slate: 'text-slate-400', cyan: 'text-cyan-400', purple: 'text-purple-400',
+    emerald: 'text-emerald-400', amber: 'text-amber-400', rose: 'text-rose-400', indigo: 'text-indigo-400',
+  };
+  return (
+    <section className={`rounded-xl border p-5 ${tones[tone] || tones.slate}`}>
+      {title && (
+        <h3 className={`text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-2 ${text[tone] || text.slate}`}>
+          {icon && <span>{icon}</span>}{title}
+        </h3>
+      )}
+      {children}
+    </section>
+  );
+}
+
+function ProseBlock({ block }) {
+  return (
+    <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
+      {block.heading && <h3 className="text-base font-bold text-white mb-3">{block.heading}</h3>}
+      <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{block.body}</div>
+    </section>
+  );
+}
+
+function FlowchartBlock({ block }) {
+  const steps = (block.steps || []).filter(Boolean);
+  if (steps.length === 0) return null;
+  return (
+    <BlockShell tone="cyan" icon="🔀" title={block.title || 'Process'}>
+      <div>
+        {steps.map((s, i) => {
+          const label = typeof s === 'string' ? s : s.label;
+          const detail = typeof s === 'string' ? '' : s.detail;
+          return (
+            <div key={i} className="flex gap-3">
+              <div className="flex flex-col items-center flex-shrink-0">
+                <span className="w-8 h-8 rounded-full bg-cyan-600/25 border border-cyan-500/40 flex items-center justify-center text-xs font-black text-cyan-300">{i + 1}</span>
+                {i < steps.length - 1 && <span className="w-px flex-1 bg-cyan-500/30 my-1" style={{ minHeight: '1.25rem' }} />}
+              </div>
+              <div className="pb-4">
+                <p className="text-sm font-semibold text-slate-100">{label}</p>
+                {detail && <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{detail}</p>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {block.note && <p className="text-xs text-cyan-200/70 mt-1 italic">{block.note}</p>}
+    </BlockShell>
+  );
+}
+
+function ChartBlock({ block }) {
+  const data = (block.data || []).filter(d => d && typeof d.value === 'number').slice(0, 8);
+  if (data.length < 2) return null;
+  const total = data.reduce((s, d) => s + d.value, 0) || 1;
+  const max = Math.max(...data.map(d => d.value), 1);
+
+  if (block.type === 'pie') {
+    let acc = 0;
+    const stops = data.map((d, i) => {
+      const start = (acc / total) * 360;
+      acc += d.value;
+      return `${CHART_COLORS[i % CHART_COLORS.length]} ${start}deg ${(acc / total) * 360}deg`;
+    }).join(', ');
+    return (
+      <BlockShell tone="purple" icon="🥧" title={block.title || 'Breakdown'}>
+        <div className="flex flex-col sm:flex-row items-center gap-6">
+          <div className="w-36 h-36 rounded-full flex-shrink-0" style={{ background: `conic-gradient(${stops})` }} />
+          <ul className="space-y-1.5 w-full">
+            {data.map((d, i) => (
+              <li key={i} className="flex items-center gap-2 text-xs text-slate-300">
+                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                <span className="flex-1">{d.label}</span>
+                <span className="text-slate-500 font-semibold">{Math.round((d.value / total) * 100)}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {block.insight && <p className="text-xs text-purple-200/70 mt-4 italic">{block.insight}</p>}
+      </BlockShell>
+    );
+  }
+
+  return (
+    <BlockShell tone="purple" icon="📊" title={block.title || 'Comparison'}>
+      <div className="space-y-2.5">
+        {data.map((d, i) => (
+          <div key={i}>
+            <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
+              <span>{d.label}</span>
+              <span className="text-slate-500 font-semibold">{d.value}{block.unit ? ` ${block.unit}` : ''}</span>
+            </div>
+            <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${(d.value / max) * 100}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      {block.insight && <p className="text-xs text-purple-200/70 mt-4 italic">{block.insight}</p>}
+    </BlockShell>
+  );
+}
+
+function TableBlock({ block }) {
+  const columns = block.columns || [];
+  const rows = (block.rows || []).filter(r => Array.isArray(r) && r.length > 0);
+  if (columns.length < 2 || rows.length === 0) return null;
+  return (
+    <BlockShell tone="indigo" icon="📋" title={block.title || 'Comparison'}>
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-slate-700/60">
+              {columns.map((c, i) => (
+                <th key={i} className="text-left py-2 px-2 text-slate-400 font-bold uppercase tracking-wider">{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-700/30">
+            {rows.map((r, i) => (
+              <tr key={i} className={i % 2 ? 'bg-slate-900/30' : ''}>
+                {r.map((cell, j) => (
+                  <td key={j} className={`py-2 px-2 align-top ${j === 0 ? 'text-white font-medium' : 'text-slate-300'}`}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </BlockShell>
+  );
+}
+
+function LessonPlanBlock({ block }) {
+  const rows = (block.rows || []).filter(Boolean);
+  if (rows.length === 0) return null;
+  return (
+    <BlockShell tone="emerald" icon="🗂️" title={block.title || "What you'll cover"}>
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-slate-700/60">
+              <th className="text-left py-2 px-2 text-slate-400 font-bold uppercase tracking-wider">Subtopic</th>
+              <th className="text-left py-2 px-2 text-slate-400 font-bold uppercase tracking-wider">You'll be able to</th>
+              <th className="text-left py-2 px-2 text-slate-400 font-bold uppercase tracking-wider">Time</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-700/30">
+            {rows.map((r, i) => (
+              <tr key={i} className={i % 2 ? 'bg-slate-900/30' : ''}>
+                <td className="py-2 px-2 text-white font-medium align-top">{r.subtopic}</td>
+                <td className="py-2 px-2 text-slate-300 align-top">{r.outcome}</td>
+                <td className="py-2 px-2 align-top whitespace-nowrap">
+                  {r.minutes ? <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold">{r.minutes} min</span> : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </BlockShell>
+  );
+}
+
+function ExampleBlock({ block }) {
+  return (
+    <section className="rounded-xl border-l-4 border-l-emerald-500 border border-emerald-500/20 bg-emerald-500/5 p-5">
+      {(block.company || block.year) && (
+        <p className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-1">
+          {block.company}{block.company && block.year ? ' · ' : ''}{block.year}
+        </p>
+      )}
+      {block.title && <h3 className="text-sm font-bold text-white mb-2">{block.title}</h3>}
+      {block.scenario && <p className="text-sm text-slate-200 leading-relaxed mb-2">{block.scenario}</p>}
+      {block.action && <p className="text-xs text-slate-300 leading-relaxed mb-1"><span className="font-bold text-slate-400">What they did: </span>{block.action}</p>}
+      {block.outcome && <p className="text-xs text-slate-300 leading-relaxed"><span className="font-bold text-slate-400">Result: </span>{block.outcome}</p>}
+      {block.takeaway && (
+        <p className="text-sm text-emerald-200 font-semibold mt-3 pt-3 border-t border-emerald-500/20">→ {block.takeaway}</p>
+      )}
+    </section>
+  );
+}
+
+const CALLOUT_VARIANTS = {
+  warning: { tone: 'amber', icon: '⚠️' },
+  pitfall: { tone: 'rose', icon: '⛔' },
+  tip:     { tone: 'cyan', icon: '💡' },
+};
+
+function CalloutBlock({ block }) {
+  const v = CALLOUT_VARIANTS[block.variant] || CALLOUT_VARIANTS.tip;
+  return (
+    <BlockShell tone={v.tone} icon={v.icon} title={block.title || block.variant || 'Note'}>
+      <p className="text-sm text-slate-200 leading-relaxed">{block.body}</p>
+    </BlockShell>
+  );
+}
+
+function ChecklistBlock({ block }) {
+  const items = (block.items || []).filter(Boolean);
+  if (items.length === 0) return null;
+  return (
+    <BlockShell tone="slate" icon="☑️" title={block.title || 'Checklist'}>
+      <ul className="space-y-2">
+        {items.map((it, i) => (
+          <li key={i} className="flex gap-2.5 text-sm text-slate-200">
+            <span className="w-4 h-4 mt-0.5 rounded border border-slate-600 flex-shrink-0" />
+            <span>{it}</span>
+          </li>
+        ))}
+      </ul>
+    </BlockShell>
+  );
+}
+
+const BLOCK_RENDERERS = {
+  prose: ProseBlock,
+  flowchart: FlowchartBlock,
+  bar: ChartBlock,
+  pie: ChartBlock,
+  comparison: TableBlock,
+  lessonPlan: LessonPlanBlock,
+  example: ExampleBlock,
+  callout: CalloutBlock,
+  checklist: ChecklistBlock,
+};
+
+// Unknown block types render nothing rather than breaking the page, so the
+// generator can add new types before the client knows about them.
+function SessionBlocks({ blocks }) {
+  if (!Array.isArray(blocks) || blocks.length === 0) return null;
+  return (
+    <>
+      {blocks.map((block, i) => {
+        const Renderer = BLOCK_RENDERERS[block?.type];
+        if (!Renderer) return null;
+        return <Renderer key={i} block={block} />;
+      })}
+    </>
+  );
+}
+
+function CardDeck({ cards, forceRevealed = false }) {
+  const [revealed, setRevealed] = useState({});
+  const [allOpen, setAllOpen] = useState(forceRevealed);
+  const list = (cards || []).filter(c => c && (c.front || c.back));
+  if (list.length === 0) return null;
+  return (
+    <BlockShell tone="indigo" icon="🃏" title={`Recall cards (${list.length})`}>
+      <button
+        onClick={() => { setAllOpen(v => !v); setRevealed({}); }}
+        className="mb-3 text-xs font-semibold text-indigo-300 hover:text-indigo-200 transition-colors"
+      >
+        {allOpen ? 'Hide all answers' : 'Reveal all answers'}
+      </button>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        {list.map((c, i) => {
+          const open = allOpen || revealed[i];
+          return (
+            <button
+              key={i}
+              onClick={() => setRevealed(p => ({ ...p, [i]: !p[i] }))}
+              className="text-left rounded-lg border border-slate-700/60 bg-slate-900/50 hover:border-indigo-500/40 p-3 transition-all min-h-[84px]"
+            >
+              {c.tag && <span className="inline-block text-[10px] uppercase tracking-wider text-slate-500 mb-1">{c.tag}</span>}
+              <p className="text-sm font-semibold text-white leading-snug">{c.front}</p>
+              {open
+                ? <p className="text-xs text-indigo-200 mt-2 leading-relaxed">{c.back}</p>
+                : <p className="text-xs text-slate-500 mt-2 italic">Tap to reveal</p>}
+            </button>
+          );
+        })}
+      </div>
+    </BlockShell>
+  );
+}
+
+function DefinitionsBlock({ definitions }) {
+  const list = (definitions || []).filter(Boolean);
+  if (list.length === 0) return null;
+  return (
+    <BlockShell tone="amber" icon="📖" title="Key definitions">
+      <dl className="space-y-3">
+        {list.map((d, i) => (
+          <div key={i}>
+            <dt className="text-sm font-bold text-white">{typeof d === 'string' ? d : d.term || d.word || `Term ${i + 1}`}</dt>
+            {d.definition && <dd className="text-sm text-slate-400 mt-0.5 ml-3">{d.definition}</dd>}
+            {d.whyItMatters && <dd className="text-xs text-amber-200/70 mt-1 ml-3 italic">Why it matters: {d.whyItMatters}</dd>}
+          </div>
+        ))}
+      </dl>
+    </BlockShell>
+  );
+}
+
+function AbbreviationsBlock({ abbreviations }) {
+  const list = (abbreviations || []).filter(a => a && (a.short || a.full));
+  if (list.length === 0) return null;
+  return (
+    <BlockShell tone="slate" icon="🔤" title="Abbreviations">
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+        {list.map((a, i) => (
+          <div key={i} className="flex gap-2 text-sm">
+            <dt className="font-black text-white whitespace-nowrap">{a.short}</dt>
+            <dd className="text-slate-400">
+              {a.full}
+              {a.note && <span className="block text-xs text-slate-500 italic">{a.note}</span>}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </BlockShell>
+  );
+}
+
+function MnemonicsBlock({ mnemonics }) {
+  const list = (mnemonics || []).filter(m => m && m.device);
+  if (list.length === 0) return null;
+  return (
+    <BlockShell tone="purple" icon="🧠" title="Memory aids">
+      <div className="space-y-3">
+        {list.map((m, i) => (
+          <div key={i}>
+            <p className="text-lg font-black text-purple-200 tracking-wide font-mono">{m.device}</p>
+            {m.expands && <p className="text-sm text-slate-300 mt-0.5">{m.expands}</p>}
+            {m.howToUse && <p className="text-xs text-slate-500 mt-0.5 italic">{m.howToUse}</p>}
+          </div>
+        ))}
+      </div>
+    </BlockShell>
+  );
+}
+
+const SEVERITY_STYLES = {
+  critical:  'bg-rose-500/15 border-rose-500/40 text-rose-300',
+  important: 'bg-amber-500/15 border-amber-500/40 text-amber-300',
+  tip:       'bg-cyan-500/15 border-cyan-500/40 text-cyan-300',
+};
+
+function KeepInMindBlock({ points }) {
+  const list = (points || []).filter(p => p && p.point);
+  if (list.length === 0) return null;
+  return (
+    <BlockShell tone="rose" icon="📌" title="Keep in mind">
+      <ul className="space-y-3">
+        {list.map((p, i) => (
+          <li key={i}>
+            <div className="flex items-start gap-2">
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border flex-shrink-0 ${SEVERITY_STYLES[p.severity] || SEVERITY_STYLES.important}`}>
+                {p.severity || 'important'}
+              </span>
+              <p className="text-sm text-slate-200 leading-snug">{p.point}</p>
+            </div>
+            {p.why && <p className="text-xs text-slate-500 mt-0.5 ml-[4.25rem] leading-relaxed">{p.why}</p>}
+          </li>
+        ))}
+      </ul>
+    </BlockShell>
+  );
+}
+
+function SubtopicStrip({ subtopics }) {
+  const list = (subtopics || []).map(s => (typeof s === 'string' ? { name: s } : s)).filter(s => s?.name);
+  if (list.length === 0) return null;
+  return (
+    <BlockShell tone="slate" icon="🧭" title="What you'll cover">
+      <ol className="space-y-2">
+        {list.map((s, i) => (
+          <li key={i} className="flex gap-3">
+            <span className="w-5 h-5 rounded bg-slate-700/60 text-slate-300 text-xs font-black flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+            <div>
+              <p className="text-sm font-semibold text-white">
+                {s.name}
+                {s.minutes ? <span className="ml-2 text-xs text-slate-500 font-normal">{s.minutes} min</span> : null}
+              </p>
+              {s.summary && <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{s.summary}</p>}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </BlockShell>
+  );
+}
+
+function ContentPhase({ session, sessionIndex, module, preparingDeep, onStartQuiz, onOpenNotes, onHome }) {
   const [readProgress, setReadProgress] = useState(0);
   const contentRef = useRef(null);
 
@@ -229,6 +734,18 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz, onOpenNotes,
   const learningObjectives = session.learningObjectives || [];
   const visual = session.visual;
   const isCapstone = session.type === 'capstone';
+
+  // Deep (contentVersion 2) days carry an ordered `blocks` array plus a card
+  // deck, abbreviations, mnemonics and keep-in-mind points. Older sessions
+  // have none of this — SessionBlocks/CardDeck/etc all render null on empty
+  // input, so a v1 session below falls straight through to the legacy
+  // Key Points / Visual / Explanation section unchanged.
+  const isDeep = session.contentVersion === 2 && Array.isArray(session.blocks) && session.blocks.length > 0;
+  const subtopics = session.subtopics || [];
+  const abbreviations = session.abbreviations || [];
+  const mnemonics = session.mnemonics || [];
+  const keepInMind = session.keepInMind || [];
+  const cardDeck = session.cardDeck || [];
 
   return (
     <div className="min-h-screen bg-[#0F172A]">
@@ -263,6 +780,13 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz, onOpenNotes,
           <h1 className="text-3xl font-black text-white mb-3 leading-tight">{title}</h1>
           {description && <p className="text-slate-300 text-base leading-relaxed">{description}</p>}
         </div>
+
+        {preparingDeep && (
+          <div className="mb-6 flex items-center gap-3 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3">
+            <span className="w-4 h-4 border-2 border-indigo-400/40 border-t-indigo-400 rounded-full animate-spin flex-shrink-0" />
+            <p className="text-sm text-indigo-200">Preparing your deep dive for this day — the material below will expand in a moment.</p>
+          </div>
+        )}
 
         {/* Content scroll area */}
         <div className="space-y-6" ref={contentRef}>
@@ -304,51 +828,99 @@ function ContentPhase({ session, sessionIndex, module, onStartQuiz, onOpenNotes,
             </section>
           )}
 
-          {/* Key Points */}
-          {keyPoints.length > 0 && (
-            <section className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5">
-              <h2 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <span>✅</span> Key Points
-              </h2>
-              <ul className="space-y-2">
-                {keyPoints.map((point, i) => (
-                  <li key={i} className="flex gap-3">
-                    <span className="w-5 h-5 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-400 flex-shrink-0 mt-0.5">
-                      {i + 1}
-                    </span>
-                    <span className="text-sm text-slate-200 leading-relaxed">
-                      {typeof point === 'string' ? point : point.title || point.point || JSON.stringify(point)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          {isDeep ? (
+            <>
+              {/* What you'll cover — the subtopic strip for this deep day */}
+              <SubtopicStrip subtopics={subtopics} />
 
-          {/* Visual: flowchart / bar / pie — only when the content genuinely has one */}
-          <SessionVisual visual={visual} />
+              {/* The bulk of the day, in the order the model chose:
+                  prose / flowchart / charts / tables / examples / callouts */}
+              <SessionBlocks blocks={session.blocks} />
 
-          {/* Main explanation / notes */}
-          {(notes || explanation) && (
-            <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
-              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <span>💡</span> Explanation & Notes
-              </h2>
-              <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
-                {explanation || notes}
-              </div>
-            </section>
-          )}
+              <AbbreviationsBlock abbreviations={abbreviations} />
+              <MnemonicsBlock mnemonics={mnemonics} />
+              <KeepInMindBlock points={keepInMind} />
+              <CardDeck cards={cardDeck} />
 
-          {/* Summary fallback if no structured content */}
-          {!notes && !explanation && keyPoints.length === 0 && definitions.length === 0 && (
-            <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-6 text-center">
-              <div className="text-4xl mb-3 opacity-50">📝</div>
-              <p className="text-slate-400 text-sm">
-                Learning content for <strong className="text-white">{title}</strong> covers the foundational concepts of the module.
-                Complete the knowledge quiz below to progress.
-              </p>
-            </section>
+              {/* Key Points recap, after the deep material rather than before it */}
+              {keyPoints.length > 0 && (
+                <section className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5">
+                  <h2 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span>✅</span> Key Points Recap
+                  </h2>
+                  <ul className="space-y-2">
+                    {keyPoints.map((point, i) => (
+                      <li key={i} className="flex gap-3">
+                        <span className="w-5 h-5 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-400 flex-shrink-0 mt-0.5">
+                          {i + 1}
+                        </span>
+                        <span className="text-sm text-slate-200 leading-relaxed">
+                          {typeof point === 'string' ? point : point.title || point.point || JSON.stringify(point)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Key Points */}
+              {keyPoints.length > 0 && (
+                <section className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5">
+                  <h2 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span>✅</span> Key Points
+                  </h2>
+                  <ul className="space-y-2">
+                    {keyPoints.map((point, i) => (
+                      <li key={i} className="flex gap-3">
+                        <span className="w-5 h-5 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-400 flex-shrink-0 mt-0.5">
+                          {i + 1}
+                        </span>
+                        <span className="text-sm text-slate-200 leading-relaxed">
+                          {typeof point === 'string' ? point : point.title || point.point || JSON.stringify(point)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {/* Visual: flowchart / bar / pie — only when the content genuinely has one */}
+              <SessionVisual visual={visual} />
+
+              {/* Explanation and Notes are two distinct fields the generator can
+                  both populate — this used to render `explanation || notes`,
+                  which silently dropped Notes whenever Explanation was present.
+                  Shown as separate sections, de-duplicated only when identical. */}
+              {explanation && (
+                <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
+                  <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span>💡</span> Explanation
+                  </h2>
+                  <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{explanation}</div>
+                </section>
+              )}
+              {notes && notes !== explanation && (
+                <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
+                  <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span>📝</span> Notes
+                  </h2>
+                  <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{notes}</div>
+                </section>
+              )}
+
+              {/* Summary fallback if no structured content */}
+              {!notes && !explanation && keyPoints.length === 0 && definitions.length === 0 && (
+                <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-6 text-center">
+                  <div className="text-4xl mb-3 opacity-50">📝</div>
+                  <p className="text-slate-400 text-sm">
+                    Learning content for <strong className="text-white">{title}</strong> covers the foundational concepts of the module.
+                    Complete the knowledge quiz below to progress.
+                  </p>
+                </section>
+              )}
+            </>
           )}
 
         </div>
@@ -386,6 +958,12 @@ function NotesPhase({ session, sessionIndex, module, quizResults, onBack, onHome
   const notes = session.notes || session.content || '';
   const explanation = session.explanation || '';
   const learningObjectives = session.learningObjectives || [];
+  const isDeep = session.contentVersion === 2 && Array.isArray(session.blocks) && session.blocks.length > 0;
+  const subtopics = session.subtopics || [];
+  const abbreviations = session.abbreviations || [];
+  const mnemonics = session.mnemonics || [];
+  const keepInMind = session.keepInMind || [];
+  const cardDeck = session.cardDeck || [];
 
   const handleDownload = async () => {
     setDownloadingPdf(true);
@@ -457,27 +1035,61 @@ function NotesPhase({ session, sessionIndex, module, quizResults, onBack, onHome
             </section>
           )}
 
-          {keyPoints.length > 0 && (
-            <section className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5">
-              <h2 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4">✅ Key Points</h2>
-              <ul className="space-y-2">
-                {keyPoints.map((point, i) => (
-                  <li key={i} className="flex gap-3">
-                    <span className="w-5 h-5 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-400 flex-shrink-0 mt-0.5">{i + 1}</span>
-                    <span className="text-sm text-slate-200 leading-relaxed">{typeof point === 'string' ? point : point.title || point.point || JSON.stringify(point)}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          {isDeep ? (
+            <>
+              <SubtopicStrip subtopics={subtopics} />
+              <SessionBlocks blocks={session.blocks} />
+              <AbbreviationsBlock abbreviations={abbreviations} />
+              <MnemonicsBlock mnemonics={mnemonics} />
+              <KeepInMindBlock points={keepInMind} />
+              {/* Force-revealed here: a notes page is for review/printing,
+                  not testing recall — flipping every card is the point. */}
+              <CardDeck cards={cardDeck} forceRevealed />
+              {keyPoints.length > 0 && (
+                <section className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5">
+                  <h2 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4">✅ Key Points Recap</h2>
+                  <ul className="space-y-2">
+                    {keyPoints.map((point, i) => (
+                      <li key={i} className="flex gap-3">
+                        <span className="w-5 h-5 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-400 flex-shrink-0 mt-0.5">{i + 1}</span>
+                        <span className="text-sm text-slate-200 leading-relaxed">{typeof point === 'string' ? point : point.title || point.point || JSON.stringify(point)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
+          ) : (
+            <>
+              {keyPoints.length > 0 && (
+                <section className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5">
+                  <h2 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4">✅ Key Points</h2>
+                  <ul className="space-y-2">
+                    {keyPoints.map((point, i) => (
+                      <li key={i} className="flex gap-3">
+                        <span className="w-5 h-5 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-400 flex-shrink-0 mt-0.5">{i + 1}</span>
+                        <span className="text-sm text-slate-200 leading-relaxed">{typeof point === 'string' ? point : point.title || point.point || JSON.stringify(point)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
 
-          <SessionVisual visual={session.visual} />
+              <SessionVisual visual={session.visual} />
 
-          {(notes || explanation) && (
-            <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
-              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">💡 Explanation & Notes</h2>
-              <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{explanation || notes}</div>
-            </section>
+              {explanation && (
+                <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
+                  <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">💡 Explanation</h2>
+                  <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{explanation}</div>
+                </section>
+              )}
+              {notes && notes !== explanation && (
+                <section className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
+                  <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">📝 Notes</h2>
+                  <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{notes}</div>
+                </section>
+              )}
+            </>
           )}
 
           {Array.isArray(quizResults) && quizResults.length > 0 && (
@@ -982,6 +1594,8 @@ export default function ModuleSession() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [quizKey, setQuizKey] = useState(0); // increment to force QuizPhase remount on retry
+  const [preparingDeep, setPreparingDeep] = useState(false);
+  const deepAttemptRef = useRef(null); // "moduleId-sessionIndex" already attempted this mount
 
   useEffect(() => {
     loadData();
@@ -1034,6 +1648,33 @@ export default function ModuleSession() {
       setLoading(false);
     }
   };
+
+  // Self-heal for a session that isn't deep yet — the background job
+  // normally lands content well before a day unlocks, but this covers the
+  // rare race and pre-existing modules created before per-day generation
+  // existed. Guarded to attempt at most once per module+day per mount so a
+  // generation failure (or an intentionally thin v1 module) can't retry in a
+  // loop; the employee simply keeps the legacy rendering for that day.
+  useEffect(() => {
+    if (!session || !moduleId) return;
+    const isDeep = session.contentVersion === 2 && Array.isArray(session.blocks) && session.blocks.length >= 6;
+    if (isDeep) return;
+    const attemptKey = `${moduleId}-${sessionIndex}`;
+    if (deepAttemptRef.current === attemptKey) return;
+    deepAttemptRef.current = attemptKey;
+
+    let cancelled = false;
+    setPreparingDeep(true);
+    authFetch(`/api/modules/${moduleId}/sessions/${sessionIndex}/ensure-content`, { method: 'POST' })
+      .then(res => {
+        if (cancelled) return;
+        const updated = res?.session;
+        if (updated) setSession(updated);
+      })
+      .catch(() => { /* stay on the legacy rendering for this day */ })
+      .finally(() => { if (!cancelled) setPreparingDeep(false); });
+    return () => { cancelled = true; };
+  }, [session, moduleId, sessionIndex]);
 
   // Called by QuizPhase when the user submits their answers.
   // Always saves progress regardless of score, then transitions to score phase.
@@ -1163,6 +1804,7 @@ export default function ModuleSession() {
         session={session}
         sessionIndex={sessionIndex}
         module={module}
+        preparingDeep={preparingDeep}
         onStartQuiz={() => setPhase('quiz')}
         onOpenNotes={() => setPhase('notes')}
         onHome={goToDashboard}
