@@ -16,6 +16,7 @@ import { randomBytes } from 'crypto';
 import { getGroups } from '../db/store.js';
 import { buildTypeSequence } from '../services/QuestionMix.js';
 import { canActAsManager, linkEmployeeToManager } from '../services/ManagerScope.js';
+import { revokeAllForUser } from '../security/refreshTokenStore.js';
 
 // ── Authorization helper: can `actor` (req.user) access `target` user record? ──
 // Rules (additive, preserves existing single-tenant 'default' behavior):
@@ -590,6 +591,20 @@ router.post('/:userId/regenerate-password', authenticate, requireRole('admin', '
       resetTokenExpires: null,
     });
     UserStore.updateUser(target.userId, { mustChangePassword: true }).catch(() => {});
+
+    // Revoke the TARGET user's refresh tokens — matches what self-service
+    // change-password already does for the caller (auth.js:958). Without
+    // this, an admin resetting someone's password (e.g. because their
+    // account was compromised or they're being offboarded) left that
+    // person's existing 24h access token AND their 30-day refresh token
+    // fully valid: /api/auth/refresh never checks mustChangePassword, so
+    // they could keep silently renewing indefinitely with the OLD
+    // credentials' session, never being forced to the new password. We
+    // can't blocklist their specific access token here (only a token the
+    // server has actually seen in this request can be blocklisted), but
+    // revoking the refresh token stops it from being renewed, forcing a
+    // real re-login within the access token's remaining lifetime.
+    revokeAllForUser(target.userId);
 
     // Invalidate previous activation tokens and issue a fresh one
     let activationUrl = null;
