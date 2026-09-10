@@ -26,7 +26,7 @@ import { getApprovedBankCached } from '../services/QuestionBankCache.js';
 import GeminiService from '../services/GeminiService.js';
 import LLMCache from '../services/LLMCache.js';
 import { generateSessionQuiz, ensureAllSessionQuizzes } from '../services/SessionQuizGenerator.js';
-import { getVisibleEmployeeIds } from '../services/ManagerScope.js';
+import { getVisibleEmployeeIds, canActAsManager } from '../services/ManagerScope.js';
 import { QUIZ_MIX, normalizeTypeName } from '../services/QuestionMix.js';
 import { startDeepContentJob } from '../services/SessionContentGenerator.js';
 
@@ -373,14 +373,13 @@ router.get('/', authenticate, async (req, res) => {
       ? assessments.filter(a => !a.companyId || a.companyId === companyId)
       : assessments;
 
-    if (req.user.role === 'manager') {
-      // Manager: only assessments that include at least one of their group employees
-      const allGroups = await Groups.getAll();
-      const myGroups = allGroups.filter(g =>
-        g.managerId === req.user.userId &&
-        (g.companyId || 'default') === companyId
-      );
-      const myEmpIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
+    const isAdminList = req.user.role === 'admin' || req.user.role === 'superadmin';
+    if (!isAdminList && canActAsManager(req.user)) {
+      // Manager: only assessments that include at least one of their visible
+      // employees (Groups union the durable manager_id path) — was Groups-only
+      // and gated on the raw current role, missing manager_id-linked employees
+      // and 403-adjacent-behaving for an access-grant manager viewing as employee.
+      const myEmpIds = await getVisibleEmployeeIds(req.user);
       const result = myEmpIds.size === 0
         ? []
         : companyFiltered.filter(a =>
@@ -391,15 +390,14 @@ router.get('/', authenticate, async (req, res) => {
       return res.json({ success: true, data: await Promise.all(result.map(hydrateAssignmentsForAdmin)), error: null });
     }
 
-    const result = ['admin', 'superadmin'].includes(req.user.role)
+    const result = isAdminList
       ? companyFiltered
       : companyFiltered.filter(a =>
           a.employeeAssignments?.some(ea => ea.userId === req.user.userId) ||
           a.targetUsers?.includes(req.user.userId)
         );
 
-    const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
-    res.json({ success: true, data: isPrivileged ? await Promise.all(result.map(hydrateAssignmentsForAdmin)) : result, error: null });
+    res.json({ success: true, data: isAdminList ? await Promise.all(result.map(hydrateAssignmentsForAdmin)) : result, error: null });
   } catch (e) {
     console.error('[assessments GET /]', e.message);
     res.status(500).json({ success: false, data: null, error: 'Failed to load assessments' });
@@ -1604,14 +1602,19 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
         .map(u => u.userId || u.id)
     );
 
-    let allowedIds = companyId === 'default' ? null : companyUserIds;
+    const isAdminReq = req.user.role === 'admin' || req.user.role === 'superadmin';
+    let allowedIds = (companyId === 'default' && isAdminReq) ? null : companyUserIds;
 
     // Manager: restrict to their own team. This used to consider Groups ONLY,
     // so every employee linked through the durable manager_id path (the Assign
     // Manager dropdown, individual creation, bulk import) was invisible here —
     // the direct cause of "the manager can't see their candidate's details".
-    // getVisibleEmployeeIds unions both mechanisms.
-    if (req.user.role === 'manager') {
+    // getVisibleEmployeeIds unions both mechanisms. Also: this used to gate on
+    // req.user.role === 'manager' (the current X-Active-Role view), so an
+    // access-grant manager viewing as "employee" fell through to the
+    // companyId==='default' null-allowedIds branch above and saw EVERY
+    // company's reports, unrestricted — gate on capability instead.
+    if (!isAdminReq) {
       const myEmpIds = await getVisibleEmployeeIds(req.user);
       allowedIds = companyId === 'default'
         ? myEmpIds
@@ -1640,17 +1643,18 @@ router.get('/export-all-reports', authenticate, async (req, res) => {
     const allReports = await Reports.getAll();
 
     let reports;
-    if (role === 'employee') {
-      // Employee sees only their own reports
-      reports = allReports.filter(r => (r.userId || r.user_id) === req.user.userId);
-    } else if (role === 'manager') {
-      const allGroups = await Groups.getAll();
-      const myGroups = allGroups.filter(g =>
-        g.managerId === req.user.userId &&
-        (g.companyId || 'default') === companyId
-      );
-      const allowedIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
+    const isAdminExport = role === 'admin' || role === 'superadmin';
+    // Gate on capability, not the raw current view — an access-grant manager
+    // browsing in the employee view still gets their team's export here,
+    // matching the identical fix applied to /reports/all above. Also
+    // switched from Groups-only to getVisibleEmployeeIds (Groups union the
+    // durable manager_id path).
+    if (!isAdminExport && canActAsManager(req.user)) {
+      const allowedIds = await getVisibleEmployeeIds(req.user);
       reports = allReports.filter(r => allowedIds.has(r.userId || r.user_id || r.submittedBy));
+    } else if (!isAdminExport) {
+      // Genuine employee (no manager capability): only their own reports
+      reports = allReports.filter(r => (r.userId || r.user_id) === req.user.userId);
     } else {
       // admin / superadmin: filter by company
       if (companyId !== 'default') {
