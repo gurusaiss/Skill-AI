@@ -3,7 +3,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import UserStore from '../services/UserStore.js';
 import * as db from '../db/store.js';
 import { Groups } from '../services/DataStore.js';
-import { getVisibleEmployeeIds } from '../services/ManagerScope.js';
+import { getVisibleEmployeeIds, canActAsManager } from '../services/ManagerScope.js';
 
 const router = express.Router();
 
@@ -279,8 +279,9 @@ router.post('/content', authenticate, async (req, res) => {
       });
     }
 
-    // Check if requester has permission
-    if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    // Check if requester has permission. Raw role check previously rejected
+    // an access-grant manager (primary role employee, accesses:['manager']).
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && !canActAsManager(req.user)) {
       return res.status(403).json({
         success: false,
         data: null,
@@ -567,11 +568,20 @@ router.get('/', authenticate, async (req, res) => {
 
     // Restrict non-admins to their own assignments (or, for managers, their direct reports').
     // A client-supplied `userId` must never let a non-admin read another user's assignments.
-    if (req.user.role === 'admin') {
+    //
+    // Was `req.user.role === 'admin' / === 'manager'` — a raw role check that
+    // (a) sent anyone whose manager capability comes only from an access
+    // grant (primary role employee, accesses:['manager']) into the plain
+    // "restricted to self" branch below, so their whole team's assignments
+    // vanished, and (b) sourced the team from getManagerEmployees() alone,
+    // missing anyone visible only via Groups membership. This is the route
+    // ManagerDashboard's employee-detail click and dashboard stats depend on
+    // (fetchJSON('/api/assignments') / '?userId=X'), so a Group-scoped
+    // manager saw "Failed to load assignments" opening any employee's card.
+    if (req.user.role === 'admin' || req.user.role === 'superadmin') {
       if (userId) filters.user_id = userId;
-    } else if (req.user.role === 'manager') {
-      const employees = await UserStore.getManagerEmployees(req.user.userId);
-      const employeeIds = employees.map(e => e.userId || e.id);
+    } else if (canActAsManager(req.user)) {
+      const employeeIds = [...await getVisibleEmployeeIds(req.user)];
       if (userId) {
         const selfId = req.user.userId || req.user.id;
         if (userId !== selfId && !employeeIds.includes(userId)) {
