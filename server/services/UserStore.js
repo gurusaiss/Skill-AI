@@ -696,9 +696,9 @@ class UserStore {
     } catch { return { requests: [], nextId: 1 }; }
   }
   async writeRequestsFile(data) {
-    await fs.writeFile(
+    await this._writeJsonAtomic(
       path.join(path.dirname(this.assignmentsFilePath), 'assignment_requests.json'),
-      JSON.stringify(data, null, 2), 'utf-8'
+      data
     );
   }
 

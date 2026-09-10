@@ -791,7 +791,7 @@ router.post('/forgot-password', rateLimitPasswordReset, async (req, res) => {
  * POST /api/auth/reset-password
  * Reset password with token
  */
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', rateLimitPasswordReset, async (req, res) => {
   try {
     const { token, newPassword } = req.body;
 

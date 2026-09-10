@@ -1496,9 +1496,16 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
     if (created.length > 0) {
       try {
         const XLSX = await import('xlsx');
+        // Prefix any cell that starts with =,+,-,@ with a leading apostrophe so
+        // Excel/Sheets treats it as text, not a formula (spreadsheet-injection
+        // hardening — these values come from imported user rows, not typed by an admin).
+        const escapeCell = (v) => {
+          const s = String(v ?? '');
+          return /^[=+\-@]/.test(s) ? `'${s}` : s;
+        };
         const wsData = [
           ['Employee Name', 'Employee Email', 'Temporary Password', 'Login/Activation Link'],
-          ...created.map(u => [u.name, u.email, u.tempPassword, u.activationUrl || '']),
+          ...created.map(u => [escapeCell(u.name), escapeCell(u.email), escapeCell(u.tempPassword), escapeCell(u.activationUrl || '')]),
         ];
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(wsData);
