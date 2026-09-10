@@ -185,6 +185,8 @@ export default function ManagerDashboard() {
   const [assignments, setAssignments] = useState([]);
   const [assessmentReports, setAssessmentReports] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [employeePage, setEmployeePage] = useState(1);
+  const EMPLOYEES_PER_PAGE = 25;
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [employeeDetailLoading, setEmployeeDetailLoading] = useState(false);
   const [employeeAssignments, setEmployeeAssignments] = useState([]);
@@ -313,6 +315,12 @@ export default function ManagerDashboard() {
       (emp.role || '').toLowerCase().includes(q)
     );
   });
+
+  const employeePageCount = Math.max(1, Math.ceil(filteredEmployees.length / EMPLOYEES_PER_PAGE));
+  const pagedEmployees = filteredEmployees.slice(
+    (employeePage - 1) * EMPLOYEES_PER_PAGE,
+    employeePage * EMPLOYEES_PER_PAGE
+  );
 
   const recentAssignments = [...assignments]
     .sort((a, b) => {
@@ -750,8 +758,8 @@ export default function ManagerDashboard() {
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-500">Completion Rate</span>
                     <span className="font-bold text-white">
-                      {totalEmployees > 0
-                        ? Math.round((completedAssignments / (completedAssignments + activeAssignments || 1)) * 100)
+                      {assignments.length > 0
+                        ? Math.round((completedAssignments / assignments.length) * 100)
                         : 0}
                       %
                     </span>
@@ -773,7 +781,7 @@ export default function ManagerDashboard() {
                   type="text"
                   placeholder="Search employees..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setSearchQuery(e.target.value); setEmployeePage(1); }}
                   className="w-full sm:w-64 pl-9 pr-4 py-2 rounded-lg bg-slate-900/60 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/25 transition-all"
                 />
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
@@ -802,7 +810,7 @@ export default function ManagerDashboard() {
             />
           ) : (
             <div className="divide-y divide-slate-700/30">
-              {filteredEmployees.map((emp, idx) => {
+              {pagedEmployees.map((emp, idx) => {
                 const empProgress = emp.progress || (emp.assignedModules > 0 ? Math.round((emp.completedModules || 0) / emp.assignedModules * 100) : 0);
                 return (
                   <div
@@ -846,6 +854,31 @@ export default function ManagerDashboard() {
                   </div>
                 );
               })}
+            </div>
+          )}
+          {filteredEmployees.length > EMPLOYEES_PER_PAGE && (
+            <div className="flex items-center justify-between px-5 py-3 border-t border-slate-700/40">
+              <p className="text-xs text-slate-500">
+                Showing {(employeePage - 1) * EMPLOYEES_PER_PAGE + 1}
+                –{Math.min(employeePage * EMPLOYEES_PER_PAGE, filteredEmployees.length)} of {filteredEmployees.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setEmployeePage((p) => Math.max(1, p - 1))}
+                  disabled={employeePage <= 1}
+                  className="px-3 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700/60 transition-all"
+                >
+                  ← Prev
+                </button>
+                <span className="text-xs text-slate-500">Page {employeePage} of {employeePageCount}</span>
+                <button
+                  onClick={() => setEmployeePage((p) => Math.min(employeePageCount, p + 1))}
+                  disabled={employeePage >= employeePageCount}
+                  className="px-3 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700/60 transition-all"
+                >
+                  Next →
+                </button>
+              </div>
             </div>
           )}
         </div>
