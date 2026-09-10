@@ -229,11 +229,18 @@ export default function Employee() {
       loadAssessments();
       loadRecommendations();
 
+      // Each of these degrades independently rather than one failure blocking
+      // the whole dashboard — a genuinely empty account (no assignments yet)
+      // and a transient fetch failure both used to look identical from here,
+      // and the assignments branch specifically re-threw into a toast that
+      // showed the raw error message verbatim (e.g. "Failed to fetch") to the
+      // employee instead of just rendering an empty, zeroed-out dashboard.
       if (assignmentsData.status === 'fulfilled') {
         const data = assignmentsData.value;
         setAssignments(Array.isArray(data) ? data : (data?.assignments || data?.data || []));
       } else {
-        throw assignmentsData.reason;
+        console.warn('[Employee] assignments failed to load:', assignmentsData.reason?.message);
+        setAssignments([]);
       }
 
       if (statsData.status === 'fulfilled') {
@@ -248,7 +255,8 @@ export default function Employee() {
         console.warn('[Employee] manager info failed to load:', mgrData.reason?.message);
       }
     } catch (err) {
-      showToast(err.message || 'Failed to load dashboard data', 'error');
+      console.warn('[Employee] loadData unexpected error:', err.message);
+      setAssignments(prev => prev || []);
     } finally {
       setLoading(false);
     }

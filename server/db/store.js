@@ -147,6 +147,44 @@ function normalizeModule(m) {
   };
 }
 
+// JSONB-fallback (generated_modules) documents don't go through
+// normalizeModule (that's flat-table-only), so a top-level field written by
+// one update call (e.g. `sessions`) can go stale relative to `content` set by
+// a LATER call that only touched `content` — updateHealed's shallow merge
+// preserves whatever top-level value was already there. Applied at every
+// JSONB read/write return point so `sessions`/`roadmap`/`projects` always
+// reflect the current `content`, mirroring what normalizeModule already
+// guarantees for the flat-table path.
+function reconcileModuleFields(doc) {
+  if (!doc) return doc;
+  const content = doc.content || {};
+  return {
+    ...doc,
+    sessions: content.sessions || doc.sessions || [],
+    roadmap: content.roadmap || doc.roadmap || [],
+    projects: content.projects || doc.projects || [],
+  };
+}
+
+// Fixes the drift at the SOURCE, not just on the next read: whenever an
+// update sets `content.sessions`/`roadmap`/`projects`, mirror the same value
+// onto the top-level field being written into the JSONB document.
+// updateHealed does a plain shallow merge, so without this, an update that
+// only touches `content` (e.g. ModuleManagement removing a day) leaves
+// whatever top-level `sessions` a PRIOR update call happened to write
+// (e.g. the deep-content job's persist step) stranded and stale forever —
+// reconcileModuleFields patches every read, but the stored document itself
+// would still disagree with itself.
+function jsonbUpdatePayload(updates) {
+  const payload = { ...updates, updatedAt: new Date().toISOString() };
+  if (updates.content) {
+    if (updates.content.sessions !== undefined) payload.sessions = updates.content.sessions;
+    if (updates.content.roadmap !== undefined) payload.roadmap = updates.content.roadmap;
+    if (updates.content.projects !== undefined) payload.projects = updates.content.projects;
+  }
+  return payload;
+}
+
 // Build a safe Supabase-compatible payload from a module object
 function toSupabaseModule(module, createdBy, id) {
   const durationRaw = module.estimatedDuration || module.estimated_duration || '';
@@ -192,7 +230,7 @@ export async function getModules(filters = {}) {
       if (filters.difficulty && m.difficulty !== filters.difficulty) return false;
       if (filters.companyId && m.companyId && m.companyId !== filters.companyId) return false;
       return true;
-    });
+    }).map(reconcileModuleFields);
   } catch (_) {}
   // Merge: flat-column modules take precedence; JSONB fills the gaps
   const seen = new Set(flatModules.map(m => m.id));
@@ -213,7 +251,7 @@ export async function getModuleById(id) {
   // Check DataStore JSONB table (generated_modules) — used when flat-column table fails
   try {
     const dsModule = await GeneratedModules.getById(id);
-    if (dsModule) return dsModule;
+    if (dsModule) return reconcileModuleFields(dsModule);
   } catch (_) {}
   // Check ephemeral file (last resort / pre-migration stranded data)
   const f = await readJsonFile(join(DATA_DIR, 'modules.json'));
@@ -233,7 +271,7 @@ export async function getModulesByIds(ids) {
   if (missingIds.length) {
     try {
       const dsAll = await GeneratedModules.getAll();
-      const dsFound = (dsAll || []).filter(m => missingIds.includes(m.id));
+      const dsFound = (dsAll || []).filter(m => missingIds.includes(m.id)).map(reconcileModuleFields);
       found = [...found, ...dsFound];
     } catch (_) {}
   }
@@ -393,8 +431,8 @@ export async function updateModule(id, updates) {
           if (e2) throw e2;
           return normalizeModule(d2);
         }
-        const dsUpdated = await GeneratedModules.update(id, { ...updates, updatedAt: new Date().toISOString() }).catch(() => null);
-        if (dsUpdated) return dsUpdated;
+        const dsUpdated = await GeneratedModules.update(id, jsonbUpdatePayload(updates)).catch(() => null);
+        if (dsUpdated) return reconcileModuleFields(dsUpdated);
         return null;
       }
       throw error;
@@ -403,8 +441,8 @@ export async function updateModule(id, updates) {
   }
   // Supabase not configured — try the JSONB DataStore first (its own update()
   // already falls back to the file store), then the legacy ephemeral file.
-  const dsUpdated = await GeneratedModules.update(id, { ...updates, updatedAt: new Date().toISOString() }).catch(() => null);
-  if (dsUpdated) return dsUpdated;
+  const dsUpdated = await GeneratedModules.update(id, jsonbUpdatePayload(updates)).catch(() => null);
+  if (dsUpdated) return reconcileModuleFields(dsUpdated);
   const path = join(DATA_DIR, 'modules.json');
   const f = await readJsonFile(path) || { modules: [] };
   const idx = f.modules.findIndex(m => m.id === id);

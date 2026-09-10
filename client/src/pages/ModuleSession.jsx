@@ -1796,7 +1796,16 @@ export default function ModuleSession() {
     );
   }
 
-  const totalSessions = module?.sessions?.length || 1;
+  // Must match loadData's own read of the session list (line ~1627) —
+  // `module.sessions` (top-level) can go stale relative to
+  // `module.content.sessions` for modules stored via the JSONB fallback path
+  // (see db/store.js), because an edit that only touches `content.sessions`
+  // (e.g. removing a day in ModuleManagement's SessionsEditor) never updates
+  // that top-level mirror. Reading `content.sessions` first is what
+  // ScorePhase's "Continue to Next Day" button correctness depends on: a
+  // stale, larger `module.sessions` count was making that button appear even
+  // for a module that now genuinely has only one day.
+  const totalSessions = (module?.content?.sessions || module?.sessions || []).length || 1;
 
   if (phase === 'content') {
     return (
