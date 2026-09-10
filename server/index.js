@@ -175,7 +175,15 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  // X-Active-Role was missing here. Any request carrying it (i.e. every
+  // request made after a user has EVER used "Switch to X View", since
+  // active_role persists in localStorage across sessions) triggers a browser
+  // CORS preflight that this server then rejects — the browser never even
+  // shows the real response, it fails at the network layer as a bare
+  // "Failed to fetch". That is invisible to curl/server-side testing (no
+  // browser enforces CORS), which is why this was never caught by direct API
+  // checks: every one of them succeeds because they don't preflight.
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Active-Role'],
 }));
 // Handle OPTIONS preflight for all routes
 app.options('*', cors());
