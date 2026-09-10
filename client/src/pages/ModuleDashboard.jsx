@@ -289,7 +289,12 @@ function ProgressTab({ module, assignment, sessionStatuses }) {
   const sessions = module?.sessions || module?.content?.sessions || [];
   const completed = sessions.filter((_, i) => sessionStatuses[i] === 'completed').length;
   const pct = sessions.length > 0 ? Math.round((completed / sessions.length) * 100) : 0;
-  const sessionReports = assignment?.progress_data?.sessionReports || {};
+  // The assignments API normalizes this field to camelCase `progressData`
+  // (server/routes/assignments.js) — reading `progress_data` here always
+  // returned undefined, so every employee's avg quiz score, per-day score
+  // badge, completion date, and strengths/weaknesses silently never
+  // rendered, even though ModuleSession.jsx was saving the data correctly.
+  const sessionReports = assignment?.progressData?.sessionReports || assignment?.progress_data?.sessionReports || {};
 
   // Average score across completed sessions that have a report
   const reportValues = Object.values(sessionReports);
@@ -583,11 +588,16 @@ export default function ModuleDashboard() {
         assignData = assignRes.value;
         setAssignment(assignData);
 
-        // session_progress (Supabase snake_case) OR sessionProgress (camelCase)
+        // session_progress (Supabase snake_case) OR sessionProgress (camelCase).
+        // The dead-code fallback here (progress_data?.sessions, wrong casing
+        // AND wrong field name — session status lives under sessionProgress,
+        // not inside progressData) is corrected to progressData for
+        // consistency with the fix above, though normally shadowed by the
+        // first two checks.
         const progress =
           assignData.sessionProgress ||
           assignData.session_progress ||
-          assignData.progress_data?.sessions ||
+          assignData.progressData?.sessions ||
           {};
         const initialStatuses = progress[0] !== undefined ? progress : { ...progress, 0: 'pending' };
         setSessionStatuses(initialStatuses);
