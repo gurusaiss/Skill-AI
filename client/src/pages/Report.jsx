@@ -578,160 +578,130 @@ function AdminReportView({ user, navigate }) {
 }
 
 // ─── Employee Report View ─────────────────────────────────────────────────────
+// Was: fetched GET /api/report/:userId, which only ever had data for users
+// onboarded through the old goal-based SmartAgent/learningUUID system —
+// every employee onboarded through the current assessment/module system hit
+// a 404 here and landed on a dead "Generate Report" button forever, since
+// generateReport() posts into that same dead system. Replaced with a single
+// page listing every past module and assessment this employee actually has,
+// each linking to its own already-working report view (ModuleReport /
+// Assessment.jsx's submitted-assessment view) — no old-system dependency.
 function EmployeeReportView({ user, navigate }) {
-  const { notify } = useNotification();
-  const [moduleContent, setModuleContent] = useState(null);
-  const [report, setReport] = useState(null);
+  const [modules, setModules] = useState([]);
+  const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadModule = async () => {
+    const load = async () => {
+      setLoading(true);
       try {
-        const token = localStorage.getItem('auth_token');
-        const res = await fetch(`${BASE_URL}/api/assignments?userId=${user?.userId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await res.json();
-        const assignments = data.data?.assignments || data.assignments || [];
-        if (assignments.length > 0) {
-          const modId = assignments[0].assignable_id;
-          const modRes = await fetch(`${BASE_URL}/api/modules/${modId}`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          const modData = await modRes.json();
-          setModuleContent(modData.data?.content || {});
+        const [assignRes, assessRes] = await Promise.allSettled([
+          authFetch(`/api/assignments?userId=${user.userId || user.id}`),
+          authFetch('/api/assessments/my'),
+        ]);
+        if (assignRes.status === 'fulfilled') {
+          const raw = assignRes.value?.data ?? assignRes.value;
+          const list = raw?.assignments || (Array.isArray(raw) ? raw : []);
+          setModules(list.filter(a => (a.type || a.assignable_type) === 'module'));
         }
-      } catch (_) {}
+        if (assessRes.status === 'fulfilled') {
+          const raw = assessRes.value?.data ?? assessRes.value;
+          setAssessments(Array.isArray(raw) ? raw : (raw?.assessments || []));
+        }
+      } catch (_) {
+      } finally {
+        setLoading(false);
+      }
     };
-    if (user) loadModule();
+    if (user) load();
   }, [user]);
-
-  useEffect(() => {
-    loadReport();
-  }, [user]);
-
-  const loadReport = async () => {
-    setLoading(true);
-    try {
-      const uid = user.userId || user.id;
-      const data = await authFetch(`/api/report/${uid}`);
-      setReport(data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateReport = async () => {
-    setLoading(true);
-    try {
-      const uid = user.userId || user.id;
-      await authFetch('/api/report/generate', { method: 'POST', body: JSON.stringify({ userId: uid }) });
-      await loadReport();
-    } catch (e) {
-      notify(e.message || 'Failed to generate report', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
         <div className="text-center">
           <div className="animate-spin text-indigo-400 text-4xl mb-4">⟳</div>
-          <div className="text-slate-400 text-sm">Loading report...</div>
+          <div className="text-slate-400 text-sm">Loading your history...</div>
         </div>
       </div>
     );
   }
 
-  if (!report) {
-    return (
-      <div className="min-h-screen px-4 py-8 max-w-4xl mx-auto bg-[#0F172A] text-white">
-        <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2">← Back</button>
-        <div className="text-center py-16">
-          <div className="text-5xl mb-4">📄</div>
-          <h1 className="text-2xl font-black mb-2">No Report Yet</h1>
-          <p className="text-slate-400 mb-6">Generate your learning report to see analytics and insights.</p>
-          <button onClick={generateReport} className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-bold">Generate Report</button>
-        </div>
-      </div>
-    );
-  }
+  const hasNothing = modules.length === 0 && assessments.length === 0;
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-8 max-w-5xl mx-auto">
       <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2">← Back to Dashboard</button>
 
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-black text-white">Learning Report</h1>
-          <p className="text-slate-400 text-sm">Comprehensive analytics and insights</p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => downloadReportPDF({
-              employeeName: user.name || user.email,
-              email: user.email,
-              completionRate: report.stats?.avgScore || 0,
-              completedAssignments: report.stats?.totalSessions || 0,
-              totalAssignments: report.stats?.totalSessions || 0,
-              assignments: (report.sessions || []).map(s => ({ moduleName: s.skillName, status: 'completed', progress: s.score })),
-            })}
-            className="px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white text-sm font-medium transition-all"
-          >
-            ↓ Download PDF
-          </button>
-          <button onClick={generateReport} className="px-4 py-2 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-sm font-bold transition-all">Regenerate</button>
-        </div>
+      <div className="mb-8">
+        <h1 className="text-3xl font-black text-white">My Learning History</h1>
+        <p className="text-slate-400 text-sm">Every module and assessment you've been assigned</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-6">
-          <p className="text-xs text-indigo-400 font-bold uppercase tracking-widest mb-1">Total Sessions</p>
-          <p className="text-4xl font-black text-white">{report.stats?.totalSessions || 0}</p>
+      {hasNothing ? (
+        <div className="text-center py-16">
+          <div className="text-5xl mb-4">📄</div>
+          <h2 className="text-xl font-black mb-2">Nothing here yet</h2>
+          <p className="text-slate-400">You'll see your modules and assessments here once you're assigned some.</p>
         </div>
-        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6">
-          <p className="text-xs text-emerald-400 font-bold uppercase tracking-widest mb-1">Average Score</p>
-          <p className="text-4xl font-black text-white">{report.stats?.avgScore || 0}<span className="text-2xl text-emerald-400">%</span></p>
-        </div>
-        <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-6">
-          <p className="text-xs text-purple-400 font-bold uppercase tracking-widest mb-1">Best Score</p>
-          <p className="text-4xl font-black text-white">{report.stats?.bestScore || 0}<span className="text-2xl text-purple-400">%</span></p>
-        </div>
-      </div>
-
-      {report.goal && (
-        <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-8 mb-6">
-          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Goal Overview</h3>
-          <div className="text-lg font-bold text-white mb-1">{report.goal.goalText}</div>
-          <div className="text-sm text-slate-400">Domain: {report.goal.domainLabel} · {report.goal.totalEstimatedDays} days · {report.skillTree?.skills?.length || 0} skills</div>
-        </div>
-      )}
-
-      {report.sessions?.length > 0 && (
-        <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-8 mb-6">
-          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Recent Sessions</h3>
-          <div className="space-y-3">
-            {report.sessions.slice(0, 5).map((s, i) => (
-              <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-slate-800/40 border border-slate-700/30">
-                <div>
-                  <p className="font-semibold text-white">Day {s.day} — {s.skillName}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{s.completedAt ? new Date(s.completedAt).toLocaleDateString() : '—'}</p>
-                </div>
-                <div className="text-right">
-                  <div className="text-xl font-black text-emerald-400">{s.score}%</div>
-                  <div className="text-xs text-emerald-400/70 font-bold">{s.grade}</div>
-                </div>
+      ) : (
+        <div className="space-y-8">
+          {modules.length > 0 && (
+            <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-6 sm:p-8">
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Modules</h3>
+              <div className="space-y-3">
+                {modules.map((m, i) => (
+                  <div key={m.id || i} className="flex items-center justify-between gap-3 p-4 rounded-xl bg-slate-800/40 border border-slate-700/30">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-white truncate">{m.title || m.module_name || m.name || `Module #${i + 1}`}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Status: {m.status || 'assigned'} · Progress: {m.progress || 0}%</p>
+                    </div>
+                    <button
+                      onClick={() => navigate(`/report?moduleId=${m.assignable_id || m.module_id}&assignmentId=${m.id}`)}
+                      className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700/60 hover:text-white text-xs font-bold transition-all whitespace-nowrap"
+                    >
+                      View Report →
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {assessments.length > 0 && (
+            <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-6 sm:p-8">
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Assessments</h3>
+              <div className="space-y-3">
+                {assessments.map((a, i) => {
+                  const id = a.id || a._id;
+                  const isSubmitted = a.status === 'submitted' || a.status === 'completed';
+                  const score = a.submission?.scoring?.score ?? a.scoring?.score ?? a.score ?? null;
+                  return (
+                    <div key={id || i} className="flex items-center justify-between gap-3 p-4 rounded-xl bg-slate-800/40 border border-slate-700/30">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-white truncate">{a.title}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Status: {a.status || 'pending'}{score !== null ? ` · Score: ${Math.round(score)}%` : ''}
+                        </p>
+                      </div>
+                      {isSubmitted && id && (
+                        <button
+                          onClick={() => navigate(`/assessment/${id}`)}
+                          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700/60 hover:text-white text-xs font-bold transition-all whitespace-nowrap"
+                        >
+                          View Report →
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="text-center text-xs text-slate-500">Report generated from your learning activity</div>
+      <div className="text-center text-xs text-slate-500 mt-8">SkillForge AI · Corporate Training Platform · Confidential</div>
     </div>
   );
 }
