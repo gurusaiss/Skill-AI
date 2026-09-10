@@ -555,6 +555,10 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       return result;
     }
 
+    // Memoize per companyId+jobRole so assigning to many users in the same
+    // company/role doesn't re-run RoleLibrary's full company scan once per
+    // user (findByName → getByCompany does a fresh fetch every call).
+    const roleMatchCache = new Map();
     const employeeAssignments = (await Promise.all(
       validUsers.map(async (user) => {
         const userId = user.userId || user.id;
@@ -566,7 +570,14 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
         let resolvedSkills = user.jdSkills || [];
         if (!resolvedJD && user.jobRole) {
           try {
-            const roleMatch = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
+            const cacheKey = `${user.companyId || 'default'}|${user.jobRole.toLowerCase()}`;
+            let roleMatch;
+            if (roleMatchCache.has(cacheKey)) {
+              roleMatch = roleMatchCache.get(cacheKey);
+            } else {
+              roleMatch = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
+              roleMatchCache.set(cacheKey, roleMatch);
+            }
             if (roleMatch?.jobDescription) { resolvedJD = roleMatch.jobDescription; }
             if (!resolvedSkills.length && (roleMatch?.skills || []).length) { resolvedSkills = roleMatch.skills; }
           } catch {}

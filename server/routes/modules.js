@@ -105,10 +105,14 @@ router.get('/my-assignments', authenticate, async (req, res) => {
   try {
     const all = await ModuleAssignments.getAll();
     const assignments = all.filter(a => a.userId === req.user.userId);
-    const enriched = await Promise.all(assignments.map(async a => {
-      const mod = await db.getModuleById(a.moduleId).catch(() => null);
-      return { ...a, module: mod };
-    }));
+    // Single batched module fetch instead of one getModuleById() per
+    // assignment (N+1 — same pattern already fixed for assignment titles
+    // in assignments.js's enrichAssignmentTitles).
+    const allModules = await db.getModules().catch(() => []);
+    const moduleMap = new Map(
+      (Array.isArray(allModules) ? allModules : allModules.modules || []).map(m => [m.id || m.module_id, m])
+    );
+    const enriched = assignments.map(a => ({ ...a, module: moduleMap.get(a.moduleId) || null }));
     res.json({ success: true, data: enriched, error: null });
   } catch (e) {
     res.status(500).json({ success: false, error: { message: 'Failed to fetch assignments' } });
