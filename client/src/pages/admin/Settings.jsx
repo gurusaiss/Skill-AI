@@ -45,6 +45,50 @@ export default function Settings() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditLimit, setAuditLimit] = useState(50);
   const [auditEventType, setAuditEventType] = useState('');
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [general, setGeneral] = useState({});
+  const [security, setSecurity] = useState({});
+  const [notifications, setNotifications] = useState({});
+  const [healthInfo, setHealthInfo] = useState(null);
+
+  useEffect(() => {
+    authFetch('/api/settings')
+      .then(res => {
+        const data = res?.data ?? res;
+        if (data) {
+          setGeneral(data.general || {});
+          setSecurity(data.security || {});
+          setNotifications(data.notifications || {});
+        }
+      })
+      .catch(() => notifyError('Failed to load settings — showing defaults'))
+      .finally(() => setSettingsLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    if (activeSection !== 'agents' && activeSection !== 'integrations') return;
+    authFetch('/api/health').then(setHealthInfo).catch(() => {});
+  }, [activeSection]);
+
+  const [activeUserCount, setActiveUserCount] = useState(null);
+  useEffect(() => {
+    if (activeSection !== 'billing') return;
+    authFetch('/api/users')
+      .then(res => {
+        const data = res?.data ?? res;
+        const list = data?.users || (Array.isArray(data) ? data : []);
+        setActiveUserCount(list.filter(u => u.status !== 'inactive').length);
+      })
+      .catch(() => {});
+  }, [activeSection]);
+
+  const saveSection = (section, values) => {
+    setSaving(true);
+    authFetch(`/api/settings/${section}`, { method: 'PUT', body: JSON.stringify(values) })
+      .then(() => success('Settings saved.'))
+      .catch(err => notifyError(err.message || 'Failed to save settings'))
+      .finally(() => setSaving(false));
+  };
 
   useEffect(() => {
     if (activeSection !== 'audit') return;
@@ -110,11 +154,6 @@ export default function Settings() {
     { id: 'backup',         label: 'Backup & Restore', icon: '💾', desc: 'Database snapshots, import / export' },
   ];
 
-  const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => { setSaving(false); success('Settings saved successfully.'); }, 800);
-  };
-
   return (
     <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-8 max-w-7xl mx-auto">
       <div className="mb-8">
@@ -155,19 +194,19 @@ export default function Settings() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Platform Name</label>
-                    <input type="text" defaultValue="SkillForge AI" className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm" />
+                    <input type="text" value={general.platformName ?? ''} onChange={(e) => setGeneral(g => ({ ...g, platformName: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Tagline</label>
-                    <input type="text" defaultValue="Autonomous AI Learning Platform · 9-Agent System" className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm" />
+                    <input type="text" value={general.tagline ?? ''} onChange={(e) => setGeneral(g => ({ ...g, tagline: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Support Email</label>
-                    <input type="email" defaultValue="support@skillforge.ai" className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm" />
+                    <input type="email" value={general.supportEmail ?? ''} onChange={(e) => setGeneral(g => ({ ...g, supportEmail: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Default User Role</label>
-                    <select defaultValue="employee" className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm">
+                    <select value={general.defaultUserRole ?? 'employee'} onChange={(e) => setGeneral(g => ({ ...g, defaultUserRole: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm">
                       <option value="employee">Employee</option>
                       <option value="manager">Manager</option>
                       <option value="admin">Admin</option>
@@ -176,14 +215,19 @@ export default function Settings() {
                   <div className="flex items-center justify-between rounded-xl bg-slate-900/50 border border-slate-700/40 p-4">
                     <div>
                       <p className="text-sm font-semibold text-white">Maintenance Mode</p>
-                      <p className="text-xs text-slate-500">Block all non-admin access while updating</p>
+                      <p className="text-xs text-slate-500">Flag stored for reference — not yet wired to block requests</p>
                     </div>
-                    <button className="px-4 py-1.5 rounded-lg bg-slate-700 text-slate-300 text-xs font-bold hover:bg-slate-600">OFF</button>
+                    <button
+                      onClick={() => setGeneral(g => ({ ...g, maintenanceMode: !g.maintenanceMode }))}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-bold ${general.maintenanceMode ? 'bg-amber-600/80 text-white hover:bg-amber-600' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                    >
+                      {general.maintenanceMode ? 'ON' : 'OFF'}
+                    </button>
                   </div>
                 </div>
 
                 <div className="mt-6 flex justify-end">
-                  <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all disabled:opacity-50">
+                  <button onClick={() => saveSection('general', general)} disabled={saving || !settingsLoaded} className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all disabled:opacity-50">
                     {saving ? '⏳ Saving…' : 'Save Changes'}
                   </button>
                 </div>
@@ -195,38 +239,58 @@ export default function Settings() {
             <div className="space-y-5">
               <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
                 <h2 className="text-lg font-black text-white mb-1">Security Settings</h2>
-                <p className="text-sm text-slate-400 mb-6">Authentication, sessions, and access control policies.</p>
+                <p className="text-sm text-slate-400 mb-2">Authentication, sessions, and access control policies.</p>
+                <p className="text-xs text-amber-400/80 mb-6">
+                  Strong-password rules and login rate-limiting are always enforced platform-wide regardless of these
+                  toggles. 2FA, single-session, and IP-whitelist policies aren't built yet — these are saved for
+                  reference and future rollout.
+                </p>
 
                 <div className="space-y-4">
                   {[
-                    { label: 'Require 2FA for Admins',   desc: 'Force two-factor authentication for all admin accounts', defaultChecked: true },
-                    { label: 'Enforce Strong Passwords', desc: 'Minimum 8 chars, uppercase, number, and symbol required', defaultChecked: true },
-                    { label: 'Single Session per User',  desc: 'Invalidate older sessions when a user logs in again', defaultChecked: false },
-                    { label: 'Auto-logout after Inactivity', desc: 'End sessions after 60 minutes of inactivity', defaultChecked: true },
-                    { label: 'IP Whitelist',             desc: 'Restrict admin access to approved IP ranges', defaultChecked: false },
+                    { key: 'require2FAForAdmins',      label: 'Require 2FA for Admins',   desc: 'Force two-factor authentication for all admin accounts' },
+                    { key: 'enforceStrongPasswords',    label: 'Enforce Strong Passwords', desc: 'Minimum 8 chars, uppercase, number, and symbol required' },
+                    { key: 'singleSessionPerUser',      label: 'Single Session per User',  desc: 'Invalidate older sessions when a user logs in again' },
+                    { key: 'autoLogoutOnInactivity',    label: 'Auto-logout after Inactivity', desc: 'End sessions after the configured timeout' },
+                    { key: 'ipWhitelist',               label: 'IP Whitelist',             desc: 'Restrict admin access to approved IP ranges' },
                   ].map(item => (
-                    <label key={item.label} className="flex items-center justify-between rounded-xl bg-slate-900/50 border border-slate-700/40 p-4 cursor-pointer">
+                    <label key={item.key} className="flex items-center justify-between rounded-xl bg-slate-900/50 border border-slate-700/40 p-4 cursor-pointer">
                       <div>
                         <p className="text-sm font-semibold text-white">{item.label}</p>
                         <p className="text-xs text-slate-500 mt-0.5">{item.desc}</p>
                       </div>
-                      <input type="checkbox" defaultChecked={item.defaultChecked} className="w-5 h-5 rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-indigo-500" />
+                      <input
+                        type="checkbox"
+                        checked={!!security[item.key]}
+                        onChange={(e) => setSecurity(s => ({ ...s, [item.key]: e.target.checked }))}
+                        className="w-5 h-5 rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-indigo-500"
+                      />
                     </label>
                   ))}
 
                   <div>
                     <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Session Timeout (minutes)</label>
-                    <input type="number" defaultValue={60} className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm" />
+                    <input
+                      type="number"
+                      value={security.sessionTimeoutMinutes ?? 60}
+                      onChange={(e) => setSecurity(s => ({ ...s, sessionTimeoutMinutes: Number(e.target.value) }))}
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm"
+                    />
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Max Login Attempts</label>
-                    <input type="number" defaultValue={5} className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm" />
+                    <input
+                      type="number"
+                      value={security.maxLoginAttempts ?? 5}
+                      onChange={(e) => setSecurity(s => ({ ...s, maxLoginAttempts: Number(e.target.value) }))}
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm"
+                    />
                   </div>
                 </div>
 
                 <div className="mt-6 flex justify-end">
-                  <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all disabled:opacity-50">
+                  <button onClick={() => saveSection('security', security)} disabled={saving || !settingsLoaded} className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all disabled:opacity-50">
                     {saving ? '⏳ Saving…' : 'Save Changes'}
                   </button>
                 </div>
@@ -238,29 +302,38 @@ export default function Settings() {
             <div className="space-y-5">
               <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
                 <h2 className="text-lg font-black text-white mb-1">Notification Settings</h2>
-                <p className="text-sm text-slate-400 mb-6">Control which events trigger email or in-app notifications.</p>
+                <p className="text-sm text-slate-400 mb-2">Control which events trigger email or in-app notifications.</p>
+                <p className="text-xs text-amber-400/80 mb-6">
+                  "Manager Request Pending" is already sent unconditionally today. The others aren't wired to a
+                  trigger yet — these toggles are saved for when they are.
+                </p>
 
                 <div className="space-y-4">
                   {[
-                    { label: 'New User Registered',       desc: 'Alert admins when a new user signs up', defaultOn: true },
-                    { label: 'Module Created',             desc: 'Notify managers when a new module is published', defaultOn: true },
-                    { label: 'Assignment Completed',       desc: 'Employee finishes a module or session', defaultOn: true },
-                    { label: 'Quiz Score Below 60%',       desc: 'Alert employee and their manager on poor performance', defaultOn: true },
-                    { label: 'Manager Request Pending',    desc: 'Alert admin when a manager requests a new assignment', defaultOn: false },
-                    { label: 'Weekly Digest',              desc: 'Send a weekly summary of team activity to all managers', defaultOn: false },
+                    { key: 'newUserRegistered',    label: 'New User Registered',       desc: 'Alert admins when a new user signs up' },
+                    { key: 'moduleCreated',        label: 'Module Created',             desc: 'Notify managers when a new module is published' },
+                    { key: 'assignmentCompleted',  label: 'Assignment Completed',       desc: 'Employee finishes a module or session' },
+                    { key: 'quizScoreBelow60',     label: 'Quiz Score Below 60%',       desc: 'Alert employee and their manager on poor performance' },
+                    { key: 'managerRequestPending',label: 'Manager Request Pending',    desc: 'Alert admin when a manager requests a new assignment' },
+                    { key: 'weeklyDigest',         label: 'Weekly Digest',              desc: 'Send a weekly summary of team activity to all managers' },
                   ].map(item => (
-                    <label key={item.label} className="flex items-center justify-between rounded-xl bg-slate-900/50 border border-slate-700/40 p-4 cursor-pointer">
+                    <label key={item.key} className="flex items-center justify-between rounded-xl bg-slate-900/50 border border-slate-700/40 p-4 cursor-pointer">
                       <div>
                         <p className="text-sm font-semibold text-white">{item.label}</p>
                         <p className="text-xs text-slate-500 mt-0.5">{item.desc}</p>
                       </div>
-                      <input type="checkbox" defaultChecked={item.defaultOn} className="w-5 h-5 rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-indigo-500" />
+                      <input
+                        type="checkbox"
+                        checked={!!notifications[item.key]}
+                        onChange={(e) => setNotifications(n => ({ ...n, [item.key]: e.target.checked }))}
+                        className="w-5 h-5 rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-indigo-500"
+                      />
                     </label>
                   ))}
                 </div>
 
                 <div className="mt-6 flex justify-end">
-                  <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all disabled:opacity-50">
+                  <button onClick={() => saveSection('notifications', notifications)} disabled={saving || !settingsLoaded} className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all disabled:opacity-50">
                     {saving ? '⏳ Saving…' : 'Save Changes'}
                   </button>
                 </div>
@@ -271,53 +344,45 @@ export default function Settings() {
           {activeSection === 'agents' && (
             <div className="space-y-5">
               <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
-                <h2 className="text-lg font-black text-white mb-1">9-Agent System Settings</h2>
-                <p className="text-sm text-slate-400 mb-6">Fine-tune each specialist agent and the orchestration pipeline.</p>
+                <h2 className="text-lg font-black text-white mb-1">Agent System Status</h2>
+                <p className="text-sm text-slate-400 mb-6">
+                  Live status of the deployed agent pipeline — read-only. Per-agent temperature and model choice are
+                  fixed by the server deployment, not configurable per company.
+                </p>
 
-                {[
-                  { name: 'GoalAgent',        role: 'Goal analysis & intent recognition',           temp: '0.2' },
-                  { name: 'DecomposeAgent',   role: 'Skill tree decomposition & sequencing',        temp: '0.3' },
-                  { name: 'DiagnosticAgent',  role: 'Diagnostic quiz generation',                   temp: '0.4' },
-                  { name: 'ScoringAgent',     role: 'Gap scoring & mastery map computation',        temp: '0.1' },
-                  { name: 'CurriculumAgent',  role: '14-day roadmap builder',                       temp: '0.3' },
-                  { name: 'EvaluatorAgent',   role: 'Practice response evaluation & feedback',      temp: '0.2' },
-                  { name: 'AdaptorAgent',     role: 'Real-time plan rebalancer',                    temp: '0.4' },
-                  { name: 'MarketAgent',      role: 'Job market & career path intelligence',        temp: '0.5' },
-                  { name: 'InterviewAgent',   role: 'Interview question & scenario generation',     temp: '0.5' },
-                ].map(agent => (
-                  <div key={agent.name} className="flex items-center justify-between rounded-xl bg-slate-900/50 border border-slate-700/40 p-4 mb-3">
-                    <div>
-                      <p className="text-sm font-bold text-indigo-300">{agent.name}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{agent.role}</p>
+                {!healthInfo ? (
+                  <p className="text-sm text-slate-500">Loading live status…</p>
+                ) : (
+                  <>
+                    <div className="grid sm:grid-cols-3 gap-4 mb-5">
+                      <div className="rounded-xl border border-slate-700/40 bg-slate-900/50 p-4 text-center">
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Active Agents</p>
+                        <p className="text-xl font-black text-white">{healthInfo.agentCount ?? '—'}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-700/40 bg-slate-900/50 p-4 text-center">
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Primary Model</p>
+                        <p className="text-sm font-black text-white break-all">{healthInfo.model ?? '—'}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-700/40 bg-slate-900/50 p-4 text-center">
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Gemini Keys</p>
+                        <p className="text-xl font-black text-white">{healthInfo.geminiKeys ?? '—'}</p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500 font-bold uppercase">Temperature</span>
-                        <input type="number" step="0.1" min="0" max="1" defaultValue={agent.temp} className="w-16 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs text-center" />
-                      </label>
-                      <label className="flex items-center gap-1.5">
-                        <input type="checkbox" defaultChecked className="rounded border-slate-700 bg-slate-800 text-indigo-500" />
-                        <span className="text-xs text-slate-300">Enabled</span>
-                      </label>
+                    <div className="space-y-2">
+                      {(healthInfo.agents || []).map(name => (
+                        <div key={name} className="flex items-center justify-between rounded-xl bg-slate-900/50 border border-slate-700/40 p-3.5">
+                          <p className="text-sm font-bold text-indigo-300">{name}</p>
+                          <span className="text-xs font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Active</span>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                ))}
-
-                <div className="mt-4">
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">LLM Model</label>
-                  <select defaultValue="gpt-4o" className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm">
-                    <option value="gpt-4o">GPT-4o</option>
-                    <option value="gpt-4o-mini">GPT-4o Mini</option>
-                    <option value="o3">o3</option>
-                    <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end">
-                <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all disabled:opacity-50">
-                  {saving ? '⏳ Saving…' : 'Save Changes'}
-                </button>
+                    <div className="mt-4 flex items-center gap-3 text-xs text-slate-500">
+                      <span>Groq fallback: <strong className={healthInfo.groq?.startsWith('enabled') ? 'text-emerald-400' : 'text-slate-400'}>{healthInfo.groq}</strong></span>
+                      <span>·</span>
+                      <span>Cerebras: <strong className={healthInfo.cerebras === 'enabled' ? 'text-emerald-400' : 'text-slate-400'}>{healthInfo.cerebras}</strong></span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -326,16 +391,20 @@ export default function Settings() {
             <div className="space-y-5">
               <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
                 <h2 className="text-lg font-black text-white mb-1">Integrations</h2>
-                <p className="text-sm text-slate-400 mb-6">Connect SkillForge to your existing tools and services.</p>
+                <p className="text-sm text-slate-400 mb-6">Live connection status — read-only. Credentials are set via server environment variables, not this UI.</p>
 
                 {[
-                  { name: 'Supabase',          status: 'Connected',                                        color: 'text-emerald-400', desc: 'Primary database & auth provider',            icon: '🗄️' },
-                  { name: 'OpenAI / LLM',      status: 'Connected',                                        color: 'text-emerald-400', desc: 'AI agent model provider',                     icon: '🧠' },
-                  { name: 'Google OAuth',      status: 'Configured',                                       color: 'text-amber-400',   desc: 'Social login for users',                      icon: '🔑' },
-                  { name: 'SMTP (Email)',      status: 'Not Configured',                                   color: 'text-red-400',     desc: 'Transaction and notification emails',         icon: '📧' },
-                  { name: 'Stripe / Billing',  status: 'Not Configured',                                   color: 'text-red-400',     desc: 'Subscription and invoice payments',           icon: '💳' },
-                  { name: 'Slack / Teams',     status: 'Not Configured',                                   color: 'text-red-400',     desc: 'Push notifications to team channels',         icon: '💬' },
-                ].map(intg => (
+                  { name: 'Database',          live: healthInfo && (healthInfo.db === 'supabase'),               desc: healthInfo ? (healthInfo.db === 'supabase' ? 'Supabase (primary)' : 'File-based fallback — SUPABASE_URL not set') : 'Checking…', icon: '🗄️' },
+                  { name: 'LLM Provider',      live: healthInfo?.integrations?.llm,                              desc: healthInfo ? `${healthInfo.model || 'model'} · Groq: ${healthInfo.groq} · Cerebras: ${healthInfo.cerebras}` : 'Checking…', icon: '🧠' },
+                  { name: 'Google OAuth',      live: healthInfo?.integrations?.googleOAuth,                      desc: 'Social login for users',                      icon: '🔑' },
+                  { name: 'SMTP (Email)',      live: healthInfo?.integrations?.smtp,                             desc: 'Transaction and notification emails',         icon: '📧' },
+                  { name: 'Stripe / Billing',  live: false,                                                      desc: 'Subscription and invoice payments — not built yet', icon: '💳' },
+                  { name: 'Slack / Teams',     live: false,                                                      desc: 'Push notifications to team channels — not built yet', icon: '💬' },
+                ].map(intg => ({
+                  ...intg,
+                  status: !healthInfo ? '…' : intg.live ? 'Connected' : 'Not Configured',
+                  color: !healthInfo ? 'text-slate-500' : intg.live ? 'text-emerald-400' : 'text-red-400',
+                })).map(intg => (
                   <div key={intg.name} className="flex items-center justify-between rounded-xl bg-slate-900/50 border border-slate-700/40 p-4 mb-3">
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">{intg.icon}</span>
@@ -355,12 +424,13 @@ export default function Settings() {
             <div className="space-y-5">
               <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
                 <h2 className="text-lg font-black text-white mb-1">Billing & Plans</h2>
-                <p className="text-sm text-slate-400 mb-6">Manage subscriptions, usage limits, and invoices.</p>
+                <p className="text-sm text-slate-400 mb-2">No payment provider is integrated yet — this page is informational.</p>
+                <p className="text-xs text-slate-500 mb-6">Active Users reflects your real company headcount; Plan and Billing Period below are placeholders until a billing provider (e.g. Stripe) is connected.</p>
 
                 <div className="grid sm:grid-cols-3 gap-4 mb-6">
                   {[
                     { label: 'Current Plan', value: 'Enterprise', badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
-                    { label: 'Active Users',  value: '—',          badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
+                    { label: 'Active Users',  value: activeUserCount ?? '…', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
                     { label: 'Billing Period', value: 'Monthly',  badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
                   ].map(m => (
                     <div key={m.label} className="rounded-xl border border-slate-700/40 bg-slate-900/50 p-5 text-center">

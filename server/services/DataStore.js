@@ -426,6 +426,55 @@ export const Companies = {
   },
 };
 
+// ── PLATFORM SETTINGS ──────────────────────────────────────────────────────────
+// Per-company admin settings (General/Security/Notifications sections).
+// Kept as its own small table/file rather than nested in Companies so a
+// missing `platform_settings` Supabase table (not every deployment has run
+// the migration for it) degrades to the file fallback instead of breaking
+// company reads/writes elsewhere.
+export const PlatformSettings = {
+  async getByCompany(companyId) {
+    const key = companyId || 'default';
+    const sb = getSB();
+    if (sb) {
+      try {
+        const { data, error } = await sb.from('platform_settings').select('*').eq('company_id', key).maybeSingle();
+        if (!error) return data?.settings || {};
+      } catch (e) {
+        console.warn('[DataStore] platform_settings.getByCompany:', e.message);
+      }
+    }
+    const all = readFile('platform_settings.json');
+    const row = all.find(r => r.companyId === key);
+    return row?.settings || {};
+  },
+  // Shallow-merges `values` into settings[section] only — other sections
+  // (and other fields within the same section) are left untouched.
+  async updateSection(companyId, section, values) {
+    const key = companyId || 'default';
+    const current = await this.getByCompany(key);
+    const merged = { ...current, [section]: { ...(current[section] || {}), ...values } };
+    const sb = getSB();
+    if (sb) {
+      try {
+        const { error } = await sb.from('platform_settings').upsert(
+          { company_id: key, settings: merged, updated_at: new Date().toISOString() },
+          { onConflict: 'company_id' }
+        );
+        if (!error) return merged;
+      } catch (e) {
+        console.warn('[DataStore] platform_settings.updateSection:', e.message);
+      }
+    }
+    const all = readFile('platform_settings.json');
+    const idx = all.findIndex(r => r.companyId === key);
+    const row = { companyId: key, settings: merged, updatedAt: new Date().toISOString() };
+    if (idx >= 0) all[idx] = row; else all.push(row);
+    writeFile('platform_settings.json', all);
+    return merged;
+  },
+};
+
 // ── ORGANIZATIONS ─────────────────────────────────────────────────────────────
 
 export const Organizations = {
