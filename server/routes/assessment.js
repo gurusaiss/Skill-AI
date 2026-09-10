@@ -972,19 +972,21 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
     const allReports  = await Reports.getAll();
     let assignments   = assessment.employeeAssignments || [];
 
-    // Manager: restrict to their group employees (employeeIds stored on group object)
-    if (req.user.role === 'manager') {
+    // Non-admins: restrict to their own team. Was gated on
+    // `req.user.role === 'manager'` specifically — the router-level
+    // requireRole('admin','manager') gate already lets through anyone with
+    // manager capability via ANY path (primary role, access grant, or
+    // switched view), so an access-grant manager who hadn't happened to
+    // switch their active view to "Manager" could fall through this `if`
+    // with NO restriction applied at all and export every employee's report,
+    // not just their own team's — an over-exposure, not the usual
+    // under-exposure bug. Now applies whenever the caller isn't admin, and
+    // unions Groups with the durable manager_id path via getVisibleEmployeeIds.
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       try {
-        const { getGroups } = await import('../db/store.js');
-        const allGroups = await getGroups();
-        const myGroups  = allGroups.filter(g =>
-          g.managerId === req.user.userId &&
-          (g.companyId || 'default') === (req.user.companyId || 'default')
-        );
-        if (myGroups.length > 0) {
-          const memberIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
-          if (memberIds.size > 0) assignments = assignments.filter(ea => memberIds.has(ea.userId));
-        }
+        const memberIds = await getVisibleEmployeeIds(req.user);
+        if (memberIds.size > 0) assignments = assignments.filter(ea => memberIds.has(ea.userId));
+        else assignments = [];
       } catch {}
     }
 

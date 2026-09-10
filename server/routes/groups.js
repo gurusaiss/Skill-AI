@@ -6,6 +6,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { randomUUID } from 'crypto';
 import UserStore from '../services/UserStore.js';
 import { Groups } from '../services/DataStore.js';
+import { canActAsManager } from '../services/ManagerScope.js';
 
 const router = express.Router();
 
@@ -16,11 +17,20 @@ const router = express.Router();
 router.get('/', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const companyId = req.user.companyId || 'default';
-    const isManager = req.user.role === 'manager';
+    // Was `req.user.role === 'manager'` — for an access-grant manager whose
+    // active view isn't literally "manager" at the moment (primary role
+    // employee/admin, manager capability from an access grant), `isManager`
+    // evaluated false, which made the filter `!isManager || ...` true for
+    // EVERY group unconditionally — a company-wide group-visibility leak
+    // for anyone who passed the route's requireRole('admin','manager') gate
+    // without also being a true admin. Restriction now applies to anyone who
+    // isn't actually an admin/superadmin, regardless of which role they're
+    // currently viewing as.
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
     const all = await Groups.getAll();
     const groups = all.filter(g =>
       (g.companyId || 'default') === companyId &&
-      (!isManager || g.managerId === req.user.userId)
+      (isAdmin || g.managerId === req.user.userId)
     );
 
     // Enrich with current member count
@@ -49,7 +59,11 @@ router.get('/:id', authenticate, requireRole('admin', 'manager'), async (req, re
     if ((group.companyId || 'default') !== (req.user.companyId || 'default')) {
       return res.status(403).json({ success: false, data: null, error: 'Access denied' });
     }
-    if (req.user.role === 'manager' && group.managerId !== req.user.userId) {
+    // Same fix as GET / — was gated on the literal current role, which let an
+    // access-grant manager (or anyone not viewing-as-"manager" at that
+    // instant) view any group by ID unrestricted, bypassing the 403 entirely.
+    const isAdminReq = req.user.role === 'admin' || req.user.role === 'superadmin';
+    if (!isAdminReq && group.managerId !== req.user.userId) {
       return res.status(403).json({ success: false, data: null, error: 'Access denied — not your group' });
     }
 

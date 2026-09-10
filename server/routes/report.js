@@ -2,7 +2,7 @@ import express from 'express';
 import SmartAgent from '../agent/SmartAgent.js';
 import { authenticate } from '../middleware/auth.js';
 import UserStore from '../services/UserStore.js';
-import { Groups } from '../services/DataStore.js';
+import { getVisibleEmployeeIds, canActAsManager } from '../services/ManagerScope.js';
 
 const router = express.Router();
 const agent = new SmartAgent();
@@ -56,7 +56,10 @@ router.post('/generate', authenticate, async (req, res) => {
  */
 router.get('/all', authenticate, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    // Raw role check previously hard-rejected an access-grant manager
+    // (primary role employee, accesses:['manager']) even though they pass
+    // this same check everywhere else in the app.
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && !canActAsManager(req.user)) {
       return res.status(403).json({ success: false, data: null, error: 'Admin or manager access required' });
     }
 
@@ -81,21 +84,21 @@ router.get('/all', authenticate, async (req, res) => {
     });
 
     let targetUsers;
-    if (req.user.role === 'admin') {
+    if (req.user.role === 'admin' || req.user.role === 'superadmin') {
       const adminCompanyId = req.user.companyId || 'default';
       targetUsers = allUsers.filter(u =>
         u.role === 'employee' &&
         (adminCompanyId === 'default' || (u.companyId || 'default') === adminCompanyId)
       );
     } else {
-      // Manager: only show employees in their groups
+      // Manager: union of Groups membership AND the durable manager_id path
+      // (getVisibleEmployeeIds) — this was Groups-only, so an employee linked
+      // via the Assign Manager dropdown or bulk import (which only ever set
+      // manager_id, never created a Group) never appeared in this manager's
+      // module/assignment report list, even though the assessment-report
+      // list next to it (already fixed) showed them correctly.
       const managerCompanyId = req.user.companyId || 'default';
-      const allGroups = await Groups.getAll();
-      const myGroups = allGroups.filter(g =>
-        g.managerId === req.user.userId &&
-        (g.companyId || 'default') === managerCompanyId
-      );
-      const managerEmpIds = new Set(myGroups.flatMap(g => g.employeeIds || []));
+      const managerEmpIds = await getVisibleEmployeeIds(req.user);
       targetUsers = managerEmpIds.size === 0
         ? []
         : allUsers.filter(u =>
