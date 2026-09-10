@@ -590,6 +590,17 @@ export default function Employee() {
                           Start →
                         </button>
                       )}
+                      {isSubmitted && (
+                        // Assessment.jsx's loadAssessment already renders the
+                        // full report (score, skill breakdown, per-question
+                        // review) for a submitted assessment — this row just
+                        // had no way to get there. Previously a submitted
+                        // assessment was a dead end with no route back to it.
+                        <button onClick={() => navigate(`/assessment/${id}`)}
+                          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700/60 hover:text-white text-xs font-bold transition-all whitespace-nowrap">
+                          View Report →
+                        </button>
+                      )}
                       {isNotYet && a.assessmentDate && (
                         <span className="text-xs text-slate-600 shrink-0">
                           Opens {new Date(a.assessmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}

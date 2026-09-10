@@ -1205,9 +1205,24 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
     const results = questions.map((q, i) => {
       const userAnswer = (answers[i] || '').toString().trim().toLowerCase();
       const correctAnswer = (q.answer || '').toString().trim().toLowerCase();
-      const isCorrect = q.type === 'subjective'
-        ? userAnswer.length > 20  // subjective: any substantial answer
-        : userAnswer === correctAnswer || userAnswer.startsWith(correctAnswer.charAt(0));
+      let isCorrect;
+      if (q.type === 'subjective') {
+        isCorrect = userAnswer.length > 20; // subjective: any substantial answer
+      } else if (q.type === 'mcq') {
+        // MCQ answers are always a single letter after server-side
+        // normalization (QuestionMix.normalizeQuestionShape), so an exact
+        // match is both correct and sufficient. The previous fallback —
+        // `userAnswer.startsWith(correctAnswer.charAt(0))` — was only inert
+        // by coincidence (a normalized answer's first character equals
+        // itself); against any non-normalized/legacy question where `answer`
+        // is full option text ("b) some option"), it could mark a correct
+        // pick wrong or a wrong pick right depending on shared first letters.
+        // Extracting the letter from either shape removes that fragility.
+        const letterOf = (s) => (s.match(/^[a-d]\)?/) || [s.charAt(0)])[0].replace(')', '');
+        isCorrect = letterOf(userAnswer) === letterOf(correctAnswer);
+      } else {
+        isCorrect = userAnswer === correctAnswer;
+      }
       if (isCorrect) correct++;
       return { ...q, userAnswer: answers[i] || '', isCorrect };
     });
