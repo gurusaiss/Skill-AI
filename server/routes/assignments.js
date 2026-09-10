@@ -15,7 +15,7 @@ async function canAccessAssignment(actor, assignedUserId) {
   const actorId = actor.userId || actor.id;
   if (actorId && assignedUserId && actorId === assignedUserId) return true;
   if (actor.role === 'superadmin') return true;
-  if (actor.role !== 'admin' && actor.role !== 'manager') return false;
+  if (actor.role !== 'admin' && !canActAsManager(actor)) return false;
   const actorCompany = actor.companyId || 'default';
   if (actorCompany === 'default') return true;
   try {

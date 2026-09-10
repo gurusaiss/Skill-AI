@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import UserStore from '../services/UserStore.js';
 import { ApprovalRequests } from '../services/DataStore.js';
 import * as db from '../db/store.js';
+import { canActAsManager } from '../services/ManagerScope.js';
 
 const router = express.Router();
 
@@ -81,7 +82,8 @@ router.post('/', authenticate, requireRole('manager', 'admin'), async (req, res)
  */
 router.get('/', authenticate, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    const isAdminReq = req.user.role === 'admin' || req.user.role === 'superadmin';
+    if (!isAdminReq && !canActAsManager(req.user)) {
       return res.status(403).json({ success: false, data: null, error: 'Access denied' });
     }
 
@@ -89,7 +91,7 @@ router.get('/', authenticate, async (req, res) => {
     const companyId = req.user.companyId || 'default';
 
     let requests;
-    if (req.user.role === 'admin') {
+    if (isAdminReq) {
       requests = all.filter(a => a.companyId === companyId);
     } else {
       // Manager sees only their own requests
