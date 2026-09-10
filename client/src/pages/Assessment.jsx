@@ -816,9 +816,27 @@ export default function Assessment() {
                 </span>
               ) : 'Submit Assessment'}
             </button>
-            {!allAnswered() && (
-              <p className="mt-2 text-xs text-slate-500">Answer all questions to submit</p>
-            )}
+            {!allAnswered() && (() => {
+              const firstUnansweredIdx = questions.findIndex((_, idx) => {
+                const ans = answers[idx];
+                return ans === undefined || ans === null || String(ans).trim() === '';
+              });
+              const firstUnansweredPage = Math.floor(firstUnansweredIdx / QUESTIONS_PER_PAGE);
+              const isOnAnotherPage = paginated && firstUnansweredPage !== safePage;
+              return (
+                <div className="mt-3 flex flex-col items-center gap-2">
+                  <p className="text-xs text-slate-500">Answer all questions to submit</p>
+                  {isOnAnotherPage && (
+                    <button
+                      onClick={() => { setPage(firstUnansweredPage); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                      className="text-xs font-semibold text-amber-400 hover:text-amber-300 underline underline-offset-2"
+                    >
+                      Go to page {firstUnansweredPage + 1} — question {firstUnansweredIdx + 1} is unanswered
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
