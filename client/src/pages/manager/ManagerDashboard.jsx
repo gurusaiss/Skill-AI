@@ -434,6 +434,26 @@ export default function ManagerDashboard() {
                 </div>
               </div>
 
+              {(() => {
+                const empId = selectedEmployee.userId || selectedEmployee.id;
+                const empReport = assessmentReports.find(r => r.userId === empId);
+                if (!empReport) return null;
+                const scoreColor = (empReport.score || 0) >= 80 ? 'text-emerald-400' : (empReport.score || 0) >= 60 ? 'text-amber-400' : 'text-red-400';
+                return (
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Assessment Report</h3>
+                    <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 flex items-center justify-between gap-4">
+                      <div>
+                        <p className={`text-2xl font-black ${scoreColor}`}>{empReport.score || 0}%<span className="text-slate-500 text-sm font-bold ml-2">{empReport.grade}</span></p>
+                        {empReport.weakAreas?.length > 0 && (
+                          <p className="text-xs text-amber-400 mt-1">⚠ Weak areas: {empReport.weakAreas.join(', ')}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div>
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Assignments</h3>
                 {employeeDetailLoading ? (
