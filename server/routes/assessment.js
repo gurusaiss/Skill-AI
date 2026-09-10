@@ -2087,6 +2087,33 @@ router.post('/:id/submit', authenticate, async (req, res) => {
 
     await Reports.create(report);
 
+    // Upgrade the template improvementRecommendations to genuinely specific,
+    // AI-generated guidance in the background — submission must not wait on
+    // an LLM call. The template already saved above is a perfectly usable
+    // placeholder if this never completes (LLM down, etc.).
+    if (scoring.weakAreas?.length > 0) {
+      setImmediate(async () => {
+        try {
+          const cacheKey = `improvement_recs_${LLMCache.hash(JSON.stringify(scoring.weakAreas) + (assignment.jobRole || ''))}`;
+          let recommendations = LLMCache.get(cacheKey);
+          if (!recommendations) {
+            const prompt = `An employee in the role "${assignment.jobRole || 'this position'}" scored weak on these specific skill areas from an assessment: ${scoring.weakAreas.map(a => `"${a}"`).join(', ')}.
+For EACH weak area, write one concrete, specific improvement recommendation (1-2 sentences) — name actual practice methods, resources, or exercises relevant to that skill, not generic advice like "practice more". Return ONLY a JSON object: {"recommendations": ["...", "..."]} with exactly ${scoring.weakAreas.length} items, in the same order as the weak areas listed.`;
+            const result = await GeminiService.generateJSONFast(prompt);
+            if (Array.isArray(result?.recommendations) && result.recommendations.length === scoring.weakAreas.length) {
+              recommendations = result.recommendations;
+              LLMCache.set(cacheKey, recommendations, LLMCache.TTL.MODULE);
+            }
+          }
+          if (recommendations) {
+            await Reports.update(report.id, { improvementRecommendations: recommendations });
+          }
+        } catch (e) {
+          console.warn('[assessment submit] AI improvement recommendations failed, template stays:', e.message);
+        }
+      });
+    }
+
     // Persist updated assessment to Supabase
     await Assessments.update(req.params.id, {
       employeeAssignments: updatedAssignments,
