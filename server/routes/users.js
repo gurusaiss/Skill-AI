@@ -31,7 +31,7 @@ function canAccessUser(actor, target) {
   const targetId = target.userId || target.id;
   if (actorId && targetId && actorId === targetId) return true;
   if (actor.role === 'superadmin') return true;
-  if (actor.role === 'admin' || actor.role === 'manager') {
+  if (actor.role === 'admin' || canActAsManager(actor)) {
     const actorCompany = actor.companyId || 'default';
     const targetCompany = target.companyId || 'default';
     // Single-tenant default installs: admins in 'default' retain full visibility.
@@ -358,8 +358,8 @@ router.get('/role-counts', authenticate, requireRole('admin', 'manager'), async 
  */
 router.get('/', authenticate, async (req, res) => {
   try {
-    const isAdmin = req.user.role === 'admin';
-    const isManager = req.user.role === 'manager';
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    const isManager = !isAdmin && canActAsManager(req.user);
     if (!isAdmin && !isManager) {
       return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
     }
@@ -474,8 +474,13 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       }
     }
 
-    // Managers can only create employees
-    const assignedRole = (req.user.role === 'manager') ? 'employee' : (role || 'employee');
+    // Non-admins (managers, including access-grant managers not currently
+    // viewing as "manager") can only create employees — gating this on the
+    // raw current role let an access-grant manager viewing as "employee"
+    // set an arbitrary role, since requireRole('admin','manager') above
+    // already passes them on capability, not current view.
+    const isAdminActor = req.user.role === 'admin' || req.user.role === 'superadmin';
+    const assignedRole = isAdminActor ? (role || 'employee') : 'employee';
     // Generate a real temporary password — admin can share it directly, and/or
     // share the activation link below. Either path forces a real password to be
     // set before normal login proceeds (see mustChangePassword).
@@ -642,8 +647,8 @@ router.get('/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
     const isSelf = req.user.userId === userId;
-    const isAdmin = req.user.role === 'admin';
-    const isManager = req.user.role === 'manager';
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    const isManager = !isAdmin && canActAsManager(req.user);
 
     if (!isSelf && !isAdmin && !isManager) {
       return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
@@ -672,8 +677,8 @@ router.put('/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
     const isSelf = req.user.userId === userId;
-    const isAdmin = req.user.role === 'admin';
-    const isManager = req.user.role === 'manager';
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    const isManager = !isAdmin && canActAsManager(req.user);
 
     if (!isSelf && !isAdmin && !isManager) {
       return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Cannot update this user' } });
@@ -784,8 +789,8 @@ router.post('/:userId/jd-upload', authenticate, jdUpload.single('jd'), async (re
   try {
     const { userId } = req.params;
     const isSelf = req.user.userId === userId;
-    const isAdmin = req.user.role === 'admin';
-    const isManager = req.user.role === 'manager';
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    const isManager = !isAdmin && canActAsManager(req.user);
 
     if (!isSelf && !isAdmin && !isManager) {
       return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
@@ -872,8 +877,8 @@ router.post('/:userId/jd-url', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
     const isSelf = req.user.userId === userId;
-    const isAdmin = req.user.role === 'admin';
-    const isManager = req.user.role === 'manager';
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    const isManager = !isAdmin && canActAsManager(req.user);
 
     if (!isSelf && !isAdmin && !isManager) {
       return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
@@ -951,8 +956,8 @@ router.get('/:userId/jd', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
     const isSelf = req.user.userId === userId;
-    const isAdmin = req.user.role === 'admin';
-    const isManager = req.user.role === 'manager';
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    const isManager = !isAdmin && canActAsManager(req.user);
 
     if (!isSelf && !isAdmin && !isManager) {
       return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Access denied' } });
@@ -1204,8 +1209,8 @@ router.get('/:userId/jd-file', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
     const isSelf = req.user.userId === userId;
-    const isAdmin = req.user.role === 'admin';
-    const isManager = req.user.role === 'manager';
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    const isManager = !isAdmin && canActAsManager(req.user);
     if (!isSelf && !isAdmin && !isManager) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
@@ -1424,7 +1429,12 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
       try {
         const ALLOWED_IMPORT_ROLES = ['employee', 'manager', 'trainer', 'leadership'];
         const requestedRole = (row.role || 'employee').toLowerCase();
-        const assignedRole = req.user.role === 'manager'
+        // Gate on capability (canActAsManager), not the currently-active
+        // X-Active-Role view — an access-grant manager viewing as "employee"
+        // must not be able to bulk-import a 'manager'/'leadership' row just
+        // because req.user.role happens not to say "manager" right now.
+        const isAdminImporter = req.user.role === 'admin' || req.user.role === 'superadmin';
+        const assignedRole = !isAdminImporter
           ? (['employee', 'trainer'].includes(requestedRole) ? requestedRole : 'employee')
           : (ALLOWED_IMPORT_ROLES.includes(requestedRole) ? requestedRole : 'employee');
         // Generate a real unique password — admin gets it in the credential Excel
