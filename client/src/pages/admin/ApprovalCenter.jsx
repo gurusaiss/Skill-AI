@@ -103,7 +103,7 @@ export default function ApprovalCenter() {
         authFetch('/api/assignments/requests'),
         authFetch('/api/approvals'),
         authFetch('/api/users'),
-        authFetch('/api/modules'),
+        authFetch('/api/modules?limit=1000'),
       ]);
 
       setAssignmentRequests(

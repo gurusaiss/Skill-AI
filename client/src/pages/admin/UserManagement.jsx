@@ -1997,7 +1997,7 @@ export default function UserManagement() {
       const [usersData, assignmentsData, modulesData] = await Promise.allSettled([
         authFetch('/api/users'),
         authFetch('/api/assignments'),
-        authFetch('/api/modules'),
+        authFetch('/api/modules?limit=1000'),
       ]);
       if (usersData.status === 'fulfilled') {
         const u = usersData.value;

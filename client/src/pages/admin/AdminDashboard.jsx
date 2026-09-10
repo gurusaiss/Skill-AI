@@ -461,7 +461,7 @@ export default function AdminDashboard() {
 
       const [usersRes, modulesRes, assignmentsRes, requestsRes, reportsRes] = await Promise.allSettled([
         authFetch('/api/users'),
-        authFetch('/api/modules'),
+        authFetch('/api/modules?limit=1000'),
         authFetch('/api/assignments'),
         authFetch('/api/assignments/requests'),
         authFetch('/api/assessments/reports/all').catch(() => []),

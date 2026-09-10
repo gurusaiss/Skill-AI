@@ -87,7 +87,7 @@ export default function MetricsDashboard() {
         authFetch('/api/admin/dashboard'),
         authFetch('/api/health'),
         authFetch('/api/recommendations/metrics'),
-        authFetch('/api/modules'),
+        authFetch('/api/modules?limit=1000'),
       ]);
 
       if (admin.status === 'fulfilled' && admin.value) setAdminData(admin.value);
