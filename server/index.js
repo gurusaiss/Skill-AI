@@ -51,6 +51,9 @@ import approvalsRouter from './routes/approvals.js';
 import groupsRouter from './routes/groups.js';
 import recommendationsRouter from './routes/recommendations.js';
 import rolesRouter from './routes/roles.js';
+import settingsRouter from './routes/settings.js';
+import emailService from './services/EmailService.js';
+import oauthService from './services/OAuthService.js';
 import { autoSeed } from './utils/autoSeed.js';
 import { migrateDB } from './utils/migrateDB.js';
 import { migrateDefaultUsersToGSS } from './utils/migrateGSS.js';
@@ -239,6 +242,12 @@ app.get('/api/health', (req, res) => {
       timestamp: new Date().toISOString(),
       db: process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'placeholder' ? 'supabase' : 'file',
       llm: geminiService.getStats(),
+      integrations: {
+        supabase: process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'placeholder',
+        llm: geminiEnabled || groqEnabled,
+        googleOAuth: oauthService.isGoogleConfigured(),
+        smtp: emailService.isEnabled(),
+      },
     },
   });
 });
@@ -305,6 +314,7 @@ app.use('/api/memory', memoryRouter);
 app.use('/api/agent-control', agentControlRouter);
 app.use('/api/recommendations', recommendationsRouter);
 app.use('/api/roles', rolesRouter);
+app.use('/api/settings', settingsRouter);
 
 // ── Autonomous Agent Brief routes (authenticated — own data only) ───────────
 app.get('/api/brief/:userId', authenticate, (req, res) => {
