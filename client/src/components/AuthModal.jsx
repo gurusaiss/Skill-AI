@@ -47,8 +47,20 @@ const AuthModal = ({ isOpen, onClose }) => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [matchedRole, setMatchedRole] = useState(null);
 
-  const { login, register, getDashboardRoute } = useAuth();
+  const { login, register, completePasswordChange, getDashboardRoute } = useAuth();
   const navigate = useNavigate();
+
+  // Set when the backend reports mustChangePassword (new account, or an
+  // admin-regenerated temp password) — login() then returns success:true
+  // with no token, so this must be handled explicitly, not treated as a
+  // completed login. Previously it wasn't: handleLogin only checked
+  // result?.success, closed the modal, and navigated to the dashboard
+  // with no session ever established — the route guard would silently
+  // bounce the user right back to the home page with no visible error,
+  // exactly like login "not working" for a brand-new account.
+  const [forcedChange, setForcedChange] = useState(null); // { email, currentPassword }
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
   // Reset when modal opens/closes
   useEffect(() => {
@@ -60,6 +72,9 @@ const AuthModal = ({ isOpen, onClose }) => {
       setCodeStatus(null);
       setRoleOptions([]);
       setMatchedRole(null);
+      setForcedChange(null);
+      setNewPassword('');
+      setConfirmNewPassword('');
     }
   }, [isOpen]);
 
@@ -105,11 +120,32 @@ const AuthModal = ({ isOpen, onClose }) => {
     setLoading(true); setError('');
     try {
       const result = await login(formData.email, formData.password);
+      if (result?.requiresPasswordChange) {
+        setForcedChange({ email: result.email || formData.email, currentPassword: formData.password });
+        return;
+      }
       if (result?.success) { onClose(); navigate(getDashboardRoute()); }
       else setError(result?.error?.message || 'Invalid email or password.');
     } catch (err) {
       setError(err.message || 'Login failed.');
     } finally { setLoading(false); }
+  };
+
+  const handleCompletePasswordChange = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (newPassword.length < 8) { setError('New password must be at least 8 characters'); return; }
+    if (newPassword !== confirmNewPassword) { setError('Passwords do not match'); return; }
+    setLoading(true);
+    try {
+      await completePasswordChange(forcedChange.email, forcedChange.currentPassword, newPassword);
+      onClose();
+      navigate(getDashboardRoute());
+    } catch (err) {
+      setError(err.message || 'Failed to update password');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSignup = async (e) => {
@@ -170,7 +206,7 @@ const AuthModal = ({ isOpen, onClose }) => {
             {/* Header */}
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-lg font-black text-white">
-                {isSignup ? '✨ Create Account' : '🔐 Sign In'}
+                {forcedChange ? '🔐 Set New Password' : isSignup ? '✨ Create Account' : '🔐 Sign In'}
               </h3>
               <button
                 onClick={onClose}
@@ -190,6 +226,35 @@ const AuthModal = ({ isOpen, onClose }) => {
               </div>
             )}
 
+            {/* ── FORCED PASSWORD CHANGE (new account / admin-regenerated temp password) ── */}
+            {forcedChange ? (
+              <>
+                <div className="mb-4 p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-sm">
+                  🔐 For your security, please create a new password before continuing.
+                </div>
+                <form onSubmit={handleCompletePasswordChange} className="space-y-4">
+                  <div>
+                    <label className={labelCls}>New Password</label>
+                    <input type="password" required value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                      className={inputCls} placeholder="At least 8 characters" disabled={loading} autoFocus />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Confirm New Password</label>
+                    <input type="password" required value={confirmNewPassword} onChange={e => setConfirmNewPassword(e.target.value)}
+                      className={inputCls} placeholder="Re-enter new password" disabled={loading} />
+                  </div>
+                  <button type="submit" disabled={loading}
+                    className="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
+                    {loading ? '⏳ Updating…' : 'Set New Password & Continue'}
+                  </button>
+                  <button type="button" onClick={() => { setForcedChange(null); setNewPassword(''); setConfirmNewPassword(''); setError(''); }}
+                    className="w-full text-center text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                    ← Back to Sign In
+                  </button>
+                </form>
+              </>
+            ) : (
+            <>
             {/* ── LOGIN FORM ── */}
             {!isSignup && (
               <form onSubmit={handleLogin} className="space-y-4">
@@ -359,6 +424,8 @@ const AuthModal = ({ isOpen, onClose }) => {
               </svg>
               Google
             </button>
+            </>
+            )}
 
           </div>
         </motion.div>
