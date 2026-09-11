@@ -461,19 +461,6 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       return res.status(409).json({ success: false, data: null, error: { code: 'USER_EMAIL_EXISTS', message: 'Email already registered' } });
     }
 
-    // Validate manager reference up-front (before creating the user) so a
-    // bad manager email fails loudly instead of silently creating a broken
-    // relationship — same validation the bulk-import path already applies.
-    let managerRecord = null;
-    let managerError = null;
-    if (managerEmail) {
-      managerRecord = await UserStore.getUserByEmail(managerEmail);
-      if (!managerRecord || !['manager', 'admin'].includes(managerRecord.role)) {
-        managerError = `Manager "${raw.managerEmail}" not found or not a manager role`;
-        managerRecord = null;
-      }
-    }
-
     // Non-admins (managers, including access-grant managers not currently
     // viewing as "manager") can only create employees — gating this on the
     // raw current role let an access-grant manager viewing as "employee"
@@ -481,6 +468,23 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
     // already passes them on capability, not current view.
     const isAdminActor = req.user.role === 'admin' || req.user.role === 'superadmin';
     const assignedRole = isAdminActor ? (role || 'employee') : 'employee';
+
+    // A manager is required for every employee add — mirrors bulk-import's
+    // rule (manager/admin rows sit at the top of the chain and don't need
+    // one; every employee does). Validated up-front, before creating the
+    // user, so a bad or missing manager fails loudly instead of silently
+    // creating an unlinked employee.
+    let managerRecord = null;
+    if (assignedRole === 'employee') {
+      if (!managerEmail) {
+        return res.status(400).json({ success: false, data: null, error: { code: 'USER_MANAGER_REQUIRED', message: 'A manager is required for employee accounts' } });
+      }
+      managerRecord = await UserStore.getUserByEmail(managerEmail);
+      if (!managerRecord || !['manager', 'admin'].includes(managerRecord.role)) {
+        return res.status(400).json({ success: false, data: null, error: { code: 'USER_MANAGER_INVALID', message: `Manager "${raw.managerEmail}" not found or not a manager role` } });
+      }
+    }
+    let managerError = null;
     // Generate a real temporary password — admin can share it directly, and/or
     // share the activation link below. Either path forces a real password to be
     // set before normal login proceeds (see mustChangePassword).
@@ -500,18 +504,25 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
       companyName: companyName || '',
       companyId: req.user.companyId || 'default',
     });
-    // Best-effort: mark forced-password-change (new optional column — must not
-    // block user creation if the migration hasn't been applied yet).
-    UserStore.updateUser(user.userId, { mustChangePassword: true }).catch(() => {});
-
-    if (managerRecord) {
-      try {
-        await UserStore.updateUser(user.userId, { managerId: managerRecord.userId });
+    // Combined into ONE updateUser call — the file-fallback store does a
+    // read-modify-write on the whole user record, so two concurrent
+    // updateUser calls for the same userId (this used to be an unawaited
+    // mustChangePassword write racing an awaited managerId write) silently
+    // lose whichever one wrote first. That's exactly how a manager
+    // selected on Create User was being dropped: mustChangePassword
+    // consistently won the race and managerId never persisted.
+    const postCreateUpdates = { mustChangePassword: true };
+    if (managerRecord) postCreateUpdates.managerId = managerRecord.userId;
+    try {
+      await UserStore.updateUser(user.userId, postCreateUpdates);
+      user.mustChangePassword = true;
+      if (managerRecord) {
         await UserStore.assignEmployeesToManager(managerRecord.userId, [user.userId], req.user.userId).catch(() => {});
         user.managerId = managerRecord.userId;
-      } catch (e) {
-        managerError = e.message;
       }
+    } catch (e) {
+      console.warn('[users] post-create update failed:', e.message);
+      if (managerRecord) managerError = e.message;
     }
 
     await UserStore.logAuthEvent('user_created_by_admin', user.userId, {
