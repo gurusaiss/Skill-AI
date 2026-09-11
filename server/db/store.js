@@ -1,9 +1,25 @@
 import { createClient } from '@supabase/supabase-js';
 import { readFile, writeFile, rename, access, mkdir } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { GeneratedModules } from '../services/DataStore.js';
+import * as mysqlDb from './mysql.js';
 
-const DATA_DIR = join(new URL('..', import.meta.url).pathname, 'data');
+// Same opt-in contract as DataStore.js/UserStore.js: unset DB_BACKEND (the
+// default) leaves every existing Supabase/file behavior in this file
+// completely untouched. Supabase keeps working exactly as it does today
+// until DB_BACKEND=mysql is explicitly set.
+function useMySQL() {
+  return process.env.DB_BACKEND === 'mysql' && !!mysqlDb.getPool();
+}
+
+// new URL('..', import.meta.url).pathname produces a leading-slash path on
+// Windows (e.g. /D:/HACKap/server) which join() then treats as relative,
+// prepending the cwd's own drive on top (D:\D:\HACKap\...) — the same
+// fileURLToPath+dirname pattern DataStore.js/UserStore.js already use
+// avoids that entirely.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const DATA_DIR = join(__dirname, '../data');
 let supabase = null;
 let enabled = false;
 
@@ -105,6 +121,12 @@ async function writeJsonFile(path, data) {
 
 // Content: Packages
 export async function getPackages(filters = {}) {
+  if (useMySQL()) {
+    const rows = filters.category
+      ? await mysqlDb.selectWhere('packages', { category: filters.category })
+      : await mysqlDb.selectAll('packages');
+    return (rows || []).map(r => ({ ...r, ...(r.extra || {}) }));
+  }
   if (isOn()) {
     let qb = supabase.from('packages').select('*');
     if (filters.category) qb = qb.eq('category', filters.category);
@@ -212,7 +234,14 @@ function toSupabaseModule(module, createdBy, id) {
 
 export async function getModules(filters = {}) {
   let flatModules = [];
-  if (isOn()) {
+  if (useMySQL()) {
+    const where = {};
+    if (filters.category) where.category = filters.category;
+    if (filters.difficulty) where.difficulty = filters.difficulty;
+    if (filters.companyId) where.company_id = filters.companyId;
+    const rows = await mysqlDb.selectWhere('modules', where);
+    flatModules = (rows || []).map(normalizeModule);
+  } else if (isOn()) {
     let qb = supabase.from('modules').select('*');
     if (filters.category) qb = qb.eq('category', filters.category);
     if (filters.difficulty) qb = qb.eq('difficulty', filters.difficulty);
@@ -242,7 +271,10 @@ export async function getModules(filters = {}) {
 }
 
 export async function getModuleById(id) {
-  if (isOn()) {
+  if (useMySQL()) {
+    const row = await mysqlDb.selectById('modules', id, 'id');
+    if (row) return normalizeModule(row);
+  } else if (isOn()) {
     // maybeSingle() returns null (not error) when no row matches
     const { data, error } = await supabase.from('modules').select('*').eq('id', id).maybeSingle();
     if (error && error.code !== 'PGRST116') throw error;
@@ -261,7 +293,12 @@ export async function getModuleById(id) {
 export async function getModulesByIds(ids) {
   if (!ids?.length) return [];
   let found = [];
-  if (isOn()) {
+  if (useMySQL()) {
+    const pool = mysqlDb.getPool();
+    const placeholders = ids.map(() => '?').join(', ');
+    const [rows] = await pool.query(`SELECT * FROM \`modules\` WHERE \`id\` IN (${placeholders})`, ids);
+    found = (rows || []).map(normalizeModule);
+  } else if (isOn()) {
     const { data, error } = await supabase.from('modules').select('*').in('id', ids);
     if (!error) found = (data || []).map(normalizeModule);
   }
@@ -284,6 +321,18 @@ export async function getModulesByIds(ids) {
 export async function createModule(module, createdBy) {
   const { randomUUID } = await import('crypto');
   const id = `mod_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+
+  // MySQL's schema (sql/mysql_schema.sql) is created fresh and complete, so
+  // none of the defensive missing-column/FK retry logic the Supabase branch
+  // below needs (that complexity exists only because the LIVE Supabase
+  // schema drifted from its own migration files over time) is needed here.
+  if (useMySQL()) {
+    const payload = toSupabaseModule(module, createdBy, id);
+    payload.created_at = new Date().toISOString();
+    payload.updated_at = payload.created_at;
+    await mysqlDb.upsertRow('modules', payload);
+    return normalizeModule(payload);
+  }
 
   if (isOn()) {
     const payload = toSupabaseModule(module, createdBy, id);
@@ -384,6 +433,45 @@ export async function syncFileModulesToSupabase() {
 }
 
 export async function updateModule(id, updates) {
+  if (useMySQL()) {
+    const row = {};
+    if (updates.title !== undefined) row.title = updates.title;
+    if (updates.description !== undefined) row.description = updates.description;
+    if (updates.category !== undefined) row.category = updates.category;
+    if (updates.difficulty !== undefined) row.difficulty = updates.difficulty;
+    if (updates.estimatedDuration !== undefined) row.estimated_duration = parseInt(updates.estimatedDuration) || 30;
+    if (updates.skills !== undefined) row.skills = updates.skills;
+    if (updates.tasks !== undefined) row.tasks = updates.tasks;
+    if (updates.resources !== undefined) row.resources = updates.resources;
+    if (updates.completionCriteria !== undefined) row.completion_criteria = updates.completionCriteria;
+    if (updates.companyId !== undefined) row.company_id = updates.companyId;
+    if (updates.company_id !== undefined) row.company_id = updates.company_id;
+    if (updates.sessions !== undefined || updates.content !== undefined || updates.targetRoles !== undefined || updates.progressTracking !== undefined) {
+      const existing = await mysqlDb.selectById('modules', id, 'id');
+      const existingContent = existing?.content || {};
+      row.content = {
+        ...existingContent,
+        ...(updates.content || {}),
+        ...(updates.sessions !== undefined ? { sessions: updates.sessions } : {}),
+        ...(updates.targetRoles !== undefined ? { targetRoles: Array.isArray(updates.targetRoles) ? updates.targetRoles : [] } : {}),
+        ...(updates.progressTracking !== undefined ? { progressTracking: updates.progressTracking } : {}),
+      };
+    }
+    row.updated_at = new Date().toISOString();
+    const pool = mysqlDb.getPool();
+    const [result] = await pool.query(
+      `UPDATE \`modules\` SET ${Object.keys(row).map(c => `\`${c}\` = ?`).join(', ')} WHERE \`id\` = ?`,
+      [...Object.values(row).map(v => (v !== null && typeof v === 'object') ? JSON.stringify(v) : v), id]
+    );
+    if (result.affectedRows > 0) {
+      return normalizeModule(await mysqlDb.selectById('modules', id, 'id'));
+    }
+    // Not in the flat modules table — same JSONB/file fallback the
+    // Supabase branch below uses for a module stranded in generated_modules.
+    const dsUpdated = await GeneratedModules.update(id, jsonbUpdatePayload(updates)).catch(() => null);
+    if (dsUpdated) return reconcileModuleFields(dsUpdated);
+    return null;
+  }
   if (isOn()) {
     // Normalize updates to snake_case for Supabase
     const sbUpdates = {};
@@ -453,7 +541,11 @@ export async function updateModule(id, updates) {
 }
 
 export async function deleteModule(id) {
-  if (isOn()) {
+  if (useMySQL()) {
+    const deleted = await mysqlDb.deleteRow('modules', id, 'id');
+    if (deleted) return true;
+    // fall through to check the JSONB/file fallback locations below
+  } else if (isOn()) {
     // .delete() succeeds with an empty result (no error) even when no row
     // matches — checking rows-affected via .select() first, same asymmetry
     // as updateModule() above: a module actually stored in the
@@ -483,7 +575,28 @@ export async function deleteModule(id) {
   return false;
 }
 
+// packages/skill_packages/learning_tracks are opaque pass-through tables —
+// only `id`/`category`/`created_by` are real columns, everything else the
+// caller passes goes into the `extra` JSON column and is spread back out
+// on read (see getPackages above).
+function splitPackageRow(obj, knownCols) {
+  const row = {};
+  const extra = {};
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (knownCols.includes(k)) row[k] = v;
+    else extra[k] = v;
+  }
+  row.extra = extra;
+  return row;
+}
+
 export async function createPackage(pkg, createdBy) {
+  if (useMySQL()) {
+    const id = pkg.id || `pkg_${Date.now()}`;
+    const row = { id, created_by: createdBy, created_at: new Date().toISOString(), ...splitPackageRow(pkg, ['id', 'category']) };
+    await mysqlDb.insertRow('packages', row);
+    return { ...row, ...row.extra };
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('packages').insert([{ ...pkg, created_by: createdBy }]).select().single();
     if (error) throw error;
@@ -500,6 +613,16 @@ export async function createPackage(pkg, createdBy) {
 }
 
 export async function updatePackage(id, updates) {
+  if (useMySQL()) {
+    const existing = await mysqlDb.selectById('packages', id, 'id');
+    if (!existing) return null;
+    const row = splitPackageRow(updates, ['category']);
+    row.extra = { ...(existing.extra || {}), ...row.extra }; // merge, don't replace — a partial update must not drop prior extra fields
+    row.updated_at = new Date().toISOString();
+    await mysqlDb.updateRow('packages', id, row, 'id');
+    const updated = await mysqlDb.selectById('packages', id, 'id');
+    return updated ? { ...updated, ...(updated.extra || {}) } : null;
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('packages').update(updates).eq('id', id).select().single();
     if (error) throw error;
@@ -515,6 +638,9 @@ export async function updatePackage(id, updates) {
 }
 
 export async function deletePackage(id) {
+  if (useMySQL()) {
+    return await mysqlDb.deleteRow('packages', id, 'id');
+  }
   if (isOn()) {
     const { error } = await supabase.from('packages').delete().eq('id', id);
     if (error) throw error;
@@ -531,6 +657,10 @@ export async function deletePackage(id) {
 
 // Skill packages
 export async function getSkillPackages(filters = {}) {
+  if (useMySQL()) {
+    const rows = await mysqlDb.selectAll('skill_packages');
+    return (rows || []).map(r => ({ ...r, ...(r.extra || {}) }));
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('skill_packages').select('*');
     if (error) throw error;
@@ -541,6 +671,12 @@ export async function getSkillPackages(filters = {}) {
 }
 
 export async function createSkillPackage(pkg, createdBy) {
+  if (useMySQL()) {
+    const id = pkg.id || `sp_${Date.now()}`;
+    const row = { id, created_by: createdBy, created_at: new Date().toISOString(), ...splitPackageRow(pkg, ['id']) };
+    await mysqlDb.insertRow('skill_packages', row);
+    return { ...row, ...row.extra };
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('skill_packages').insert([{ ...pkg, created_by: createdBy }]).select().single();
     if (error) throw error;
@@ -557,6 +693,15 @@ export async function createSkillPackage(pkg, createdBy) {
 }
 
 export async function updateSkillPackage(id, updates) {
+  if (useMySQL()) {
+    const existing = await mysqlDb.selectById('skill_packages', id, 'id');
+    if (!existing) return null;
+    const row = splitPackageRow(updates, []);
+    row.extra = { ...(existing.extra || {}), ...row.extra };
+    await mysqlDb.updateRow('skill_packages', id, row, 'id');
+    const updated = await mysqlDb.selectById('skill_packages', id, 'id');
+    return updated ? { ...updated, ...(updated.extra || {}) } : null;
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('skill_packages').update(updates).eq('id', id).select().single();
     if (error) throw error;
@@ -573,6 +718,10 @@ export async function updateSkillPackage(id, updates) {
 
 // Learning tracks
 export async function getLearningTracks(filters = {}) {
+  if (useMySQL()) {
+    const rows = await mysqlDb.selectAll('learning_tracks');
+    return (rows || []).map(r => ({ ...r, ...(r.extra || {}) }));
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('learning_tracks').select('*');
     if (error) throw error;
@@ -583,6 +732,12 @@ export async function getLearningTracks(filters = {}) {
 }
 
 export async function createLearningTrack(track, createdBy) {
+  if (useMySQL()) {
+    const id = track.id || `lt_${Date.now()}`;
+    const row = { id, created_by: createdBy, created_at: new Date().toISOString(), ...splitPackageRow(track, ['id']) };
+    await mysqlDb.insertRow('learning_tracks', row);
+    return { ...row, ...row.extra };
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('learning_tracks').insert([{ ...track, created_by: createdBy }]).select().single();
     if (error) throw error;
@@ -613,6 +768,10 @@ export async function _sbSelect(table) {
 }
 
 export async function getGroups() {
+  if (useMySQL()) {
+    const rows = await mysqlDb.selectAll('groups');
+    return (rows || []).map(r => ({ id: r.id, ...(r.data || {}) }));
+  }
   if (isOn()) {
     // groups table uses the JSONB { id, data } pattern (shared with DataStore.Groups)
     const { data, error } = await supabase.from('groups').select('id, data');
@@ -624,6 +783,17 @@ export async function getGroups() {
 }
 
 export async function createGroup(group) {
+  if (useMySQL()) {
+    const id = group.id || `grp_${Date.now()}`;
+    const { id: _i, ...rest } = group;
+    await mysqlDb.upsertRow('groups', {
+      id,
+      name: rest.name || null,
+      manager_id: rest.managerId || null,
+      data: rest,
+    }, ['name', 'manager_id', 'data']);
+    return { id, ...rest };
+  }
   if (isOn()) {
     const id = group.id || `grp_${Date.now()}`;
     const { id: _i, ...rest } = group;
@@ -651,6 +821,10 @@ export async function addGroupMembers(groupId, userIds, roleInGroup = 'member') 
     role_in_group: roleInGroup,
     joined_at: new Date().toISOString(),
   }));
+  if (useMySQL()) {
+    for (const m of memberships) await mysqlDb.insertRow('group_memberships', m);
+    return memberships;
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('group_memberships').insert(memberships).select();
     if (error) throw error;
@@ -664,6 +838,11 @@ export async function addGroupMembers(groupId, userIds, roleInGroup = 'member') 
 }
 
 export async function getGroupMemberships(groupId) {
+  if (useMySQL()) {
+    return groupId
+      ? await mysqlDb.selectWhere('group_memberships', { group_id: groupId })
+      : await mysqlDb.selectAll('group_memberships');
+  }
   if (isOn()) {
     let qb = supabase.from('group_memberships').select('*');
     if (groupId) qb = qb.eq('group_id', groupId);
@@ -679,6 +858,10 @@ export async function getGroupMemberships(groupId) {
 // Audit logging
 export async function logAuthEvent(eventType, userId, metadata = {}) {
   const logEntry = { log_id: `log_${Date.now()}`, event_type: eventType, user_id: userId || null, metadata, timestamp: new Date().toISOString() };
+  if (useMySQL()) {
+    try { await mysqlDb.insertRow('audit_logs', logEntry); } catch (e) { console.warn('audit log error', e.message); }
+    return logEntry;
+  }
   if (isOn()) {
     const { error } = await supabase.from('audit_logs').insert([logEntry]);
     if (error) console.warn('audit log error', error.message);
@@ -693,6 +876,11 @@ export async function logAuthEvent(eventType, userId, metadata = {}) {
 }
 
 export async function getAuditLogs(filters = {}) {
+  if (useMySQL()) {
+    return filters.userId
+      ? await mysqlDb.selectWhere('audit_logs', { user_id: filters.userId })
+      : await mysqlDb.selectAll('audit_logs');
+  }
   if (isOn()) {
     const qb = supabase.from('audit_logs').select('*');
     if (filters.userId) qb.eq('user_id', filters.userId);
@@ -748,6 +936,12 @@ export default {
 // ─────────────────────────────────────────────────────────────
 // Assignments (Supabase + fallback)
 export async function getAssignments(filters = {}) {
+  if (useMySQL()) {
+    const where = {};
+    if (filters.user_id) where.assigned_to_user = filters.user_id;
+    if (filters.status) where.status = filters.status;
+    return (await mysqlDb.selectWhere('assignments', where)) || [];
+  }
   if (isOn()) {
     let qb = supabase.from('assignments').select('*');
     if (filters.user_id) qb = qb.eq('assigned_to_user', filters.user_id);
@@ -761,6 +955,12 @@ export async function getAssignments(filters = {}) {
 }
 
 export async function createAssignment(assignment) {
+  if (useMySQL()) {
+    const id = assignment.id || `assign_${Date.now()}`;
+    const row = { ...assignment, id, created_at: new Date().toISOString() };
+    await mysqlDb.insertRow('assignments', row);
+    return row;
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('assignments').insert([assignment]).select().single();
     if (error) throw error;
@@ -777,6 +977,11 @@ export async function createAssignment(assignment) {
 }
 
 export async function updateAssignment(id, updates) {
+  if (useMySQL()) {
+    const row = { ...updates, updated_at: new Date().toISOString() };
+    await mysqlDb.updateRow('assignments', id, row, 'id');
+    return await mysqlDb.selectById('assignments', id, 'id');
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('assignments').update(updates).eq('id', id).select().single();
     if (error) throw error;
@@ -793,6 +998,12 @@ export async function updateAssignment(id, updates) {
 
 // Assignment Requests (Manager → Admin)
 export async function createAssignmentRequest(req) {
+  if (useMySQL()) {
+    const id = req.id || `req_${Date.now()}`;
+    const row = { ...req, id, requested_at: new Date().toISOString() };
+    await mysqlDb.insertRow('assignment_requests', row);
+    return row;
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('assignment_requests').insert([req]).select().single();
     if (error) throw error;
@@ -809,6 +1020,11 @@ export async function createAssignmentRequest(req) {
 }
 
 export async function getAssignmentRequests(filters = {}) {
+  if (useMySQL()) {
+    return filters.status
+      ? await mysqlDb.selectWhere('assignment_requests', { status: filters.status })
+      : await mysqlDb.selectAll('assignment_requests');
+  }
   if (isOn()) {
     let qb = supabase.from('assignment_requests').select('*');
     if (filters.status) qb = qb.eq('status', filters.status);
@@ -821,6 +1037,11 @@ export async function getAssignmentRequests(filters = {}) {
 }
 
 export async function updateAssignmentRequest(id, updates) {
+  if (useMySQL()) {
+    const row = { ...updates, decided_at: new Date().toISOString() };
+    await mysqlDb.updateRow('assignment_requests', id, row, 'id');
+    return await mysqlDb.selectById('assignment_requests', id, 'id');
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('assignment_requests').update(updates).eq('id', id).select().single();
     if (error) throw error;
@@ -837,6 +1058,13 @@ export async function updateAssignmentRequest(id, updates) {
 
 // Notifications
 export async function createNotification(notif) {
+  if (useMySQL()) {
+    const id = notif.id || `notif_${Date.now()}`;
+    const { user_id, read, ...rest } = notif;
+    const row = { id, user_id, read: read || false, payload: rest, created_at: new Date().toISOString() };
+    await mysqlDb.insertRow('notifications', row);
+    return { ...row, ...rest };
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('notifications').insert([notif]).select().single();
     if (error) throw error;
@@ -852,6 +1080,11 @@ export async function createNotification(notif) {
 }
 
 export async function getNotifications(userId) {
+  if (useMySQL()) {
+    const pool = mysqlDb.getPool();
+    const [rows] = await pool.query('SELECT * FROM `notifications` WHERE `user_id` = ? ORDER BY `created_at` DESC', [userId]);
+    return (rows || []).map(({ payload, ...r }) => ({ ...r, ...(payload || {}) }));
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false });
     if (error) throw error;
@@ -862,6 +1095,13 @@ export async function getNotifications(userId) {
 }
 
 export async function markNotificationRead(notifId, userId) {
+  if (useMySQL()) {
+    const pool = mysqlDb.getPool();
+    const [result] = await pool.query('UPDATE `notifications` SET `read` = TRUE WHERE `id` = ? AND `user_id` = ?', [notifId, userId]);
+    if (result.affectedRows === 0) throw new Error('Notification not found');
+    const { payload, ...row } = await mysqlDb.selectById('notifications', notifId, 'id');
+    return { ...row, ...(payload || {}) };
+  }
   if (isOn()) {
     const { data, error } = await supabase.from('notifications').update({ read: true }).eq('id', notifId).eq('user_id', userId).select().single();
     if (error) throw error;
@@ -877,6 +1117,11 @@ export async function markNotificationRead(notifId, userId) {
 }
 
 export async function markAllNotificationsRead(userId) {
+  if (useMySQL()) {
+    const pool = mysqlDb.getPool();
+    await pool.query('UPDATE `notifications` SET `read` = TRUE WHERE `user_id` = ? AND `read` = FALSE', [userId]);
+    return true;
+  }
   if (isOn()) {
     const { error } = await supabase.from('notifications').update({ read: true }).eq('user_id', userId).eq('read', false);
     if (error) throw error;
