@@ -60,7 +60,23 @@ export async function autoAssignPreAssessment(user) {
             userId, userName: user.name, userEmail: user.email, jobRole: user.jobRole,
             status: 'assigned', assignedAt, startedAt: null, submittedAt: null, score: null, report: null,
           }];
-          await Assessments.update(assessment.id, { targetUsers: updatedTargets, employeeAssignments: updatedAssignments, updatedAt: assignedAt });
+          const updates = { targetUsers: updatedTargets, employeeAssignments: updatedAssignments, updatedAt: assignedAt };
+          // This assessment may predate the role's approval (created via the
+          // unapproved-bank branch below, back when no version existed yet) —
+          // in which case it never got a questionBankVersionId, and
+          // resolveEmployeeQuestions (assessment.js) has no way to find this
+          // employee's actual questions: it gates the entire versioned-bank
+          // lookup on assessment.questionBankVersionId being set, and this
+          // employee's own roster entry carries no embedded `questions`
+          // either (only the very first employees assigned before approval
+          // do). Backfilling it here is what actually fixes "approved in
+          // Job Library but the employee never gets the assessment" — every
+          // later employee joining this same pre-existing assessment was
+          // silently getting an unresolvable, question-less assignment.
+          if (!assessment.questionBankVersionId) {
+            updates.questionBankVersionId = approvedVersion.id;
+          }
+          await Assessments.update(assessment.id, updates);
         }
       } else {
         // Bank was approved but never locked/assigned to anyone yet (e.g.
