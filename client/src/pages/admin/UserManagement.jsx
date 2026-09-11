@@ -1034,6 +1034,12 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
 
   const handleCreate = async () => {
     if (!form.name.trim() || !form.email.trim()) { setToast({ message: 'Name and email are required', type: 'error' }); return; }
+    // Manager/admin adds don't need a manager — they sit at the top of the
+    // chain. Every employee add does, same rule bulk-import already enforces.
+    if (form.role === 'employee' && !form.managerEmail.trim()) {
+      setToast({ message: 'A manager is required for employee accounts', type: 'error' });
+      return;
+    }
     setSaving(true);
     try {
       const user = await authFetch('/api/users', {
@@ -1208,13 +1214,19 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
               </select>
             </div>
           )}
-          {form.role === 'employee' && managerOptions.length > 0 && (
+          {form.role === 'employee' && (
             <div>
-              <FieldLabel>Manager</FieldLabel>
-              <select value={form.managerEmail} onChange={f('managerEmail')} aria-label="Manager" className={selectCls}>
-                <option value="">— None —</option>
-                {managerOptions.map(m => <option key={m.userId} value={m.email}>{m.name}</option>)}
-              </select>
+              <FieldLabel required>Manager</FieldLabel>
+              {managerOptions.length > 0 ? (
+                <select value={form.managerEmail} onChange={f('managerEmail')} aria-label="Manager" className={selectCls}>
+                  <option value="">— Select a manager —</option>
+                  {managerOptions.map(m => <option key={m.userId} value={m.email}>{m.name} ({m.email})</option>)}
+                </select>
+              ) : (
+                <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5">
+                  No managers exist yet — create a manager account first, then add this employee.
+                </p>
+              )}
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">
