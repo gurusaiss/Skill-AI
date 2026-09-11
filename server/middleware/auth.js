@@ -2,7 +2,7 @@ import AuthService from '../services/AuthService.js';
 import UserStore from '../services/UserStore.js';
 import rateLimit from 'express-rate-limit';
 import { isBlocklisted } from '../security/tokenBlocklist.js';
-import { getEffectiveAccesses, canActAsManager } from '../services/roleCapability.js';
+import { getEffectiveAccesses, canActAsManager, MANAGER_TIER_ROLES } from '../services/roleCapability.js';
 
 // Shared by authenticate() below AND routes/auth.js's login/me/password-change
 // responses — these MUST stay in sync. A manager/admin who has never had
@@ -141,9 +141,12 @@ export const requireRole = (...roles) => {
     // superadmin has access to everything
     if (req.user.primaryRole === 'superadmin' || req.user.role === 'superadmin') return next();
 
-    // Check effective role OR primary role OR any granted access
+    // Check effective role OR primary role OR any granted access.
+    // Any manager-tier role (leadership, senior-training-manager, etc.) satisfies
+    // a 'manager' requirement — they all carry manager-level platform access.
     const allUserRoles = [req.user.role, req.user.primaryRole, ...(req.user.accesses || [])].filter(Boolean);
-    if (!roles.some(r => allUserRoles.includes(r))) {
+    const expandedRoles = roles.flatMap(r => r === 'manager' ? ['manager', ...MANAGER_TIER_ROLES] : [r]);
+    if (!expandedRoles.some(r => allUserRoles.includes(r))) {
       return res.status(403).json({
         success: false,
         data: null,

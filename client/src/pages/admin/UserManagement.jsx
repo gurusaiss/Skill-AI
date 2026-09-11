@@ -29,14 +29,48 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const ROLE_RANK = { admin: 0, manager: 1, employee: 2 };
+// Must stay in sync with server/services/roleCapability.js MANAGER_TIER_ROLES.
+const MANAGER_TIER_ROLES = [
+  'manager',
+  'leadership',
+  'senior-training-development-manager',
+  'senior-quality-manager',
+  'senior-training-manager',
+  'senior-operations-manager',
+  'assistant-manager-ops',
+  'assistant-manager-quality',
+  'assistant-manager-training',
+  'wfm',
+  'lead',
+];
+
+const ROLE_LABELS = {
+  admin: 'Admin',
+  employee: 'Employee',
+  trainer: 'Trainer',
+  manager: 'Manager',
+  leadership: 'Leadership',
+  'senior-training-development-manager': 'Senior Training & Development Manager',
+  'senior-quality-manager': 'Senior Quality Manager',
+  'senior-training-manager': 'Senior Training Manager',
+  'senior-operations-manager': 'Senior Operations Manager',
+  'assistant-manager-ops': 'Assistant Manager - Ops',
+  'assistant-manager-quality': 'Assistant Manager - Quality',
+  'assistant-manager-training': 'Assistant Manager - Training',
+  wfm: 'WFM',
+  lead: 'Lead',
+};
+
+const ROLE_RANK = { admin: 0, manager: 1, leadership: 1, 'senior-training-development-manager': 1, 'senior-quality-manager': 1, 'senior-training-manager': 1, 'senior-operations-manager': 1, 'assistant-manager-ops': 1, 'assistant-manager-quality': 1, 'assistant-manager-training': 1, wfm: 1, lead: 1, employee: 2 };
+
 function getRoleBadge(role) {
-  switch (role) {
-    case 'admin':    return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
-    case 'manager':  return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30';
-    case 'employee': return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
-    default:         return 'bg-slate-500/20 text-slate-300 border-slate-500/30';
-  }
+  if (role === 'admin') return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
+  if (MANAGER_TIER_ROLES.includes(role)) return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30';
+  if (role === 'employee') return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+  return 'bg-slate-500/20 text-slate-300 border-slate-500/30';
+}
+function getRoleLabel(role) {
+  return ROLE_LABELS[role] || (role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Unknown');
 }
 function getStatusBadge(s) {
   if (s === 'active')   return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
@@ -44,8 +78,8 @@ function getStatusBadge(s) {
   return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
 }
 function getAvatarColor(role) {
-  if (role === 'admin')    return 'bg-purple-600/30 border-purple-500/40 text-purple-300';
-  if (role === 'manager')  return 'bg-indigo-600/30 border-indigo-500/40 text-indigo-300';
+  if (role === 'admin') return 'bg-purple-600/30 border-purple-500/40 text-purple-300';
+  if (MANAGER_TIER_ROLES.includes(role)) return 'bg-indigo-600/30 border-indigo-500/40 text-indigo-300';
   return 'bg-emerald-600/30 border-emerald-500/40 text-emerald-300';
 }
 
@@ -644,7 +678,19 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                     <FieldLabel>Role</FieldLabel>
                     <select value={form.role} onChange={f('role')} aria-label="Role" className={selectCls}>
                       <option value="admin">Admin</option>
-                      <option value="manager">Manager</option>
+                      <optgroup label="Management">
+                        <option value="manager">Manager</option>
+                        <option value="leadership">Leadership</option>
+                        <option value="senior-training-development-manager">Senior Training &amp; Development Manager</option>
+                        <option value="senior-quality-manager">Senior Quality Manager</option>
+                        <option value="senior-training-manager">Senior Training Manager</option>
+                        <option value="senior-operations-manager">Senior Operations Manager</option>
+                        <option value="assistant-manager-ops">Assistant Manager - Ops</option>
+                        <option value="assistant-manager-quality">Assistant Manager - Quality</option>
+                        <option value="assistant-manager-training">Assistant Manager - Training</option>
+                        <option value="wfm">WFM</option>
+                        <option value="lead">Lead</option>
+                      </optgroup>
                       <option value="employee">Employee</option>
                     </select>
                   </div>
@@ -1016,7 +1062,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
 
 function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users = [] }) {
   const [form, setForm] = useState({ name: '', email: '', role: 'employee', jobRole: '', department: '', jobDescription: '', companyName: '', managerEmail: '' });
-  const managerOptions = useMemo(() => users.filter(u => u.role === 'manager' || (u.accesses || []).includes('manager')), [users]);
+  const managerOptions = useMemo(() => users.filter(u => MANAGER_TIER_ROLES.includes(u.role) || u.role === 'admin' || (u.accesses || []).includes('manager')), [users]);
   const [saving, setSaving] = useState(false);
   const [roleOptions, setRoleOptions] = useState([]);
   const [additionalRoles, setAdditionalRoles] = useState([]);
@@ -1209,7 +1255,19 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
               <FieldLabel>Role</FieldLabel>
               <select value={form.role} onChange={f('role')} aria-label="Role" className={selectCls}>
                 <option value="employee">Employee</option>
-                <option value="manager">Manager</option>
+                <optgroup label="Management">
+                  <option value="manager">Manager</option>
+                  <option value="leadership">Leadership</option>
+                  <option value="senior-training-development-manager">Senior Training &amp; Development Manager</option>
+                  <option value="senior-quality-manager">Senior Quality Manager</option>
+                  <option value="senior-training-manager">Senior Training Manager</option>
+                  <option value="senior-operations-manager">Senior Operations Manager</option>
+                  <option value="assistant-manager-ops">Assistant Manager - Ops</option>
+                  <option value="assistant-manager-quality">Assistant Manager - Quality</option>
+                  <option value="assistant-manager-training">Assistant Manager - Training</option>
+                  <option value="wfm">WFM</option>
+                  <option value="lead">Lead</option>
+                </optgroup>
                 <option value="admin">Admin</option>
               </select>
             </div>
@@ -1891,7 +1949,7 @@ const ACCESS_OPTIONS = [
 function getEffectiveAccesses(user) {
   const stored = user.accesses || [];
   if (stored.length > 0) return stored;
-  if (user.role === 'manager') return ['employee'];
+  if (MANAGER_TIER_ROLES.includes(user.role)) return ['employee'];
   if (user.role === 'admin') return ['manager', 'employee'];
   return stored;
 }

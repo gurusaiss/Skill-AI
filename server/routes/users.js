@@ -16,6 +16,7 @@ import { randomBytes } from 'crypto';
 import { getGroups } from '../db/store.js';
 import { buildTypeSequence } from '../services/QuestionMix.js';
 import { canActAsManager, linkEmployeeToManager } from '../services/ManagerScope.js';
+import { MANAGER_TIER_ROLES, ALL_VALID_ROLES } from '../services/roleCapability.js';
 import { revokeAllForUser } from '../security/refreshTokenStore.js';
 
 // ── Authorization helper: can `actor` (req.user) access `target` user record? ──
@@ -221,7 +222,7 @@ async function buildImportContext(rawRows) {
     if (isCommentRow(raw)) continue;
     const r = normaliseRow(raw);
     const role = (r.role || 'employee').toLowerCase();
-    if ((role === 'manager' || role === 'admin') && r.email) {
+    if ((MANAGER_TIER_ROLES.includes(role) || role === 'admin') && r.email) {
       batchManagers.add(r.email.toLowerCase());
     }
   }
@@ -480,7 +481,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
         return res.status(400).json({ success: false, data: null, error: { code: 'USER_MANAGER_REQUIRED', message: 'A manager is required for employee accounts' } });
       }
       managerRecord = await UserStore.getUserByEmail(managerEmail);
-      if (!managerRecord || !['manager', 'admin'].includes(managerRecord.role)) {
+      if (!managerRecord || (!MANAGER_TIER_ROLES.includes(managerRecord.role) && managerRecord.role !== 'admin')) {
         return res.status(400).json({ success: false, data: null, error: { code: 'USER_MANAGER_INVALID', message: `Manager "${raw.managerEmail}" not found or not a manager role` } });
       }
     }
@@ -731,7 +732,7 @@ router.put('/:userId', authenticate, async (req, res) => {
 
     // Role — admin only
     if (role !== undefined && isAdmin) {
-      const validRoles = ['admin', 'manager', 'employee'];
+      const validRoles = ALL_VALID_ROLES.filter(r => r !== 'superadmin');
       if (validRoles.includes(role)) updates.role = role;
     }
 
@@ -1123,7 +1124,7 @@ router.put('/:userId/role', authenticate, requireRole('admin'), async (req, res)
   try {
     const { userId } = req.params;
     const { role } = req.body;
-    const validRoles = ['admin', 'manager', 'employee', 'trainer', 'leadership'];
+    const validRoles = ALL_VALID_ROLES.filter(r => r !== 'superadmin');
 
     if (!role || !validRoles.includes(role)) {
       return res.status(400).json({ success: false, data: null, error: { code: 'USER_INVALID_ROLE', message: `Role must be one of: ${validRoles.join(', ')}` } });
@@ -1443,7 +1444,7 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async
       }
 
       try {
-        const ALLOWED_IMPORT_ROLES = ['employee', 'manager', 'trainer', 'leadership'];
+        const ALLOWED_IMPORT_ROLES = ALL_VALID_ROLES.filter(r => r !== 'superadmin' && r !== 'admin');
         const requestedRole = (row.role || 'employee').toLowerCase();
         // Gate on capability (canActAsManager), not the currently-active
         // X-Active-Role view — an access-grant manager viewing as "employee"

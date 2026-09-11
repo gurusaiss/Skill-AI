@@ -10,6 +10,36 @@
  */
 
 /**
+ * All roles that carry manager-tier access — i.e. they can be assigned as a
+ * manager for employees, appear in the manager picker, and pass canActAsManager().
+ * Keep in sync with the client-side MANAGER_TIER_ROLES in UserManagement.jsx.
+ */
+export const MANAGER_TIER_ROLES = [
+  'manager',
+  'leadership',
+  'senior-training-development-manager',
+  'senior-quality-manager',
+  'senior-training-manager',
+  'senior-operations-manager',
+  'assistant-manager-ops',
+  'assistant-manager-quality',
+  'assistant-manager-training',
+  'wfm',
+  'lead',
+];
+
+/**
+ * All valid platform roles (used for validation at create/update endpoints).
+ */
+export const ALL_VALID_ROLES = [
+  'superadmin',
+  'admin',
+  'employee',
+  'trainer',
+  ...MANAGER_TIER_ROLES,
+];
+
+/**
  * A manager/admin who has never had `accesses` explicitly set (the common
  * case) implicitly gets the standard role-switch options, so the
  * "Switch to X View" UI has something to offer. Must stay in sync with the
@@ -18,7 +48,7 @@
 export function getEffectiveAccesses(user) {
   const stored = user?.accesses || [];
   if (stored.length > 0) return stored;
-  if (user?.role === 'manager') return ['employee'];
+  if (MANAGER_TIER_ROLES.includes(user?.role)) return ['employee'];
   if (user?.role === 'admin') return ['manager', 'employee'];
   return stored;
 }
@@ -34,7 +64,7 @@ export function getEffectiveAccesses(user) {
  */
 export function canActAsManager(user) {
   if (!user) return false;
-  if (user.role === 'admin' || user.role === 'manager') return true;
-  if (user.primaryRole === 'admin' || user.primaryRole === 'manager') return true;
+  if (user.role === 'admin' || MANAGER_TIER_ROLES.includes(user.role)) return true;
+  if (user.primaryRole === 'admin' || MANAGER_TIER_ROLES.includes(user.primaryRole)) return true;
   return getEffectiveAccesses(user).includes('manager');
 }

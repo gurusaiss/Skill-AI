@@ -7,6 +7,7 @@ import UserStore from '../services/UserStore.js';
 import { Companies, ApprovalRequests, AccessCodes, Groups, Assessments, Reports } from '../services/DataStore.js';
 import { randomUUID } from 'crypto';
 import * as db from '../db/store.js';
+import { MANAGER_TIER_ROLES } from '../services/roleCapability.js';
 
 const router = express.Router();
 
@@ -99,7 +100,7 @@ router.get('/dashboard', authenticate, requireRole('admin'), async (req, res) =>
       (u.companyId || 'default') === companyId && u.role !== 'superadmin'
     );
     const employees = companyUsers.filter(u => u.role === 'employee');
-    const managers = companyUsers.filter(u => u.role === 'manager');
+    const managers = companyUsers.filter(u => MANAGER_TIER_ROLES.includes(u.role));
     const companyUserIds = new Set(companyUsers.map(u => u.userId || u.id));
 
     // 3. Assignments for company users

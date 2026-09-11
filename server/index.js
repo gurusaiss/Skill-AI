@@ -17,6 +17,7 @@ import { swaggerSpec } from './swagger.js';
 
 import AuthService from './services/AuthService.js';
 import { authenticate, requireRole } from './middleware/auth.js';
+import { MANAGER_TIER_ROLES } from './services/roleCapability.js';
 
 import goalRouter from './routes/goal.js';
 import diagnosticRouter from './routes/diagnostic.js';
@@ -321,7 +322,7 @@ app.get('/api/brief/:userId', authenticate, (req, res) => {
   const { userId } = req.params;
   // Users can only read their own brief; admins/managers can read any
   const isSelf = req.user.userId === userId;
-  const isPrivileged = req.user.role === 'admin' || req.user.role === 'manager' || req.user.role === 'superadmin';
+  const isPrivileged = req.user.role === 'admin' || req.user.role === 'superadmin' || MANAGER_TIER_ROLES.includes(req.user.role);
   if (!isSelf && !isPrivileged) {
     return res.status(403).json({ success: false, error: 'Access denied' });
   }
