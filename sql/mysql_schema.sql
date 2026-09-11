@@ -66,7 +66,12 @@
 -- intentionally NOT included here — it never existed as a real column.
 CREATE TABLE IF NOT EXISTS users (
   user_id                VARCHAR(191) PRIMARY KEY,
-  email                  VARCHAR(255) NOT NULL,
+  -- Explicit case-insensitive collation (not just relying on the table's
+  -- utf8mb4 default) so "John@x.com" and "john@x.com" collide on
+  -- uq_users_email below exactly like the app-layer case-insensitive
+  -- lookup in UserStore.getUserByEmail() — the stored value itself keeps
+  -- whatever casing the user typed; only comparison/uniqueness ignores it.
+  email                  VARCHAR(255) COLLATE utf8mb4_general_ci NOT NULL,
   password_hash          VARCHAR(255) NOT NULL,
   name                   VARCHAR(200) NOT NULL,
   role                    VARCHAR(30)  NOT NULL DEFAULT 'employee',

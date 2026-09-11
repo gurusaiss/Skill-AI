@@ -22,14 +22,19 @@ export function sanitizeText(value, maxLen = 500) {
 }
 
 /**
- * Normalise an email address — lowercase, trim, limit length.
- * Does NOT validate format (that's done separately with a regex).
+ * Normalise an email address for storage — trim and limit length only.
+ * Deliberately does NOT lowercase: the email is stored exactly as the
+ * user typed it (mixed case preserved for display), while every lookup/
+ * comparison (login, duplicate checks, OTP, password reset, manager-email
+ * matching, etc.) is done case-insensitively in the store layer instead —
+ * see UserStore.getUserByEmail(). Does NOT validate format (done
+ * separately with a regex).
  * @param {unknown} value
  * @returns {string}
  */
 export function sanitizeEmail(value) {
   if (typeof value !== 'string') return '';
-  return value.toLowerCase().trim().slice(0, 320);
+  return value.trim().slice(0, 320);
 }
 
 /**

@@ -256,7 +256,8 @@ class UserStore {
 
     // File fallback
     const data = await this.readUsersFile();
-    if (data.users.find(u => u.email === userData.email)) throw new Error('Email already registered');
+    const newEmailLc = userData.email?.toLowerCase();
+    if (data.users.find(u => u.email?.toLowerCase() === newEmailLc)) throw new Error('Email already registered');
     newUser.userId = `auth_user_${String(data.nextUserId).padStart(3, '0')}`;
     data.users.push(newUser);
     data.nextUserId += 1;
@@ -283,23 +284,34 @@ class UserStore {
     return data.users.find(u => u.userId === userId) || null;
   }
 
+  // Email is stored exactly as typed (any case), but lookup is always
+  // case-insensitive — "John@x.com" and "john@x.com" must resolve to the
+  // same user for login, duplicate checks, OTP, and password reset alike.
   async getUserByEmail(email) {
+    if (!email) return null;
     if (useMySQL()) {
-      const rows = await mysqlDb.selectWhere('users', { email });
+      const pool = mysqlDb.getPool();
+      const [rows] = await pool.query('SELECT * FROM `users` WHERE LOWER(`email`) = LOWER(?) LIMIT 1', [email]);
       const user = rowToUser(rows?.[0]);
       if (!user) return null;
       try { return mergeJD(user, await UserJDProfiles.getById(user.userId)); } catch { return user; }
     }
     const sb = getSB();
     if (sb) {
-      const { data, error } = await sb.from('users').select('*').eq('email', email).maybeSingle();
+      // ilike does case-insensitive matching, but treats bare % and _ as
+      // wildcards — both are legal characters in an email's local part
+      // (e.g. john_doe@x.com), so they must be escaped or a real email
+      // containing one could match unrelated addresses.
+      const escaped = email.replace(/[%_\\]/g, c => '\\' + c);
+      const { data, error } = await sb.from('users').select('*').ilike('email', escaped).maybeSingle();
       if (error) { console.error('[UserStore] getUserByEmail:', error.message); return null; }
       const user = rowToUser(data);
       if (!user) return null;
       try { return mergeJD(user, await UserJDProfiles.getById(user.userId)); } catch { return user; }
     }
     const data = await this.readUsersFile();
-    return data.users.find(u => u.email === email) || null;
+    const emailLc = email.toLowerCase();
+    return data.users.find(u => u.email?.toLowerCase() === emailLc) || null;
   }
 
   async getUserByGoogleId(googleId) {

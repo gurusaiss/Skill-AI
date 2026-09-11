@@ -712,16 +712,21 @@ router.put('/:userId', authenticate, async (req, res) => {
       updates.name = name.trim();
     }
 
-    // Email — self or admin only
-    if (email !== undefined && email !== user.email) {
+    // Email — self or admin only. Stored exactly as typed (casing
+    // preserved); the `!== user.email` check below is intentionally
+    // case-SENSITIVE so a user correcting only the casing of their own
+    // email is still treated as a real change and gets applied — the
+    // duplicate check right after is what must stay case-insensitive.
+    const trimmedEmail = email !== undefined ? sanitizeEmail(email) : undefined;
+    if (trimmedEmail !== undefined && trimmedEmail !== user.email) {
       if (!isSelf && !isAdmin) return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Only admin can change email' } });
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) return res.status(400).json({ success: false, data: null, error: { code: 'USER_INVALID_EMAIL', message: 'Invalid email format' } });
-      const existingUser = await UserStore.getUserByEmail(email);
+      if (!emailRegex.test(trimmedEmail)) return res.status(400).json({ success: false, data: null, error: { code: 'USER_INVALID_EMAIL', message: 'Invalid email format' } });
+      const existingUser = await UserStore.getUserByEmail(trimmedEmail);
       if (existingUser && existingUser.userId !== userId) {
         return res.status(409).json({ success: false, data: null, error: { code: 'USER_EMAIL_EXISTS', message: 'Email already in use' } });
       }
-      updates.email = email;
+      updates.email = trimmedEmail;
     }
 
     // Role — admin only

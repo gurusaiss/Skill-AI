@@ -500,7 +500,7 @@ router.put('/admins/:adminId', async (req, res) => {
     const { name, email, status } = req.body;
     const updates = {};
     if (name) updates.name = name.trim();
-    if (email) updates.email = email.trim().toLowerCase();
+    if (email) updates.email = email.trim();
     if (status) updates.status = status;
     updates.updatedAt = new Date().toISOString();
 
