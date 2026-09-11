@@ -76,6 +76,16 @@ export async function autoAssignPreAssessment(user) {
           if (!assessment.questionBankVersionId) {
             updates.questionBankVersionId = approvedVersion.id;
           }
+          // Same correction as the title comment below, applied to an
+          // assessment that already exists: if its title still reflects
+          // whichever employee's raw job title first created it (e.g.
+          // "Process Associate-AMI") rather than the role's own canonical
+          // name, fix it now — every employee sharing this same role's bank
+          // should see one consistent, role-accurate title.
+          const canonicalTitle = `Pre-Assessment: ${roleMatch.roleName}`;
+          if (assessment.title !== canonicalTitle && /^Pre-Assessment: /.test(assessment.title || '')) {
+            updates.title = canonicalTitle;
+          }
           await Assessments.update(assessment.id, updates);
         }
       } else {
@@ -117,7 +127,14 @@ export async function autoAssignPreAssessment(user) {
       // the FULL bank (whatever size it genuinely is), never truncated.
       const assessment = {
         id: randomUUID(),
-        title: `Pre-Assessment: ${user.jobRole}`,
+        // Titled from the matched Job Library role's own canonical name, not
+        // this specific employee's raw typed job title — otherwise whichever
+        // employee happened to create this shared assessment first (e.g. one
+        // whose title was typed as "Process Associate-AMI", a fuzzy-matched
+        // variant of the "Process Associate" role) permanently sets a
+        // confusing title for every other employee who later joins the same
+        // assessment via a plain, exact match to that same role.
+        title: `Pre-Assessment: ${roleMatch.roleName}`,
         targetUsers: [userId],
         employeeAssignments: [{
           userId, userName: user.name, userEmail: user.email,
