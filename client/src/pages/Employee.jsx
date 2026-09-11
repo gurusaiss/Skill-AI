@@ -411,8 +411,14 @@ export default function Employee() {
     return '#ef4444';
   };
 
-  const mgrName = managerInfo?.name || managerInfo?.full_name || 'Not assigned';
-  const mgrEmail = managerInfo?.email || '';
+  // GET /api/assignments/employee/:id/manager returns { employeeId, managers: [...], count }
+  // (an employee can have more than one manager) — this used to read
+  // managerInfo?.name directly, which never existed on that shape, so
+  // "Your Manager" showed "Not assigned" unconditionally even when a
+  // manager genuinely was assigned.
+  const primaryManager = managerInfo?.managers?.[0] || null;
+  const mgrName = primaryManager?.name || primaryManager?.full_name || 'Not assigned';
+  const mgrEmail = primaryManager?.email || '';
   const mgrInitial = mgrName.charAt(0).toUpperCase();
 
   return (

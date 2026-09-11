@@ -1571,16 +1571,31 @@ router.get('/my', authenticate, async (req, res) => {
             await autoAssignPreAssessment(user);
             assessments = await Assessments.getAll() || [];
             mine = findMine(assessments);
-          } else if (!existingForRole.questionBankVersionId) {
-            // Already on the roster, but the assessment predates the role's
-            // approval and was never backfilled with a version link (the
-            // exact bug that left an approved role's employees with a
-            // listed-but-empty assessment) — patch it in place so
-            // resolveEmployeeQuestions can find real questions for everyone
-            // attached to it, not just this one employee.
-            const approvedVersion = await QuestionBankVersions.getApproved(roleMatch.id);
-            if (approvedVersion) {
-              await Assessments.update(existingForRole.id, { questionBankVersionId: approvedVersion.id, updatedAt: new Date().toISOString() });
+          } else {
+            // Already on the roster — check for two independent, historical
+            // data gaps and backfill both in one write if either applies.
+            const patch = {};
+            if (!existingForRole.questionBankVersionId) {
+              // Predates the role's approval and was never backfilled with a
+              // version link (the exact bug that left an approved role's
+              // employees with a listed-but-empty assessment) —
+              // resolveEmployeeQuestions can't find real questions without it.
+              const approvedVersion = await QuestionBankVersions.getApproved(roleMatch.id);
+              if (approvedVersion) patch.questionBankVersionId = approvedVersion.id;
+            }
+            // Title still reflects whichever employee's raw typed job title
+            // first created this shared assessment (e.g. "Process
+            // Associate-AMI", a fuzzy match onto the "Process Associate"
+            // role) instead of the role's own canonical name — confusing
+            // for every OTHER employee who plainly, exactly matches this
+            // same role and sees a title that doesn't look like their job.
+            const canonicalTitle = `Pre-Assessment: ${roleMatch.roleName}`;
+            if (existingForRole.title !== canonicalTitle && /^Pre-Assessment: /.test(existingForRole.title || '')) {
+              patch.title = canonicalTitle;
+            }
+            if (Object.keys(patch).length > 0) {
+              patch.updatedAt = new Date().toISOString();
+              await Assessments.update(existingForRole.id, patch);
               assessments = await Assessments.getAll() || [];
               mine = findMine(assessments);
             }
