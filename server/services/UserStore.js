@@ -6,6 +6,16 @@ import { createClient } from '@supabase/supabase-js';
 import ws from 'ws';
 import { UserJDProfiles, Groups } from './DataStore.js';
 import { canActAsManager } from './roleCapability.js';
+import * as mysqlDb from '../db/mysql.js';
+
+// MySQL is opt-in via DB_BACKEND=mysql — unset (the default) or any other
+// value leaves every existing Supabase/file behavior completely untouched.
+// This is deliberate: Supabase must keep working exactly as it does today
+// for as long as needed: MySQL is a new, parallel, independently-working
+// option, not a forced replacement.
+function useMySQL() {
+  return process.env.DB_BACKEND === 'mysql' && !!mysqlDb.getPool();
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -201,6 +211,14 @@ class UserStore {
       status:             userData.status || 'active',
     };
 
+    if (useMySQL()) {
+      const existing = await this.getUserByEmail(userData.email);
+      if (existing) throw new Error('Email already registered');
+      const row = userToRow(newUser);
+      await mysqlDb.insertRow('users', row);
+      return newUser;
+    }
+
     if (sb) {
       const existing = await this.getUserByEmail(userData.email);
       if (existing) throw new Error('Email already registered');
@@ -247,6 +265,12 @@ class UserStore {
   }
 
   async getUserById(userId) {
+    if (useMySQL()) {
+      const row = await mysqlDb.selectById('users', userId, 'user_id');
+      const user = rowToUser(row);
+      if (!user) return null;
+      try { return mergeJD(user, await UserJDProfiles.getById(userId)); } catch { return user; }
+    }
     const sb = getSB();
     if (sb) {
       const { data, error } = await sb.from('users').select('*').eq('user_id', userId).maybeSingle();
@@ -260,6 +284,12 @@ class UserStore {
   }
 
   async getUserByEmail(email) {
+    if (useMySQL()) {
+      const rows = await mysqlDb.selectWhere('users', { email });
+      const user = rowToUser(rows?.[0]);
+      if (!user) return null;
+      try { return mergeJD(user, await UserJDProfiles.getById(user.userId)); } catch { return user; }
+    }
     const sb = getSB();
     if (sb) {
       const { data, error } = await sb.from('users').select('*').eq('email', email).maybeSingle();
@@ -273,6 +303,10 @@ class UserStore {
   }
 
   async getUserByGoogleId(googleId) {
+    if (useMySQL()) {
+      const rows = await mysqlDb.selectWhere('users', { google_id: googleId });
+      return rowToUser(rows?.[0]);
+    }
     const sb = getSB();
     if (sb) {
       const { data, error } = await sb.from('users').select('*').eq('google_id', googleId).maybeSingle();
@@ -289,6 +323,19 @@ class UserStore {
     JD_FIELDS.forEach(f => { if (updates[f] !== undefined) jdUpdates[f] = updates[f]; });
     if (Object.keys(jdUpdates).length > 0) {
       try { await UserJDProfiles.upsert(userId, jdUpdates); } catch {}
+    }
+
+    if (useMySQL()) {
+      try {
+        const row = userToRow(updates);
+        row.updated_at = new Date().toISOString();
+        await mysqlDb.updateRow('users', userId, row, 'user_id');
+        const user = await this.getUserById(userId);
+        return user || { userId, ...updates };
+      } catch (err) {
+        console.error('[UserStore] updateUser MySQL exception:', err.message);
+        return { userId, ...updates };
+      }
     }
 
     const sb = getSB();
@@ -332,6 +379,12 @@ class UserStore {
     // (assessment reports, submissions) are intentionally left untouched.
     await this._cleanupUserReferences(userId);
 
+    if (useMySQL()) {
+      const deleted = await mysqlDb.deleteRow('users', userId, 'user_id');
+      if (!deleted) throw new Error('User not found');
+      return true;
+    }
+
     const sb = getSB();
     if (sb) {
       const { error } = await sb.from('users').delete().eq('user_id', userId);
@@ -350,16 +403,30 @@ class UserStore {
   }
 
   async _cleanupUserReferences(userId) {
-    // Assignments — both directions (as the assignee, and as the assigner/manager)
+    // Assignments — both directions (as the assignee, and as the assigner/manager).
+    // MySQL's assigned_to_user FK (ON DELETE CASCADE) already handles the
+    // assignee direction automatically once the user row itself is deleted
+    // below, but assigned_by has no FK constraint (assigners aren't required
+    // to still exist), so that direction still needs an explicit delete here
+    // to match Supabase's behavior of removing assignments this user created.
     try {
-      const sb = getSB();
-      if (sb) {
-        await sb.from('assignments').delete().eq('assigned_to_user', userId);
-        await sb.from('assignments').delete().eq('assigned_by', userId);
+      if (useMySQL()) {
+        const pool = mysqlDb.getPool();
+        await pool.query('DELETE FROM `assignments` WHERE `assigned_by` = ?', [userId]);
+      } else {
+        const sb = getSB();
+        if (sb) {
+          await sb.from('assignments').delete().eq('assigned_to_user', userId);
+          await sb.from('assignments').delete().eq('assigned_by', userId);
+        }
       }
     } catch (e) { console.warn('[deleteUser] assignment cleanup failed:', e.message); }
 
-    // Group membership — remove from employeeIds, clear managerId if they managed it
+    // Group membership — remove from employeeIds, clear managerId if they managed it.
+    // NOTE: Groups (DataStore.js) hasn't been wired for MySQL yet — this still
+    // reads/writes wherever Groups itself is currently configured (Supabase
+    // or file), independent of this file's DB_BACKEND setting, until
+    // DataStore.js gets its own MySQL wiring in a later commit.
     try {
       const allGroups = await Groups.getAll();
       for (const g of allGroups || []) {
@@ -378,6 +445,20 @@ class UserStore {
   }
 
   async getAllUsers(filters = {}) {
+    if (useMySQL()) {
+      let rows = await mysqlDb.selectAll('users');
+      if (filters.role) rows = rows.filter(r => r.role === filters.role);
+      if (filters.emailVerified !== undefined) rows = rows.filter(r => !!r.email_verified === filters.emailVerified);
+      const users = rows.map(rowToUser);
+      try {
+        const jdProfiles = await UserJDProfiles.getAll();
+        if (jdProfiles && jdProfiles.length > 0) {
+          const jdMap = new Map(jdProfiles.map(p => [p.id, p]));
+          return users.map(u => mergeJD(u, jdMap.get(u.userId)));
+        }
+      } catch {}
+      return users;
+    }
     const sb = getSB();
     if (sb) {
       let q = sb.from('users').select('*');
@@ -404,6 +485,10 @@ class UserStore {
   }
 
   async getUsersByCompany(companyId) {
+    if (useMySQL()) {
+      const rows = await mysqlDb.selectWhere('users', { company_id: companyId });
+      return (rows || []).map(rowToUser);
+    }
     const sb = getSB();
     if (sb) {
       const { data, error } = await sb.from('users').select('*').eq('company_id', companyId);
@@ -521,6 +606,12 @@ class UserStore {
   // Batched lookup — replaces N individual getUserById() round-trips with one query.
   async getUsersByIds(ids) {
     if (!ids?.length) return [];
+    if (useMySQL()) {
+      const pool = mysqlDb.getPool();
+      const placeholders = ids.map(() => '?').join(', ');
+      const [rows] = await pool.query(`SELECT * FROM \`users\` WHERE \`user_id\` IN (${placeholders})`, ids);
+      return (rows || []).map(rowToUser).filter(Boolean);
+    }
     const sb = getSB();
     if (sb) {
       const { data, error } = await sb.from('users').select('*').in('user_id', ids);
@@ -545,6 +636,19 @@ class UserStore {
   // ── Content assignments ───────────────────────────────────────────────────
 
   async getAssignments(filters = {}) {
+    if (useMySQL()) {
+      const pool = mysqlDb.getPool();
+      const clauses = [];
+      const values = [];
+      if (filters.id)         { clauses.push('`id` = ?'); values.push(filters.id); }
+      if (filters.user_id || filters.assigned_to_user) { clauses.push('`assigned_to_user` = ?'); values.push(filters.user_id || filters.assigned_to_user); }
+      if (filters.group_id)  { clauses.push('`assigned_to_group` = ?'); values.push(filters.group_id); }
+      if (filters.status)    { clauses.push('`status` = ?'); values.push(filters.status); }
+      if (filters.assigned_by) { clauses.push('`assigned_by` = ?'); values.push(filters.assigned_by); }
+      const where = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+      const [rows] = await pool.query(`SELECT * FROM \`assignments\`${where}`, values);
+      return rows || [];
+    }
     const sb = getSB();
     if (sb) {
       let q = sb.from('assignments').select('*');
@@ -592,6 +696,28 @@ class UserStore {
       updated_at:         new Date().toISOString(),
     };
 
+    if (useMySQL()) {
+      const mysqlRow = {
+        id:                  newA.id,
+        type:                newA.type,
+        assignable_id:       newA.assignable_id,
+        assignable_type:     newA.assignable_type,
+        assigned_by:         newA.assigned_by || null,
+        assigned_to_user:    newA.assigned_to_user,
+        assigned_to_group:   newA.assigned_to_group,
+        assigned_by_manager: newA.assigned_by_manager || null,
+        priority:            newA.priority,
+        due_date:            newA.due_date,
+        status:              newA.status,
+        progress:            newA.progress,
+        module_name:         newA.title || null,
+        created_at:          newA.created_at,
+        updated_at:          newA.updated_at,
+      };
+      await mysqlDb.upsertRow('assignments', mysqlRow, Object.keys(mysqlRow).filter(k => k !== 'id'));
+      return mysqlRow;
+    }
+
     if (sb) {
       // Only send columns that exist in the Supabase schema
       // IMPORTANT: assigned_by/assigned_by_manager must be null or a valid user_id (FK constraint)
@@ -636,6 +762,18 @@ class UserStore {
   }
 
   async updateAssignment(assignmentId, updates) {
+    if (useMySQL()) {
+      const mysqlUpdates = { updated_at: new Date().toISOString() };
+      if (updates.status !== undefined)           mysqlUpdates.status = updates.status;
+      if (updates.progress !== undefined)         mysqlUpdates.progress = updates.progress;
+      if (updates.due_date !== undefined)         mysqlUpdates.due_date = updates.due_date;
+      if (updates.priority !== undefined)         mysqlUpdates.priority = updates.priority;
+      if (updates.sessionProgress !== undefined)  mysqlUpdates.session_progress = updates.sessionProgress;
+      if (updates.session_progress !== undefined) mysqlUpdates.session_progress = updates.session_progress;
+      if (updates.progress_data !== undefined)    mysqlUpdates.progress_data = updates.progress_data;
+      await mysqlDb.updateRow('assignments', assignmentId, mysqlUpdates, 'id');
+      return await mysqlDb.selectById('assignments', assignmentId, 'id');
+    }
     const sb = getSB();
     if (sb) {
       // Map camelCase to Supabase snake_case columns
@@ -671,6 +809,11 @@ class UserStore {
   }
 
   async deleteAssignment(assignmentId) {
+    if (useMySQL()) {
+      const deleted = await mysqlDb.deleteRow('assignments', assignmentId, 'id');
+      if (!deleted) throw new Error('Assignment not found');
+      return true;
+    }
     const sb = getSB();
     if (sb) {
       const { error } = await sb.from('assignments').delete().eq('id', assignmentId);
@@ -703,6 +846,24 @@ class UserStore {
   }
 
   async createAssignmentRequest(reqData) {
+    if (useMySQL()) {
+      const { randomUUID } = await import('crypto');
+      const newReq = {
+        id: `req_${randomUUID().slice(0, 8)}`,
+        manager_id:   reqData.manager_id,
+        employee_id:  reqData.employee_id || null,
+        group_id:     reqData.group_id || null,
+        module_id:    reqData.module_id,
+        priority:     reqData.priority || 'medium',
+        due_date:     reqData.due_date || null,
+        status:       reqData.status || 'pending',
+        requested_at: new Date().toISOString(),
+        decided_by:   null,
+        decided_at:   null,
+      };
+      await mysqlDb.insertRow('assignment_requests', newReq);
+      return newReq;
+    }
     const sb = getSB();
     if (sb) {
       const { randomUUID } = await import('crypto');
@@ -753,6 +914,13 @@ class UserStore {
   }
 
   async getAssignmentRequests(filters = {}) {
+    if (useMySQL()) {
+      const where = {};
+      if (filters.manager_id)  where.manager_id = filters.manager_id;
+      if (filters.employee_id) where.employee_id = filters.employee_id;
+      if (filters.status)      where.status = filters.status;
+      return (await mysqlDb.selectWhere('assignment_requests', where)) || [];
+    }
     const sb = getSB();
     if (sb) {
       let q = sb.from('assignment_requests').select('*');
@@ -772,6 +940,11 @@ class UserStore {
   }
 
   async updateAssignmentRequest(requestId, updates) {
+    if (useMySQL()) {
+      const mysqlUpdates = { ...updates, decided_at: new Date().toISOString() };
+      await mysqlDb.updateRow('assignment_requests', requestId, mysqlUpdates, 'id');
+      return (await mysqlDb.selectById('assignment_requests', requestId, 'id')) || { id: requestId, ...updates };
+    }
     const sb = getSB();
     if (sb) {
       const { data, error } = await sb.from('assignment_requests')
@@ -802,6 +975,17 @@ class UserStore {
     const timestamp = new Date().toISOString();
     const logEntry = { logId, eventType, userId: userId || null, timestamp, metadata };
 
+    if (useMySQL()) {
+      try {
+        await mysqlDb.insertRow('audit_logs', {
+          log_id: logId, event_type: eventType, user_id: userId || null, metadata, timestamp,
+        });
+        return logEntry;
+      } catch (e) {
+        console.warn('[UserStore] logAuthEvent MySQL insert failed, falling back to file:', e.message);
+      }
+    }
+
     const sb = getSB();
     if (sb) {
       try {
@@ -822,8 +1006,25 @@ class UserStore {
   }
 
   async getAuditLogs(filters = {}) {
-    const sb = getSB();
     let logs = null;
+    if (useMySQL()) {
+      try {
+        const pool = mysqlDb.getPool();
+        const clauses = [];
+        const values = [];
+        if (filters.userId)    { clauses.push('`user_id` = ?'); values.push(filters.userId); }
+        if (filters.eventType) { clauses.push('`event_type` = ?'); values.push(filters.eventType); }
+        if (filters.startDate) { clauses.push('`timestamp` >= ?'); values.push(filters.startDate); }
+        if (filters.endDate)   { clauses.push('`timestamp` <= ?'); values.push(filters.endDate); }
+        const where = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+        const [rows] = await pool.query(`SELECT * FROM \`audit_logs\`${where} ORDER BY \`timestamp\` DESC`, values);
+        logs = rows.map(r => ({ logId: r.log_id, eventType: r.event_type, userId: r.user_id, timestamp: r.timestamp, metadata: r.metadata || {} }));
+      } catch (e) {
+        console.warn('[UserStore] getAuditLogs MySQL query failed, falling back:', e.message);
+      }
+    }
+
+    const sb = !logs ? getSB() : null;
     if (sb) {
       try {
         let q = sb.from('audit_logs').select('*').order('timestamp', { ascending: false });
