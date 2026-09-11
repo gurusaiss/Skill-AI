@@ -1823,9 +1823,16 @@ export default function RoleLibrary() {
                         📚 Questions{role.questionBankCount ? ` (${role.questionBankCount})` : ''}
                       </button>
                       {role.questionBankCount > 0 && (
-                        <button onClick={() => setApproveRole(role)} className="text-xs px-2 py-1 rounded bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 whitespace-nowrap border border-emerald-500/30">
-                          ✓ Approve
-                        </button>
+                        role.approved ? (
+                          <button disabled title={role.approvedAt ? `Approved ${new Date(role.approvedAt).toLocaleString()} — questions are locked` : 'Approved — questions are locked'}
+                            className="text-xs px-2 py-1 rounded bg-emerald-900/30 text-emerald-500 whitespace-nowrap border border-emerald-800/40 cursor-default opacity-80">
+                            ✓ Approved
+                          </button>
+                        ) : (
+                          <button onClick={() => setApproveRole(role)} className="text-xs px-2 py-1 rounded bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 whitespace-nowrap border border-emerald-500/30">
+                            ✓ Approve
+                          </button>
+                        )
                       )}
                       <button onClick={() => setHistoryRole(role)} className="text-xs px-2 py-1 rounded bg-sky-600/20 text-sky-300 hover:bg-sky-600/40 whitespace-nowrap" title="Version, regeneration, and assignment history">
                         📜 History

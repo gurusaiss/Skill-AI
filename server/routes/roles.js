@@ -1839,11 +1839,19 @@ async function handleLockAssessment(req, res) {
     // that is resolved at read-time, not baked into stored question content.
     const qCount = bank.length;
 
-    // Find all employees with this job role in this company
+    // Find all employees with this job role in this company. Normalized the
+    // same way RoleLibrary.findByName's tier-1 match does (case, whitespace,
+    // -/_// all collapsed to a single space) — this used to be a bare `===`
+    // after only .toLowerCase().trim(), so any employee whose job title had
+    // a double space, a hyphen instead of a space, etc. silently failed this
+    // exact-match and was permanently skipped by the ONE retroactive
+    // assignment path in the app, with no error and no way to retry later.
+    const normalizeRoleName = (s) => (s || '').toLowerCase().trim().replace(/[-_/]+/g, ' ').replace(/\s+/g, ' ');
+    const targetRoleName = normalizeRoleName(role.roleName);
     const allUsers = await UserStore.getAllUsers({});
     const targets = allUsers.filter(u =>
       (u.role === 'employee' || u.userRole === 'employee') &&
-      u.jobRole?.toLowerCase().trim() === role.roleName.toLowerCase().trim() &&
+      normalizeRoleName(u.jobRole) === targetRoleName &&
       (u.companyId || 'default') === companyId
     );
 

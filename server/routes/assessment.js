@@ -1539,13 +1539,57 @@ router.post('/generate-from-jd', authenticate, requireRole('admin', 'manager'), 
  */
 router.get('/my', authenticate, async (req, res) => {
   try {
-    const assessments = await Assessments.getAll() || [];
+    let assessments = await Assessments.getAll() || [];
     const now = new Date();
 
-    const mine = assessments.filter(a =>
+    const findMine = (list) => list.filter(a =>
       a.employeeAssignments?.some(ea => ea.userId === req.user.userId) ||
       a.targetUsers?.includes(req.user.userId)
     );
+    let mine = findMine(assessments);
+
+    // Self-healing: the only two places an employee ever gets an assessment
+    // are creation-time (autoAssignPreAssessment) and an admin manually
+    // clicking Approve in the Job Library — there is no scheduled or
+    // retroactive job that revisits this later. So an employee whose role
+    // was approved AFTER their account existed (bulk-imported before
+    // approval, jobRole edited afterward, or the role simply wasn't ready
+    // yet when they were created) stays permanently stuck with nothing
+    // unless someone happens to notice. Check on every load instead: if
+    // this employee's current job role has an approved Job Library bank
+    // and they aren't attached to any assessment for that role yet, assign
+    // it now.
+    try {
+      const user = await UserStore.getUserById(req.user.userId);
+      if (user?.jobRole) {
+        const roleMatch = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
+        if (roleMatch) {
+          const existingForRole = mine.find(a => a.fromRoleId === roleMatch.id);
+          if (!existingForRole) {
+            // Not on any assessment for this role at all — assign one now.
+            const { autoAssignPreAssessment } = await import('../services/AssessmentAutoAssign.js');
+            await autoAssignPreAssessment(user);
+            assessments = await Assessments.getAll() || [];
+            mine = findMine(assessments);
+          } else if (!existingForRole.questionBankVersionId) {
+            // Already on the roster, but the assessment predates the role's
+            // approval and was never backfilled with a version link (the
+            // exact bug that left an approved role's employees with a
+            // listed-but-empty assessment) — patch it in place so
+            // resolveEmployeeQuestions can find real questions for everyone
+            // attached to it, not just this one employee.
+            const approvedVersion = await QuestionBankVersions.getApproved(roleMatch.id);
+            if (approvedVersion) {
+              await Assessments.update(existingForRole.id, { questionBankVersionId: approvedVersion.id, updatedAt: new Date().toISOString() });
+              assessments = await Assessments.getAll() || [];
+              mine = findMine(assessments);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[assessments GET mine] self-heal auto-assign failed:', e.message);
+    }
 
     const myAssessments = await Promise.all(mine.map(async (a) => {
       const myAssignment = a.employeeAssignments?.find(ea => ea.userId === req.user.userId);
