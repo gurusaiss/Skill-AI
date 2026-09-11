@@ -48,6 +48,8 @@ const ROLE_LABELS = {
   admin: 'Admin',
   employee: 'Employee',
   trainer: 'Trainer',
+  'quality-analyst': 'Quality Analyst',
+  sme: 'SME',
   manager: 'Manager',
   leadership: 'Leadership',
   'senior-training-development-manager': 'Senior Training & Development Manager',
@@ -691,6 +693,11 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                         <option value="wfm">WFM</option>
                         <option value="lead">Lead</option>
                       </optgroup>
+                      <optgroup label="Specialist">
+                        <option value="trainer">Trainer</option>
+                        <option value="quality-analyst">Quality Analyst</option>
+                        <option value="sme">SME</option>
+                      </optgroup>
                       <option value="employee">Employee</option>
                     </select>
                   </div>
@@ -1255,6 +1262,11 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
               <FieldLabel>Role</FieldLabel>
               <select value={form.role} onChange={f('role')} aria-label="Role" className={selectCls}>
                 <option value="employee">Employee</option>
+                <optgroup label="Specialist">
+                  <option value="trainer">Trainer</option>
+                  <option value="quality-analyst">Quality Analyst</option>
+                  <option value="sme">SME</option>
+                </optgroup>
                 <optgroup label="Management">
                   <option value="manager">Manager</option>
                   <option value="leadership">Leadership</option>

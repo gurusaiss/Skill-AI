@@ -36,6 +36,8 @@ export const ALL_VALID_ROLES = [
   'admin',
   'employee',
   'trainer',
+  'quality-analyst',
+  'sme',
   ...MANAGER_TIER_ROLES,
 ];
 

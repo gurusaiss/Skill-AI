@@ -135,7 +135,7 @@ class UserStore {
     this.usersFilePath       = path.join(__dirname, '../data/users.json');
     this.assignmentsFilePath = path.join(__dirname, '../data/assignments.json');
     this.auditFilePath       = path.join(__dirname, '../data/audit.json');
-    this.validRoles          = ['superadmin', 'admin', 'manager', 'employee', 'trainer', 'leadership', 'senior-training-development-manager', 'senior-quality-manager', 'senior-training-manager', 'senior-operations-manager', 'assistant-manager-ops', 'assistant-manager-quality', 'assistant-manager-training', 'wfm', 'lead'];
+    this.validRoles          = ['superadmin', 'admin', 'manager', 'employee', 'trainer', 'quality-analyst', 'sme', 'leadership', 'senior-training-development-manager', 'senior-quality-manager', 'senior-training-manager', 'senior-operations-manager', 'assistant-manager-ops', 'assistant-manager-quality', 'assistant-manager-training', 'wfm', 'lead'];
   }
 
   // ── File I/O helpers (fallback) ───────────────────────────────────────────
