@@ -2040,7 +2040,7 @@ function ManageAccessModal({ user: targetUser, onClose, onSaved, setToast }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function UserManagement() {
-  const { user, hasRole, activeRole } = useAuth();
+  const { user, hasRole, activeRole, hasFeaturePermission } = useAuth();
   const navigate = useNavigate();
 
   const [users, setUsers] = useState([]);
@@ -2238,12 +2238,16 @@ export default function UserManagement() {
               </div>
               {/* Import button */}
               <button onClick={() => setShowImport(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 border border-emerald-600 rounded-xl text-white font-bold text-sm transition-colors shadow-lg shadow-emerald-900/30">
+                disabled={!hasFeaturePermission('users.create')}
+                title={!hasFeaturePermission('users.create') ? "You don't have permission to add users" : undefined}
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-600 rounded-xl text-white font-bold text-sm transition-colors shadow-lg shadow-emerald-900/30">
                 📥 Bulk Import
               </button>
               {/* Create button */}
               <button onClick={() => setShowCreate(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-sm transition-colors shadow-lg shadow-indigo-500/20">
+                disabled={!hasFeaturePermission('users.create')}
+                title={!hasFeaturePermission('users.create') ? "You don't have permission to add users" : undefined}
+                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-white font-bold text-sm transition-colors shadow-lg shadow-indigo-500/20">
                 ➕ Add User
               </button>
             </div>

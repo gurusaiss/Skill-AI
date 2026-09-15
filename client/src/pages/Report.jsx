@@ -88,6 +88,7 @@ function SortIcon({ active, dir }) {
 // ─── Admin/Manager Report Table ───────────────────────────────────────────────
 function AdminReportView({ user, navigate }) {
   const { notify } = useNotification();
+  const { hasFeaturePermission } = useAuth();
   const [reports, setReports] = useState([]); // module reports (per-employee, with .assignments[])
   const [assessmentReports, setAssessmentReports] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -360,7 +361,8 @@ function AdminReportView({ user, navigate }) {
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowDownloadModal(true)} disabled={!!downloadingFmt}
+          <button onClick={() => setShowDownloadModal(true)} disabled={!!downloadingFmt || !hasFeaturePermission('reports.export')}
+            title={!hasFeaturePermission('reports.export') ? "You don't have permission to export reports" : undefined}
             className="px-4 py-2 rounded-lg bg-teal-600/20 border border-teal-500/30 text-teal-300 hover:bg-teal-600/40 text-sm font-medium transition-all disabled:opacity-40">
             {downloadingFmt ? 'Downloading…' : '⬇ Download All Reports'}
           </button>
@@ -490,8 +492,9 @@ function AdminReportView({ user, navigate }) {
                           ) : (
                             <button
                               onClick={() => setRowDownloadTarget(r)}
-                              title="Download full report"
-                              className="px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap bg-slate-700/30 border-slate-600/30 text-slate-300 hover:bg-slate-700/50 hover:border-slate-500/50 transition-all"
+                              disabled={!hasFeaturePermission('reports.download')}
+                              title={!hasFeaturePermission('reports.download') ? "You don't have permission to download reports" : 'Download full report'}
+                              className="px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap bg-slate-700/30 border-slate-600/30 text-slate-300 hover:bg-slate-700/50 hover:border-slate-500/50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                             >
                               📊 {displayValue}% ↓
                             </button>

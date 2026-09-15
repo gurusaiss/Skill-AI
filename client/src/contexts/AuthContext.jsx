@@ -16,7 +16,7 @@ const AuthContext = createContext({
   resetPassword: async (token, newPassword) => {},
   updateProfile: async (updates) => {},
   hasRole: (role) => false,
-  hasPermission: (permission) => false,
+  hasFeaturePermission: (key) => false,
   setAuthFromToken: (token, userData) => {},
 });
 
@@ -516,38 +516,15 @@ export const AuthProvider = ({ children }) => {
     return all.includes(role);
   };
 
-  const hasPermission = (permission) => {
+  // Granular feature-permission check (Add User, Module Creation, Downloads,
+  // etc.) — separate from hasRole(). The resolved permission list is computed
+  // server-side (role defaults + per-user admin overrides, see
+  // server/services/permissions.js) and rides in on `user.permissions` from
+  // /login and /me, so this is just a lookup, not a policy decision.
+  const hasFeaturePermission = (key) => {
     if (!user) return false;
-
-    const rolePermissions = {
-      superadmin: [
-        'manage_platform', 'manage_companies', 'manage_admins', 'view_all', 'create_companies',
-        'manage_users', 'create_content', 'assign_managers',
-        'manage_employees', 'view_all_reports', 'manage_modules',
-        'create_tasks', 'create_plans', 'view_all_users', 'modify_roles', 'view_all_data',
-        'access_learning', 'manage_assessments', 'view_analytics',
-      ],
-      admin: [
-        'create_content', 'create_tasks', 'create_plans', 'assign_managers', 'view_all_users',
-        'modify_roles', 'view_all_data', 'manage_employees', 'access_learning',
-        'manage_assessments', 'view_analytics',
-      ],
-      manager: [
-        'view_assigned_employees', 'create_content_for_employees', 'view_employee_progress',
-        'create_tasks_for_employees', 'access_learning', 'manage_assessments', 'view_team_analytics',
-      ],
-      employee: [
-        'access_learning', 'view_own_progress', 'submit_sessions', 'view_own_reports',
-        'view_own_skill_tree', 'take_assessments',
-      ],
-    };
-
-    // Use the switched (effective) role, not always the primary role — a user
-    // who switches to "Employee View" via hasRole()-gated UI must also see
-    // permission-gated UI change consistently, instead of still seeing
-    // permissions for the role they switched away from.
-    const userPermissions = rolePermissions[getEffectiveRole()] || [];
-    return userPermissions.includes(permission);
+    if (user.role === 'superadmin') return true;
+    return (user.permissions || []).includes(key);
   };
 
   const getDashboardRoute = () => {
@@ -583,7 +560,7 @@ export const AuthProvider = ({ children }) => {
     resetPassword,
     updateProfile,
     hasRole,
-    hasPermission,
+    hasFeaturePermission,
     getDashboardRoute,
     redirectToDashboard,
     setAuthFromToken,

@@ -658,7 +658,7 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
 }
 
 export default function ModuleManagement() {
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, hasFeaturePermission } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
@@ -1012,7 +1012,9 @@ export default function ModuleManagement() {
             )}
             <button
               onClick={() => { setShowCreate(true); setEditing(null); setShowReviewForm(false); setShowAgentUI(false); }}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all"
+              disabled={!hasFeaturePermission('modules.create')}
+              title={!hasFeaturePermission('modules.create') ? "You don't have permission to create modules" : undefined}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold transition-all"
             >
               + New Module
             </button>
@@ -1289,11 +1291,15 @@ export default function ModuleManagement() {
                     {/* Actions */}
                     <div className="flex items-center gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={e => { e.stopPropagation(); openEdit(mod); }}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-bold transition-all">
+                        disabled={!hasFeaturePermission('modules.edit')}
+                        title={!hasFeaturePermission('modules.edit') ? "You don't have permission to edit modules" : undefined}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all">
                         Edit
                       </button>
                       <button onClick={e => { e.stopPropagation(); handleDelete(mod.id); }}
-                        className="w-7 h-7 rounded-lg bg-slate-700/50 hover:bg-red-500/20 border border-transparent hover:border-red-500/30 text-slate-400 hover:text-red-300 flex items-center justify-center text-xs transition-all">
+                        disabled={!hasFeaturePermission('modules.delete')}
+                        title={!hasFeaturePermission('modules.delete') ? "You don't have permission to delete modules" : undefined}
+                        className="w-7 h-7 rounded-lg bg-slate-700/50 hover:bg-red-500/20 border border-transparent hover:border-red-500/30 text-slate-400 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-xs transition-all">
                         ✕
                       </button>
                     </div>
@@ -1408,7 +1414,8 @@ export default function ModuleManagement() {
             {generateInput.trim() && (
               <button
                 onClick={runGeneration}
-                disabled={generating}
+                disabled={generating || !hasFeaturePermission('modules.generate')}
+                title={!hasFeaturePermission('modules.generate') ? "You don't have permission to auto-generate modules" : undefined}
                 className="mt-4 w-full py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black text-lg transition-all shadow-2xl shadow-indigo-500/30 disabled:opacity-60"
               >
                 Generate Module with AI →

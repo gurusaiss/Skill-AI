@@ -12,7 +12,8 @@
  * 7. Report visible to employee + admin + manager
  */
 import express from 'express';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, requireRole, requirePermission } from '../middleware/auth.js';
+import { getEffectivePermissions } from '../services/permissions.js';
 import { llmLimiter } from '../middleware/rateLimiters.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -481,7 +482,7 @@ router.get('/', authenticate, async (req, res) => {
  * POST /api/assessments
  * Create assessment — admin/manager only
  */
-router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.post('/', authenticate, requireRole('admin', 'manager'), requirePermission('assessments.create'), async (req, res) => {
   try {
     const {
       title,
@@ -1041,7 +1042,7 @@ async function generateDOCXBuffer(rows, title) {
  * Export all employee reports — XLSX / PDF / DOCX / ZIP
  * Manager sees only their group employees; admin sees all.
  */
-router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'), requirePermission('reports.export'), async (req, res) => {
   try {
     const { id } = req.params;
     const format  = (req.query.format || 'xlsx').toLowerCase();
@@ -1503,7 +1504,10 @@ router.get('/:id/reports/:userId/download', authenticate, async (req, res) => {
   try {
     const { id, userId } = req.params;
     const format = (req.query.format || 'pdf').toLowerCase();
-    const isPrivileged = ['admin', 'manager', 'superadmin'].includes(req.user.role);
+    // Permission-gated rather than a hardcoded role list, so an admin can
+    // revoke/grant this per-user — but self-download must never be gated,
+    // an employee can always fetch their own report regardless of permissions.
+    const isPrivileged = getEffectivePermissions(req.user).has('reports.download');
     const isSelf = req.user.userId === userId;
 
     if (!isPrivileged && !isSelf) {
@@ -1779,7 +1783,7 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
  * GET /api/assessments/export-all-reports
  * Download ALL assessment reports for this company/manager as XLSX
  */
-router.get('/export-all-reports', authenticate, async (req, res) => {
+router.get('/export-all-reports', authenticate, requirePermission('reports.export'), async (req, res) => {
   try {
     const companyId = req.user?.companyId || 'default';
     const role = req.user.role;
@@ -1974,7 +1978,7 @@ async function generateTabularDOCXBuffer(headers, rows, title, metaLine) {
  * re-filtering, no drift, no duplicate/missing rows).
  * Body: { format: 'xlsx'|'pdf'|'doc', title, headers: string[], rows: any[][], filterSummary? }
  */
-router.post('/export-filtered-reports', authenticate, async (req, res) => {
+router.post('/export-filtered-reports', authenticate, requirePermission('reports.export'), async (req, res) => {
   try {
     const { format = 'xlsx', title, headers, rows, filterSummary } = req.body || {};
     if (!Array.isArray(headers) || !headers.length) return res.status(400).json({ success: false, error: 'headers array required' });
@@ -2036,7 +2040,7 @@ router.post('/export-filtered-reports', authenticate, async (req, res) => {
  * content never changes) fixes both the latency and the wasted repeat calls
  * across employees taking the same session.
  */
-router.post('/generate', authenticate, llmLimiter, async (req, res) => {
+router.post('/generate', authenticate, llmLimiter, requirePermission('assessments.generate'), async (req, res) => {
   try {
     const { moduleTitle, moduleDescription, skills, numQuestions, questionTypes, sessionTitle, sessionTopics, sessionKeyPoints } = req.body;
     const topics = Array.isArray(sessionTopics) && sessionTopics.length > 0 ? sessionTopics : skills;

@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, requireRole, requirePermission } from '../middleware/auth.js';
 import { sanitizeText, sanitizeEmail, sanitizePhone, sanitizeId } from '../utils/sanitize.js';
 import UserStore from '../services/UserStore.js';
 import AuthService from '../services/AuthService.js';
@@ -17,6 +17,7 @@ import { getGroups } from '../db/store.js';
 import { buildTypeSequence } from '../services/QuestionMix.js';
 import { canActAsManager, linkEmployeeToManager } from '../services/ManagerScope.js';
 import { MANAGER_TIER_ROLES, ALL_VALID_ROLES } from '../services/roleCapability.js';
+import { ALL_PERMISSION_KEYS, ROLE_DEFAULT_PERMISSIONS, getEffectivePermissions } from '../services/permissions.js';
 import { revokeAllForUser } from '../security/refreshTokenStore.js';
 
 // ── Authorization helper: can `actor` (req.user) access `target` user record? ──
@@ -357,7 +358,7 @@ router.get('/role-counts', authenticate, requireRole('admin', 'manager'), async 
  * GET /api/users
  * Get all users (admin/manager)
  */
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, requirePermission('users.view_all'), async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
     const isManager = !isAdmin && canActAsManager(req.user);
@@ -434,7 +435,7 @@ router.get('/', authenticate, async (req, res) => {
  * POST /api/users
  * Admin/Manager creates a new user directly (bypasses email signup)
  */
-router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.post('/', authenticate, requireRole('admin', 'manager'), requirePermission('users.create'), async (req, res) => {
   try {
     const raw = req.body;
     const email       = sanitizeEmail(raw.email);
@@ -1192,6 +1193,83 @@ router.put('/:userId/accesses', authenticate, requireRole('admin'), async (req, 
 });
 
 /**
+ * GET /api/users/:userId/permissions
+ * Resolved feature permissions for one user — role defaults, per-user
+ * grants/revokes, and the final resolved set. Admin-only.
+ */
+router.get('/:userId/permissions', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await UserStore.getUserById(userId);
+    if (!user) return res.status(404).json({ success: false, data: null, error: 'User not found' });
+
+    const myCompany = req.user.companyId || 'default';
+    if ((user.companyId || 'default') !== myCompany) {
+      return res.status(403).json({ success: false, data: null, error: 'Cannot manage users from another company' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        role: user.role,
+        roleDefaults: ROLE_DEFAULT_PERMISSIONS[user.role] || [],
+        granted: user.permissions?.granted || [],
+        revoked: user.permissions?.revoked || [],
+        resolved: [...getEffectivePermissions(user)],
+      },
+      error: null,
+    });
+  } catch (e) {
+    console.error('[User Routes] Get permissions error:', e.message);
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * PUT /api/users/:userId/permissions
+ * Set per-user permission overrides (granted/revoked) on top of role
+ * defaults. Admin-only.
+ */
+router.put('/:userId/permissions', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { granted, revoked } = req.body;
+
+    if (!Array.isArray(granted) || !Array.isArray(revoked)) {
+      return res.status(400).json({ success: false, data: null, error: 'granted and revoked must be arrays' });
+    }
+    const filteredGranted = granted.filter(k => ALL_PERMISSION_KEYS.includes(k));
+    const filteredRevoked = revoked.filter(k => ALL_PERMISSION_KEYS.includes(k));
+
+    const user = await UserStore.getUserById(userId);
+    if (!user) return res.status(404).json({ success: false, data: null, error: 'User not found' });
+
+    const myCompany = req.user.companyId || 'default';
+    if ((user.companyId || 'default') !== myCompany) {
+      return res.status(403).json({ success: false, data: null, error: 'Cannot manage users from another company' });
+    }
+
+    const updatedUser = await UserStore.updateUser(userId, { permissions: { granted: filteredGranted, revoked: filteredRevoked } });
+    await UserStore.logAuthEvent('permissions_changed', userId, { changedBy: req.user.userId, granted: filteredGranted, revoked: filteredRevoked, ipAddress: req.ip });
+
+    res.json({
+      success: true,
+      data: {
+        role: updatedUser.role,
+        roleDefaults: ROLE_DEFAULT_PERMISSIONS[updatedUser.role] || [],
+        granted: filteredGranted,
+        revoked: filteredRevoked,
+        resolved: [...getEffectivePermissions(updatedUser)],
+      },
+      error: null,
+    });
+  } catch (e) {
+    console.error('[User Routes] Update permissions error:', e.message);
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
  * GET /api/users/:userId/assignments
  * Get user's assignments
  */
@@ -1266,7 +1344,7 @@ router.get('/:userId/jd-file', authenticate, async (req, res) => {
  * role-conditional mandatory-field rules where an admin will actually read
  * them. Reuses the same SheetJS path already proven by the credential export.
  */
-router.get('/bulk-import/template', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.get('/bulk-import/template', authenticate, requireRole('admin', 'manager'), requirePermission('users.create'), async (req, res) => {
   try {
     const XLSX = await import('xlsx');
     const headers = [
@@ -1322,7 +1400,7 @@ router.get('/bulk-import/template', authenticate, requireRole('admin', 'manager'
  * POST /api/users/bulk-import/preview
  * Parse an import file and return preview rows with validation — no DB writes.
  */
-router.post('/bulk-import/preview', authenticate, requireRole('admin', 'manager'),
+router.post('/bulk-import/preview', authenticate, requireRole('admin', 'manager'), requirePermission('users.create'),
   importUpload.single('file'), async (req, res) => {
   const filePath = req.file?.path;
   try {
@@ -1376,7 +1454,7 @@ router.post('/bulk-import/preview', authenticate, requireRole('admin', 'manager'
  * POST /api/users/bulk-import
  * Accept validated rows (JSON array) and create users in DB.
  */
-router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), requirePermission('users.create'), async (req, res) => {
   try {
     const { rows } = req.body; // array of normalised row objects from preview
     if (!Array.isArray(rows) || !rows.length) {

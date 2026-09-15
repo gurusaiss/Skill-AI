@@ -10,6 +10,7 @@ import { addToBlocklist } from '../security/tokenBlocklist.js';
 import { isLocked, getLockoutMinutes, remainingAttempts, recordFailure, clearRecord } from '../security/loginProtection.js';
 import { generateRefreshToken, verifyRefreshToken, revokeRefreshToken, revokeAllForUser } from '../security/refreshTokenStore.js';
 import { autoAssignPreAssessment } from '../services/AssessmentAutoAssign.js';
+import { getEffectivePermissions } from '../services/permissions.js';
 
 // Alias — randomUUID is already imported from 'crypto' at the top of this file
 const generateUUID = randomUUID;
@@ -530,6 +531,7 @@ router.post('/login', rateLimitLogin, async (req, res) => {
           name: user.name,
           role: user.role,
           accesses: loginEffectiveAccesses,
+          permissions: [...getEffectivePermissions(user)],
           companyId: user.companyId || null,
           jobRole: user.jobRole || null,
           department: user.department || null,
@@ -604,6 +606,7 @@ router.post('/complete-password-change', rateLimitLogin, async (req, res) => {
           name: user.name,
           role: user.role,
           accesses: effectiveAccesses,
+          permissions: [...getEffectivePermissions(user)],
           companyId: user.companyId || null,
           jobRole: user.jobRole || null,
           department: user.department || null,
@@ -693,6 +696,7 @@ router.get('/me', authenticate, async (req, res) => {
         name: user.name,
         role: user.role,
         accesses: effectiveAccesses,
+        permissions: [...getEffectivePermissions(user)],
         companyId: user.companyId || null,
         jobRole: user.jobRole || null,
         department: user.department || null,

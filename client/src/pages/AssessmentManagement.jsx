@@ -161,7 +161,7 @@ const EMPTY_MODAL = {
 
 export default function AssessmentManagement() {
   const navigate = useNavigate();
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, hasFeaturePermission } = useAuth();
 
   const [assessments, setAssessments] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -561,20 +561,25 @@ export default function AssessmentManagement() {
           <div className="flex gap-3">
             <button
               onClick={() => setShowExportFormatModal(true)}
-              disabled={downloadingAll}
+              disabled={downloadingAll || !hasFeaturePermission('reports.export')}
+              title={!hasFeaturePermission('reports.export') ? "You don't have permission to export reports" : undefined}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-sm font-bold transition-all shadow-lg shadow-teal-500/20 disabled:opacity-40"
             >
               {downloadingAll ? 'Downloading…' : 'Download All Reports'}
             </button>
             <button
               onClick={() => setShowManualModal(true)}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm font-bold transition-all shadow-lg shadow-emerald-500/20"
+              disabled={!hasFeaturePermission('assessments.create')}
+              title={!hasFeaturePermission('assessments.create') ? "You don't have permission to create assessments" : undefined}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold transition-all shadow-lg shadow-emerald-500/20"
             >
               ✏ Manual Assessment
             </button>
             <button
               onClick={openModal}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold transition-all shadow-lg shadow-indigo-500/20"
+              disabled={!hasFeaturePermission('assessments.create')}
+              title={!hasFeaturePermission('assessments.create') ? "You don't have permission to create assessments" : undefined}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold transition-all shadow-lg shadow-indigo-500/20"
             >
               + AI Assessment
             </button>
@@ -1244,7 +1249,8 @@ export default function AssessmentManagement() {
                   </button>
                   <button
                     onClick={handleCreate}
-                    disabled={creating}
+                    disabled={creating || !hasFeaturePermission('assessments.generate')}
+                    title={!hasFeaturePermission('assessments.generate') ? "You don't have permission to generate assessment content" : undefined}
                     className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-sm font-bold text-white transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
                   >
                     {creating ? (
@@ -1709,12 +1715,16 @@ export default function AssessmentManagement() {
               <div className="flex items-center gap-2">
                 {[['xlsx','📊 Excel'],['pdf','📄 PDF'],['docx','📝 Word']].map(([fmt,lbl]) => (
                   <button key={fmt} onClick={() => doDetailExport(fmt)}
-                    className="px-3 py-1.5 rounded-lg bg-teal-600/20 hover:bg-teal-600/40 border border-teal-500/30 text-teal-300 text-xs font-bold transition-colors">
+                    disabled={!hasFeaturePermission('reports.export')}
+                    title={!hasFeaturePermission('reports.export') ? "You don't have permission to export reports" : undefined}
+                    className="px-3 py-1.5 rounded-lg bg-teal-600/20 hover:bg-teal-600/40 border border-teal-500/30 text-teal-300 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                     ⬇ {lbl}
                   </button>
                 ))}
                 <button onClick={() => doDetailExport('zip')}
-                  className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 text-purple-300 text-xs font-bold transition-colors">
+                  disabled={!hasFeaturePermission('reports.export')}
+                  title={!hasFeaturePermission('reports.export') ? "You don't have permission to export reports" : undefined}
+                  className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 text-purple-300 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                   ⬇ ZIP Bundle
                 </button>
               </div>
@@ -1839,7 +1849,9 @@ export default function AssessmentManagement() {
                                       .then(r => { if (!r.ok) throw new Error('Export failed'); return r.blob(); })
                                       .then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${(ea.userName||ea.userId).replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Report.${fmt}`; a.click(); URL.revokeObjectURL(url); })
                                       .catch(e => showToast(e.message || 'Export failed', 'error'));
-                                  }} className="px-1.5 py-1 rounded bg-slate-700 hover:bg-indigo-600/40 text-[10px] font-bold text-slate-300 hover:text-indigo-300 transition-colors">
+                                  }} disabled={!hasFeaturePermission('reports.export')}
+                                  title={!hasFeaturePermission('reports.export') ? "You don't have permission to export reports" : undefined}
+                                  className="px-1.5 py-1 rounded bg-slate-700 hover:bg-indigo-600/40 text-[10px] font-bold text-slate-300 hover:text-indigo-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                                     {lbl}
                                   </button>
                                 ))

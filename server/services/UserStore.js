@@ -70,6 +70,7 @@ function rowToUser(row) {
     jdSourceUrl:         row.jd_source_url || '',
     jdSourceType:        row.jd_source_type || 'text',
     accesses:            row.accesses || [],
+    permissions:         row.permissions || { granted: [], revoked: [] },
     additionalJobRoles:  row.additional_job_roles || [],
     // Auth fields
     otp:                 row.otp || null,
@@ -106,6 +107,7 @@ function userToRow(u) {
   if (u.jdSourceUrl  !== undefined) row.jd_source_url      = u.jdSourceUrl;
   if (u.jdSourceType !== undefined) row.jd_source_type     = u.jdSourceType;
   if (u.accesses     !== undefined) row.accesses            = u.accesses;
+  if (u.permissions  !== undefined) row.permissions         = u.permissions;
   if (u.additionalJobRoles !== undefined) row.additional_job_roles = u.additionalJobRoles;
   if (u.otp          !== undefined) row.otp                = u.otp;
   if (u.otpExpires   !== undefined) row.otp_expires        = u.otpExpires;
@@ -209,6 +211,7 @@ class UserStore {
       employeeId:         userData.employeeId || '',
       phone:              userData.phone || '',
       status:             userData.status || 'active',
+      permissions:        { granted: [], revoked: [] },
     };
 
     if (useMySQL()) {
@@ -245,6 +248,7 @@ class UserStore {
       try { if (newUser.employeeId) row.employee_id = newUser.employeeId; } catch {}
       try { if (newUser.phone) row.phone = newUser.phone; } catch {}
       try { if (newUser.status) row.status = newUser.status; } catch {}
+      try { row.permissions = newUser.permissions; } catch {}
 
       const { data, error } = await sb.from('users').insert(row).select().maybeSingle();
       if (error) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { authFetch } from '../../utils/authFetch.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 
 const inputCls = 'w-full bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500';
 const labelCls = 'block text-xs font-medium text-slate-400 mb-1';
@@ -894,6 +895,7 @@ const Q_TYPES = [
 
 function QuestionBankModal({ role, onClose, onGenerated }) {
   const { notify: toast } = useNotification();
+  const { hasFeaturePermission } = useAuth();
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [regen, setRegen] = useState(false);
@@ -1114,16 +1116,16 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
             <div className="flex gap-2 items-center">
               <button
                 onClick={() => { setRegenMode('all'); setRegenConfirm(true); }}
-                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm}
-                title="Unlimited — locked questions are always preserved, only unlocked ones are replaced"
+                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm || !hasFeaturePermission('questions.generate')}
+                title={!hasFeaturePermission('questions.generate') ? "You don't have permission to generate questions" : "Unlimited — locked questions are always preserved, only unlocked ones are replaced"}
                 className="text-xs px-3 py-1.5 rounded-lg bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/40 disabled:opacity-40 transition-colors"
               >
                 {regen && regenMode === 'all' ? '⏳ Generating…' : '✨ Regen All'}
               </button>
               <button
                 onClick={() => { setRegenMode('ai-only'); setRegenConfirm(true); }}
-                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm}
-                title="Regenerates only unlocked AI-generated questions; locked and manually-edited questions are preserved"
+                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm || !hasFeaturePermission('questions.generate')}
+                title={!hasFeaturePermission('questions.generate') ? "You don't have permission to generate questions" : "Regenerates only unlocked AI-generated questions; locked and manually-edited questions are preserved"}
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40 disabled:opacity-40 transition-colors"
               >
                 {regen && regenMode === 'ai-only' ? '⏳ Generating…' : '🔄 Regen AI Only'}
@@ -1259,7 +1261,9 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
           <div className="ml-auto relative">
             <button
               onClick={() => { setQTypePicker(v => !v); setAddMode(false); }}
-              className="text-xs px-3 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 transition-colors"
+              disabled={!hasFeaturePermission('questions.edit')}
+              title={!hasFeaturePermission('questions.edit') ? "You don't have permission to edit questions" : undefined}
+              className="text-xs px-3 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               + Add Question
             </button>
@@ -1447,19 +1451,19 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
                         <span className={`px-2 py-0.5 rounded-full text-xs border capitalize ${DIFF_COLORS[q.difficulty] || DIFF_COLORS.medium}`}>{q.difficulty || 'medium'}</span>
                         <button
                           onClick={() => startEdit(realIdx)}
-                          disabled={q.locked}
-                          title={q.locked ? 'Unlock to edit' : undefined}
+                          disabled={q.locked || !hasFeaturePermission('questions.edit')}
+                          title={!hasFeaturePermission('questions.edit') ? "You don't have permission to edit questions" : q.locked ? 'Unlock to edit' : undefined}
                           className="text-xs px-2 py-1 rounded bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 disabled:opacity-40 disabled:cursor-not-allowed"
                         >Edit</button>
                         <button
                           onClick={() => toggleQuestionLock(q)}
-                          disabled={lockingQid === q.id}
-                          title={q.locked ? 'Unlock — this question becomes regeneratable again' : 'Lock — preserve this question exactly as-is on every future regenerate'}
+                          disabled={lockingQid === q.id || !hasFeaturePermission('questions.edit')}
+                          title={!hasFeaturePermission('questions.edit') ? "You don't have permission to edit questions" : q.locked ? 'Unlock — this question becomes regeneratable again' : 'Lock — preserve this question exactly as-is on every future regenerate'}
                           className={`text-xs px-2 py-1 rounded disabled:opacity-40 ${q.locked ? 'bg-amber-600/20 text-amber-300 hover:bg-amber-600/40' : 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40'}`}
                         >
                           {lockingQid === q.id ? '…' : q.locked ? '🔓 Unlock' : '🔒 Lock'}
                         </button>
-                        <button onClick={() => deleteQ(realIdx)} disabled={q.locked} title={q.locked ? 'Unlock to delete' : undefined} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40 disabled:opacity-40 disabled:cursor-not-allowed">Del</button>
+                        <button onClick={() => deleteQ(realIdx)} disabled={q.locked || !hasFeaturePermission('questions.edit')} title={!hasFeaturePermission('questions.edit') ? "You don't have permission to edit questions" : q.locked ? 'Unlock to delete' : undefined} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40 disabled:opacity-40 disabled:cursor-not-allowed">Del</button>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
@@ -1686,6 +1690,7 @@ function ApproveModal({ role, onClose }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function RoleLibrary() {
   const { notify: toast } = useNotification();
+  const { hasFeaturePermission } = useAuth();
   const [roles, setRoles]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
@@ -1743,10 +1748,16 @@ export default function RoleLibrary() {
           <p className="text-sm text-slate-400 mt-0.5">Manage job roles, descriptions, and skills for your company</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setModal({ type: 'import' })} className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-indigo-500 hover:text-indigo-300 transition-colors">
+          <button onClick={() => setModal({ type: 'import' })}
+            disabled={!hasFeaturePermission('roles.import')}
+            title={!hasFeaturePermission('roles.import') ? "You don't have permission to import roles" : undefined}
+            className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-indigo-500 hover:text-indigo-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
             Import
           </button>
-          <button onClick={() => setModal({ type: 'add' })} className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
+          <button onClick={() => setModal({ type: 'add' })}
+            disabled={!hasFeaturePermission('roles.create')}
+            title={!hasFeaturePermission('roles.create') ? "You don't have permission to add roles" : undefined}
+            className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed">
             + Add Role
           </button>
         </div>
@@ -1818,7 +1829,10 @@ export default function RoleLibrary() {
                   <td className="px-4 py-3">
                     <div className="flex gap-1.5 flex-wrap">
                       <button onClick={() => setModal({ type: 'view', role })} className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">View</button>
-                      <button onClick={() => setModal({ type: 'edit', role })} className="text-xs px-2 py-1 rounded bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50">Edit</button>
+                      <button onClick={() => setModal({ type: 'edit', role })}
+                        disabled={!hasFeaturePermission('roles.edit')}
+                        title={!hasFeaturePermission('roles.edit') ? "You don't have permission to edit roles" : undefined}
+                        className="text-xs px-2 py-1 rounded bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50 disabled:opacity-40 disabled:cursor-not-allowed">Edit</button>
                       <button onClick={() => setQBankRole(role)} className="text-xs px-2 py-1 rounded bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 whitespace-nowrap">
                         📚 Questions{role.questionBankCount ? ` (${role.questionBankCount})` : ''}
                       </button>
@@ -1837,7 +1851,10 @@ export default function RoleLibrary() {
                       <button onClick={() => setHistoryRole(role)} className="text-xs px-2 py-1 rounded bg-sky-600/20 text-sky-300 hover:bg-sky-600/40 whitespace-nowrap" title="Version, regeneration, and assignment history">
                         📜 History
                       </button>
-                      <button onClick={() => setDelId(role.id)} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40">Delete</button>
+                      <button onClick={() => setDelId(role.id)}
+                        disabled={!hasFeaturePermission('roles.edit')}
+                        title={!hasFeaturePermission('roles.edit') ? "You don't have permission to delete roles" : undefined}
+                        className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40 disabled:opacity-40 disabled:cursor-not-allowed">Delete</button>
                     </div>
                   </td>
                 </tr>

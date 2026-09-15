@@ -96,6 +96,11 @@ CREATE TABLE IF NOT EXISTS users (
   jd_source_url          VARCHAR(2000),
   jd_source_type         VARCHAR(30),
   accesses               JSON,
+  -- { granted: string[], revoked: string[] } — per-user feature-permission overrides
+  -- on top of role defaults (server/services/permissions.js). Also add the
+  -- equivalent `permissions jsonb` column to Supabase's users table before
+  -- deploying the app code that reads/writes it (expand-then-use).
+  permissions            JSON,
   additional_job_roles   JSON,
   otp                    VARCHAR(20),
   otp_expires            TIMESTAMP    NULL,

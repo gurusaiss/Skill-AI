@@ -6,7 +6,7 @@
  */
 
 import express from 'express';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, requireRole, requirePermission } from '../middleware/auth.js';
 import multer from 'multer';
 import * as db from '../db/store.js';
 import UserStore from '../services/UserStore.js';
@@ -350,7 +350,7 @@ router.post('/import', authenticate, requireRole('admin', 'manager', 'trainer'),
  * POST /api/modules
  * Create new module (admin/manager) - persists to Supabase
  */
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, requirePermission('modules.create'), async (req, res) => {
   try {
     const user = req.user;
 
@@ -391,7 +391,7 @@ router.post('/', authenticate, async (req, res) => {
  * PUT /api/modules/:id
  * Update module (admin/manager) - persists to Supabase
  */
-router.put('/:id', authenticate, async (req, res) => {
+router.put('/:id', authenticate, requirePermission('modules.edit'), async (req, res) => {
   try {
     const user = req.user;
     const { id } = req.params;
@@ -773,7 +773,7 @@ router.post('/:id/sessions/:index/ensure-content', authenticate, async (req, res
  * DELETE /api/modules/:id
  * Delete module (admin only) - persists to Supabase
  */
-router.delete('/:id', authenticate, async (req, res) => {
+router.delete('/:id', authenticate, requirePermission('modules.delete'), async (req, res) => {
   try {
     const user = req.user;
     const { id } = req.params;
@@ -819,7 +819,7 @@ router.delete('/:id', authenticate, async (req, res) => {
  * POST /api/modules/auto-generate
  * Auto-generate a module from an assessment report — stored as PENDING (needs approval)
  */
-router.post('/auto-generate', authenticate, async (req, res) => {
+router.post('/auto-generate', authenticate, requirePermission('modules.generate'), async (req, res) => {
   try {
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && !canActAsManager(req.user)) {
       return res.status(403).json({ success: false, error: { message: 'Admin/Manager only' } });

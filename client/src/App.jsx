@@ -51,6 +51,7 @@ const EmployeeAnalytics    = lazy(() => import('./pages/employee/Analytics.jsx')
 const ApprovalCenter      = lazy(() => import('./pages/admin/ApprovalCenter.jsx'));
 const GroupManagement     = lazy(() => import('./pages/admin/GroupManagement.jsx'));
 const RoleLibrary         = lazy(() => import('./pages/admin/RoleLibrary.jsx'));
+const Permissions         = lazy(() => import('./pages/admin/Permissions.jsx'));
 const ContentReview       = lazy(() => import('./pages/admin/ContentReview.jsx'));
 const AccessCodes         = lazy(() => import('./pages/admin/AccessCodes.jsx'));
 const ActivateAccount     = lazy(() => import('./pages/auth/ActivateAccount.jsx'));
@@ -203,6 +204,11 @@ const App = () => {
               <Route path="/admin/roles" element={
                 <ProtectedRoute requiredRole={['admin', 'manager']}>
                   <RoleLibrary />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/permissions" element={
+                <ProtectedRoute requiredRole="admin">
+                  <Permissions />
                 </ProtectedRoute>
               } />
               <Route path="/admin/content-review" element={<Navigate to="/admin/modules" replace />} />

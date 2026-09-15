@@ -3,6 +3,7 @@ import UserStore from '../services/UserStore.js';
 import rateLimit from 'express-rate-limit';
 import { isBlocklisted } from '../security/tokenBlocklist.js';
 import { getEffectiveAccesses, canActAsManager, MANAGER_TIER_ROLES } from '../services/roleCapability.js';
+import { getEffectivePermissions } from '../services/permissions.js';
 
 // Shared by authenticate() below AND routes/auth.js's login/me/password-change
 // responses — these MUST stay in sync. A manager/admin who has never had
@@ -101,6 +102,7 @@ export const authenticate = async (req, res, next) => {
       role: effectiveRole,
       primaryRole: user.role,
       accesses: userAccesses,
+      permissions: user.permissions || { granted: [], revoked: [] },
       name: user.name,
       learningUUID: user.learningUUID,
       companyId: user.companyId || 'default',
@@ -157,6 +159,34 @@ export const requireRole = (...roles) => {
       });
     }
 
+    next();
+  };
+};
+
+/**
+ * Feature-permission middleware — stacks alongside requireRole, never
+ * replaces it. requireRole answers "is this actor even the right kind of
+ * user"; requirePermission answers "has an admin specifically turned this
+ * capability on for this person." Superadmin bypasses via
+ * getEffectivePermissions itself.
+ * @param {string} permissionKey - key from server/services/permissions.js PERMISSION_CATALOG
+ */
+export const requirePermission = (permissionKey) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        data: null,
+        error: { code: 'AUTH_UNAUTHORIZED', message: 'Authentication required' },
+      });
+    }
+    if (!getEffectivePermissions(req.user).has(permissionKey)) {
+      return res.status(403).json({
+        success: false,
+        data: null,
+        error: { code: 'AUTH_FORBIDDEN', message: 'Insufficient permissions' },
+      });
+    }
     next();
   };
 };

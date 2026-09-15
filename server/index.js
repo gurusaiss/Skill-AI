@@ -52,6 +52,7 @@ import approvalsRouter from './routes/approvals.js';
 import groupsRouter from './routes/groups.js';
 import recommendationsRouter from './routes/recommendations.js';
 import rolesRouter from './routes/roles.js';
+import permissionsRouter from './routes/permissions.js';
 import settingsRouter from './routes/settings.js';
 import emailService from './services/EmailService.js';
 import oauthService from './services/OAuthService.js';
@@ -315,6 +316,7 @@ app.use('/api/memory', memoryRouter);
 app.use('/api/agent-control', agentControlRouter);
 app.use('/api/recommendations', recommendationsRouter);
 app.use('/api/roles', rolesRouter);
+app.use('/api/permissions', permissionsRouter);
 app.use('/api/settings', settingsRouter);
 
 // ── Autonomous Agent Brief routes (authenticated — own data only) ───────────

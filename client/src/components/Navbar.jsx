@@ -84,6 +84,7 @@ function Navbar() {
     { to: '/admin/assignments', label: 'Assignments', icon: '📋', roles: ['admin', 'manager'] },
     { to: '/report',            label: 'Reports',     icon: '📄', roles: ['admin', 'manager'] },
     { to: '/admin/metrics',     label: 'AI Metrics',  icon: '📈', roles: ['admin'] },
+    { to: '/admin/permissions', label: 'Permissions', icon: '🔐', roles: ['admin'] },
   ];
 
   const ROLE_LINKS = {
