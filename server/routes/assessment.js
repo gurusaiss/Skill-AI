@@ -247,6 +247,94 @@ function getReadinessLevel(score) {
   return 'Requires Significant Training Before Progression';
 }
 
+// ── Answer evaluation helpers ─────────────────────────────────────────────────
+
+// Remove all punctuation and symbols, collapse whitespace.
+// "If-Else" → "if else", "AHT!" → "aht", "call centre" → "call centre"
+function normalizeAnswer(s) {
+  return (s || '')
+    .toLowerCase()
+    .replace(/[''`]/g, '')           // drop apostrophes (don't → dont)
+    .replace(/[-–—_/\\|]/g, ' ')    // hyphens/slashes → space (if-else → if else)
+    .replace(/[^\w\s]/g, ' ')        // drop remaining punctuation
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Common words that carry no meaning for answer comparison
+const STOP_WORDS = new Set([
+  'the','a','an','is','are','was','were','be','been','being',
+  'have','has','had','do','does','did','will','would','could',
+  'should','may','might','must','can','of','in','on','at','to',
+  'for','with','by','from','up','about','into','through',
+  'and','or','but','if','then','that','this','it','its',
+  'not','no','so','as','than','when','where','which','who',
+  'how','what','we','they','he','she','you','i','my','our',
+  'their','your','his','her','also','very','used','use',
+]);
+
+// Simple suffix stemming so "handling"/"handled"/"handles" all match "handle"
+function stem(w) {
+  return w
+    .replace(/ing$/, '')
+    .replace(/tions?$/, 't')
+    .replace(/ments?$/, '')
+    .replace(/nesses?$/, '')
+    .replace(/iers?$/, 'y')
+    .replace(/ies$/, 'y')
+    .replace(/ers?$/, '')
+    .replace(/es$/, '')
+    .replace(/s$/, '');
+}
+
+function getKeywords(norm) {
+  return norm.split(/\s+/).filter(w => w.length > 1 && !STOP_WORDS.has(w));
+}
+
+// Fraction of correct-answer keywords present in the user answer (with stemming)
+function keywordOverlap(uaNorm, caNorm) {
+  const caKW = getKeywords(caNorm);
+  if (caKW.length === 0) return 1;
+  const uaSet = new Set(getKeywords(uaNorm));
+  const uaStemSet = new Set([...uaSet].map(stem));
+  let matched = 0;
+  for (const k of caKW) {
+    if (uaSet.has(k) || uaStemSet.has(stem(k))) matched++;
+  }
+  return matched / caKW.length;
+}
+
+// Core answer evaluator — shared by fill_blank and subjective
+function isAnswerCorrect(userAnswer, correctAnswer, type) {
+  const uaNorm = normalizeAnswer(userAnswer);
+  const caNorm = normalizeAnswer(correctAnswer);
+
+  // 1. Exact match after full normalization (handles case, hyphens, punctuation)
+  if (uaNorm === caNorm) return true;
+  if (!uaNorm) return false;
+
+  // 2. The correct answer (normalized) is fully contained in the user answer
+  //    e.g. user wrote a longer but correct sentence
+  if (caNorm.length > 2 && uaNorm.includes(caNorm)) return true;
+
+  // 3. The user answer is fully contained in the correct answer
+  //    e.g. correct = "average handle time", user = "average handling time"
+  if (uaNorm.length > 2 && caNorm.includes(uaNorm)) return true;
+
+  const caWords = caNorm.split(/\s+/).filter(Boolean);
+  const overlap = keywordOverlap(uaNorm, caNorm);
+
+  if (type === 'fill_blank' || type === 'fill_in_blank') {
+    // Short answer (≤3 key words): require high match — "if else" must not accept "loop"
+    const caKW = getKeywords(caNorm);
+    const threshold = caKW.length <= 2 ? 0.8 : caWords.length <= 5 ? 0.65 : 0.5;
+    return overlap >= threshold;
+  }
+
+  // Subjective: minimum meaningful length + 30% keyword coverage
+  return uaNorm.length >= 5 && (getKeywords(caNorm).length === 0 || overlap >= 0.3);
+}
+
 // ── Score a submission ────────────────────────────────────────────────────────
 // responses: dense array of { answer: string } indexed by question position
 function scoreSubmission(questions, responses) {
@@ -274,24 +362,9 @@ function scoreSubmission(questions, responses) {
       const correctLetter = extractLetter(q.answer || '');
       isCorrect = userLetter !== '' && userLetter === correctLetter;
     } else if (q.type === 'fill_blank' || q.type === 'fill_in_blank') {
-      const ua = userAnswer.toLowerCase().trim();
-      const ca = (q.answer || '').toLowerCase().trim();
-      // Exact match first
-      if (ua === ca) {
-        isCorrect = true;
-      } else {
-        // Keyword overlap
-        const keywords = ca.split(/\s+/).filter(w => w.length > 3);
-        const matched = keywords.filter(k => ua.includes(k)).length;
-        isCorrect = keywords.length > 0 && (matched / keywords.length) >= 0.5;
-      }
+      isCorrect = isAnswerCorrect(userAnswer, q.answer || '', 'fill_blank');
     } else {
-      // Subjective — keyword overlap scoring
-      const ua = userAnswer.toLowerCase();
-      const ca = (q.answer || '').toLowerCase();
-      const keywords = ca.split(/\s+/).filter(w => w.length > 4);
-      const matched = keywords.filter(k => ua.includes(k)).length;
-      isCorrect = ua.trim().length > 10 && (keywords.length === 0 || (matched / keywords.length) >= 0.3);
+      isCorrect = isAnswerCorrect(userAnswer, q.answer || '', 'subjective');
     }
 
     total++;
