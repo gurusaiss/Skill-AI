@@ -679,7 +679,9 @@ export default function AssessmentManagement() {
                 const totalAssigned = empAssignments.length || a.targetUsers?.length || 0;
                 const pendingCount = totalAssigned - submittedCount;
                 const passThreshold = a.settings?.passPercentage ?? 80;
-                const scores = empAssignments.filter(ea => ea.status === 'submitted').map(ea => ea.score ?? ea.percentage ?? 0).filter(s => s > 0);
+                // Same fallback as the detail view — ea.score/ea.percentage are
+                // never actually set; the real score lives at ea.scoring.score.
+                const scores = empAssignments.filter(ea => ea.status === 'submitted').map(ea => ea.score ?? ea.percentage ?? ea.scoring?.score ?? null).filter(s => s != null && s > 0);
                 const avgScore = scores.length ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length) : null;
                 // Determine primary job role for this assessment
                 const jobRoles = [...new Set(empAssignments.map(ea => ea.jobRole).filter(Boolean))];
@@ -1678,8 +1680,15 @@ export default function AssessmentManagement() {
         const empAssignments = viewDetail.employeeAssignments || [];
         const submitted = empAssignments.filter(ea => ea.status === 'submitted');
         const passThreshold = viewDetail.settings?.passPercentage ?? 80;
-        const scores = submitted.map(ea => ea.score ?? ea.percentage ?? 0).filter(s => s > 0);
-        const passCount = submitted.filter(ea => (ea.score ?? ea.percentage ?? 0) >= passThreshold).length;
+        // The real score lives at ea.scoring.score (set by scoreSubmission on
+        // the server) — ea.score/ea.percentage are legacy fields that are
+        // never actually populated for real submissions, so without this
+        // fallback every submitted employee silently scored as "0%", making
+        // Avg Score show "—" and Pass%/Fail% show 0%/100% regardless of the
+        // employees' real scores. Matches the per-row display's own fallback below.
+        const scoreOf = (ea) => ea.score ?? ea.percentage ?? ea.scoring?.score ?? null;
+        const scores = submitted.map(scoreOf).filter(s => s != null && s > 0);
+        const passCount = submitted.filter(ea => (scoreOf(ea) ?? 0) >= passThreshold).length;
         const failCount = submitted.length - passCount;
         const passRate = submitted.length ? Math.round(passCount / submitted.length * 100) : 0;
         const failRate = submitted.length ? Math.round(failCount / submitted.length * 100) : 0;

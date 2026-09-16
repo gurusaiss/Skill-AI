@@ -591,7 +591,7 @@ export default function ManagerDashboard() {
             </div>
             <div className="bg-slate-900/60 rounded-xl p-3 text-center">
               <p className="text-2xl font-black text-emerald-400">{passedReports}</p>
-              <p className="text-xs text-slate-500 mt-0.5">Passed (≥60%)</p>
+              <p className="text-xs text-slate-500 mt-0.5" title="Each assessment's own configured pass threshold">Passed</p>
             </div>
             <div className="bg-slate-900/60 rounded-xl p-3 text-center">
               <p className={`text-2xl font-black ${needsAttention.length > 0 ? 'text-red-400' : 'text-slate-400'}`}>{needsAttention.length}</p>
@@ -630,7 +630,7 @@ export default function ManagerDashboard() {
           {needsAttention.length > 0 && (
             <div className="mt-3 flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
               <span>⚠</span>
-              <span><strong>{needsAttention.length}</strong> employee{needsAttention.length !== 1 ? 's' : ''} scored below 60% — consider approving auto-generated training modules.</span>
+              <span><strong>{needsAttention.length}</strong> employee{needsAttention.length !== 1 ? 's' : ''} scored below their assessment's pass threshold — consider approving auto-generated training modules.</span>
             </div>
           )}
         </div>
