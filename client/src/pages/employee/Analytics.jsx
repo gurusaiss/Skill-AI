@@ -133,6 +133,10 @@ export default function Analytics() {
       .map((a, i) => ({
         name : (a.title || `Test ${i + 1}`).slice(0, 18),
         score: Math.round(a.submission?.scoring?.score ?? a.scoring?.score ?? a.score ?? 0),
+        // Same threshold the admin/manager/report views use for this exact
+        // submission — never a hardcoded split — so "pass" means the same
+        // thing everywhere this score is shown.
+        passThreshold: a.submission?.scoring?.passThreshold ?? a.scoring?.passThreshold ?? a.passThreshold ?? 80,
       }));
   }, [assessments]);
 
@@ -272,7 +276,7 @@ export default function Analytics() {
                   <Tooltip contentStyle={customTooltipStyle} formatter={(v) => [`${v}%`, 'Score']} />
                   <Bar dataKey="score" name="Score" radius={[6, 6, 0, 0]}>
                     {assessmentScores.map((entry, i) => (
-                      <Cell key={i} fill={entry.score >= 80 ? COLORS.emerald : entry.score >= 60 ? COLORS.indigo : COLORS.rose} />
+                      <Cell key={i} fill={entry.score >= entry.passThreshold ? COLORS.emerald : COLORS.rose} />
                     ))}
                   </Bar>
                 </BarChart>

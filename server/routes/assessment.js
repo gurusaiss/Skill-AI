@@ -338,7 +338,7 @@ function isAnswerCorrect(userAnswer, correctAnswer, type) {
 
 // ── Score a submission ────────────────────────────────────────────────────────
 // responses: dense array of { answer: string } indexed by question position
-function scoreSubmission(questions, responses) {
+function scoreSubmission(questions, responses, passThreshold = 80, customThresholds) {
   let correct = 0;
   let total = 0;
   const breakdown = [];
@@ -420,13 +420,19 @@ function scoreSubmission(questions, responses) {
     .filter(([, v]) => v.correct === 0)
     .map(([k]) => k);
 
-  const performanceClassification = classifyPerformance(score);
+  const performanceClassification = classifyPerformance(score, customThresholds);
   const readinessLevel = getReadinessLevel(score);
 
   // Recommended learning areas derived from weak/missing areas
   const recommendedLearningAreas = [...new Set([...missingCompetencies, ...weakAreas])];
 
-  return { score, grade, correct, total, breakdown, skillAreas, skillBreakdown, strengths, weakAreas, missingCompetencies, performanceClassification, readinessLevel, recommendedLearningAreas };
+  // passThreshold/passed are persisted onto every report (spread verbatim by
+  // the /submit route), so every later consumer — employee report, manager
+  // dashboard, exports — can use the SAME pass/fail fact for this submission
+  // instead of re-deriving it from a different, possibly stale assumption.
+  const passed = score >= passThreshold;
+
+  return { score, grade, correct, total, breakdown, skillAreas, skillBreakdown, strengths, weakAreas, missingCompetencies, performanceClassification, readinessLevel, recommendedLearningAreas, passThreshold, passed };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1293,7 +1299,12 @@ async function buildFullReportData({ ea, report, assessment, userId, req }) {
       finalScore: sc.score ?? null,
       correct: sc.correct ?? null,
       total: sc.total ?? questions.length,
-      passFail: sc.score != null ? (sc.score >= 70 ? 'Pass' : 'Fail') : 'Pending',
+      // Always recompute from the assessment's real configured threshold —
+      // never a hardcoded cutoff — so this matches the admin's export and
+      // the manager dashboard for the exact same submission. Recomputing
+      // here (rather than trusting a stored sc.passed) also keeps this
+      // correct for reports submitted before passThreshold started being persisted.
+      passFail: sc.score != null ? (sc.score >= (assessment.settings?.passPercentage ?? 80) ? 'Pass' : 'Fail') : 'Pending',
       grade: sc.grade || '',
       status: ea.status || 'assigned',
     },
@@ -2170,8 +2181,13 @@ router.post('/:id/submit', authenticate, async (req, res) => {
 
     console.log(`[submit] Assessment ${req.params.id} — ${questions.length} questions, ${responses.filter(r => r?.answer).length} answered`);
 
-    // Score the submission
-    const scoring = scoreSubmission(questions, responses);
+    // Score the submission — pass/fail and classification must use the SAME
+    // threshold everywhere a submission's result is shown (admin export,
+    // employee report, manager dashboard), so resolve it once here from the
+    // real per-assessment setting rather than letting each consumer guess.
+    const passThreshold = assessment.settings?.passPercentage ?? 80;
+    const companyThresholds = await AssessmentThresholds.getByCompany(req.user.companyId || 'default').catch(() => null);
+    const scoring = scoreSubmission(questions, responses, passThreshold, companyThresholds?.thresholds);
 
     // Re-fetch the assessment immediately before writing to shrink the race
     // window against a concurrent submit for the same employee — this is a

@@ -119,6 +119,7 @@ function PhaseDetails({ module, onStart }) {
   const duration  = module?.estimated_duration || module?.duration || '7 days';
   const difficulty = module?.difficulty || 'intermediate';
   const category   = module?.category || 'Learning';
+  const customFields = (module?.content?.customFields || []).filter(f => f.label?.trim());
 
   return (
     <div className="min-h-screen bg-[#0F172A] py-10 px-4">
@@ -183,6 +184,21 @@ function PhaseDetails({ module, onStart }) {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* Additional info (optional, admin-defined) */}
+        {customFields.length > 0 && (
+          <div className="mb-8 rounded-2xl bg-slate-800/30 border border-slate-700/60 p-5">
+            <h2 className="text-sm font-black text-slate-200 uppercase tracking-widest mb-3">Additional Info</h2>
+            <dl className="space-y-2">
+              {customFields.map((f, i) => (
+                <div key={f.id || i} className="flex justify-between gap-4 text-sm">
+                  <dt className="text-slate-400">{f.label}</dt>
+                  <dd className="text-slate-200 font-medium text-right">{f.value}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
         )}
 

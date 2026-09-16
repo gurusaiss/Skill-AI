@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
@@ -701,8 +701,10 @@ export default function ModuleManagement() {
     title: '', description: '', category: 'Web Development', difficulty: 'beginner',
     estimatedDuration: '7 days', skills: [''], tasks: [''], resources: [''],
     completionCriteria: 'Complete all tasks', roadmap: [], sessions: [], quizzes: [],
-    milestones: [], timeline: 14, targetRoles: '',
+    milestones: [], timeline: 14, targetRoles: '', customFields: [],
   });
+
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const isManagerOrAdmin = hasRole('admin') || hasRole('manager');
 
@@ -846,10 +848,23 @@ export default function ModuleManagement() {
       quizzes: mod.quizzes || [],
       milestones: mod.milestones || mod.skills || [],
       timeline: mod.timeline || mod.estimatedDuration || 14,
+      customFields: mod.content?.customFields || [],
     });
     setShowCreate(true);
     setShowReviewForm(true); // go straight to review/edit form for existing modules
   };
+
+  // Deep-link support: opened via "Edit Module" from an employee's assignment
+  // (/admin/modules?edit=<moduleId>) — auto-opens that module's edit form the
+  // moment its data is available, then clears the param so a refresh doesn't
+  // reopen it.
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (!editId || modules.length === 0) return;
+    const mod = modules.find(m => m.id === editId);
+    if (mod) openEdit(mod);
+    setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('edit'); return next; }, { replace: true });
+  }, [modules, searchParams]);
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this module?')) return;
@@ -895,6 +910,7 @@ export default function ModuleManagement() {
         milestones: form.milestones || cleanSkills || [],
         timeline: form.timeline || 14,
         completionCriteria: form.completionCriteria || 'Complete all tasks',
+        customFields: (form.customFields || []).filter(f => f.label?.trim()),
       },
     };
 
@@ -1631,6 +1647,30 @@ export default function ModuleManagement() {
                   </div>
                 ))}
                 {extResources.length === 0 && <p className="text-xs text-slate-600 py-1">No external resources added.</p>}
+              </div>
+
+              {/* Additional Info — free-form optional fields (e.g. Turnaround Time) */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    Additional Info <span className="text-slate-600 font-normal normal-case">(optional)</span>
+                  </label>
+                  <button type="button" onClick={() => updateField('customFields', [...(form.customFields || []), { id: `cf_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, label: '', value: '' }])}
+                    className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40">
+                    + Add Field
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 mb-2">Add any other info this module needs — Turnaround Time, SLA, Prerequisites, or anything else. Never required.</p>
+                {(form.customFields || []).map((f, i) => (
+                  <div key={f.id || i} className="flex gap-2 mb-2">
+                    <input value={f.label} onChange={e => { const n = [...(form.customFields || [])]; n[i] = { ...n[i], label: e.target.value }; updateField('customFields', n); }}
+                      placeholder="Label (e.g. Turnaround Time)" className="flex-1 bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                    <input value={f.value} onChange={e => { const n = [...(form.customFields || [])]; n[i] = { ...n[i], value: e.target.value }; updateField('customFields', n); }}
+                      placeholder="Value (e.g. 48 hours)" className="flex-[2] bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                    <button type="button" onClick={() => updateField('customFields', (form.customFields || []).filter((_, j) => j !== i))} className="text-red-400 hover:text-red-300 px-2">✕</button>
+                  </div>
+                ))}
+                {(form.customFields || []).length === 0 && <p className="text-xs text-slate-600 py-1">No additional info added.</p>}
               </div>
 
               {/* Sessions + Quiz editor */}

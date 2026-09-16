@@ -339,14 +339,19 @@ export default function ManagerDashboard() {
     : 0;
   const overdueAssignments = assignments.filter((a) => isOverdue(a.dueDate, a.status)).length;
 
-  // Assessment report stats
+  // Assessment report stats. Pass/fail must use each report's OWN configured
+  // threshold (set at assessment-creation time), not a flat guess — otherwise
+  // this dashboard's pass rate disagrees with the employee's own report and
+  // the admin's export for the exact same submission. Falls back to 80 (the
+  // platform default) for reports submitted before passThreshold was persisted.
   const teamEmployeeIds = new Set(employees.map(e => e.userId || e.id));
   const teamReports = assessmentReports.filter(r => teamEmployeeIds.has(r.userId));
+  const isReportPassed = (r) => (r.score || 0) >= (r.passThreshold ?? 80);
   const avgAssessmentScore = teamReports.length > 0
     ? Math.round(teamReports.reduce((s, r) => s + (r.score || 0), 0) / teamReports.length)
     : null;
-  const passedReports = teamReports.filter(r => (r.score || 0) >= 60).length;
-  const needsAttention = teamReports.filter(r => (r.score || 0) < 60);
+  const passedReports = teamReports.filter(isReportPassed).length;
+  const needsAttention = teamReports.filter(r => !isReportPassed(r));
 
   if (!user) return null;
 
@@ -446,7 +451,7 @@ export default function ManagerDashboard() {
                 const empId = selectedEmployee.userId || selectedEmployee.id;
                 const empReport = assessmentReports.find(r => r.userId === empId);
                 if (!empReport) return null;
-                const scoreColor = (empReport.score || 0) >= 80 ? 'text-emerald-400' : (empReport.score || 0) >= 60 ? 'text-amber-400' : 'text-red-400';
+                const scoreColor = isReportPassed(empReport) ? 'text-emerald-400' : 'text-red-400';
                 return (
                   <div>
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Assessment Report</h3>
@@ -597,8 +602,8 @@ export default function ManagerDashboard() {
           {/* Per-employee report rows */}
           <div className="space-y-2 max-h-56 overflow-y-auto">
             {teamReports.slice().sort((a, b) => (a.score || 0) - (b.score || 0)).map((r) => {
-              const scoreColor = (r.score || 0) >= 80 ? 'text-emerald-400' : (r.score || 0) >= 60 ? 'text-amber-400' : 'text-red-400';
-              const gradeBg = (r.score || 0) >= 80 ? 'bg-emerald-500/15 border-emerald-500/30' : (r.score || 0) >= 60 ? 'bg-amber-500/15 border-amber-500/30' : 'bg-red-500/15 border-red-500/30';
+              const scoreColor = isReportPassed(r) ? 'text-emerald-400' : 'text-red-400';
+              const gradeBg = isReportPassed(r) ? 'bg-emerald-500/15 border-emerald-500/30' : 'bg-red-500/15 border-red-500/30';
               return (
                 <div key={r.id} className="flex items-center gap-3 px-3 py-2.5 bg-slate-900/50 rounded-lg border border-slate-700/40">
                   <div className="w-7 h-7 rounded-lg bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 shrink-0">

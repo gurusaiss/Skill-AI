@@ -182,6 +182,7 @@ function AdminReportView({ user, navigate }) {
         name: r.assessmentTitle || r.title || 'Untitled Assessment',
         status: r.status || 'submitted',
         score: r.score ?? r.completionRate ?? 0,
+        passThreshold: r.passThreshold ?? 80,
         progress: null, // assessments are graded, not progress-tracked
         scoreOrCompletion: r.score ?? r.completionRate ?? 0, // unified field kept for sorting
         assignedDate: r.assignedAt || null,
@@ -452,7 +453,13 @@ function AdminReportView({ user, navigate }) {
                 <tbody className="divide-y divide-slate-700/30">
                   {pageRows.map(r => {
                     const displayValue = Math.round(r.scoreOrCompletion || 0);
-                    const valueColor = displayValue >= 80 ? 'text-emerald-400' : displayValue >= 50 ? 'text-amber-400' : 'text-red-400';
+                    // Assessment scores are pass/fail against the assessment's own
+                    // configured threshold (same fact the employee's report and
+                    // admin's export use); module completion % has no such
+                    // threshold, so it keeps its existing tiered coloring.
+                    const valueColor = r.type === 'assessment'
+                      ? (displayValue >= (r.passThreshold ?? 80) ? 'text-emerald-400' : 'text-red-400')
+                      : (displayValue >= 80 ? 'text-emerald-400' : displayValue >= 50 ? 'text-amber-400' : 'text-red-400');
                     return (
                       <tr key={r.id} className="hover:bg-slate-800/20 transition-all h-[52px]">
                         <td className={TD_CLS}>

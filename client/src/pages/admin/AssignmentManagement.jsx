@@ -435,6 +435,15 @@ export default function AssignmentManagement() {
 
                     {/* Actions */}
                     <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                      {moduleId && (
+                        <button
+                          onClick={() => navigate(`/admin/modules?edit=${moduleId}`)}
+                          title="Edit this module"
+                          className="w-7 h-7 rounded-lg bg-slate-700/60 hover:bg-indigo-500/20 hover:border-indigo-500/40 border border-transparent text-slate-400 hover:text-indigo-300 flex items-center justify-center text-xs transition-all"
+                        >
+                          ✎
+                        </button>
+                      )}
                       {status !== 'completed' && status !== 'cancelled' && (
                         <button
                           onClick={() => cancelAssignment(a.id)}
@@ -533,7 +542,14 @@ export default function AssignmentManagement() {
                               <p className="text-sm font-semibold text-white truncate">{empName}</p>
                             </div>
                             {/* Module */}
-                            <p className="text-sm text-slate-300 truncate">{getModuleName(moduleId)}</p>
+                            {moduleId ? (
+                              <button onClick={() => navigate(`/admin/modules?edit=${moduleId}`)} title="Edit this module"
+                                className="text-sm text-slate-300 hover:text-indigo-300 truncate text-left transition-colors">
+                                {getModuleName(moduleId)}
+                              </button>
+                            ) : (
+                              <p className="text-sm text-slate-300 truncate">{getModuleName(moduleId)}</p>
+                            )}
                             {/* Priority */}
                             <div className="flex items-center gap-1.5">
                               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${pcfg.dot}`} />

@@ -34,6 +34,7 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
   const totalMinutes = content.estimatedMinutesTotal;
   const expectedOutcomes = content.expectedOutcomes || [];
   const milestones = content.milestones || [];
+  const customFields = (content.customFields || []).filter(f => f.label?.trim());
 
   return (
     <div className="space-y-6">
@@ -145,6 +146,21 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Additional Info (optional, admin-defined) */}
+      {customFields.length > 0 && (
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Additional Info</h3>
+          <dl className="space-y-2">
+            {customFields.map((f, i) => (
+              <div key={f.id || i} className="flex justify-between gap-4 text-sm">
+                <dt className="text-slate-400">{f.label}</dt>
+                <dd className="text-slate-200 font-medium text-right">{f.value}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       )}
 
