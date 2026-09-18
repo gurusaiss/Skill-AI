@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { readFile, writeFile, rename, access, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { GeneratedModules } from '../services/DataStore.js';
+import { GeneratedModules, Groups as GroupsStore } from '../services/DataStore.js';
 import * as mysqlDb from './mysql.js';
 
 // Same opt-in contract as DataStore.js/UserStore.js: unset DB_BACKEND (the
@@ -778,8 +778,14 @@ export async function getGroups() {
     if (error) throw error;
     return (data || []).map(r => ({ id: r.id, ...(r.data || {}) }));
   }
-  const f = await readJsonFile(join(DATA_DIR, 'groups.json'));
-  return f?.groups || [];
+  // File-fallback previously read its own `{ groups: [...] }` wrapper here
+  // while DataStore.Groups' writer (used by the actual Groups admin page,
+  // and by every other caller of this data) wrote a bare array — the two
+  // never agreed on shape, so this always returned []. Delegating to
+  // DataStore.Groups makes this function and the Groups page read the exact
+  // same store; readFileRecords() already tolerates both a bare array and a
+  // `{key:[...]}` wrapper, so any existing groups.json keeps working.
+  return GroupsStore.getAll();
 }
 
 export async function createGroup(group) {
@@ -804,13 +810,11 @@ export async function createGroup(group) {
     if (error) throw error;
     return { id: data.id, ...(data.data || {}) };
   }
-  const path = join(DATA_DIR, 'groups.json');
-  const f = await readJsonFile(path) || { groups: [], nextId: 1 };
-  const newGroup = { ...group, id: group.id || `grp_${String(f.nextId).padStart(4, '0')}` };
-  f.groups.push(newGroup);
-  f.nextId += 1;
-  await writeJsonFile(path, f);
-  return newGroup;
+  // Same unification as getGroups() above — write through the one store
+  // every other group creation path (GroupManagement.jsx → /api/groups)
+  // already uses, instead of a second file format nothing else reads.
+  const id = group.id || `grp_${Date.now()}`;
+  return GroupsStore.create({ ...group, id });
 }
 
 export async function addGroupMembers(groupId, userIds, roleInGroup = 'member') {

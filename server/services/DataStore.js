@@ -1235,6 +1235,26 @@ export const EmployeeAssessmentAssignments = {
     if (idx >= 0) { all[idx] = { ...all[idx], ...payload }; writeFile(EAA_FILE, all); return all[idx]; }
     return null;
   },
+  // Merge-safe: touches ONLY question_order, by (assessment_id, user_id) —
+  // unlike bulkCreate's upsert (which always resets status/submitted_at/
+  // scoring to fresh-assignment defaults), this is safe to call against a
+  // row that may already carry real submission data. Used to self-heal a
+  // stale/short question_order without any risk of clobbering a score.
+  async updateQuestionOrder(assessmentId, userId, order) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('employee_assessment_assignments')
+        .update({ question_order: order })
+        .eq('assessment_id', assessmentId).eq('user_id', userId)
+        .select('*').maybeSingle();
+      if (!error) return data;
+      console.warn('[DataStore] employee_assessment_assignments.updateQuestionOrder:', error.message);
+    }
+    const all = readFileRecords(EAA_FILE);
+    const idx = all.findIndex(r => r.assessment_id === assessmentId && r.user_id === userId);
+    if (idx >= 0) { all[idx] = { ...all[idx], question_order: order }; writeFile(EAA_FILE, all); return all[idx]; }
+    return null;
+  },
 };
 
 export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds, AccessCodes, GeneratedModules, QuestionBankVersions, EmployeeAssessmentAssignments };

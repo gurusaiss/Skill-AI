@@ -1376,8 +1376,9 @@ router.get('/bulk-import/template', authenticate, requireRole('admin', 'manager'
       ['manager_email', 'Must match an existing manager/admin, OR a manager row inside this same file (any order).'],
       ['manager_name', 'For your readability. A mismatch against the record is a warning, not an error — the email is what links.'],
       ['email', 'Immutable. If the email already exists the user is UPDATED; if new, the user is CREATED.'],
-      ['job_role_1', 'The primary job role.'],
-      ['job_role_2/3/4', 'Additional job roles, applied in order. Each triggers its own auto-assessment, exactly as adding one manually does.'],
+      ['job_role_1', 'The primary job role — uses job_description below, and auto-generates its assessment.'],
+      ['job_role_2/3/4', 'Additional job roles, applied in order and tagged with this row\'s department. They do NOT auto-generate an assessment (there\'s no distinct job_description per extra role in this template) — add one from Role Library afterward if needed.'],
+      ['company_name', 'Set on create. On re-import of an existing user, only overwrites if this cell is non-blank.'],
       ['password', 'Leave blank — a secure password is generated and returned to you in a credentials file.'],
       [],
       ['Note', 'Do not add comment or instruction rows to the Users sheet; every row there is treated as data.'],
@@ -1488,6 +1489,7 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), requi
           if (row.jobRole) updateFields.jobRole = row.jobRole;
           if (row.department) updateFields.department = row.department;
           if (row.jobDescription) updateFields.jobDescription = row.jobDescription;
+          if (row.companyName) updateFields.companyName = row.companyName;
           if (row.phone) updateFields.phone = row.phone;
           if (row.employeeId) updateFields.employeeId = row.employeeId;
           if (row.status && ['active','inactive','blocked'].includes(row.status)) updateFields.status = row.status;
@@ -1500,12 +1502,18 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), requi
             await UserStore.updateUser(existingUser.userId || existingUser.id, updateFields);
           }
 
-          // Additional job roles (job_role_2/3/4) — same behavior as manually
-          // adding a role: appended in order, each triggers its own assessment.
+          // Additional job roles (job_role_2/3/4) — appended in order, tagged
+          // with the row's department. Deliberately NOT given the row's
+          // job_description: that text describes job_role_1, and generating
+          // an assessment for a DIFFERENT role from job_role_1's JD would be
+          // exactly the kind of ungrounded/mismatched content generation this
+          // platform's assessment-quality work explicitly rejects. Without a
+          // distinct JD per extra role, addAdditionalJobRole correctly leaves
+          // that role assessment-less rather than fabricating one.
           const extraRoleNames = [row.jobRole2, row.jobRole3, row.jobRole4].filter(Boolean);
           const addedExtraRoles = [];
           for (const roleName of extraRoleNames) {
-            const { role } = await addAdditionalJobRole(existingUser, { roleName }, req.user.userId);
+            const { role } = await addAdditionalJobRole(existingUser, { roleName, department: row.department }, req.user.userId);
             if (role) addedExtraRoles.push(role.roleName);
           }
 
@@ -1558,9 +1566,11 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), requi
 
         // Additional job roles (job_role_2/3/4) — order preserved, primary
         // (job_role_1) is already set above via createUser's jobRole field.
+        // See the update-path comment above for why department is passed
+        // through but job_description deliberately is not.
         const extraRoleNames = [row.jobRole2, row.jobRole3, row.jobRole4].filter(Boolean);
         for (const roleName of extraRoleNames) {
-          await addAdditionalJobRole(user, { roleName }, req.user.userId).catch(() => {});
+          await addAdditionalJobRole(user, { roleName, department: row.department }, req.user.userId).catch(() => {});
         }
 
         // Activation link — an alternate path to the same outcome as the temp

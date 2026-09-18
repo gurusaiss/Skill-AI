@@ -209,7 +209,10 @@ export default function ContentReview() {
   const regenerate = async (roleId, roleName) => {
     if (!roleId) return warning('No role ID available to regenerate');
     try {
-      await authFetch(`/api/roles/${roleId}/generate-assessment`, { method: 'POST', body: JSON.stringify({ questionCount: 10 }) });
+      // No questionCount here — let the server apply its own default (50),
+      // the same one every other generation entry point uses. This used to
+      // hardcode 10, silently overriding whatever the role's real target was.
+      await authFetch(`/api/roles/${roleId}/generate-assessment`, { method: 'POST' });
       success(`Assessment regenerated for ${roleName}`);
       load();
     } catch { notifyError('Regeneration failed'); }

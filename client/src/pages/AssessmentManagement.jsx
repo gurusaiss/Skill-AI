@@ -166,6 +166,14 @@ export default function AssessmentManagement() {
   const [assessments, setAssessments] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [groups, setGroups] = useState([]);
+  // Same derivation UserManagement.jsx's department filter uses — the
+  // distinct department values actually present on employee records is the
+  // one source of truth already used everywhere else in the app (there is
+  // no Organizations/Departments admin hierarchy anyone actually populates).
+  const departments = useMemo(
+    () => [...new Set(employees.map(e => e.department).filter(Boolean))].sort(),
+    [employees]
+  );
   const [loading, setLoading] = useState(true);
   const { notify: showToast } = useNotification();
   const [search, setSearch] = useState('');
@@ -246,7 +254,11 @@ export default function AssessmentManagement() {
       const [assessRes, empRes, groupRes] = await Promise.allSettled([
         authFetch('/api/assessments'),
         authFetch('/api/users?role=employee'),
-        authFetch('/api/content/groups'),
+        // Same endpoint the Groups admin page itself uses (GroupManagement.jsx)
+        // — /api/content/groups was backed by a second, independent group
+        // store that never agreed with this one, so an existing group never
+        // appeared here.
+        authFetch('/api/groups'),
       ]);
       if (assessRes.status === 'fulfilled') {
         const v = assessRes.value;
@@ -900,18 +912,30 @@ export default function AssessmentManagement() {
                   </div>
                 )}
 
-                {/* Department: text input */}
+                {/* Department: dynamic dropdown, sourced from actual employee records */}
                 {modal.targetType === 'department' && (
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Department Name</label>
-                    <input
-                      type="text"
-                      value={modal.department}
-                      onChange={e => updateModal({ department: e.target.value })}
-                      placeholder="e.g. Engineering, Marketing, HR"
-                      className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">All employees with this department will be assigned</p>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Department</label>
+                    {departments.length > 0 ? (
+                      <>
+                        <SearchableSelect
+                          value={modal.department}
+                          onChange={val => updateModal({ department: val })}
+                          options={departments.map(d => ({ value: d, label: d }))}
+                          placeholder="Select a department…"
+                          includeAllOption={false}
+                        />
+                        {modal.department && (
+                          <p className="text-xs text-slate-500 mt-1">
+                            {employees.filter(e => e.department === modal.department).length} employee(s) in this department will be assigned
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5">
+                        No employees have a department set yet — add a department when creating or editing a user first.
+                      </p>
+                    )}
                   </div>
                 )}
 

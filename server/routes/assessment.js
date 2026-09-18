@@ -39,6 +39,12 @@ const DATA_DIR = join(__dirname, '../data');
 
 const router = express.Router();
 
+// Platform-wide default when a caller doesn't specify a question count for a
+// fresh generation — matches roles.js's own default (50). Never used to cap
+// or truncate an APPROVED bank; that path always delivers bank.length,
+// unconditionally, elsewhere in this file.
+const DEFAULT_GENERATION_QUESTION_COUNT = 50;
+
 // Unbiased Fisher-Yates shuffle — reorders only, never drops/adds items.
 // Replaces the biased `sort(() => Math.random() - 0.5)` pattern previously
 // used to both reorder AND (bug) resample per-employee question subsets.
@@ -142,7 +148,35 @@ async function resolveEmployeeQuestions(assessment, assignment, userId) {
       ]);
       if (version?.questions?.length) {
         const byId = new Map(version.questions.map(q => [q.id, q]));
-        const order = eaa?.question_order?.length ? eaa.question_order : version.questions.map(q => q.id);
+        const storedOrder = eaa?.question_order?.length ? eaa.question_order : [];
+
+        // THE 10-question bug: the stored order was previously trusted as
+        // "the complete set" (order.length === what the employee gets). If a
+        // role's approved bank grows (e.g. re-approved with 30 questions
+        // after the employee was originally assigned against a 10-question
+        // version), the employee's question_order — still just 10 ids —
+        // silently capped them at 10 forever, even though Job Library shows
+        // the full 30 and the assessment's own questionCount says 30.
+        //
+        // Fix: keep whatever ordering the employee already has for ids still
+        // present in the CURRENT approved version, then append any version
+        // questions that order doesn't cover yet. A first-ever resolve (no
+        // stored order) still gets the full bank in bank order, same as
+        // before. An order that's already complete round-trips unchanged.
+        const orderedIds = storedOrder.filter(qid => byId.has(qid));
+        const missingIds = version.questions.map(q => q.id).filter(qid => !orderedIds.includes(qid));
+        const order = [...orderedIds, ...missingIds];
+
+        if (missingIds.length > 0) {
+          console.warn(`[assessment] question_order for assessment=${assessment.id} user=${userId} covered ${orderedIds.length}/${version.questions.length} approved questions — reconciled by appending ${missingIds.length} missing question(s).`);
+          // Persist the reconciliation so it's stable across requests instead
+          // of being silently recomputed every time — this is the only write
+          // on an otherwise read path, fires only when there's something to
+          // fix, and (via updateQuestionOrder) never touches status/scoring.
+          EmployeeAssessmentAssignments.updateQuestionOrder(assessment.id, userId, order)
+            .catch(e2 => console.warn('[assessment] Failed to persist reconciled question_order:', e2.message));
+        }
+
         const resolved = order.map(qid => byId.get(qid)).filter(Boolean).map(stripInternalMetadata);
         if (resolved.length > 0) return { questions: resolved, source: 'version' };
       }
@@ -533,16 +567,22 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
       } catch (e) { console.warn('[assessment] targetType=all resolution failed:', e.message); }
     }
 
-    // If targetType === 'department', fetch employees matching the department
+    // If targetType === 'department', fetch employees matching the department.
+    // Case/whitespace-insensitive — the client selector offers exactly the
+    // department strings that exist on user records, but matching strictly
+    // by === here previously meant a trailing space or casing drift (e.g.
+    // "Engineering " vs "engineering") silently assigned zero employees
+    // while the API still reported success.
     if (targetType === 'department' && department) {
       try {
         const allUsersForCompany = await UserStore.getAllUsers({});
         const companyId = req.user.companyId || 'default';
+        const normDept = department.trim().toLowerCase();
         const deptEmployeeIds = allUsersForCompany
           .filter(u =>
             u.role === 'employee' &&
             (u.companyId || 'default') === companyId &&
-            u.department === department
+            (u.department || '').trim().toLowerCase() === normDept
           )
           .map(u => u.userId || u.id);
         userIds = [...new Set([...userIds, ...deptEmployeeIds])];
@@ -679,7 +719,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
             jobRole: user.jobRole || 'Employee',
             jobDescription: resolvedJD,
             jdSkills: resolvedSkills,
-            questionCount: questionCount ?? 10,
+            questionCount: questionCount ?? DEFAULT_GENERATION_QUESTION_COUNT,
             questionTypes,
             employeeSeed: `${userId}-${Date.now()}`,
           });
