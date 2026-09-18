@@ -437,6 +437,15 @@ export default function AssignmentManagement() {
                     <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                       {moduleId && (
                         <button
+                          onClick={() => navigate(`/module/${moduleId}/learn?assignmentId=${a.id}`)}
+                          title={`View this module exactly as ${empName} sees it`}
+                          className="w-7 h-7 rounded-lg bg-slate-700/60 hover:bg-sky-500/20 hover:border-sky-500/40 border border-transparent text-slate-400 hover:text-sky-300 flex items-center justify-center text-xs transition-all"
+                        >
+                          👁
+                        </button>
+                      )}
+                      {moduleId && (
+                        <button
                           onClick={() => navigate(`/admin/modules?edit=${moduleId}`)}
                           title="Edit this module"
                           className="w-7 h-7 rounded-lg bg-slate-700/60 hover:bg-indigo-500/20 hover:border-indigo-500/40 border border-transparent text-slate-400 hover:text-indigo-300 flex items-center justify-center text-xs transition-all"

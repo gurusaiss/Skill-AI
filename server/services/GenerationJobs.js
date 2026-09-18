@@ -91,7 +91,7 @@ class GenerationJobs {
     if (typeof evt.delayMs === 'number') job.throttleMs = evt.delayMs;
   }
 
-  finish(roleId, { versionId = null, count = null } = {}) {
+  finish(roleId, { versionId = null, count = null, diagnostics = null } = {}) {
     const job = this._jobs.get(roleId);
     if (!job) return;
     job.status = 'done';
@@ -99,6 +99,9 @@ class GenerationJobs {
     job.finishedAt = Date.now();
     job.versionId = versionId;
     job.count = count;
+    // Source/grounding breakdown for the finished run, so the UI can explain
+    // WHY a bank came out generic instead of just reporting "done".
+    job.diagnostics = diagnostics;
     if (count != null) job.done = count;
   }
 

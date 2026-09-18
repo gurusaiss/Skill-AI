@@ -18,7 +18,7 @@ import { randomUUID } from 'crypto';
 import { createRequire } from 'module';
 import { authenticate, requireRole, requirePermission } from '../middleware/auth.js';
 import { RoleLibrary, EmployeeChecklists, Assessments, GeneratedContent, QuestionBankVersions, EmployeeAssessmentAssignments } from '../services/DataStore.js';
-import { generateQuestionsFromJD, validateQuestionBank, generateQuestionsFromFiles } from '../services/AssessmentGenerator.js';
+import { generateQuestionsFromJD, validateQuestionBank, generateQuestionsFromFiles, assessSourceQuality, MIN_SOURCE_CHARS } from '../services/AssessmentGenerator.js';
 import UserStore from '../services/UserStore.js';
 import GenerationJobs from '../services/GenerationJobs.js';
 import { preprocessDocumentText, extractJDCoreContent, removeFilenameFromText } from '../utils/textPreprocessor.js';
@@ -61,13 +61,21 @@ function buildFileSources(role) {
   // Files WITH an explicit questionCount are completely unaffected.
   const defaultPerFile = totalFileCount > 0 ? Math.max(10, Math.floor(50 / totalFileCount)) : 10;
 
+  // Questions cite their source by the admin's friendly label when one is set
+  // ("File 2 — Ops SOP v3"), falling back to the raw filename otherwise.
+  const sourceName = (f, i) => {
+    const position = `File ${i + 1}`;
+    const label = (f.label || '').trim();
+    return label ? `${position} — ${label}` : (f.name || position);
+  };
+
   const sources = [];
-  for (const f of validJdFiles) {
-    sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
-  }
-  for (const f of validSupportingFiles) {
-    sources.push({ name: f.name, text: f.text, questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
-  }
+  validJdFiles.forEach((f, i) => {
+    sources.push({ name: sourceName(f, i), fileName: f.name, text: f.text, questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
+  });
+  validSupportingFiles.forEach((f, i) => {
+    sources.push({ name: sourceName(f, i), fileName: f.name, text: f.text, questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
+  });
   return sources;
 }
 
@@ -473,7 +481,15 @@ router.post('/parse-jd', authenticate, requireRole('admin', 'manager'), upload.s
 
     if (!text) return res.status(400).json({ success: false, error: 'Could not extract usable content from this file' });
 
-    res.json({ success: true, data: { text, length: text.length, ext, uploadedBy: req.user.userId, uploadedByEmail: req.user.email } });
+    // Not an error — a short supporting doc can be perfectly valid alongside a
+    // large JD — but flag it at upload time so the admin sees the problem while
+    // they're still holding the file, rather than discovering it later as
+    // mysteriously generic questions.
+    const warning = text.length < MIN_SOURCE_CHARS
+      ? `Only ${text.length} characters of text were extracted from this file. That is usually too little to generate specific questions from — check the file isn't a scanned image, or add more detail.`
+      : null;
+
+    res.json({ success: true, data: { text, length: text.length, ext, warning, uploadedBy: req.user.userId, uploadedByEmail: req.user.email } });
   } catch (e) {
     // UnsupportedFileError = the user needs to fix their upload (scanned
     // PDF, image, legacy .ppt) — a clear 400 with the actionable message,
@@ -1019,15 +1035,36 @@ router.post('/:id/generate-assessment', authenticate, requireRole('admin'), requ
     const { questionCount = 50, questionTypes } = req.body;
     const companyId = req.user.companyId || 'default';
 
-    const questions = await generateQuestionsFromJD({
-      jobRole:        role.roleName,
-      jobDescription: role.jobDescription || '',
-      jdSkills:       role.skills || [],
-      questionCount,
-      questionTypes,
-      employeeSeed:   `role-${role.id}-${Date.now()}`,
-      supportingDocs: role.supportingDocs || [],
-    });
+    // Prefer the per-file sources (jdFiles/supportingFiles) — the same path
+    // regenerate-questions uses. The legacy `supportingDocs` array is only
+    // rewritten on a full role save, so it goes stale the moment a file is
+    // added or removed individually, which silently starved this endpoint of
+    // the role's actual documents.
+    const fileSources = buildFileSources(role);
+    const sourceQuality = assessSourceQuality(
+      fileSources.length > 0 ? fileSources : [{ name: 'Job description', text: role.jobDescription || '' }],
+      questionCount
+    );
+    if (!sourceQuality.ok) {
+      return res.status(400).json({ success: false, error: sourceQuality.reason, data: { sourceQuality } });
+    }
+
+    const questions = fileSources.length > 0
+      ? await generateQuestionsFromFiles(fileSources, {
+          jobRole: role.roleName,
+          skills:  role.skills || [],
+          seed:    `role-${role.id}-${Date.now()}`,
+          questionTypes,
+        })
+      : await generateQuestionsFromJD({
+          jobRole:        role.roleName,
+          jobDescription: role.jobDescription || '',
+          jdSkills:       role.skills || [],
+          questionCount,
+          questionTypes,
+          employeeSeed:   `role-${role.id}-${Date.now()}`,
+          supportingDocs: role.supportingDocs || [],
+        });
 
     const assessmentId = randomUUID();
     const assessment = {
@@ -1105,15 +1142,25 @@ router.post('/bulk-generate-assessments', authenticate, requireRole('admin'), re
       let done = 0;
       for (const role of activeRoles) {
         try {
-          const questions = await generateQuestionsFromJD({
-            jobRole:        role.roleName,
-            jobDescription: role.jobDescription || '',
-            jdSkills:       role.skills || [],
-            questionCount,
-            questionTypes,
-            employeeSeed:   `role-${role.id}-bulk-${Date.now()}`,
-            supportingDocs: role.supportingDocs || [],
-          });
+          // Same per-file-source preference as /:id/generate-assessment —
+          // `supportingDocs` alone goes stale after individual file changes.
+          const bulkFileSources = buildFileSources(role);
+          const questions = bulkFileSources.length > 0
+            ? await generateQuestionsFromFiles(bulkFileSources, {
+                jobRole: role.roleName,
+                skills:  role.skills || [],
+                seed:    `role-${role.id}-bulk-${Date.now()}`,
+                questionTypes,
+              })
+            : await generateQuestionsFromJD({
+                jobRole:        role.roleName,
+                jobDescription: role.jobDescription || '',
+                jdSkills:       role.skills || [],
+                questionCount,
+                questionTypes,
+                employeeSeed:   `role-${role.id}-bulk-${Date.now()}`,
+                supportingDocs: role.supportingDocs || [],
+              });
 
           const assessmentId = randomUUID();
           await Assessments.create({
@@ -1429,6 +1476,22 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), req
       return res.status(400).json({ success: false, error: 'Role has no job description or uploaded files — add a JD first' });
     }
 
+    // Refuse to generate from source text too thin to ground questions in.
+    // Without this the generator silently falls back to templated questions
+    // and every regeneration produces a different-looking but equally generic
+    // bank — the symptom of "regenerated 6 times, still generic".
+    const qualitySources = hasFiles
+      ? fileSources
+      : [{ name: 'Job description', text: updatedRole.jobDescription || '' }];
+    const sourceQuality = assessSourceQuality(qualitySources, filesTotalCount(updatedRole, 50));
+    if (!sourceQuality.ok) {
+      return res.status(400).json({
+        success: false,
+        error: sourceQuality.reason,
+        data: { sourceQuality },
+      });
+    }
+
     // Read from the latest known version if one exists (new source of
     // truth), falling back to the legacy role.questionBank field for roles
     // created before versioning existed.
@@ -1618,8 +1681,25 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), req
           lockedCount: manualQuestions.filter(q => q.locked === true).length, freshCount: aiQuestions.length,
         });
 
-        GenerationJobs.finish(req.params.id, { versionId: version.id, count: bank.length });
-        console.log(`[regenerate-questions] "${role.roleName}": saved v${version.version} with ${bank.length} questions`);
+        // Diagnostics the admin can actually act on: how much real source text
+        // each file contributed, and how many questions are deterministic
+        // template padding rather than content derived from those documents.
+        // Without this, a bank that is 100% generic filler looks identical to
+        // one fully grounded in the JD.
+        const templateFallbackCount = bank.filter(q => q.isTemplateFallback).length;
+        const diagnostics = {
+          requested: bank.length,
+          fromSource: bank.length - templateFallbackCount,
+          templateFallback: templateFallbackCount,
+          totalSourceChars: sourceQuality.totalChars,
+          perFile: sourceQuality.perFile,
+        };
+        if (templateFallbackCount > 0) {
+          console.warn(`[regenerate-questions] "${role.roleName}": ${templateFallbackCount}/${bank.length} questions are generic template padding — source text may be too thin or repetitive`);
+        }
+
+        GenerationJobs.finish(req.params.id, { versionId: version.id, count: bank.length, diagnostics });
+        console.log(`[regenerate-questions] "${role.roleName}": saved v${version.version} with ${bank.length} questions (${diagnostics.fromSource} from source, ${templateFallbackCount} template)`);
       } catch (e) {
         console.error('[regenerate-questions background]', e);
         GenerationJobs.fail(req.params.id, e);
@@ -1656,6 +1736,7 @@ router.get('/:id/generation-status', authenticate, requireRole('admin', 'manager
         startedAt: job?.startedAt || null,
         savedCount,
         latestVersionId: latest?.id || null,
+        diagnostics: job?.diagnostics || null,
       },
     });
   } catch (e) {

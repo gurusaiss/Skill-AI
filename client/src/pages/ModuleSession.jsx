@@ -12,6 +12,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
+import { useAuth } from '../contexts/AuthContext';
 
 // ─── Content phase ────────────────────────────────────────────────────────────
 
@@ -1595,6 +1596,7 @@ export default function ModuleSession() {
   const { moduleId, sessionIndex: sessionIndexStr } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const searchParams = new URLSearchParams(location.search);
   const assignmentId = searchParams.get('assignmentId');
@@ -1611,6 +1613,11 @@ export default function ModuleSession() {
   const [quizKey, setQuizKey] = useState(0); // increment to force QuizPhase remount on retry
   const [preparingDeep, setPreparingDeep] = useState(false);
   const deepAttemptRef = useRef(null); // "moduleId-sessionIndex" already attempted this mount
+  // Observer mode — an admin/manager reviewing someone else's assigned
+  // session. Must never write to their progress, and must not trigger content
+  // generation on the shared module as a side effect of just looking.
+  const [isObserver, setIsObserver] = useState(false);
+  const [observedName, setObservedName] = useState('');
 
   useEffect(() => {
     loadData();
@@ -1650,6 +1657,11 @@ export default function ModuleSession() {
       // lost the correct/incorrect breakdown and explanations, since `phase`
       // otherwise always resets to 'content' on load.
       const assignment = assignRes.status === 'fulfilled' ? assignRes.value : null;
+      if (assignment) {
+        const ownerId = assignment.assigned_to_user || assignment.assignedToUser || assignment.employeeId || assignment.userId;
+        setIsObserver(!!ownerId && !!user?.userId && ownerId !== user.userId);
+        setObservedName(assignment.employeeName || assignment.userName || 'this employee');
+      }
       const sessionProgress = assignment?.sessionProgress || assignment?.session_progress || {};
       const savedReport = assignment?.progress_data?.sessionReports?.[sessionIndex]
         || assignment?.progressData?.sessionReports?.[sessionIndex];
@@ -1672,6 +1684,7 @@ export default function ModuleSession() {
   // loop; the employee simply keeps the legacy rendering for that day.
   useEffect(() => {
     if (!session || !moduleId) return;
+    if (isObserver) return; // reviewing — never mutate the shared module here
     const isDeep = session.contentVersion === 2 && Array.isArray(session.blocks) && session.blocks.length >= 6;
     if (isDeep) return;
     const attemptKey = `${moduleId}-${sessionIndex}`;
@@ -1689,7 +1702,7 @@ export default function ModuleSession() {
       .catch(() => { /* stay on the legacy rendering for this day */ })
       .finally(() => { if (!cancelled) setPreparingDeep(false); });
     return () => { cancelled = true; };
-  }, [session, moduleId, sessionIndex]);
+  }, [session, moduleId, sessionIndex, isObserver]);
 
   // Called by QuizPhase when the user submits their answers.
   // Always saves progress regardless of score, then transitions to score phase.
@@ -1706,6 +1719,9 @@ export default function ModuleSession() {
   // indication anything went wrong.
   const saveQuizProgress = async (score) => {
     if (!assignmentId) return;
+    // An admin/manager reviewing this session must never overwrite the
+    // employee's own completion status or score.
+    if (isObserver) return;
 
     setSaving(true);
     setSaveError(false);
@@ -1822,8 +1838,30 @@ export default function ModuleSession() {
   // for a module that now genuinely has only one day.
   const totalSessions = (module?.content?.sessions || module?.sessions || []).length || 1;
 
-  if (phase === 'content') {
+  // Every phase renders its own full-page layout, so the review banner is
+  // wrapped around whichever one is active rather than living inside them.
+  const withObserverBanner = (node) => {
+    if (!isObserver) return node;
     return (
+      <>
+        <div className="sticky top-0 z-50 bg-indigo-600/95 backdrop-blur px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-sm text-white font-semibold">
+            👁 Reviewing {observedName}'s session — nothing here is saved to their progress
+          </p>
+          <button
+            onClick={() => navigate(`/admin/modules?edit=${moduleId}`)}
+            className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-colors flex-shrink-0"
+          >
+            ✎ Edit Module
+          </button>
+        </div>
+        {node}
+      </>
+    );
+  };
+
+  if (phase === 'content') {
+    return withObserverBanner(
       <ContentPhase
         session={session}
         sessionIndex={sessionIndex}
@@ -1837,7 +1875,7 @@ export default function ModuleSession() {
   }
 
   if (phase === 'notes') {
-    return (
+    return withObserverBanner(
       <NotesPhase
         session={session}
         sessionIndex={sessionIndex}
@@ -1850,7 +1888,7 @@ export default function ModuleSession() {
   }
 
   if (phase === 'quiz') {
-    return (
+    return withObserverBanner(
       <QuizPhase
         key={quizKey}
         session={session}
@@ -1862,14 +1900,15 @@ export default function ModuleSession() {
   }
 
   if (phase === 'score' && quizScore) {
-    return (
+    return withObserverBanner(
       <ScorePhase
         score={quizScore}
         sessionTitle={session?.title || session?.topic || `Day ${sessionIndex + 1}`}
         sessionIndex={sessionIndex}
         totalSessions={totalSessions}
-        saving={saving}
-        saveError={saveError}
+        // No save is attempted while observing, so never show saving/retry UI
+        saving={isObserver ? false : saving}
+        saveError={isObserver ? false : saveError}
         onRetrySave={() => saveQuizProgress(quizScore)}
         onRewatch={handleRewatch}
         onRetryQuiz={handleRetryQuiz}

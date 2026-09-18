@@ -8,6 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
+import { useAuth } from '../contexts/AuthContext';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -181,7 +182,7 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
   );
 }
 
-function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, assignment, onRegenerate }) {
+function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, assignment, isObserver, onRegenerate }) {
   const navigate = useNavigate();
   const sessions = module?.sessions || module?.content?.sessions || [];
 
@@ -202,13 +203,19 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, assignme
       <div className="text-center py-16">
         <div className="text-5xl mb-4 opacity-30">📚</div>
         <p className="text-lg font-bold text-slate-400 mb-2">No Sessions Yet</p>
-        <p className="text-sm text-slate-600 mb-6">Click below to generate AI-powered learning sessions for this module.</p>
-        <button
-          onClick={onRegenerate}
-          className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-all shadow-lg shadow-indigo-500/25"
-        >
-          🧠 Generate Learning Content
-        </button>
+        {isObserver ? (
+          <p className="text-sm text-slate-600 mb-6">This module has no learning content generated yet — generate it from Module Management.</p>
+        ) : (
+          <>
+            <p className="text-sm text-slate-600 mb-6">Click below to generate AI-powered learning sessions for this module.</p>
+            <button
+              onClick={onRegenerate}
+              className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-all shadow-lg shadow-indigo-500/25"
+            >
+              🧠 Generate Learning Content
+            </button>
+          </>
+        )}
       </div>
     );
   }
@@ -225,7 +232,10 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, assignme
         // Day-lock: only today's session index is accessible; past = completed/view; future = locked
         const isToday = index === todaySessionIndex;
         const isPast  = index < todaySessionIndex;
-        const isUnlocked = isToday || isPast || isCompleted;
+        // An admin/manager reviewing this employee's module sees every day
+        // unlocked — the drip schedule exists to pace the learner, not to stop
+        // a reviewer from inspecting the material.
+        const isUnlocked = isObserver || isToday || isPast || isCompleted;
         // Unlock date label for future sessions
         const unlockDateLabel = (() => {
           if (isUnlocked) return null;
@@ -404,7 +414,7 @@ function ProgressTab({ module, assignment, sessionStatuses }) {
   );
 }
 
-function PlanTab({ module, onRegenerate }) {
+function PlanTab({ module, isObserver, onRegenerate }) {
   const roadmap = module?.roadmap || module?.content?.roadmap || [];
   const plan = module?.plan || module?.content?.plan || module?.learningPlan || '';
   const objectives = module?.content?.objectives || module?.objectives || [];
@@ -418,13 +428,19 @@ function PlanTab({ module, onRegenerate }) {
       <div className="text-center py-16">
         <div className="text-5xl mb-4 opacity-30">🗺️</div>
         <p className="text-lg font-bold text-slate-400 mb-2">No Roadmap Available</p>
-        <p className="text-sm text-slate-600 mb-6">Generate AI learning content to create a personalized roadmap.</p>
-        <button
-          onClick={onRegenerate}
-          className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-all"
-        >
-          🧠 Generate Roadmap
-        </button>
+        {isObserver ? (
+          <p className="text-sm text-slate-600 mb-6">No roadmap has been generated for this module yet.</p>
+        ) : (
+          <>
+            <p className="text-sm text-slate-600 mb-6">Generate AI learning content to create a personalized roadmap.</p>
+            <button
+              onClick={onRegenerate}
+              className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-all"
+            >
+              🧠 Generate Roadmap
+            </button>
+          </>
+        )}
       </div>
     );
   }
@@ -571,9 +587,17 @@ export default function ModuleDashboard() {
   const { moduleId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const searchParams = new URLSearchParams(location.search);
   const assignmentId = searchParams.get('assignmentId');
+
+  // Observer mode: an admin/manager opened someone else's assignment to review
+  // it. The server already permits this read (canAccessAssignment), but this
+  // screen must then never write to that employee's progress or silently
+  // trigger content generation on the shared module template.
+  const [isObserver, setIsObserver] = useState(false);
+  const [observedName, setObservedName] = useState('');
 
   const [module, setModule] = useState(null);
   const [assignment, setAssignment] = useState(null);
@@ -600,9 +624,15 @@ export default function ModuleDashboard() {
 
       // ── Assignment (primary source of truth for progress + embedded module) ──
       let assignData = null;
+      let observing = false;
       if (assignRes.status === 'fulfilled' && assignRes.value) {
         assignData = assignRes.value;
         setAssignment(assignData);
+
+        const ownerId = assignData.assigned_to_user || assignData.assignedToUser || assignData.employeeId || assignData.userId;
+        observing = !!ownerId && !!user?.userId && ownerId !== user.userId;
+        setIsObserver(observing);
+        setObservedName(assignData.employeeName || assignData.userName || 'this employee');
 
         // session_progress (Supabase snake_case) OR sessionProgress (camelCase).
         // The dead-code fallback here (progress_data?.sessions, wrong casing
@@ -659,9 +689,12 @@ export default function ModuleDashboard() {
 
       setModule(mod);
 
-      // Refresh sessions from the latest module data (admin edits reflected immediately)
+      // Refresh sessions from the latest module data (admin edits reflected
+      // immediately). Never auto-generate while observing — that writes to the
+      // shared module template, which must not happen as a side effect of an
+      // admin merely opening an employee's module to look at it.
       const sessions = mod.sessions || mod.content?.sessions || [];
-      if (sessions.length === 0 && !skipGenerate) {
+      if (sessions.length === 0 && !skipGenerate && !observing) {
         await generateContent(mod);
       }
     } catch (err) {
@@ -774,7 +807,24 @@ export default function ModuleDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
         {/* Regenerate button — shown when module has no sessions */}
-        {(module?.sessions || module?.content?.sessions || []).length === 0 && !generating && (
+        {isObserver && (
+          <div className="mb-6 rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-sm font-bold text-indigo-200">👁 Viewing {observedName}'s module</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                This is exactly what they see, with every day unlocked for review. Nothing you do here affects their progress or scores.
+              </p>
+            </div>
+            <button
+              onClick={() => navigate(`/admin/modules?edit=${moduleId}`)}
+              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-all flex-shrink-0"
+            >
+              ✎ Edit Module
+            </button>
+          </div>
+        )}
+
+        {(module?.sessions || module?.content?.sessions || []).length === 0 && !generating && !isObserver && (
           <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-bold text-amber-300">No learning content generated yet</p>
@@ -799,6 +849,7 @@ export default function ModuleDashboard() {
             assignmentId={assignmentId}
             sessionStatuses={sessionStatuses}
             assignment={assignment}
+            isObserver={isObserver}
             onRegenerate={() => generateContent(module)}
           />
         )}
@@ -806,7 +857,7 @@ export default function ModuleDashboard() {
           <ProgressTab module={module} assignment={assignment} sessionStatuses={sessionStatuses} />
         )}
         {activeTab === 'plan' && (
-          <PlanTab module={module} onRegenerate={() => generateContent(module)} />
+          <PlanTab module={module} isObserver={isObserver} onRegenerate={() => generateContent(module)} />
         )}
       </div>
     </div>

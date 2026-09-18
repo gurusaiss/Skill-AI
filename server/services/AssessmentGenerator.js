@@ -1005,12 +1005,68 @@ function buildFallbackQuestions(count, { types, skillsList, jobRole, difficultyD
       answer,
       explanation: `Tests applied ${skill} competency for the ${role} role.`,
       skillArea: skill,
+      // Marks this as deterministic template padding rather than a question
+      // actually derived from the role's documents. Surfaced to the admin so
+      // "why are my questions generic?" has a visible, countable answer
+      // instead of being indistinguishable from real generated content.
+      isTemplateFallback: true,
     };
   });
 }
 
 // HEADER_FOOTER_PATTERNS / PERSON_NAME_PATTERNS are declared above, next to
 // extractDocEntities' looksLikeNoisePhrase, which reuses them.
+
+// ── Source-quality gate ───────────────────────────────────────────────────────
+// The two anti-generic safeguards in this file (filterGrounded and
+// verifyQuoteGrounded) deliberately no-op when the source text is too small to
+// validate against — filterGrounded needs >=5 extractable keywords,
+// verifyQuoteGrounded needs >=40 normalized chars. That means a role with a
+// thin JD gets NO grounding enforcement at all, and the deterministic template
+// padding below fills the requested count with generic questions. Regenerating
+// then just reshuffles those templates forever, because the real constraint —
+// not enough source material — never changes.
+//
+// This gate makes that condition explicit and refusable up front, instead of
+// letting it silently degrade into generic output.
+export const MIN_SOURCE_CHARS = 400;
+export const CHARS_PER_QUESTION = 80;
+
+/**
+ * Judges whether there is enough real source text to generate `requestedCount`
+ * grounded questions.
+ * @returns {{ok:boolean, totalChars:number, requiredChars:number, perFile:Array<{name:string,chars:number,thin:boolean}>, reason:string|null}}
+ */
+export function assessSourceQuality(sources, requestedCount = 0) {
+  const list = (Array.isArray(sources) ? sources : [sources]).filter(Boolean);
+  const perFile = list.map(s => {
+    const chars = (s?.text || '').trim().length;
+    return { name: s?.name || 'Untitled', chars, thin: chars > 0 && chars < MIN_SOURCE_CHARS };
+  });
+  const totalChars = perFile.reduce((sum, f) => sum + f.chars, 0);
+
+  // Need a usable floor overall, and enough material to sustain the number of
+  // questions being asked for. Capped so a very large bank doesn't demand an
+  // unrealistic document.
+  const requiredChars = Math.max(
+    MIN_SOURCE_CHARS,
+    Math.min(requestedCount * CHARS_PER_QUESTION, 12000)
+  );
+
+  // Kept under 300 characters on purpose: the client's authFetch replaces any
+  // longer error with a generic "something went wrong", which would hide the
+  // one message that actually explains the problem.
+  let reason = null;
+  if (totalChars === 0) {
+    reason = 'No readable text could be extracted from this role\'s job description or uploaded files. Add a JD before generating.';
+  } else if (totalChars < requiredChars) {
+    reason =
+      `Not enough source text: ${totalChars.toLocaleString()} characters available, ~${requiredChars.toLocaleString()} needed for ${requestedCount} questions. ` +
+      'Regenerating cannot fix this — it produces generic questions. Add a fuller JD or a more detailed document first.';
+  }
+
+  return { ok: reason === null, totalChars, requiredChars, perFile, reason };
+}
 
 /**
  * Validates a question bank before persisting/approving it.

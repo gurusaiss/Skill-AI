@@ -128,7 +128,7 @@ function FullTextModal({ title, text, accent = 'indigo', onClose }) {
 }
 
 // ── FileRow — enhanced file row with preview, search, copy, and text editing ───
-function FileRow({ file, idx, onCountChange, onCountBlur, onRemove, onTextEdit, onStakeholderChange, onProcessDeliveryChange, accent = 'indigo', isEditMode = false }) {
+function FileRow({ file, idx, onCountChange, onCountBlur, onRemove, onTextEdit, onLabelChange, onStakeholderChange, onProcessDeliveryChange, accent = 'indigo', isEditMode = false }) {
   const [expanded, setExpanded] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showFull, setShowFull] = useState(false);
@@ -164,8 +164,25 @@ function FileRow({ file, idx, onCountChange, onCountBlur, onRemove, onTextEdit, 
       {/* Header row */}
       <div className="flex items-center gap-2 px-3 py-2">
         <span className={`text-xs shrink-0 ${accentText}`}>📄</span>
-        <span className="text-xs text-slate-300 flex-1 truncate min-w-0" title={file.name}>{file.name}</span>
-        <span className="text-xs text-slate-500 shrink-0">{charCount.toLocaleString()}c</span>
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${accentBg} ${accentText} border ${accentBdr}`}>
+          File {idx + 1}
+        </span>
+        {onLabelChange ? (
+          <input
+            value={file.label || ''}
+            onChange={e => onLabelChange(idx, e.target.value)}
+            placeholder="Name this file (optional)"
+            title={`Original filename: ${file.name}`}
+            className="w-36 shrink-0 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-xs focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+          />
+        ) : file.label ? (
+          <span className="text-xs text-slate-200 font-medium shrink-0">{file.label}</span>
+        ) : null}
+        <span className="text-xs text-slate-400 flex-1 truncate min-w-0" title={file.name}>{file.name}</span>
+        <span className={`text-xs shrink-0 ${charCount > 0 && charCount < 400 ? 'text-amber-400' : 'text-slate-500'}`}
+          title={charCount > 0 && charCount < 400 ? 'Very little text extracted — too thin to generate specific questions from' : undefined}>
+          {charCount.toLocaleString()}c{charCount > 0 && charCount < 400 ? ' ⚠' : ''}
+        </span>
         <label className="text-xs text-slate-500 shrink-0">Q:</label>
         <input
           type="number" min="1" max="200" value={file.questionCount}
@@ -310,12 +327,13 @@ function RoleModal({ role, onClose, onSaved }) {
       const text = data?.text ?? '';
       if (!text) throw new Error('No text extracted from file');
       setJdFiles(p => [...p, {
-        id: genId(), name: file.name, text, chars: text.length, questionCount: 10,
+        id: genId(), name: file.name, label: '', text, chars: text.length, questionCount: 10,
         ext: data?.ext || file.name.split('.').pop()?.toLowerCase() || '',
         uploadedBy: data?.uploadedBy || '', uploadedAt: new Date().toISOString(),
         stakeholder: false, processDelivery: false,
       }]);
-      toast(`JD added: ${file.name} (${text.length.toLocaleString()} chars)`);
+      if (data?.warning) toast(data.warning, 'error');
+      else toast(`JD added: ${file.name} (${text.length.toLocaleString()} chars)`);
     } catch (e) {
       toast(e.message || 'Failed to extract text', 'error');
     } finally {
@@ -335,12 +353,13 @@ function RoleModal({ role, onClose, onSaved }) {
       const text = data?.text ?? '';
       if (!text) throw new Error('No text extracted from file');
       setSupportingFiles(p => [...p, {
-        id: genId(), name: file.name, text, chars: text.length, questionCount: 5,
+        id: genId(), name: file.name, label: '', text, chars: text.length, questionCount: 5,
         ext: data?.ext || file.name.split('.').pop()?.toLowerCase() || '',
         uploadedBy: data?.uploadedBy || '', uploadedAt: new Date().toISOString(),
         stakeholder: false, processDelivery: false,
       }]);
-      toast(`Supporting doc added: ${file.name} (${text.length.toLocaleString()} chars)`);
+      if (data?.warning) toast(data.warning, 'error');
+      else toast(`Supporting doc added: ${file.name} (${text.length.toLocaleString()} chars)`);
     } catch (e) {
       toast(e.message || 'Failed to extract text', 'error');
     } finally {
@@ -395,6 +414,12 @@ function RoleModal({ role, onClose, onSaved }) {
     setJdFiles(p => p.map((f, i) => i === idx ? { ...f, processDelivery: !!val } : f));
   const updateSupportingProcessDelivery = (idx, val) =>
     setSupportingFiles(p => p.map((f, i) => i === idx ? { ...f, processDelivery: !!val } : f));
+  // Optional friendly name per file — shown instead of the raw filename and
+  // cited as the source on every question generated from that file.
+  const updateJdLabel = (idx, val) =>
+    setJdFiles(p => p.map((f, i) => i === idx ? { ...f, label: val } : f));
+  const updateSupportingLabel = (idx, val) =>
+    setSupportingFiles(p => p.map((f, i) => i === idx ? { ...f, label: val } : f));
 
   const totalQuestions = [...jdFiles, ...supportingFiles].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0);
 
@@ -505,7 +530,7 @@ function RoleModal({ role, onClose, onSaved }) {
             ) : (
               <div className="space-y-1.5">
                 {jdFiles.map((file, i) => (
-                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateJdCount} onCountBlur={updateJdCountBlur} onRemove={removeJdFile} onTextEdit={updateJdText} onStakeholderChange={updateJdStakeholder} onProcessDeliveryChange={updateJdProcessDelivery} accent="indigo" isEditMode={isEdit} />
+                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateJdCount} onCountBlur={updateJdCountBlur} onRemove={removeJdFile} onTextEdit={updateJdText} onLabelChange={updateJdLabel} onStakeholderChange={updateJdStakeholder} onProcessDeliveryChange={updateJdProcessDelivery} accent="indigo" isEditMode={isEdit} />
                 ))}
                 <button type="button" onClick={() => jdFileRef.current?.click()} disabled={jdUploading}
                   className="text-xs text-indigo-400 hover:text-indigo-300 underline ml-1">
@@ -540,7 +565,7 @@ function RoleModal({ role, onClose, onSaved }) {
             ) : (
               <div className="space-y-1.5">
                 {supportingFiles.map((file, i) => (
-                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateSupportingCount} onCountBlur={updateSupportingCountBlur} onRemove={removeSupportingFile} onTextEdit={updateSupportingText} onStakeholderChange={updateSupportingStakeholder} onProcessDeliveryChange={updateSupportingProcessDelivery} accent="emerald" isEditMode={isEdit} />
+                  <FileRow key={file.id} file={file} idx={i} onCountChange={updateSupportingCount} onCountBlur={updateSupportingCountBlur} onRemove={removeSupportingFile} onTextEdit={updateSupportingText} onLabelChange={updateSupportingLabel} onStakeholderChange={updateSupportingStakeholder} onProcessDeliveryChange={updateSupportingProcessDelivery} accent="emerald" isEditMode={isEdit} />
                 ))}
               </div>
             )}
@@ -921,6 +946,9 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
   const [diffFilter, setDiffFilter] = useState('all');
   const [generating, setGenerating] = useState(false);
   const [genProgress, setGenProgress] = useState(null);
+  // Post-generation source breakdown: how much text each file contributed and
+  // how many questions were templated filler rather than drawn from documents.
+  const [genDiagnostics, setGenDiagnostics] = useState(null);
   const pollRef = useRef(null);
 
   useEffect(() => {
@@ -961,6 +989,7 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
           setQuestions(q2);
           setGenerating(false);
           setGenProgress(null);
+          setGenDiagnostics(st.diagnostics || null);
           if (q2.length > 0) {
             toast(`${q2.length} questions ready`);
             // Tell the parent so the table row's questionBankCount/Approve
@@ -1323,6 +1352,38 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
               </p>
             </div>
           )}
+          {/* Source breakdown for the run that just finished — answers "why are
+              my questions generic?" with numbers instead of guesswork. */}
+          {!generating && genDiagnostics && (
+            <div className={`rounded-xl border p-3 ${genDiagnostics.templateFallback > 0 ? 'bg-amber-500/5 border-amber-500/30' : 'bg-emerald-500/5 border-emerald-500/25'}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className={`text-xs font-bold ${genDiagnostics.templateFallback > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>
+                    {genDiagnostics.templateFallback > 0
+                      ? `⚠ ${genDiagnostics.fromSource} of ${genDiagnostics.requested} questions came from your documents — ${genDiagnostics.templateFallback} are generic templates`
+                      : `✓ All ${genDiagnostics.requested} questions were generated from your documents`}
+                  </p>
+                  {genDiagnostics.templateFallback > 0 && (
+                    <p className="text-xs text-slate-400 mt-1">
+                      Generic templates appear when there isn't enough distinct source text to draw more specific questions from.
+                      Regenerating won't fix this — add more detail to the documents below, then regenerate.
+                    </p>
+                  )}
+                  {Array.isArray(genDiagnostics.perFile) && genDiagnostics.perFile.length > 0 && (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                      {genDiagnostics.perFile.map((f, i) => (
+                        <span key={i} className={`text-[11px] ${f.thin ? 'text-amber-400' : 'text-slate-500'}`}>
+                          {f.name}: {f.chars.toLocaleString()} chars{f.thin ? ' ⚠ thin' : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => setGenDiagnostics(null)} className="text-slate-500 hover:text-white text-sm px-1 shrink-0">✕</button>
+              </div>
+            </div>
+          )}
+
           {!loading && !generating && filtered.length === 0 && (
             <div className="text-center py-10">
               <p className="text-slate-400 text-sm">{questions.length === 0 ? 'No questions yet. Click "Regen All" to auto-generate from the JD.' : `No ${diffFilter} questions.`}</p>

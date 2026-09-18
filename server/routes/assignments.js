@@ -525,6 +525,13 @@ router.get('/:id', authenticate, async (req, res) => {
       title:           a.module_name || a.title || '',
     };
 
+    // Whose assignment this is — lets an admin/manager reviewing someone
+    // else's module name the person on screen instead of saying "this employee".
+    try {
+      const owner = await UserStore.getUserById(a.assigned_to_user);
+      if (owner) normalized.employeeName = owner.name || owner.email || '';
+    } catch { /* name is cosmetic — never fail the fetch over it */ }
+
     // Embed module title + sessions so frontend never needs a separate module fetch
     const moduleId = a.assignable_id || a.assignableId;
     if (moduleId) {
