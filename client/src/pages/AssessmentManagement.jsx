@@ -992,7 +992,7 @@ export default function AssessmentManagement() {
                 {/* Assessment Date */}
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
-                    Assessment Due Date <span className="text-red-400">*</span>
+                    Start Date <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="date"
@@ -1001,6 +1001,7 @@ export default function AssessmentManagement() {
                     min={new Date().toISOString().split('T')[0]}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
                   />
+                  <p className="text-slate-600 text-xs mt-1">The assessment becomes available to employees on this date — set the Deadline below for when it's due</p>
                 </div>
 
                 {/* Title */}
@@ -1314,7 +1315,7 @@ export default function AssessmentManagement() {
                 />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Assessment Due Date</label>
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Start Date</label>
                 <input
                   type="date"
                   value={editForm.assessmentDate}
@@ -1775,7 +1776,7 @@ export default function AssessmentManagement() {
                 <div className="flex flex-wrap gap-4 mt-2 text-xs text-slate-400">
                   {jobRoles.length > 0 && <span>Job Role: <span className="text-white font-semibold">{jobRoles.join(', ')}</span></span>}
                   {viewDetail.createdAt && <span>Created: <span className="text-white font-semibold">{new Date(viewDetail.createdAt).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })}</span></span>}
-                  {viewDetail.assessmentDate && <span>Assessment Due Date: <span className="text-white font-semibold">{new Date(viewDetail.assessmentDate).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })}</span></span>}
+                  {viewDetail.assessmentDate && <span>Start Date: <span className="text-white font-semibold">{new Date(viewDetail.assessmentDate).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })}</span></span>}
                   {viewDetail.deadline && <span>Deadline: <span className="text-amber-300 font-semibold">{new Date(viewDetail.deadline).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })}</span></span>}
                   {viewDetail.questionCount && <span>Questions: <span className="text-white font-semibold">{viewDetail.questionCount} per employee</span></span>}
                   {viewDetail.duration && <span>Duration: <span className="text-white font-semibold">{viewDetail.duration} min</span></span>}

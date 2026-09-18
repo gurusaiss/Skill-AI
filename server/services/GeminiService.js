@@ -77,6 +77,12 @@ class GeminiService {
     // request cap is per API key (really per Google Cloud project), not
     // shared across keys, so key A being exhausted must not block key B.
     this._geminiKeyBlockedUntil = new Map();
+    // SEPARATE cooldown map for the embedding model — text-embedding-004 is a
+    // different model than the generation model (resolvedModel), so its
+    // quota is a distinct bucket even on the same key/project. Sharing
+    // _geminiKeyBlockedUntil would incorrectly let an embedding-quota hit
+    // block real question generation on that key, or vice versa.
+    this._geminiEmbedKeyBlockedUntil = new Map();
     this._cerebrasModelPromise = null;
   }
 
@@ -492,6 +498,64 @@ class GeminiService {
       return parsed;
     } catch (err) {
       console.warn(`[Gemini] single-attempt JSON failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  // ── embedTexts: batch text embeddings for semantic similarity ────────────
+  // Purpose-built for AssessmentGenerator.js's semantic-duplicate pass. Uses
+  // Gemini's text-embedding-004 (a SEPARATE model/quota bucket from the
+  // generation model — see _geminiEmbedKeyBlockedUntil above) via
+  // batchEmbedContents, which embeds up to 100 texts in ONE HTTP request —
+  // this is what keeps semantic dedup affordable: one API call per
+  // generation run, not one per question. Deliberately a pure ADD-ON: any
+  // failure (quota, network, malformed response) returns null and the caller
+  // falls back to lexical-only dedup — this must never block or slow down
+  // the core generation pipeline, which is already carefully tuned around a
+  // tight free-tier quota.
+  async embedTexts(texts) {
+    if (!Array.isArray(texts) || texts.length === 0) return null;
+    if (texts.length > 100) texts = texts.slice(0, 100); // batchEmbedContents' documented per-request cap
+
+    const now = Date.now();
+    const key = this.geminiKeys.find(k => {
+      const until = this._geminiEmbedKeyBlockedUntil.get(k);
+      return !until || now >= until;
+    });
+    if (!key) return null;
+
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key=${key}`;
+      const body = {
+        requests: texts.map(t => ({
+          model: 'models/text-embedding-004',
+          content: { parts: [{ text: (t || '').slice(0, 2000) }] }, // per-text cap, plenty for one question's worth of text
+        })),
+      };
+      const res = await LLMQueue.run(() => fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20000),
+      }));
+      if (!res.ok) {
+        if (res.status === 429) {
+          // Same per-key-per-day free-tier shape as generation, just a
+          // different model — cool this key down for embeddings only.
+          this._geminiEmbedKeyBlockedUntil.set(key, now + this._msUntilNextUtcMidnight());
+        }
+        console.warn(`[Gemini] embedTexts HTTP ${res.status} — semantic dedup pass skipped for this run.`);
+        return null;
+      }
+      const data = await res.json();
+      const embeddings = (data.embeddings || []).map(e => e.values);
+      if (embeddings.length !== texts.length || embeddings.some(v => !Array.isArray(v))) {
+        console.warn('[Gemini] embedTexts: response shape mismatch — semantic dedup pass skipped for this run.');
+        return null;
+      }
+      return embeddings;
+    } catch (err) {
+      console.warn(`[Gemini] embedTexts failed (${err.message}) — semantic dedup pass skipped for this run.`);
       return null;
     }
   }

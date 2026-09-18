@@ -1726,13 +1726,14 @@ function ApproveModal({ role, onClose }) {
             </p>
           </div>
           <div>
-            <label className={labelCls}>Assessment date <span className="text-slate-500">(optional)</span></label>
+            <label className={labelCls}>Start Date &amp; Time <span className="text-slate-500">(optional)</span></label>
             <input
               type="datetime-local"
               className={inputCls}
               value={assessmentDate}
               onChange={e => setAssessmentDate(e.target.value)}
             />
+            <p className="text-xs text-slate-500 mt-1">Employees won't see this assessment until this date/time. Leave blank to make it available immediately.</p>
           </div>
           <div className="flex gap-3 pt-1">
             <button onClick={() => onClose(false)} className="flex-1 px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-slate-400">

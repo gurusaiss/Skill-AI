@@ -47,6 +47,19 @@ function buildTypeSequence(num) {
   return buildAssessmentTypeSequence(num, ASSESSMENT_MIX);
 }
 
+// Every generation entry point for a role should exclude questions the admin
+// explicitly deleted for it — previously only POST /:id/regenerate-questions
+// did this (Gap A from the generation-quality audit); role create, role
+// update, bulk-import, generate-assessment, and bulk-generate all omitted
+// role.deletedQuestions entirely, so a deleted question (or, before the
+// semantic-dedup upgrade in AssessmentGenerator.js, even an exact repeat)
+// could resurface via any of THOSE paths even though the dedicated
+// Regenerate button correctly avoided it.
+function buildAvoidQuestions(role, extraBank = []) {
+  const deletedQuestions = Array.isArray(role.deletedQuestions) ? role.deletedQuestions : [];
+  return [...extraBank, ...deletedQuestions];
+}
+
 // Build the per-file source list used by generateQuestionsFromFiles.
 // Combines jdFiles + supportingFiles stored on the role document.
 function buildFileSources(role) {
@@ -828,10 +841,14 @@ router.put('/:id', authenticate, requireRole('admin'), requirePermission('roles.
           try {
             const onProgress = (evt) => GenerationJobs.progress(req.params.id, evt);
             let questions;
+            // Threads deletedQuestions through — a JD/file edit re-triggers
+            // generation the same way Regenerate does, and must respect the
+            // same "don't bring back what the admin deleted" contract.
+            const avoidQuestions = buildAvoidQuestions(mergedRole, mergedRole.questionBank || []);
             if (fileSources.length > 0) {
               questions = await generateQuestionsFromFiles(fileSources, {
                 jobRole: effectiveRole, skills: effectiveSkills, seed: `qbank-${req.params.id}-upd`,
-                onProgress,
+                onProgress, avoidQuestions,
               });
             } else {
               questions = await generateQuestionsFromJD({
@@ -840,7 +857,7 @@ router.put('/:id', authenticate, requireRole('admin'), requirePermission('roles.
                 questionTypes: buildTypeSequence(targetCount),
                 employeeSeed: `qbank-${req.params.id}-upd-${Date.now()}`,
                 supportingDocs: mergedRole.supportingDocs || [],
-                onProgress,
+                onProgress, avoidQuestions,
               });
             }
             // Save partial results rather than discarding everything on a
@@ -1049,12 +1066,13 @@ router.post('/:id/generate-assessment', authenticate, requireRole('admin'), requ
       return res.status(400).json({ success: false, error: sourceQuality.reason, data: { sourceQuality } });
     }
 
+    const avoidQuestions = buildAvoidQuestions(role, role.questionBank || []);
     const questions = fileSources.length > 0
       ? await generateQuestionsFromFiles(fileSources, {
           jobRole: role.roleName,
           skills:  role.skills || [],
           seed:    `role-${role.id}-${Date.now()}`,
-          questionTypes,
+          questionTypes, avoidQuestions,
         })
       : await generateQuestionsFromJD({
           jobRole:        role.roleName,
@@ -1064,6 +1082,7 @@ router.post('/:id/generate-assessment', authenticate, requireRole('admin'), requ
           questionTypes,
           employeeSeed:   `role-${role.id}-${Date.now()}`,
           supportingDocs: role.supportingDocs || [],
+          avoidQuestions,
         });
 
     const assessmentId = randomUUID();
@@ -1145,12 +1164,13 @@ router.post('/bulk-generate-assessments', authenticate, requireRole('admin'), re
           // Same per-file-source preference as /:id/generate-assessment —
           // `supportingDocs` alone goes stale after individual file changes.
           const bulkFileSources = buildFileSources(role);
+          const bulkAvoidQuestions = buildAvoidQuestions(role, role.questionBank || []);
           const questions = bulkFileSources.length > 0
             ? await generateQuestionsFromFiles(bulkFileSources, {
                 jobRole: role.roleName,
                 skills:  role.skills || [],
                 seed:    `role-${role.id}-bulk-${Date.now()}`,
-                questionTypes,
+                questionTypes, avoidQuestions: bulkAvoidQuestions,
               })
             : await generateQuestionsFromJD({
                 jobRole:        role.roleName,
@@ -1160,6 +1180,7 @@ router.post('/bulk-generate-assessments', authenticate, requireRole('admin'), re
                 questionTypes,
                 employeeSeed:   `role-${role.id}-bulk-${Date.now()}`,
                 supportingDocs: role.supportingDocs || [],
+                avoidQuestions: bulkAvoidQuestions,
               });
 
           const assessmentId = randomUUID();
@@ -1348,7 +1369,27 @@ async function recordDeletedQuestion(role, deletedQ) {
 async function recordRemovedQuestions(role, stored, enforced) {
   const keptIds = new Set(enforced.filter(q => q?.id).map(q => q.id));
   const removed = (stored || []).filter(q => q?.id && !keptIds.has(q.id));
-  for (const q of removed) await recordDeletedQuestion(role, q);
+  if (removed.length === 0) return;
+  // Batched into ONE update instead of calling recordDeletedQuestion per
+  // question in a loop: that version re-derived `updated` from the SAME
+  // stale `role.deletedQuestions` snapshot on every iteration (role is never
+  // re-fetched between awaits), so each sequential write overwrote the
+  // previous one rather than appending to it — for a bulk edit that removed
+  // 3+ questions in one save, only the LAST tombstone actually survived, and
+  // the others were silently lost, free to reappear on a later regenerate.
+  const existing = Array.isArray(role.deletedQuestions) ? role.deletedQuestions : [];
+  const seen = new Set(existing.map(q => (q.question || '').trim().toLowerCase()));
+  const additions = [];
+  for (const q of removed) {
+    if (!q?.question) continue;
+    const key = q.question.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    additions.push({ question: q.question, options: q.options || undefined, answer: q.answer || undefined, type: q.type || undefined });
+  }
+  if (additions.length === 0) return;
+  const updated = [...existing, ...additions].slice(-MAX_DELETED_QUESTIONS);
+  await RoleLibrary.update(role.id, { deletedQuestions: updated });
 }
 
 router.delete('/:id/questions/:qid', authenticate, requireRole('admin', 'manager'), requirePermission('questions.edit'), async (req, res) => {
@@ -1357,7 +1398,17 @@ router.delete('/:id/questions/:qid', authenticate, requireRole('admin', 'manager
     if (!ctx) return;
     const sourceBank = ctx.target.mode === 'draft' ? (ctx.target.version.questions || []) : (ctx.role.questionBank || []);
     const target = sourceBank.find(q => q.id === req.params.qid);
-    if (target?.locked === true) {
+    // Previously fell through silently here: the filter below removes
+    // nothing, recordDeletedQuestion's own `if (!deletedQ?.question) return`
+    // guard no-ops, and the route still answered 200 — the UI's row
+    // disappeared (optimistic local removal) while the server did nothing
+    // and, critically, never recorded a tombstone. An admin who deleted a
+    // question this way would see it "successfully" gone, then have it
+    // silently reappear on the next regenerate with no error ever surfaced.
+    if (!target) {
+      return res.status(404).json({ success: false, error: 'Question not found in the current editable bank — it may have already been deleted or belong to a different version.' });
+    }
+    if (target.locked === true) {
       return res.status(409).json({ success: false, error: 'This question is locked. Unlock it before deleting.', locked: true });
     }
     if (ctx.target.mode === 'draft') {

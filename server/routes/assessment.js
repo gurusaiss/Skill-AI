@@ -702,6 +702,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
             if (!resolvedSkills.length && (roleMatch?.skills || []).length) { resolvedSkills = roleMatch.skills; }
           } catch {}
         }
+        const roleMatchForUser = user.jobRole ? roleMatchCache.get(`${user.companyId || 'default'}|${user.jobRole.toLowerCase()}`) : null;
 
         // Bank-only priority: if role has any approved questions, use ONLY the
         // shared per-role subset (same content for everyone), reordered per employee.
@@ -721,6 +722,9 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
             jdSkills: resolvedSkills,
             questionCount: questionCount ?? DEFAULT_GENERATION_QUESTION_COUNT,
             questionTypes,
+            // A role can carry deleted-question tombstones even with no
+            // approved bank yet (admin drafted and pruned before approving).
+            avoidQuestions: Array.isArray(roleMatchForUser?.deletedQuestions) ? roleMatchForUser.deletedQuestions : [],
             employeeSeed: `${userId}-${Date.now()}`,
           });
         }

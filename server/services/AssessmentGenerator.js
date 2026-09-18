@@ -120,13 +120,88 @@ function isNearDuplicateTokens(tokensA, tokensB, threshold = 0.70) {
   return union > 0 && intersection / union > threshold;
 }
 
-// Tracks question-text token sets (fuzzy, >70% overlap = duplicate), MCQ
-// option sets (exact, order-independent), and fill_blank/subjective answers
-// (exact) across a growing set of questions. `preSeededQuestions` lets a
-// caller seed the tracker with content it should treat as "already used"
-// without those questions being part of the batch actually being built.
+// ── Semantic (concept-level) duplicate detection ──────────────────────────────
+// The raw-token check above (isNearDuplicateTokens, >70% Jaccard on the
+// unmodified question stem) only catches near-verbatim repeats — it's
+// effectively a paraphrase-blind exact-match detector. Two questions that
+// test the SAME knowledge point read as unrelated to it the moment either
+// the wording changes meaningfully or the question TYPE changes (an MCQ
+// stem vs. a subjective prompt about the same fact share almost no raw
+// vocabulary). This is the mechanical reason regeneration only ever
+// "changes wording" and an MCQ/subjective pair can silently test the same
+// thing: nothing upstream was ever comparing MEANING, only surface text.
+//
+// conceptTokens() strips stopwords and stems the rest (same lightweight
+// suffix-stripping approach already used for fill-blank/subjective
+// answer-equivalence in assessment.js's isAnswerCorrect — deliberately
+// consistent with that, not a second competing algorithm) so
+// "escalate/escalating/escalation" or "verify/verified/verification"
+// collapse to one concept. extractConceptText() additionally folds in the
+// CORRECT answer's content (the correct MCQ option, or the fill/subjective
+// answer) — because "what is being tested" for a question is defined as
+// much by its answer as by its stem, and that's exactly the signal an MCQ
+// and a subjective question about the same fact actually share even when
+// their stems don't.
+const STOP_WORDS = new Set([
+  'the','a','an','is','are','was','were','be','been','being','have','has','had',
+  'do','does','did','will','would','could','should','may','might','must','can',
+  'of','in','on','at','to','for','with','by','from','up','about','into','through',
+  'and','or','but','if','then','that','this','it','its','not','no','so','as',
+  'than','when','where','which','who','how','what','why','you','your','i','we',
+  'they','he','she','also','very','all','any','each','some','employee','process',
+]);
+function stem(w) {
+  return w
+    .replace(/ing$/, '')
+    .replace(/tions?$/, 't')
+    .replace(/ments?$/, '')
+    .replace(/nesses?$/, '')
+    .replace(/iers?$/, 'y')
+    .replace(/ies$/, 'y')
+    .replace(/ers?$/, '')
+    .replace(/es$/, '')
+    .replace(/s$/, '');
+}
+function conceptTokens(s) {
+  return normalizeTokens(s)
+    .filter(t => t.length > 2 && !STOP_WORDS.has(t))
+    .map(stem);
+}
+function extractConceptText(q) {
+  const parts = [q?.question || ''];
+  if (Array.isArray(q?.options) && q.options.length) {
+    const letter = (q.answer || '').trim().toUpperCase()[0];
+    const correctOpt = q.options.find(o => o.trim().toUpperCase().startsWith(`${letter})`) || o.trim().toUpperCase().startsWith(letter))
+      || q.options[0];
+    if (correctOpt) parts.push(normalizeOption(correctOpt));
+  } else if (q?.answer) {
+    parts.push(q.answer);
+  }
+  return parts.join(' ');
+}
+// Lower threshold than the raw-token check (0.62 vs 0.70) — deliberately: with
+// stopwords removed and inflection collapsed, two genuinely different
+// questions on the same sub-topic already share less residual vocabulary, so
+// this can be stricter without over-rejecting adjacent-but-distinct content.
+// The >=4-token floor avoids flagging two short/generic concept sets as
+// "62% similar" by chance.
+const CONCEPT_SIMILARITY_THRESHOLD = 0.62;
+const MIN_CONCEPT_TOKENS_TO_COMPARE = 4;
+
+// Tracks question-text token sets (fuzzy, >70% raw overlap = duplicate),
+// concept token sets (fuzzy, >62% stemmed/stopword-free overlap, answer-
+// content-aware = SEMANTIC duplicate — this is what catches paraphrases and
+// cross-type duplicates), MCQ option sets (exact, order-independent), and
+// fill_blank/subjective answers (exact) across a growing set of questions.
+// `preSeededQuestions` lets a caller seed the tracker with content it should
+// treat as "already used" without those questions being part of the batch
+// actually being built — this is the single chokepoint every dedup path in
+// this file routes through (deduplicateQuestions, mergeUnique,
+// mergeFallbackUnique, fillEmergencyGap, and the cross-file tracker in
+// generateQuestionsFromFiles), so improving it here fixes all of them.
 function createSeenTracker(preSeededQuestions = []) {
   const tokenSets = [];
+  const conceptSets = [];
   const optionSets = new Set();
   const answers = new Set();
   const texts = new Set();
@@ -134,6 +209,7 @@ function createSeenTracker(preSeededQuestions = []) {
   function add(q) {
     if (!q || !q.question) return;
     tokenSets.push(new Set(normalizeTokens(q.question)));
+    conceptSets.push(new Set(conceptTokens(extractConceptText(q))));
     texts.add((q.question || '').trim().toLowerCase());
     if (Array.isArray(q.options) && q.options.length) {
       const key = q.options.map(normalizeOption).sort().join('|');
@@ -153,6 +229,11 @@ function createSeenTracker(preSeededQuestions = []) {
       if (texts.has(key)) return true;
       const tokens = new Set(normalizeTokens(q.question));
       if (tokenSets.some(prev => isNearDuplicateTokens(tokens, prev))) return true;
+      const concept = new Set(conceptTokens(extractConceptText(q)));
+      if (concept.size >= MIN_CONCEPT_TOKENS_TO_COMPARE
+          && conceptSets.some(prev => prev.size >= MIN_CONCEPT_TOKENS_TO_COMPARE && isNearDuplicateTokens(concept, prev, CONCEPT_SIMILARITY_THRESHOLD))) {
+        return true;
+      }
       if (Array.isArray(q.options) && q.options.length) {
         const normOpts = q.options.map(normalizeOption);
         if (new Set(normOpts).size !== normOpts.length) return true; // dup within itself
@@ -213,6 +294,58 @@ function mergeFallbackUnique(pool, batch, avoidSet = []) {
     additions.push(q);
   }
   return [...pool, ...additions];
+}
+
+// ── Embedding-based semantic dedup — final pass over an assembled bank ────────
+// The lexical/concept checks in createSeenTracker (stemming + stopword
+// removal + answer-content folding) catch a lot, but genuinely cannot catch
+// true synonym-level paraphrases: "What is the first STEP" vs "which ACTION
+// should be performed INITIALLY" share almost no stems even after stemming,
+// because "step"/"action" and "first"/"initially" are different words
+// entirely, not inflections of the same one. That gap needs real semantic
+// understanding, which is what this adds — ONE Gemini batchEmbedContents
+// call per generation run (not per question, not per attempt) embeds the
+// question+answer text of every candidate, and any pair whose cosine
+// similarity exceeds SEMANTIC_EMBED_THRESHOLD is treated as the same
+// knowledge point regardless of surface wording or question type. Greedy,
+// first-occurrence-wins — matches the "earlier content wins" convention
+// createSeenTracker already uses (locked/prior questions are always seeded
+// first). Pure enhancement: embedTexts() returning null (quota, network,
+// any failure) means this returns the input completely unchanged — the
+// lexical pass some questions already survived stands as the final answer.
+const SEMANTIC_EMBED_THRESHOLD = 0.90;
+
+function cosineSimilarity(a, b) {
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; magA += a[i] * a[i]; magB += b[i] * b[i]; }
+  const denom = Math.sqrt(magA) * Math.sqrt(magB);
+  return denom > 0 ? dot / denom : 0;
+}
+
+async function applySemanticDedup(questions) {
+  if (!Array.isArray(questions) || questions.length < 2) return questions;
+  try {
+    const texts = questions.map(q => extractConceptText(q).slice(0, 1500));
+    const embeddings = await GeminiService.embedTexts(texts);
+    if (!embeddings) return questions; // fail open — lexical results stand
+
+    const kept = [];
+    const keptEmbeddings = [];
+    let removed = 0;
+    for (let i = 0; i < questions.length; i++) {
+      const isDup = keptEmbeddings.some(prev => cosineSimilarity(embeddings[i], prev) > SEMANTIC_EMBED_THRESHOLD);
+      if (isDup) { removed++; continue; }
+      kept.push(questions[i]);
+      keptEmbeddings.push(embeddings[i]);
+    }
+    if (removed > 0) {
+      console.log(`[AssessmentGenerator] semantic embedding pass removed ${removed} question(s) whose meaning duplicated an earlier one in this bank (cosine > ${SEMANTIC_EMBED_THRESHOLD})`);
+    }
+    return kept;
+  } catch (err) {
+    console.warn(`[AssessmentGenerator] semantic dedup pass failed (${err.message}) — lexical dedup result used as-is.`);
+    return questions;
+  }
 }
 
 // Interleave questions by difficulty (easy → medium → hard → easy → ...) without
@@ -291,15 +424,30 @@ ABSOLUTE RULES:
 // cost of injecting full prior question text on every regenerate call.
 function buildAvoidSection(avoidQuestions) {
   if (!Array.isArray(avoidQuestions) || avoidQuestions.length === 0) return '';
-  const capped = avoidQuestions.slice(0, 40).map(q => {
+  // Callers now pass [...currentAttemptPool, ...crossVersionAvoidSet] — the
+  // caller's own array order IS the priority order (nearest/most-urgent
+  // first: what THIS generation run already produced, so a retry doesn't
+  // waste its budget re-deriving the same facts; then deleted-question
+  // tombstones; then older bank content). De-dupe by exact text first so two
+  // near-identical entries don't both burn a slot, then take the raised cap.
+  const seen = new Set();
+  const deduped = [];
+  for (const q of avoidQuestions) {
+    const text = (q?.question || q || '').toString().trim().toLowerCase();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    deduped.push(q);
+  }
+  const AVOID_CAP = 60;
+  const capped = deduped.slice(0, AVOID_CAP).map(q => {
     const text = (q?.question || q || '').toString().trim();
     const words = text.split(/\s+/).slice(0, 12).join(' ');
     return `- ${words}${text.split(/\s+/).length > 12 ? '...' : ''}`;
   }).filter(Boolean);
   if (capped.length === 0) return '';
   return `
-=== ALREADY USED — DO NOT REPEAT (from the previous version) ===
-This is a REGENERATION. The scenarios, wording, and examples below were already used in a prior version and already seen by employees. Every new question must cover DIFFERENT scenarios, wording, and examples — testing the same underlying knowledge is fine, repeating how it was asked is not.
+=== ALREADY USED — DO NOT REPEAT (from this run, deleted questions, and prior versions) ===
+This is a REGENERATION. The items below were already produced (in this same generation run, in a version an admin explicitly deleted, or in a prior approved version already seen by employees). Every new question must cover DIFFERENT scenarios, wording, and examples — testing the same underlying knowledge point is fine, repeating how it was asked, or asking it in a different question TYPE, is not.
 ${capped.join('\n')}
 `;
 }
@@ -1109,19 +1257,28 @@ export function validateQuestionBank(questions, target, config = {}) {
     if (!q || !q.question) { hardFailures.push(`Question ${i}: missing question text`); continue; }
     if (!q.answer || !String(q.answer).trim()) { hardFailures.push(`Question ${i}: empty answer`); checks.emptyAnswers.push(i); }
 
-    // Duplicate question text (>70% token overlap) — hard fail
+    // Duplicate question text — raw >70% token overlap (near-verbatim), PLUS
+    // the same concept-level check (stemmed/stopword-free, answer-content-
+    // aware) used at generation time — this is the hard gate at Approve, so
+    // it must catch the same paraphrase/cross-type duplicates generation's
+    // dedup targets, not a weaker independent reimplementation of only the
+    // raw-token half of it.
     const tokens = new Set(normalize(q.question));
+    const concept = new Set(conceptTokens(extractConceptText(q)));
     for (let j = 0; j < seenText.length; j++) {
       const prev = seenText[j];
       const prevTokens = new Set(normalize(prev.text));
       const inter = [...tokens].filter(t => prevTokens.has(t)).length;
       const union = new Set([...tokens, ...prevTokens]).size;
-      if (union > 0 && inter / union > 0.70) {
-        hardFailures.push(`Duplicate question: [${i}] is >70% similar to [${j}]`);
+      const rawDup = union > 0 && inter / union > 0.70;
+      const conceptDup = concept.size >= MIN_CONCEPT_TOKENS_TO_COMPARE && prev.concept?.size >= MIN_CONCEPT_TOKENS_TO_COMPARE
+        && isNearDuplicateTokens(concept, prev.concept, CONCEPT_SIMILARITY_THRESHOLD);
+      if (rawDup || conceptDup) {
+        hardFailures.push(`Duplicate question: [${i}] is ${rawDup ? '>70% textually' : 'semantically'} similar to [${j}]`);
         checks.duplicateQuestions.push([j, i]);
       }
     }
-    seenText.push({ text: q.question, idx: i });
+    seenText.push({ text: q.question, idx: i, concept });
 
     // MCQ shape + duplicate options — hard fail
     if (q.type === 'mcq') {
@@ -1243,7 +1400,7 @@ function withFinalCombo(questions, comboCounters) {
 // offset each round — this is the ONE place that deliberately does NOT take
 // an avoidSet, by design (see call sites), to protect the exact-count
 // guarantee above all else.
-function fillEmergencyGap(existing, num, { types, skillsList, jobRole }) {
+function fillEmergencyGap(existing, num, { types, skillsList, jobRole, avoidQuestions = [] }) {
   let combined = existing;
   let comboCounters = { easy: 9999, medium: 9999, hard: 9999 };
   let round = 0;
@@ -1260,7 +1417,12 @@ function fillEmergencyGap(existing, num, { types, skillsList, jobRole }) {
         ...Array(curSubj).fill({ type: 'subjective' }),
       ], num, ASSESSMENT_MIX),
     });
-    combined = mergeFallbackUnique(combined, batch);
+    // avoidQuestions now threaded through here too — previously this only
+    // ever checked against `combined` (the pool being built in THIS run),
+    // so an emergency-padded question could still reproduce a DELETED
+    // question or one from a prior version, since neither is part of
+    // `combined`.
+    combined = mergeFallbackUnique(combined, batch, avoidQuestions);
     comboCounters = { easy: comboCounters.easy + 1000, medium: comboCounters.medium + 1000, hard: comboCounters.hard + 1000 };
     round++;
   }
@@ -1367,7 +1529,9 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
       const bufferMultiplier = 1.4 + attempt * 0.3;
       const askFor = Math.min(maxQuestionsPerCall(), Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
       const seed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 6)}`;
-      const prompt = buildUserPrompt({ count: askFor, jobRole, jdText: chunk, skillsList, types, seed, supportingDocsText: '', avoidQuestions });
+      // Same fix as generateQuestionsFromDocument: retries now see what THIS
+      // run already accumulated, not just the static cross-version avoid set.
+      const prompt = buildUserPrompt({ count: askFor, jobRole, jdText: chunk, skillsList, types, seed, supportingDocsText: '', avoidQuestions: [...pool, ...avoidQuestions] });
 
       let batch = await GeminiService.generateQuestionsBatch(prompt, system, { maxTokens: outputTokensFor(askFor), onThrottle: emit.throttle });
       if (batch && batch.length > 0) {
@@ -1393,6 +1557,16 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
   const comboCounters = startingComboCounters
     ? { ...startingComboCounters }
     : { easy: 0, medium: 0, hard: 0 };
+
+  // Semantic embedding pass — one batched call, catches true paraphrase/
+  // cross-type duplicates the lexical tracker's stemming can't (see
+  // applySemanticDedup above for why: "first step" vs "initially" share no
+  // stems at all). Placed HERE, before the padding block below, so any
+  // removal is naturally backfilled by the exact same count-guarantee
+  // machinery every other shortfall already goes through — no separate
+  // backfill logic needed, and the "exact count always delivered" contract
+  // every downstream consumer relies on is never at risk from this pass.
+  pool = await applySemanticDedup(pool);
 
   // Absolute last resort: deterministic template padding to guarantee the exact count.
   // Combos (skill x template, then skill-pair x template) are combinatorially large,
@@ -1455,14 +1629,15 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
     if (rebalanced.length > num) {
       return withFinalCombo(attachQualityScores(rebalanced.slice(0, num), scoringSource), comboCounters);
     }
-    // Still short — generate emergency fallback for the remaining gap.
-    // Deliberately NOT seeded from avoidQuestions: this is the true
-    // last-resort guarantee that the exact count is always met, and applying
-    // cross-version rejection here risks that guarantee for roles with a
-    // small skill pool (design review recommendation) — better a rare repeat
-    // of a prior version's content than a broken count. It IS still
-    // deduplicated against the current bank and against itself (fillEmergencyGap).
-    const final = fillEmergencyGap(rebalanced, num, { types, skillsList, jobRole });
+    // Still short — generate emergency fallback for the remaining gap. Now
+    // DOES try avoidQuestions first (fillEmergencyGap tries up to 10 rounds
+    // against it before its own final ignore-avoid guarantee kicks in) — a
+    // deleted or prior-version question reappearing here was exactly the
+    // "regenerated 6 times, deleted questions come back" failure mode this
+    // was previously trading away on purpose. The exact-count contract is
+    // still never broken: fillEmergencyGap's own last-resort step accepts a
+    // rare repeat only if truly nothing else is left to generate.
+    const final = fillEmergencyGap(rebalanced, num, { types, skillsList, jobRole, avoidQuestions });
     return withFinalCombo(attachQualityScores(tagMetadata(final, { generatedFrom: 'jd' }), scoringSource), comboCounters);
   }
 
@@ -1554,8 +1729,17 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
       const bufferMultiplier = 1.4 + attempt * 0.3;
       const askFor = Math.min(maxQuestionsPerCall(), Math.max(1, Math.ceil(stillNeeded * bufferMultiplier)));
       const attemptSeed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 4)}`;
+      // Feed what THIS run has already accumulated (pool) into the prompt,
+      // not just the static cross-version avoidQuestions. Previously a
+      // retry attempt saw the exact same chunk + instructions with only a
+      // different random seed and NO knowledge of what attempt 0 already
+      // produced — the model naturally re-derived the same salient facts,
+      // and mergeUnique correctly discarded nearly all of it post-hoc. That
+      // silent waste (not the dedup logic) was the actual plateau mechanism:
+      // attempt 1 was rarely getting any real chance to add NEW content.
       const prompt = buildDocumentUserPrompt({
-        count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder, processDelivery, avoidQuestions,
+        count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder, processDelivery,
+        avoidQuestions: [...pool, ...avoidQuestions],
       });
 
       let batch = await GeminiService.generateQuestionsBatch(prompt, system, { maxTokens: outputTokensFor(askFor), onThrottle: emit.throttle });
@@ -1577,6 +1761,12 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
   const comboCounters = startingComboCounters
     ? { ...startingComboCounters }
     : { easy: 0, medium: 0, hard: 0 };
+
+  // Same semantic embedding pass as generateQuestionsFromJD, same placement
+  // logic: any removal here is naturally backfilled by the padding loop
+  // right below (or fillEmergencyGap further down), so the exact-count
+  // guarantee is never put at risk by this pass.
+  pool = await applySemanticDedup(pool);
 
   if (pool.length < num) {
     const shortage = num - pool.length;
@@ -1622,10 +1812,10 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
 
   if (rebalanced.length !== num) {
     if (rebalanced.length > num) return withFinalCombo(attachQualityScores(rebalanced.slice(0, num), sourceText), comboCounters);
-    // True last-resort guarantee — not seeded from avoidQuestions, same
-    // reasoning as generateQuestionsFromJD's emergency path. Deduplicated
-    // against the current bank and against itself via fillEmergencyGap.
-    const final = fillEmergencyGap(rebalanced, num, { types, skillsList: [SAFE_FALLBACK_TOPIC], jobRole });
+    // Same as generateQuestionsFromJD's emergency path — tries avoidQuestions
+    // first via fillEmergencyGap's own rounds, only falling through to an
+    // unavoidable repeat if truly nothing else is left.
+    const final = fillEmergencyGap(rebalanced, num, { types, skillsList: [SAFE_FALLBACK_TOPIC], jobRole, avoidQuestions });
     return withFinalCombo(attachQualityScores(tagMetadata(final, meta), sourceText), comboCounters);
   }
   return withFinalCombo(attachQualityScores(tagMetadata(rebalanced, meta), sourceText), comboCounters);
@@ -1853,19 +2043,34 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
       }
 
       // Absolute final guarantee for this source: force-fill any residual
-      // shortfall without dedup — count must never come up short, same
-      // philosophy as fillEmergencyGap.
-      if (acceptedForSource.length < count) {
+      // shortfall. Count must never come up short — but this used to accept
+      // the forced batch completely unchecked, which meant a DELETED
+      // question or one already in the bank could reappear verbatim at
+      // exactly the stage the platform is least likely to still be watching
+      // for it. Still dedup here; if that leaves a shortfall, ask
+      // buildFallbackQuestions for a differently-seeded batch (bounded
+      // rounds) before finally accepting whatever's left — this keeps the
+      // "always meets count" guarantee while eliminating the specific
+      // failure mode of an exact repeat.
+      let forceRound = 0;
+      while (acceptedForSource.length < count && forceRound < 4) {
         const stillNeeded = count - acceptedForSource.length;
         const forced = buildFallbackQuestions(stillNeeded, {
-          types: buildTypeSeqLocal(stillNeeded), skillsList: paddingSkills, jobRole: srcJobRole, comboCounters: padComboCounters,
+          types: buildTypeSeqLocal(stillNeeded), skillsList: paddingSkills, jobRole: srcJobRole,
+          comboCounters: { easy: padComboCounters.easy + forceRound * 1000, medium: padComboCounters.medium + forceRound * 1000, hard: padComboCounters.hard + forceRound * 1000 },
         });
+        let addedThisRound = 0;
         for (const q of forced) {
+          if (acceptedForSource.length >= count) break;
+          if (forceRound < 3 && tracker.isDuplicate(q)) continue; // last round: accept regardless, count must not come up short
           const tagged = { ...q, id: q.id || randomUUID(), sourceFile: source.name || 'Unknown', sourceType: source.sourceType || 'jd', qualityScore: computeQuestionQualityScore(q, text) };
-          tracker.add(tagged); // still recorded so later sources avoid repeating it, even though it wasn't itself checked
+          tracker.add(tagged);
           allQuestions.push(tagged);
           acceptedForSource.push(tagged);
+          addedThisRound++;
         }
+        forceRound++;
+        if (addedThisRound === 0 && forceRound >= 3) break; // template pool exhausted, stop looping
       }
     }
 
