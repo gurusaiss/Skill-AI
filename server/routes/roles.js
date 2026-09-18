@@ -1979,6 +1979,32 @@ async function handleLockAssessment(req, res) {
     const { Assessments: AssessmentsStore } = await import('../services/DataStore.js');
     const saved = await AssessmentsStore.create(newAssessment);
 
+    // Supersede any PRIOR active assessment(s) for this same role+company —
+    // e.g. the role's JD was updated and a new bank regenerated/approved.
+    // This is the versioning fix: without it, every approval left old
+    // assessment rows dangling isActive:true forever, so an employee's
+    // GET /my self-heal (assessment.js) would find "an assessment for this
+    // role" (the OLD one, whichever the store happened to return first) and
+    // never learn a new version exists — pinned to the old bank permanently.
+    // Deactivating is the ONLY change made to the old record: its
+    // employeeAssignments/results/history are never touched, so anyone who
+    // already started or submitted it keeps that exactly as it was.
+    // AssessmentAutoAssign.js already filters new joins to `a.isActive`, so
+    // this one flip is what makes the whole versioning chain (old stays
+    // historically valid, new becomes the live target) actually work.
+    try {
+      const priorForRole = (await AssessmentsStore.getAll())
+        .filter(a => a.fromRoleId === role.id && (a.companyId || 'default') === companyId && a.id !== saved.id && a.isActive !== false);
+      for (const prior of priorForRole) {
+        await AssessmentsStore.update(prior.id, { isActive: false, supersededBy: saved.id, supersededAt: assignedAt });
+      }
+      if (priorForRole.length > 0) {
+        console.log(`[lock-assessment] Superseded ${priorForRole.length} prior assessment(s) for role "${role.roleName}" → ${saved.id}`);
+      }
+    } catch (e) {
+      console.warn('[lock-assessment] Failed to supersede prior assessment(s):', e.message);
+    }
+
     // One assignment row per employee: same version, distinct shuffle order.
     const bankIds = bank.map(q => q.id);
     await EmployeeAssessmentAssignments.bulkCreate(targets.map(user => ({

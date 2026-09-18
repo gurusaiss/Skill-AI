@@ -1692,9 +1692,40 @@ router.get('/my', authenticate, async (req, res) => {
       if (user?.jobRole) {
         const roleMatch = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
         if (roleMatch) {
-          const existingForRole = mine.find(a => a.fromRoleId === roleMatch.id);
-          if (!existingForRole) {
-            // Not on any assessment for this role at all — assign one now.
+          // With re-approval versioning (roles.js handleLockAssessment), a
+          // role can have more than one assessment record: old ones the
+          // employee may have engaged with (isActive:false, left untouched
+          // as history) plus the current live one. Picking "whichever the
+          // store returns first" here — the old behavior — could pin an
+          // employee to a superseded version forever, since a truthy
+          // existingForRole always skipped the auto-assign-onto-the-new-one
+          // branch below. Prefer: (1) whatever they've actually started or
+          // submitted, since that's their real in-progress/completed
+          // attempt and must never be silently swapped out from under them;
+          // else (2) the currently active assessment for the role; else
+          // (3) whatever exists, so a role with only historical (inactive)
+          // assessments still resolves to something rather than nothing.
+          const roleAssessments = mine.filter(a => a.fromRoleId === roleMatch.id);
+          const engagedForRole = roleAssessments.find(a => {
+            const ea = a.employeeAssignments?.find(x => x.userId === req.user.userId);
+            return ea && (ea.status === 'submitted' || ea.status === 'in_progress' || ea.startedAt);
+          });
+          const existingForRole = engagedForRole
+            || roleAssessments.find(a => a.isActive !== false)
+            || roleAssessments[0];
+          // Only sitting on a SUPERSEDED assessment they never started —
+          // e.g. the role was re-approved with a new JD/bank after they were
+          // originally assigned, and they weren't swept into the new one's
+          // roster (a re-approval only re-resolves employees matching the
+          // role AT approval time). Treat this the same as "not assigned at
+          // all": autoAssignPreAssessment resolves and joins the currently
+          // ACTIVE assessment for the role (it already filters on
+          // a.isActive), which is exactly the migration this needs — with
+          // zero effect on the old record, still sitting there untouched
+          // for its own history.
+          const staleUnstarted = existingForRole && existingForRole.isActive === false && !engagedForRole;
+          if (!existingForRole || staleUnstarted) {
+            // Not on any CURRENT assessment for this role — assign/join one now.
             const { autoAssignPreAssessment } = await import('../services/AssessmentAutoAssign.js');
             await autoAssignPreAssessment(user);
             assessments = await Assessments.getAll() || [];
@@ -1733,6 +1764,20 @@ router.get('/my', authenticate, async (req, res) => {
     } catch (e) {
       console.warn('[assessments GET mine] self-heal auto-assign failed:', e.message);
     }
+
+    // Drop superseded assessments the employee never engaged with — after a
+    // role is re-approved with a new bank, the self-heal above joins them
+    // onto the new active one, but the old (now isActive:false) roster entry
+    // is deliberately left in place for history. If they never started it,
+    // showing it here would just be a confusing duplicate "Pre-Assessment:
+    // <role>" entry sitting next to the real, current one. An inactive
+    // assessment they DID start/submit stays fully visible — that's their
+    // legitimate result history and must never disappear.
+    mine = mine.filter(a => {
+      if (a.isActive !== false) return true;
+      const ea = a.employeeAssignments?.find(x => x.userId === req.user.userId);
+      return ea && (ea.status === 'submitted' || ea.status === 'in_progress' || ea.startedAt);
+    });
 
     const myAssessments = await Promise.all(mine.map(async (a) => {
       const myAssignment = a.employeeAssignments?.find(ea => ea.userId === req.user.userId);
