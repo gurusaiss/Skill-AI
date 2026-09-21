@@ -238,19 +238,45 @@ class UserStore {
         created_at:     newUser.createdAt,
         updated_at:     newUser.updatedAt,
       };
-      // Add extended columns only if they exist (won't error if missing)
-      try { row.job_role = newUser.jobRole || ''; } catch {}
-      try { row.department = newUser.department || ''; } catch {}
-      try { row.job_description = newUser.jobDescription || ''; } catch {}
-      try { row.onboarding_complete = newUser.onboardingComplete || false; } catch {}
-      try { row.company_name = newUser.companyName || ''; } catch {}
-      try { row.company_id = newUser.companyId || 'default'; } catch {}
-      try { if (newUser.employeeId) row.employee_id = newUser.employeeId; } catch {}
-      try { if (newUser.phone) row.phone = newUser.phone; } catch {}
-      try { if (newUser.status) row.status = newUser.status; } catch {}
-      try { row.permissions = newUser.permissions; } catch {}
+      // Extended columns — NOTE: wrapping a plain property assignment in
+      // try/catch (the old comment here claimed this "won't error if
+      // missing") does NOT protect against a genuinely missing DB column —
+      // assigning an object property can never throw; the actual error only
+      // surfaces later, at the .insert() call, as a Postgres 42703
+      // (undefined_column) error. That mismatch is exactly what broke BOTH
+      // single Add User and bulk import in production: `permissions` was
+      // added here when the per-user-permissions feature shipped, but the
+      // matching Supabase migration (documented in sql/mysql_schema.sql's
+      // own comment as a manual pre-deploy step) was never actually run
+      // against the live table, so every createUser() call started
+      // throwing. Fixed at the root with the same 42703-retry pattern
+      // DataStore.js's sbUpdate already uses elsewhere: on an undefined-
+      // column error, drop that specific column from the row and retry —
+      // self-healing for ANY future column that ships in code before its
+      // migration lands, not just this one.
+      row.job_role = newUser.jobRole || '';
+      row.department = newUser.department || '';
+      row.job_description = newUser.jobDescription || '';
+      row.onboarding_complete = newUser.onboardingComplete || false;
+      row.company_name = newUser.companyName || '';
+      row.company_id = newUser.companyId || 'default';
+      if (newUser.employeeId) row.employee_id = newUser.employeeId;
+      if (newUser.phone) row.phone = newUser.phone;
+      if (newUser.status) row.status = newUser.status;
+      row.permissions = newUser.permissions;
 
-      const { data, error } = await sb.from('users').insert(row).select().maybeSingle();
+      let { data, error } = await sb.from('users').insert(row).select().maybeSingle();
+      let guard = 0;
+      while (error?.code === '42703' && guard < 10) {
+        // Postgres's message names the exact missing column, e.g.:
+        // column "permissions" of relation "users" does not exist
+        const m = /column "([^"]+)" of relation/.exec(error.message || '');
+        if (!m || !(m[1] in row)) break; // can't identify/strip it — surface the real error below
+        console.warn(`[UserStore] createUser: column "${m[1]}" missing on Supabase users table (migration not yet applied) — retrying without it.`);
+        delete row[m[1]];
+        ({ data, error } = await sb.from('users').insert(row).select().maybeSingle());
+        guard++;
+      }
       if (error) {
         console.error('[UserStore] createUser Supabase error:', error.message);
         throw new Error(error.message);
@@ -360,7 +386,21 @@ class UserStore {
         const row = userToRow(updates);
         row.updated_at = new Date().toISOString();
         // Use maybeSingle() instead of single() — won't throw if 0 rows matched
-        const { data, error } = await sb.from('users').update(row).eq('user_id', userId).select().maybeSingle();
+        let { data, error } = await sb.from('users').update(row).eq('user_id', userId).select().maybeSingle();
+        // Same self-healing 42703 (undefined_column) retry as createUser —
+        // this path is what made the Permissions page's per-user grant/revoke
+        // save silently fail (no thrown error, just a console.error and a
+        // fake-partial "success" return) whenever `updates.permissions` was
+        // present and the column wasn't actually on the live table yet.
+        let guard = 0;
+        while (error?.code === '42703' && guard < 10) {
+          const m = /column "([^"]+)" of relation/.exec(error.message || '');
+          if (!m || !(m[1] in row)) break;
+          console.warn(`[UserStore] updateUser: column "${m[1]}" missing on Supabase users table (migration not yet applied) — retrying without it.`);
+          delete row[m[1]];
+          ({ data, error } = await sb.from('users').update(row).eq('user_id', userId).select().maybeSingle());
+          guard++;
+        }
         if (error) {
           console.error('[UserStore] updateUser Supabase error:', error.message);
           // Don't throw — fall through and return partial update

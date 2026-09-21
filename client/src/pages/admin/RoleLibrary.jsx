@@ -929,7 +929,13 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
   // Compute total from per-file configs when files are present
   const fileTotal = [...(role.jdFiles || []), ...(role.supportingFiles || [])].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0);
   const hasFiles = (role.jdFiles?.length || 0) + (role.supportingFiles?.length || 0) > 0;
-  const [regenCount, setRegenCount] = useState(fileTotal || role.questionBankCount || 50);
+  // questionBankTargetCount (not questionBankCount) is the admin's intended
+  // bank size — questionBankCount tracks the LIVE count and legitimately
+  // shrinks when a question is deleted, which used to silently retarget
+  // every future regeneration at the smaller post-deletion number instead of
+  // refilling back up to what was actually approved/generated. Falls back to
+  // questionBankCount for older roles that predate this field.
+  const [regenCount, setRegenCount] = useState(fileTotal || role.questionBankTargetCount || role.questionBankCount || 50);
   const [regenMode, setRegenMode] = useState('all');
   const [localJdFiles, setLocalJdFiles] = useState(
     (role.jdFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5, stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery }))
@@ -1127,9 +1133,15 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
               </p>
               {/* Live count summary */}
               {(() => {
+                // Same target-over-live-count priority as regenCount's init —
+                // role.questionBankCount alone would show a "Requested" total
+                // that had already shrunk from any prior deletion, making the
+                // "Remaining" indicator read 0 (nothing missing) right after
+                // deleting questions, instead of correctly showing the gap
+                // that Regenerate is supposed to fill back in.
                 const totalRequested = hasFiles
                   ? [...localJdFiles, ...localSupportingFiles].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0)
-                  : (role.questionBankCount || regenCount);
+                  : (role.questionBankTargetCount || regenCount || role.questionBankCount);
                 const manualCount = questions.filter(q => q.isManual).length;
                 const remaining = Math.max(0, totalRequested - questions.length);
                 return (
