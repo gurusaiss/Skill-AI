@@ -39,6 +39,33 @@ function getSB() {
 }
 const useSupabase = () => !!getSB();
 
+// Identifies a "this column doesn't exist yet" error from Supabase, and
+// names the offending column, regardless of which layer produced it:
+//  - Raw Postgres (querying via SQL directly): code 42703,
+//    `column "x" of relation "y" does not exist`
+//  - PostgREST (the REST layer the supabase-js client actually goes
+//    through, and what a missing-migration error looks like in practice —
+//    confirmed live in production logs): code PGRST204,
+//    `Could not find the 'x' column of 'y' in the schema cache`
+// An earlier fix only recognized the first shape, so it never actually
+// engaged against the real error this app produces.
+function missingColumnFrom(error) {
+  if (!error) return null;
+  const msg = error.message || '';
+  if (error.code === 'PGRST204') {
+    const m = /Could not find the '([^']+)' column/.exec(msg);
+    if (m) return m[1];
+  }
+  if (error.code === '42703') {
+    const m = /column "([^"]+)" of relation/.exec(msg);
+    if (m) return m[1];
+  }
+  // Fallback: either message shape, regardless of code, in case Supabase
+  // ever reports one of these messages under a different/new code.
+  const m = /Could not find the '([^']+)' column/.exec(msg) || /column "([^"]+)" of relation/.exec(msg);
+  return m ? m[1] : null;
+}
+
 // ── Row ↔ App field mapping ───────────────────────────────────────────────────
 function rowToUser(row) {
   if (!row) return null;
@@ -267,13 +294,10 @@ class UserStore {
 
       let { data, error } = await sb.from('users').insert(row).select().maybeSingle();
       let guard = 0;
-      while (error?.code === '42703' && guard < 10) {
-        // Postgres's message names the exact missing column, e.g.:
-        // column "permissions" of relation "users" does not exist
-        const m = /column "([^"]+)" of relation/.exec(error.message || '');
-        if (!m || !(m[1] in row)) break; // can't identify/strip it — surface the real error below
-        console.warn(`[UserStore] createUser: column "${m[1]}" missing on Supabase users table (migration not yet applied) — retrying without it.`);
-        delete row[m[1]];
+      let missingCol;
+      while ((missingCol = missingColumnFrom(error)) && missingCol in row && guard < 10) {
+        console.warn(`[UserStore] createUser: column "${missingCol}" missing on Supabase users table (migration not yet applied) — retrying without it.`);
+        delete row[missingCol];
         ({ data, error } = await sb.from('users').insert(row).select().maybeSingle());
         guard++;
       }
@@ -387,17 +411,16 @@ class UserStore {
         row.updated_at = new Date().toISOString();
         // Use maybeSingle() instead of single() — won't throw if 0 rows matched
         let { data, error } = await sb.from('users').update(row).eq('user_id', userId).select().maybeSingle();
-        // Same self-healing 42703 (undefined_column) retry as createUser —
+        // Same self-healing retry as createUser (see missingColumnFrom) —
         // this path is what made the Permissions page's per-user grant/revoke
         // save silently fail (no thrown error, just a console.error and a
         // fake-partial "success" return) whenever `updates.permissions` was
         // present and the column wasn't actually on the live table yet.
         let guard = 0;
-        while (error?.code === '42703' && guard < 10) {
-          const m = /column "([^"]+)" of relation/.exec(error.message || '');
-          if (!m || !(m[1] in row)) break;
-          console.warn(`[UserStore] updateUser: column "${m[1]}" missing on Supabase users table (migration not yet applied) — retrying without it.`);
-          delete row[m[1]];
+        let missingCol;
+        while ((missingCol = missingColumnFrom(error)) && missingCol in row && guard < 10) {
+          console.warn(`[UserStore] updateUser: column "${missingCol}" missing on Supabase users table (migration not yet applied) — retrying without it.`);
+          delete row[missingCol];
           ({ data, error } = await sb.from('users').update(row).eq('user_id', userId).select().maybeSingle());
           guard++;
         }
