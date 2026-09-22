@@ -80,7 +80,7 @@ const ROLE_RANK = { admin: 0, manager: 1, leadership: 1, 'senior-training-develo
 // never appeared in either tab, even though they were correctly saved and
 // showed up everywhere else (e.g. the Manager dropdown on Add User) that
 // reads straight from MANAGER_TIER_ROLES.
-const STAFF_ROLE_SET = new Set(['admin', ...MANAGER_TIER_ROLES]);
+const STAFF_ROLE_SET = new Set(['superadmin', 'admin', ...MANAGER_TIER_ROLES]);
 
 function getRoleBadge(role) {
   if (role === 'admin') return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
