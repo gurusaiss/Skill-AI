@@ -130,7 +130,18 @@ function isCommentRow(raw) {
 }
 
 const IMPORT_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const IMPORT_ROLES = ['employee', 'manager', 'admin'];
+// Was a stale ['employee','manager','admin'] — rejected every one of the 13
+// platform roles added later (leadership, senior-training-manager, wfm,
+// lead, trainer, quality-analyst, sme, etc.) at the PREVIEW stage with
+// "invalid role", even though the actual creation logic below (see
+// ALLOWED_IMPORT_ROLES near the create loop) already recognized all of
+// them — so a system_role of e.g. "wfm" could never get past preview to
+// reach that already-working code. 'admin' is deliberately excluded here
+// (not just "less privileged"): the creation path already treats
+// system_role=admin as invalid and silently downgrades it to 'employee'
+// with no visible error — better to reject it clearly in preview than let
+// that silent downgrade be someone's first surprise after a bulk import.
+const IMPORT_ROLES = ALL_VALID_ROLES.filter(r => r !== 'superadmin' && r !== 'admin');
 
 /**
  * The single validator used by BOTH /bulk-import/preview and /bulk-import.
@@ -1372,7 +1383,7 @@ router.get('/bulk-import/template', authenticate, requireRole('admin', 'manager'
       ['REQUIRED for employee rows', 'manager_name AND manager_email — an employee must have a manager'],
       ['Not required for manager/admin rows', 'manager_name, manager_email (they sit at the top of the chain)'],
       [],
-      ['system_role', 'employee | manager | admin. Blank means employee.'],
+      ['system_role', 'employee | trainer | quality-analyst | sme | manager | leadership | senior-training-development-manager | senior-quality-manager | senior-training-manager | senior-operations-manager | assistant-manager-ops | assistant-manager-quality | assistant-manager-training | wfm | lead | admin. Blank means employee. (admin cannot be bulk-imported — set it manually in Users.)'],
       ['manager_email', 'Must match an existing manager/admin, OR a manager row inside this same file (any order).'],
       ['manager_name', 'For your readability. A mismatch against the record is a warning, not an error — the email is what links.'],
       ['email', 'Immutable. If the email already exists the user is UPDATED; if new, the user is CREATED.'],
@@ -1493,10 +1504,12 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), requi
           if (row.phone) updateFields.phone = row.phone;
           if (row.employeeId) updateFields.employeeId = row.employeeId;
           if (row.status && ['active','inactive','blocked'].includes(row.status)) updateFields.status = row.status;
-          // role update only if admin
+          // role update only if admin — same IMPORT_ROLES list as create,
+          // so re-importing an existing user to change their role recognizes
+          // the same 13 platform roles the create path already does.
           if (row.role && req.user.role === 'admin') {
             const r = row.role.toLowerCase();
-            if (['employee','manager','admin'].includes(r)) updateFields.role = r;
+            if (IMPORT_ROLES.includes(r)) updateFields.role = r;
           }
           if (Object.keys(updateFields).length > 0) {
             await UserStore.updateUser(existingUser.userId || existingUser.id, updateFields);
