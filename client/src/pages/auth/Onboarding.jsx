@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
+import { SYSTEM_ROLE_JOB_TITLES } from '../../constants/roles.js';
 
 export default function Onboarding() {
   const navigate = useNavigate();
@@ -28,7 +29,11 @@ export default function Onboarding() {
   useEffect(() => {
     authFetch('/api/roles').then(res => {
       const list = Array.isArray(res) ? res : res?.roles || res?.data || [];
-      setRoleOptions(list.map(r => ({ name: r.roleName || r.name || '', dept: r.department || '' })).filter(r => r.name));
+      const libraryOptions = list.map(r => ({ name: r.roleName || r.name || '', dept: r.department || '' })).filter(r => r.name);
+      const systemOptions = SYSTEM_ROLE_JOB_TITLES
+        .filter(name => !libraryOptions.some(o => o.name.toLowerCase() === name.toLowerCase()))
+        .map(name => ({ name, dept: '' }));
+      setRoleOptions([...systemOptions, ...libraryOptions]);
     }).catch(() => {});
   }, []);
 

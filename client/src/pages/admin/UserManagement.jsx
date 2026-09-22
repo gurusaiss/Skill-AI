@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
+import { SYSTEM_ROLE_JOB_TITLES } from '../../constants/roles.js';
 
 // Needed for the raw fetch that downloads the .xlsx template — authFetch
 // parses JSON, which a binary spreadsheet response is not.
@@ -402,7 +403,11 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   useEffect(() => {
     authFetch('/api/roles').then(res => {
       const list = Array.isArray(res) ? res : res?.roles || res?.data || [];
-      setRoleOptions(list.map(r => ({ name: r.roleName || r.name || '', dept: r.department || '' })).filter(r => r.name));
+      const libraryOptions = list.map(r => ({ name: r.roleName || r.name || '', dept: r.department || '' })).filter(r => r.name);
+      const systemOptions = SYSTEM_ROLE_JOB_TITLES
+        .filter(name => !libraryOptions.some(o => o.name.toLowerCase() === name.toLowerCase()))
+        .map(name => ({ name, dept: '' }));
+      setRoleOptions([...systemOptions, ...libraryOptions]);
     }).catch(() => {});
   }, []);
 
@@ -1081,7 +1086,15 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
   useEffect(() => {
     authFetch('/api/roles').then(res => {
       const list = Array.isArray(res) ? res : res?.roles || res?.data || [];
-      setRoleOptions(list.map(r => ({ name: r.roleName || r.name || '', dept: r.department || '' })).filter(r => r.name));
+      const libraryOptions = list.map(r => ({ name: r.roleName || r.name || '', dept: r.department || '' })).filter(r => r.name);
+      // Platform system roles (Leadership, Senior Training Manager, WFM,
+      // Lead, etc.) are also selectable here, alongside actual Role Library
+      // job titles — the field stays free text either way, this just makes
+      // them easy to pick instead of having to type them out.
+      const systemOptions = SYSTEM_ROLE_JOB_TITLES
+        .filter(name => !libraryOptions.some(o => o.name.toLowerCase() === name.toLowerCase()))
+        .map(name => ({ name, dept: '' }));
+      setRoleOptions([...systemOptions, ...libraryOptions]);
     }).catch(() => {});
   }, []);
 
