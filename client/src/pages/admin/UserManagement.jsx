@@ -64,7 +64,23 @@ const ROLE_LABELS = {
   lead: 'Lead',
 };
 
-const ROLE_RANK = { admin: 0, manager: 1, leadership: 1, 'senior-training-development-manager': 1, 'senior-quality-manager': 1, 'senior-training-manager': 1, 'senior-operations-manager': 1, 'assistant-manager-ops': 1, 'assistant-manager-quality': 1, 'assistant-manager-training': 1, wfm: 1, lead: 1, employee: 2 };
+const ROLE_RANK = { admin: 0, manager: 1, leadership: 1, 'senior-training-development-manager': 1, 'senior-quality-manager': 1, 'senior-training-manager': 1, 'senior-operations-manager': 1, 'assistant-manager-ops': 1, 'assistant-manager-quality': 1, 'assistant-manager-training': 1, wfm: 1, lead: 1, employee: 2, trainer: 2, 'quality-analyst': 2, sme: 2 };
+
+// The complete "management tier" role set (admin + every MANAGER_TIER_ROLES
+// entry) — used to split the Users page into Management vs Employees tabs.
+// Deliberately the single source of truth for that split so a user is never
+// silently invisible in both tabs: whatever isn't staff falls through to
+// Employees by construction, rather than each tab having its own allowlist
+// that a new/renamed role (like the 13 platform system roles) can fall
+// between. This was the bug behind "added as manager but not shown under
+// Users" — the old staffUsers filter only matched the literal role
+// 'manager', so anyone given one of the other manager-tier roles (Leadership,
+// Senior * Manager, WFM, Lead, etc.) matched neither the staff filter
+// (role !== 'manager') nor the employee filter (role !== 'employee') and
+// never appeared in either tab, even though they were correctly saved and
+// showed up everywhere else (e.g. the Manager dropdown on Add User) that
+// reads straight from MANAGER_TIER_ROLES.
+const STAFF_ROLE_SET = new Set(['admin', ...MANAGER_TIER_ROLES]);
 
 function getRoleBadge(role) {
   if (role === 'admin') return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
@@ -411,10 +427,12 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
     }).catch(() => {});
   }, []);
 
-  // Include users granted "manager" as an additional access, not just those
-  // whose primary role is manager — otherwise anyone given manager access
-  // via Manage Access silently never appears as an assignable manager.
-  const managers = useMemo(() => users.filter(u => (u.role === 'manager' || (u.accesses || []).includes('manager')) && u.userId !== user.userId), [users, user.userId]);
+  // Include every manager-tier role (not just the literal 'manager' role —
+  // same STAFF_ROLE_SET bug as the Users page tabs, see its comment) plus
+  // anyone granted "manager" as an additional access via Manage Access,
+  // otherwise a Leadership/WFM/Lead/etc. user — or an access-granted one —
+  // silently never appears as an assignable manager here.
+  const managers = useMemo(() => users.filter(u => (STAFF_ROLE_SET.has(u.role) || (u.accesses || []).includes('manager')) && u.userId !== user.userId), [users, user.userId]);
   const isEmployee = form.role === 'employee';
   const isAdmin = currentUserRole === 'admin';
 
@@ -2131,8 +2149,11 @@ export default function UserManagement() {
     return () => clearInterval(interval);
   }, []);
 
-  const staffUsers = useMemo(() => users.filter(u => ['admin', 'manager'].includes(u.role)), [users]);
-  const employeeUsers = useMemo(() => users.filter(u => u.role === 'employee'), [users]);
+  // Every user falls into exactly one of these two — STAFF_ROLE_SET is the
+  // only place that decides "management or not," so no role can be excluded
+  // from both (see STAFF_ROLE_SET's comment for the bug this fixes).
+  const staffUsers = useMemo(() => users.filter(u => STAFF_ROLE_SET.has(u.role)), [users]);
+  const employeeUsers = useMemo(() => users.filter(u => !STAFF_ROLE_SET.has(u.role)), [users]);
 
   const roleCounts = useMemo(() => {
     const counts = {};
@@ -2328,7 +2349,7 @@ export default function UserManagement() {
                   value={filterStatus}
                   onChange={setFilterStatus}
                   allLabel="All Roles"
-                  options={[{ value: 'admin', label: 'Admin' }, { value: 'manager', label: 'Manager' }, { value: 'trainer', label: 'Trainer' }]}
+                  options={['admin', ...MANAGER_TIER_ROLES].map(r => ({ value: r, label: ROLE_LABELS[r] || r }))}
                 />
                 {filterStatus !== 'all' && (
                   <button onClick={() => setFilterStatus('all')}
