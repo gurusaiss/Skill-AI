@@ -51,6 +51,21 @@ export default function Permissions() {
   const [loadingPerms, setLoadingPerms] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Multi-select: a checkbox per row, independent of the existing "click a
+  // row to view that one user's resolved permissions" flow. Selecting 2+
+  // users switches the right panel into bulk-edit mode.
+  const [bulkSelected, setBulkSelected] = useState(new Set());
+  const [bulkMode, setBulkMode] = useState(false);
+  // Per-permission 3-state draft for bulk mode: key → 'grant' | 'revoke',
+  // absent = unchanged. One plain object (not two separate Sets) so a
+  // three-way cycle can be computed atomically from a single previous-state
+  // read — there's no single "current" permission state to show when the
+  // selected users don't necessarily share the same role/overrides, so bulk
+  // mode is an override instruction ("set these ON, set these OFF for
+  // everyone selected"), not a view of anyone's existing state.
+  const [bulkOverrides, setBulkOverrides] = useState({});
+  const [bulkSaving, setBulkSaving] = useState(false);
+
   useEffect(() => {
     if (!hasRole('admin')) navigate('/dashboard');
   }, [navigate]);
@@ -150,6 +165,69 @@ export default function Permissions() {
     }
   };
 
+  // ── Bulk multi-user selection ─────────────────────────────────────────────
+  const toggleBulkSelected = (userId) => {
+    setBulkSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId); else next.add(userId);
+      return next;
+    });
+  };
+
+  const openBulkEdit = () => {
+    setBulkOverrides({});
+    setBulkMode(true);
+    setSelectedUser(null);
+    setPermData(null);
+  };
+
+  // Cycles a permission through: unchanged → grant → revoke → unchanged.
+  // One atomic object update, so there's no cross-state-read ordering issue.
+  const cycleBulkPermission = (key) => {
+    setBulkOverrides(prev => {
+      const next = { ...prev };
+      if (next[key] === 'grant') next[key] = 'revoke';
+      else if (next[key] === 'revoke') delete next[key];
+      else next[key] = 'grant';
+      return next;
+    });
+  };
+
+  const handleBulkSave = async () => {
+    if (bulkSelected.size === 0) return;
+    const bulkGrant = Object.keys(bulkOverrides).filter(k => bulkOverrides[k] === 'grant');
+    const bulkRevoke = Object.keys(bulkOverrides).filter(k => bulkOverrides[k] === 'revoke');
+    if (bulkGrant.length === 0 && bulkRevoke.length === 0) {
+      setToast({ message: 'No permission changes selected', type: 'error' });
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      const res = await authFetch('/api/users/permissions/bulk', {
+        method: 'PUT',
+        body: JSON.stringify({
+          userIds: [...bulkSelected],
+          granted: bulkGrant,
+          revoked: bulkRevoke,
+        }),
+      });
+      const failedCount = res?.failed?.length || 0;
+      if (failedCount > 0) {
+        setToast({ message: `Applied to ${res.succeeded.length} user(s) — ${failedCount} failed (see console for details)`, type: 'error' });
+        console.error('[Permissions bulk] Failures:', res.failed);
+      } else {
+        setToast({ message: `Permissions updated for ${res.succeeded.length} user(s)`, type: 'success' });
+        setBulkMode(false);
+        setBulkSelected(new Set());
+        setBulkOverrides({});
+      }
+    } catch (e) {
+      setToast({ message: e.message || 'Bulk update failed', type: 'error' });
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 md:p-8">
       <div className="max-w-6xl mx-auto">
@@ -157,6 +235,20 @@ export default function Permissions() {
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">🔐 Permissions</h1>
           <p className="text-slate-400 text-sm mt-1">Grant or revoke specific platform capabilities per user, on top of their role's defaults.</p>
         </div>
+
+        {bulkSelected.size > 0 && (
+          <div className="mb-4 flex items-center justify-between gap-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-3">
+            <p className="text-sm text-indigo-200 font-semibold">{bulkSelected.size} user{bulkSelected.size !== 1 ? 's' : ''} selected</p>
+            <div className="flex gap-2">
+              <button onClick={openBulkEdit} className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-xs font-bold transition-colors">
+                Apply Permissions to Selected →
+              </button>
+              <button onClick={() => { setBulkSelected(new Set()); setBulkMode(false); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 text-xs font-bold transition-colors">
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
           {/* User picker */}
@@ -177,27 +269,96 @@ export default function Permissions() {
               ) : filteredUsers.length === 0 ? (
                 <div className="p-6 text-center text-slate-500 text-sm">No users found</div>
               ) : filteredUsers.map(u => (
-                <button
+                <div
                   key={u.userId}
-                  onClick={() => selectUser(u)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-left border-b border-slate-800/60 transition-colors ${selectedUser?.userId === u.userId ? 'bg-indigo-500/15' : 'hover:bg-slate-800/60'}`}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 border-b border-slate-800/60 transition-colors ${selectedUser?.userId === u.userId && !bulkMode ? 'bg-indigo-500/15' : 'hover:bg-slate-800/60'}`}
                 >
-                  <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-200 flex-shrink-0">
-                    {getAvatarInitials(u.name)}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{u.name}</p>
-                    <p className="text-xs text-slate-500 truncate">{formatRoleLabel(u.role)}</p>
-                  </div>
-                </button>
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${u.name}`}
+                    checked={bulkSelected.has(u.userId)}
+                    onChange={() => toggleBulkSelected(u.userId)}
+                    onClick={e => e.stopPropagation()}
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 accent-indigo-500 flex-shrink-0"
+                  />
+                  <button
+                    onClick={() => selectUser(u)}
+                    className="flex-1 flex items-center gap-3 text-left min-w-0"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-200 flex-shrink-0">
+                      {getAvatarInitials(u.name)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">{u.name}</p>
+                      <p className="text-xs text-slate-500 truncate">{formatRoleLabel(u.role)}</p>
+                    </div>
+                  </button>
+                </div>
               ))}
             </div>
           </div>
 
           {/* Permission checklist */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 min-h-[300px]">
-            {!selectedUser ? (
-              <div className="flex items-center justify-center h-full text-slate-500 text-sm py-16">Select a user to manage their permissions</div>
+            {bulkMode ? (
+              <>
+                <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800">
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Bulk Edit — {bulkSelected.size} user{bulkSelected.size !== 1 ? 's' : ''}</h3>
+                    <p className="text-slate-400 text-sm">Click a permission to cycle: unchanged → grant → revoke → unchanged. Only changed permissions are applied.</p>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => { setBulkMode(false); setBulkOverrides({}); }}
+                      className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 font-bold text-sm transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleBulkSave}
+                      disabled={bulkSaving}
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-white font-bold text-sm transition-colors flex items-center gap-2"
+                    >
+                      {bulkSaving ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Applying…</> : `✓ Apply to ${bulkSelected.size} User${bulkSelected.size !== 1 ? 's' : ''}`}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  {Object.entries(categories).map(([category, perms]) => (
+                    <div key={category}>
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{category}</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {perms.map(p => {
+                          const override = bulkOverrides[p.key];
+                          const state = override === 'grant' ? 'granted' : override === 'revoke' ? 'revoked' : 'default-off';
+                          const s = STATE_STYLES[state];
+                          const suffix = override === 'grant' ? '(will grant)' : override === 'revoke' ? '(will revoke)' : '';
+                          return (
+                            <button
+                              type="button"
+                              key={p.key}
+                              onClick={() => cycleBulkPermission(p.key)}
+                              className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all text-left ${override ? s.bg : 'bg-slate-900/40'} ${override ? s.border : 'border-slate-700/50'}`}
+                            >
+                              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${override ? s.check : 'border-slate-600 bg-slate-800'}`}>
+                                {override === 'grant' && <span className="text-xs text-white font-bold">✓</span>}
+                                {override === 'revoke' && <span className="text-xs text-white font-bold">✕</span>}
+                              </div>
+                              <div className="min-w-0">
+                                <p className={`text-sm font-bold ${override ? s.text : 'text-slate-400'}`}>{p.label} {suffix && <span className="text-[10px] font-normal opacity-70">{suffix}</span>}</p>
+                                <p className="text-xs text-slate-500 mt-0.5">{p.description}</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : !selectedUser ? (
+              <div className="flex items-center justify-center h-full text-slate-500 text-sm py-16">Select a user to manage their permissions, or check multiple users to bulk-edit</div>
             ) : loadingPerms || !permData ? (
               <div className="flex items-center justify-center h-full text-slate-500 text-sm py-16">Loading permissions…</div>
             ) : (

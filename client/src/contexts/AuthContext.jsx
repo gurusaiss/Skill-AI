@@ -289,6 +289,49 @@ export const AuthProvider = ({ children }) => {
     initializeAuth();
   }, []);
 
+  // ── Keep the active session's permissions/role fresh ─────────────────────────
+  // /me is otherwise fetched exactly ONCE, at app mount. If an admin grants (or
+  // revokes) a feature permission or changes a role while that user is already
+  // logged in, their React state never learns about it — hasFeaturePermission()
+  // keeps reading the stale array until they manually reload the page or log
+  // out and back in. That's a real, separate reason a just-granted permission
+  // can look "not working": the grant can be sitting correctly in the database
+  // while the browser that's supposed to see it just hasn't asked again.
+  //
+  // Two lightweight, no-new-infrastructure triggers instead of a websocket
+  // channel: refetch whenever the tab regains focus/becomes visible (covers
+  // the realistic case — admin grants access, tells the user, user switches
+  // back to the app), plus a periodic background refresh as a safety net for
+  // a tab that's never blurred. Silently no-ops on any fetch failure — this
+  // must never log an already-authenticated user out just because a
+  // background refresh hiccuped.
+  useEffect(() => {
+    if (!token) return;
+
+    const refreshSession = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const payload = await res.json();
+          setUser(prev => (prev ? { ...prev, ...(payload.data ?? payload) } : (payload.data ?? payload)));
+        }
+      } catch { /* transient network hiccup — next trigger will retry */ }
+    };
+
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshSession(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', refreshSession);
+    const intervalId = setInterval(refreshSession, 5 * 60 * 1000); // 5-minute safety net
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', refreshSession);
+      clearInterval(intervalId);
+    };
+  }, [token]);
+
   // ── Login ────────────────────────────────────────────────────────────────────
 
   const login = async (email, password) => {

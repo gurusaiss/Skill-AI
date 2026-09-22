@@ -1261,21 +1261,107 @@ router.put('/:userId/permissions', authenticate, requireRole('admin'), async (re
     }
 
     const updatedUser = await UserStore.updateUser(userId, { permissions: { granted: filteredGranted, revoked: filteredRevoked } });
+
+    // Verify the write actually landed instead of trusting UserStore's
+    // return value blindly. UserStore.updateUser never throws on a Supabase
+    // write error (by design, for partial-update tolerance) — it logs and
+    // returns a fallback object, which previously let this route echo back
+    // the INTENDED granted/revoked regardless of what (if anything) was
+    // really persisted. That's exactly how a real production failure (the
+    // `permissions` column missing from the live Supabase table) went
+    // undetected: the admin UI showed "saved" while the grant silently
+    // never reached the database, so the target user never actually got
+    // the access. Re-fetching and comparing here means this can never
+    // happen silently again — any future persistence gap surfaces as a
+    // clear 500 instead of a false success.
+    const persisted = await UserStore.getUserById(userId);
+    const persistedGranted = persisted?.permissions?.granted || [];
+    const persistedRevoked = persisted?.permissions?.revoked || [];
+    const sameSet = (a, b) => a.length === b.length && [...a].sort().every((v, i) => v === [...b].sort()[i]);
+    if (!sameSet(persistedGranted, filteredGranted) || !sameSet(persistedRevoked, filteredRevoked)) {
+      console.error(`[User Routes] Permissions write for ${userId} did not persist as requested — requested granted=${JSON.stringify(filteredGranted)} revoked=${JSON.stringify(filteredRevoked)}, but DB now has granted=${JSON.stringify(persistedGranted)} revoked=${JSON.stringify(persistedRevoked)}`);
+      return res.status(500).json({
+        success: false,
+        data: null,
+        error: 'Permissions were not saved — the database write did not persist. This usually means a required database column is missing; contact your administrator.',
+      });
+    }
+
     await UserStore.logAuthEvent('permissions_changed', userId, { changedBy: req.user.userId, granted: filteredGranted, revoked: filteredRevoked, ipAddress: req.ip });
 
     res.json({
       success: true,
       data: {
-        role: updatedUser.role,
-        roleDefaults: ROLE_DEFAULT_PERMISSIONS[updatedUser.role] || [],
-        granted: filteredGranted,
-        revoked: filteredRevoked,
-        resolved: [...getEffectivePermissions(updatedUser)],
+        role: persisted.role,
+        roleDefaults: ROLE_DEFAULT_PERMISSIONS[persisted.role] || [],
+        granted: persistedGranted,
+        revoked: persistedRevoked,
+        resolved: [...getEffectivePermissions(persisted)],
       },
       error: null,
     });
   } catch (e) {
     console.error('[User Routes] Update permissions error:', e.message);
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * PUT /api/users/permissions/bulk
+ * Apply the SAME grant/revoke override set to multiple users in one action.
+ * Admin-only. Body: { userIds: string[], granted: string[], revoked: string[] }.
+ * Each user's write is verified the same way the single-user route is — a
+ * user whose write didn't actually persist is reported back individually
+ * rather than silently counted as a success.
+ */
+router.put('/permissions/bulk', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const { userIds, granted, revoked } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ success: false, data: null, error: 'userIds must be a non-empty array' });
+    }
+    if (!Array.isArray(granted) || !Array.isArray(revoked)) {
+      return res.status(400).json({ success: false, data: null, error: 'granted and revoked must be arrays' });
+    }
+    const filteredGranted = granted.filter(k => ALL_PERMISSION_KEYS.includes(k));
+    const filteredRevoked = revoked.filter(k => ALL_PERMISSION_KEYS.includes(k));
+    const myCompany = req.user.companyId || 'default';
+
+    const succeeded = [];
+    const failed = [];
+    const sameSet = (a, b) => a.length === b.length && [...a].sort().every((v, i) => v === [...b].sort()[i]);
+
+    for (const userId of userIds) {
+      try {
+        const user = await UserStore.getUserById(userId);
+        if (!user) { failed.push({ userId, reason: 'User not found' }); continue; }
+        if ((user.companyId || 'default') !== myCompany) { failed.push({ userId, reason: 'Different company' }); continue; }
+
+        await UserStore.updateUser(userId, { permissions: { granted: filteredGranted, revoked: filteredRevoked } });
+        const persisted = await UserStore.getUserById(userId);
+        const persistedGranted = persisted?.permissions?.granted || [];
+        const persistedRevoked = persisted?.permissions?.revoked || [];
+
+        if (!sameSet(persistedGranted, filteredGranted) || !sameSet(persistedRevoked, filteredRevoked)) {
+          console.error(`[User Routes] Bulk permissions write for ${userId} did not persist as requested`);
+          failed.push({ userId, reason: 'Database write did not persist' });
+          continue;
+        }
+
+        await UserStore.logAuthEvent('permissions_changed', userId, { changedBy: req.user.userId, granted: filteredGranted, revoked: filteredRevoked, ipAddress: req.ip, bulk: true });
+        succeeded.push(userId);
+      } catch (e) {
+        failed.push({ userId, reason: e.message });
+      }
+    }
+
+    res.json({
+      success: failed.length === 0,
+      data: { succeeded, failed, granted: filteredGranted, revoked: filteredRevoked },
+      error: failed.length > 0 ? `${failed.length} of ${userIds.length} user(s) failed to update` : null,
+    });
+  } catch (e) {
+    console.error('[User Routes] Bulk update permissions error:', e.message);
     res.status(500).json({ success: false, data: null, error: e.message });
   }
 });
