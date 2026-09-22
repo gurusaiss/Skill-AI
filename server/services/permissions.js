@@ -9,6 +9,7 @@
  * auth.js, UserStore.js, and any route file without an import cycle.
  */
 import { ALL_VALID_ROLES } from './roleCapability.js';
+import { PlatformSettings } from './DataStore.js';
 
 export const PERMISSION_CATALOG = [
   { key: 'users.create',         label: 'Add User',                    description: 'Create individual users and run bulk import', category: 'Users' },
@@ -55,6 +56,50 @@ export const ROLE_DEFAULT_PERMISSIONS = {
 // null-guard and a forgotten role never silently inherits full access.
 for (const role of ALL_VALID_ROLES) {
   if (!(role in ROLE_DEFAULT_PERMISSIONS)) ROLE_DEFAULT_PERMISSIONS[role] = [];
+}
+
+// Which role-default buckets an admin can edit from the Permissions page's
+// "role presets" panel — the 3 top-level roles the platform is organized
+// around. The other (system/access) roles above keep their hardcoded
+// defaults; only these 3 are meant to be tuned without a code change.
+export const EDITABLE_ROLE_DEFAULT_KEYS = ['admin', 'manager', 'employee'];
+
+// Persisted override for the 3 editable role-default buckets, stored via the
+// existing PlatformSettings store (section 'roleDefaultPermissions') so a
+// saved change survives a server restart. ROLE_DEFAULT_PERMISSIONS is a
+// single shared module-level object (mutated in place, same reference
+// everywhere it's imported) — updating it here is visible instantly to every
+// other file that already imports it (getEffectivePermissions, auth.js,
+// users.js), with no signature change needed anywhere else.
+let _roleDefaultsLoaded = false;
+export async function loadPersistedRoleDefaults() {
+  try {
+    const settings = await PlatformSettings.getByCompany('default');
+    const saved = settings?.roleDefaultPermissions || {};
+    for (const role of EDITABLE_ROLE_DEFAULT_KEYS) {
+      if (Array.isArray(saved[role])) {
+        ROLE_DEFAULT_PERMISSIONS[role] = saved[role].filter(k => ALL_PERMISSION_KEYS.includes(k));
+      }
+    }
+  } catch (e) {
+    console.warn('[permissions] loadPersistedRoleDefaults failed, using code defaults:', e.message);
+  } finally {
+    _roleDefaultsLoaded = true;
+  }
+}
+export function roleDefaultsLoaded() { return _roleDefaultsLoaded; }
+// Fire-and-forget at import time — a request that lands before this resolves
+// just sees the hardcoded code defaults, same as before this feature existed.
+loadPersistedRoleDefaults();
+
+export async function saveRoleDefaultPermissions(role, permissionKeys) {
+  if (!EDITABLE_ROLE_DEFAULT_KEYS.includes(role)) {
+    throw new Error(`Role defaults for "${role}" are not editable`);
+  }
+  const clean = [...new Set(permissionKeys)].filter(k => ALL_PERMISSION_KEYS.includes(k));
+  ROLE_DEFAULT_PERMISSIONS[role] = clean;
+  await PlatformSettings.updateSection('default', 'roleDefaultPermissions', { [role]: clean });
+  return clean;
 }
 
 /**

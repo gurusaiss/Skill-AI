@@ -35,6 +35,20 @@ const STATE_STYLES = {
   'default-off': { active: false, bg: 'bg-slate-900/40', border: 'border-slate-700/50', text: 'text-slate-400', check: 'border-slate-600 bg-slate-800', suffix: '' },
 };
 
+// The 3 platform-wide role buckets whose default permission set is editable
+// from this page (server: EDITABLE_ROLE_DEFAULT_KEYS in
+// server/services/permissions.js — keep in sync).
+const ROLE_PRESETS = [
+  { key: 'admin',    label: 'Admin',    icon: '🛡️', color: 'indigo' },
+  { key: 'manager',  label: 'Manager',  icon: '👔', color: 'purple' },
+  { key: 'employee', label: 'Employee', icon: '👤', color: 'cyan' },
+];
+const PRESET_COLOR_CLASSES = {
+  indigo: { border: 'border-indigo-500/50', bg: 'bg-indigo-500/10', text: 'text-indigo-300', btn: 'bg-indigo-600 hover:bg-indigo-500' },
+  purple: { border: 'border-purple-500/50', bg: 'bg-purple-500/10', text: 'text-purple-300', btn: 'bg-purple-600 hover:bg-purple-500' },
+  cyan:   { border: 'border-cyan-500/50',   bg: 'bg-cyan-500/10',   text: 'text-cyan-300',   btn: 'bg-cyan-600 hover:bg-cyan-500' },
+};
+
 export default function Permissions() {
   const { hasRole } = useAuth();
   const navigate = useNavigate();
@@ -66,6 +80,16 @@ export default function Permissions() {
   const [bulkOverrides, setBulkOverrides] = useState({});
   const [bulkSaving, setBulkSaving] = useState(false);
 
+  // Role-default presets (Admin / Manager / Employee): the platform-wide
+  // baseline permission set for each role, editable here and applied
+  // instantly to every user of that role (minus their own per-user
+  // overrides). Separate from the per-user granted/revoked state above.
+  const [roleDefaults, setRoleDefaults] = useState({ admin: [], manager: [], employee: [] });
+  const [loadingRoleDefaults, setLoadingRoleDefaults] = useState(true);
+  const [editingPreset, setEditingPreset] = useState(null); // role key or null
+  const [presetDraft, setPresetDraft] = useState([]);
+  const [savingPreset, setSavingPreset] = useState(false);
+
   useEffect(() => {
     if (!hasRole('admin')) navigate('/dashboard');
   }, [navigate]);
@@ -73,10 +97,12 @@ export default function Permissions() {
   useEffect(() => {
     (async () => {
       setLoadingUsers(true);
+      setLoadingRoleDefaults(true);
       try {
-        const [usersRes, catalogRes] = await Promise.allSettled([
+        const [usersRes, catalogRes, roleDefaultsRes] = await Promise.allSettled([
           authFetch('/api/users'),
           authFetch('/api/permissions/catalog'),
+          authFetch('/api/permissions/role-defaults'),
         ]);
         if (usersRes.status === 'fulfilled') {
           const u = usersRes.value;
@@ -86,10 +112,15 @@ export default function Permissions() {
           const c = catalogRes.value;
           setCatalog(c?.catalog || []);
         }
+        if (roleDefaultsRes.status === 'fulfilled') {
+          const r = roleDefaultsRes.value;
+          setRoleDefaults({ admin: r?.admin || [], manager: r?.manager || [], employee: r?.employee || [] });
+        }
       } catch (e) {
         setToast({ message: 'Failed to load permissions data', type: 'error' });
       } finally {
         setLoadingUsers(false);
+        setLoadingRoleDefaults(false);
       }
     })();
   }, []);
@@ -108,6 +139,8 @@ export default function Permissions() {
     });
     return map;
   }, [catalog]);
+
+  const allPermissionKeys = useMemo(() => catalog.map(p => p.key), [catalog]);
 
   const selectUser = async (u) => {
     setSelectedUser(u);
@@ -228,12 +261,93 @@ export default function Permissions() {
     }
   };
 
+  // ── Role-default presets ────────────────────────────────────────────────
+  const openPresetEditor = (role) => {
+    setEditingPreset(role);
+    setPresetDraft(roleDefaults[role] || []);
+  };
+
+  const togglePresetKey = (key) => {
+    setPresetDraft(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  };
+
+  const savePresetEditor = async () => {
+    if (!editingPreset) return;
+    setSavingPreset(true);
+    try {
+      const res = await authFetch(`/api/permissions/role-defaults/${editingPreset}`, {
+        method: 'PUT',
+        body: JSON.stringify({ granted: presetDraft }),
+      });
+      setRoleDefaults(prev => ({ ...prev, [editingPreset]: res?.granted || presetDraft }));
+      setToast({ message: `Default permissions updated for ${editingPreset}`, type: 'success' });
+      setEditingPreset(null);
+    } catch (e) {
+      setToast({ message: e.message || 'Failed to save role defaults', type: 'error' });
+    } finally {
+      setSavingPreset(false);
+    }
+  };
+
+  // Forces the currently-viewed user's EFFECTIVE permission set to exactly
+  // match one of the 3 presets, regardless of that user's own base role:
+  // explicitly grant everything the preset has and explicitly revoke
+  // everything it doesn't. This is a local draft only — Save Permissions
+  // still needs to be clicked to persist it, same as any other checkbox edit.
+  const applyPresetToUser = (role) => {
+    if (!permData) return;
+    const desired = new Set(roleDefaults[role] || []);
+    const granted = allPermissionKeys.filter(k => desired.has(k));
+    const revoked = allPermissionKeys.filter(k => !desired.has(k));
+    setPermData(prev => ({ ...prev, granted, revoked }));
+    setToast({ message: `Draft set to ${role} defaults — click Save Permissions to apply`, type: 'info' });
+  };
+
+  // Same idea for bulk mode — sets every catalog key as an explicit
+  // grant/revoke override so all selected users end up with an identical,
+  // predictable effective set after Apply, regardless of their own roles.
+  const applyPresetToBulk = (role) => {
+    const desired = new Set(roleDefaults[role] || []);
+    const next = {};
+    for (const key of allPermissionKeys) next[key] = desired.has(key) ? 'grant' : 'revoke';
+    setBulkOverrides(next);
+    setToast({ message: `Draft set to ${role} defaults for all selected — click Apply to save`, type: 'info' });
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 md:p-8">
       <div className="max-w-6xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">🔐 Permissions</h1>
           <p className="text-slate-400 text-sm mt-1">Grant or revoke specific platform capabilities per user, on top of their role's defaults.</p>
+        </div>
+
+        {/* Role-default presets: platform-wide baseline for Admin / Manager /
+            Employee, editable here like Users or Modules manage their own
+            records. Every user of that role inherits this set unless they
+            have their own per-user grant/revoke override. */}
+        <div className="mb-6">
+          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Role Default Permissions</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {ROLE_PRESETS.map(({ key, label, icon, color }) => {
+              const c = PRESET_COLOR_CLASSES[color];
+              const count = roleDefaults[key]?.length || 0;
+              return (
+                <div key={key} className={`rounded-2xl border ${c.border} ${c.bg} p-4 flex items-center justify-between`}>
+                  <div>
+                    <p className={`text-sm font-black ${c.text} flex items-center gap-1.5`}>{icon} {label}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{loadingRoleDefaults ? 'Loading…' : `${count} permission${count !== 1 ? 's' : ''} by default`}</p>
+                  </div>
+                  <button
+                    onClick={() => openPresetEditor(key)}
+                    className={`px-3 py-1.5 rounded-lg text-white text-xs font-bold transition-colors flex-shrink-0 ${c.btn}`}
+                  >
+                    Edit Defaults
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {bulkSelected.size > 0 && (
@@ -324,6 +438,22 @@ export default function Permissions() {
                   </div>
                 </div>
 
+                <div className="mb-6 flex items-center gap-3 flex-wrap">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Set all selected to:</span>
+                  {ROLE_PRESETS.map(({ key, label, icon, color }) => {
+                    const c = PRESET_COLOR_CLASSES[color];
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => applyPresetToBulk(key)}
+                        className={`px-4 py-2 rounded-xl border ${c.border} ${c.bg} ${c.text} font-black text-sm transition-transform hover:scale-105 flex items-center gap-1.5`}
+                      >
+                        {icon} {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <div className="space-y-6">
                   {Object.entries(categories).map(([category, perms]) => (
                     <div key={category}>
@@ -377,6 +507,22 @@ export default function Permissions() {
                   </button>
                 </div>
 
+                <div className="mb-6 flex items-center gap-3 flex-wrap">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Quick-set to:</span>
+                  {ROLE_PRESETS.map(({ key, label, icon, color }) => {
+                    const c = PRESET_COLOR_CLASSES[color];
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => applyPresetToUser(key)}
+                        className={`px-4 py-2 rounded-xl border ${c.border} ${c.bg} ${c.text} font-black text-sm transition-transform hover:scale-105 flex items-center gap-1.5`}
+                      >
+                        {icon} {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <div className="space-y-6">
                   {Object.entries(categories).map(([category, perms]) => (
                     <div key={category}>
@@ -410,6 +556,65 @@ export default function Permissions() {
           </div>
         </div>
       </div>
+
+      {/* Role-default preset editor */}
+      {editingPreset && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setEditingPreset(null)}>
+          <div
+            className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-2xl w-full max-h-[85vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  {ROLE_PRESETS.find(r => r.key === editingPreset)?.icon} Default Permissions — {ROLE_PRESETS.find(r => r.key === editingPreset)?.label}
+                </h3>
+                <p className="text-slate-400 text-sm mt-1">Every {editingPreset} user gets these by default, unless overridden per-user.</p>
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <button onClick={() => setEditingPreset(null)} className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 font-bold text-sm transition-colors">
+                  Cancel
+                </button>
+                <button
+                  onClick={savePresetEditor}
+                  disabled={savingPreset}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-white font-bold text-sm transition-colors flex items-center gap-2"
+                >
+                  {savingPreset ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving…</> : '✓ Save Defaults'}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {Object.entries(categories).map(([category, perms]) => (
+                <div key={category}>
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{category}</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {perms.map(p => {
+                      const active = presetDraft.includes(p.key);
+                      return (
+                        <label
+                          key={p.key}
+                          className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${active ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-900/40 border-slate-700/50'}`}
+                        >
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${active ? 'bg-emerald-500/20 border-emerald-500/50' : 'border-slate-600 bg-slate-800'}`}>
+                            {active && <span className="text-xs text-white font-bold">✓</span>}
+                          </div>
+                          <input type="checkbox" className="hidden" checked={active} onChange={() => togglePresetKey(p.key)} />
+                          <div className="min-w-0">
+                            <p className={`text-sm font-bold ${active ? 'text-emerald-300' : 'text-slate-400'}`}>{p.label}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{p.description}</p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
