@@ -46,6 +46,7 @@ import orgRouter from './routes/organizations.js';
 import notificationsRouter from './routes/notifications.js';
 import agentControlRouter from './routes/agentcontrol.js';
 import autonomousScheduler from './agent/AutonomousScheduler.js';
+import { startReminderSweep } from './services/ReminderSweep.js';
 import superadminRouter from './routes/superadmin.js';
 import adminDashboardRouter from './routes/adminDashboard.js';
 import approvalsRouter from './routes/approvals.js';
@@ -423,6 +424,11 @@ export const emitToGoal = (goalId, event, data) => io.to(`goal:${goalId}`).emit(
 const server = httpServer.listen(PORT, () => {
   // Start autonomous background agent
   autonomousScheduler.start();
+
+  // Start the assessment deadline-reminder sweep (hourly, all environments —
+  // this is a real feature, not a keep-alive hack, so it isn't gated to
+  // production the way the Render keep-alive ping below is).
+  startReminderSweep();
 
   // Keep-alive ping — prevents Render free tier from spinning down (spins down after 15 min idle).
   // Pings own health endpoint every 14 minutes. Only runs in production to avoid noise locally.

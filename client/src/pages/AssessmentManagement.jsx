@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { authFetch } from '../utils/authFetch.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
+import ReminderButton from '../components/ReminderButton.jsx';
 import { useNotification } from '../contexts/NotificationContext.jsx';
 
 const QUESTION_TYPE_OPTIONS = [
@@ -192,6 +193,12 @@ export default function AssessmentManagement() {
   const [detailTab, setDetailTab] = useState('overview');
   const [viewReport, setViewReport] = useState(null);
   const [assigningModuleId, setAssigningModuleId] = useState(null);
+  // In-session only (not persisted/fetched) — keyed by `${assessmentId}:${userId}`.
+  // A page reload simply forgets it, at which point the server's own 24h
+  // cooldown check on the next send attempt is the source of truth (returned
+  // as a friendly "already sent Xh ago" error) — deliberately not doing an
+  // extra per-row history fetch just to show this before a first send.
+  const [reminderSentAt, setReminderSentAt] = useState({});
 
   // Edit modal
   const [editTarget, setEditTarget] = useState(null);
@@ -1824,8 +1831,8 @@ export default function AssessmentManagement() {
                 <div className="rounded-2xl border border-slate-700/40 overflow-hidden">
                   {/* Table header */}
                   <div className="hidden lg:grid px-4 py-3 bg-slate-800/50 border-b border-slate-700/40 text-xs font-bold text-slate-500 uppercase tracking-wider"
-                    style={{ gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 0.8fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr' }}>
-                    {['Name','Emp ID','Email','Group','Manager','Status','Score','%','Grade','Duration','Download'].map(h => (
+                    style={{ gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 0.8fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr 1.1fr' }}>
+                    {['Name','Emp ID','Email','Group','Manager','Status','Score','%','Grade','Duration','Download','Reminder'].map(h => (
                       <span key={h}>{h}</span>
                     ))}
                   </div>
@@ -1844,7 +1851,7 @@ export default function AssessmentManagement() {
                         const durationStr = completionMs ? `${Math.round(completionMs / 60000)} min` : (viewDetail.duration ? `${viewDetail.duration} min` : '—');
                         return (
                           <div key={i} className="px-4 py-3 hover:bg-slate-800/20 transition-colors"
-                            style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 0.8fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr', alignItems: 'center', gap: '8px' }}>
+                            style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 0.8fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr 1.1fr', alignItems: 'center', gap: '8px' }}>
                             {/* Name */}
                             <div className="min-w-0">
                               <p className="text-sm font-semibold text-white truncate">{ea.userName || emp?.name || ea.userId}</p>
@@ -1891,6 +1898,14 @@ export default function AssessmentManagement() {
                                 ))
                               ) : <span className="text-xs text-slate-600">Pending</span>}
                             </div>
+                            {/* Reminder */}
+                            <ReminderButton
+                              assessmentId={viewDetail.id}
+                              userId={ea.userId}
+                              status={ea.status || 'assigned'}
+                              lastSentAt={reminderSentAt[`${viewDetail.id}:${ea.userId}`]}
+                              onSent={(sentAt) => setReminderSentAt(prev => ({ ...prev, [`${viewDetail.id}:${ea.userId}`]: sentAt }))}
+                            />
                           </div>
                         );
                       })}

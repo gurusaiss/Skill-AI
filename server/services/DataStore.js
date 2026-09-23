@@ -1164,6 +1164,18 @@ export const QuestionBankVersions = {
 const EAA_FILE = 'employee_assessment_assignments.json';
 
 export const EmployeeAssessmentAssignments = {
+  // Every row across every assessment — used only by the deadline-reminder
+  // background sweep (ReminderSweep.js). Everyday lookups should use
+  // getByAssessment/getByUser/getOne instead.
+  async getAll() {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('employee_assessment_assignments').select('*');
+      if (!error) return data || [];
+      console.warn('[DataStore] employee_assessment_assignments.getAll:', error.message);
+    }
+    return readFileRecords(EAA_FILE);
+  },
   async getByAssessment(assessmentId) {
     const sb = getSB();
     if (sb) {
@@ -1274,4 +1286,52 @@ export const EmployeeAssessmentAssignments = {
   },
 };
 
-export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds, AccessCodes, GeneratedModules, QuestionBankVersions, EmployeeAssessmentAssignments };
+// ── REMINDERS ─────────────────────────────────────────────────────────────
+// Audit log + cooldown source for both manual ("Send Reminder" button) and
+// automated (deadline-approaching sweep) assessment reminders. One row per
+// send attempt — never updated in place, so the log is a true history.
+const REMINDERS_FILE = 'reminders.json';
+
+export const Reminders = {
+  async getByAssignment(assessmentId, employeeId) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('reminders').select('*')
+        .eq('assessment_id', assessmentId).eq('employee_id', employeeId)
+        .order('sent_at', { ascending: false });
+      if (!error) return data || [];
+      console.warn('[DataStore] reminders.getByAssignment:', error.message);
+    }
+    return readFileRecords(REMINDERS_FILE)
+      .filter(r => r.assessment_id === assessmentId && r.employee_id === employeeId)
+      .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at));
+  },
+  async getLatest(assessmentId, employeeId, type = null) {
+    const rows = await this.getByAssignment(assessmentId, employeeId);
+    return (type ? rows.filter(r => r.type === type) : rows)[0] || null;
+  },
+  async create({ assessmentId, employeeId, senderId, type, deliveryStatus, errorMessage = null }) {
+    const row = {
+      id: `rem-${randomUUID()}`,
+      assessment_id: assessmentId,
+      employee_id: employeeId,
+      sender_id: senderId || 'system',
+      type, // 'manual' | 'auto_deadline'
+      sent_at: new Date().toISOString(),
+      delivery_status: deliveryStatus, // 'sent' | 'failed'
+      error_message: errorMessage,
+    };
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('reminders').insert(row).select('*').maybeSingle();
+      if (!error) return data || row;
+      console.warn('[DataStore] reminders.create:', error.message);
+    }
+    const all = readFileRecords(REMINDERS_FILE);
+    all.push(row);
+    writeFile(REMINDERS_FILE, all);
+    return row;
+  },
+};
+
+export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds, AccessCodes, GeneratedModules, QuestionBankVersions, EmployeeAssessmentAssignments, Reminders };

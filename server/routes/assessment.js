@@ -20,7 +20,8 @@ import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import multer from 'multer';
 import UserStore from '../services/UserStore.js';
-import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds, Groups, QuestionBankVersions, EmployeeAssessmentAssignments } from '../services/DataStore.js';
+import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds, Groups, QuestionBankVersions, EmployeeAssessmentAssignments, Reminders } from '../services/DataStore.js';
+import EmailService from '../services/EmailService.js';
 import * as db from '../db/store.js';
 import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
 import { getApprovedBankCached } from '../services/QuestionBankCache.js';
@@ -2212,6 +2213,103 @@ router.post('/generate', authenticate, llmLimiter, requirePermission('assessment
   } catch (e) {
     console.error('[assessments generate-from-jd variant]', e.message);
     res.status(500).json({ success: false, data: null, error: 'Failed to load questions' });
+  }
+});
+
+/**
+ * POST /api/assessments/:assessmentId/employees/:userId/remind
+ * Admin/manager sends a manual reminder to one employee for one assessment.
+ * A manager may only remind employees getVisibleEmployeeIds returns for
+ * them (their own team) — the same authorization helper users.js's
+ * employee-list endpoint already uses, reused rather than reimplemented.
+ */
+router.post('/:assessmentId/employees/:userId/remind', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const { assessmentId, userId } = req.params;
+    const assessment = await Assessments.getById(assessmentId);
+    if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
+
+    if (req.user.role === 'manager') {
+      const visible = await getVisibleEmployeeIds(req.user);
+      if (!visible.has(userId)) {
+        return res.status(403).json({ success: false, data: null, error: 'You can only send reminders to employees on your own team' });
+      }
+    }
+
+    const assignment = assessment.employeeAssignments?.find(ea => ea.userId === userId);
+    if (!assignment) return res.status(404).json({ success: false, data: null, error: 'Employee is not assigned to this assessment' });
+    if (assignment.status === 'submitted') {
+      return res.status(400).json({ success: false, data: null, error: 'This employee has already completed the assessment' });
+    }
+    if (assignment.status === 'cancelled') {
+      return res.status(400).json({ success: false, data: null, error: 'This assignment was cancelled' });
+    }
+
+    // Cooldown: refuse a second manual reminder within 24h so a manager
+    // clicking repeatedly can't spam the same employee.
+    const REMINDER_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+    const latest = await Reminders.getLatest(assessmentId, userId);
+    if (latest && Date.now() - new Date(latest.sent_at).getTime() < REMINDER_COOLDOWN_MS) {
+      const hoursAgo = Math.round((Date.now() - new Date(latest.sent_at).getTime()) / 3600000);
+      return res.status(429).json({ success: false, data: null, error: `A reminder was already sent ${hoursAgo}h ago — please wait before sending another.`, lastSentAt: latest.sent_at });
+    }
+
+    // Same due_at-over-deadline priority as GET /my/submit — a 'relative'
+    // scheduling policy's per-employee date, not the shared campaign date.
+    let effectiveDeadline = assessment.deadline;
+    if (assessment.questionBankVersionId) {
+      const eaa = await EmployeeAssessmentAssignments.getOne(assessmentId, userId).catch(() => null);
+      if (eaa?.due_at) effectiveDeadline = eaa.due_at;
+    }
+    const employee = await UserStore.getUserById(userId);
+    const deadlineText = effectiveDeadline ? `by ${new Date(effectiveDeadline).toLocaleString()}` : 'soon';
+    const subject = `Reminder: "${assessment.title}" is waiting for you`;
+    const htmlBody = `<p>Hi ${employee?.name || 'there'},</p><p>You have an assessment — <strong>${assessment.title}</strong> — that hasn't been completed yet. Please complete it ${deadlineText}.</p>`;
+    const textBody = `Hi ${employee?.name || 'there'}, you have an assessment "${assessment.title}" that hasn't been completed yet. Please complete it ${deadlineText}.`;
+
+    let deliveryStatus = 'failed';
+    let errorMessage = null;
+    if (employee?.email && EmailService.isEnabled()) {
+      const result = await EmailService.sendEmail(employee.email, subject, htmlBody, textBody);
+      deliveryStatus = result?.success ? 'sent' : 'failed';
+      errorMessage = result?.success ? null : (result?.error || 'Unknown email error');
+    } else {
+      errorMessage = !employee?.email ? 'Employee has no email on file' : 'Email is not configured on this server';
+    }
+
+    const reminder = await Reminders.create({
+      assessmentId, employeeId: userId, senderId: req.user.userId, type: 'manual', deliveryStatus, errorMessage,
+    });
+
+    if (deliveryStatus !== 'sent') {
+      return res.status(502).json({ success: false, data: reminder, error: errorMessage });
+    }
+    res.json({ success: true, data: reminder, error: null });
+  } catch (e) {
+    console.error('[assessments remind]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to send reminder' });
+  }
+});
+
+/**
+ * GET /api/assessments/:assessmentId/employees/:userId/reminders
+ * Reminder history for one employee's assignment — powers the cooldown
+ * indicator in the UI without requiring a send attempt to discover it.
+ */
+router.get('/:assessmentId/employees/:userId/reminders', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const { assessmentId, userId } = req.params;
+    if (req.user.role === 'manager') {
+      const visible = await getVisibleEmployeeIds(req.user);
+      if (!visible.has(userId)) {
+        return res.status(403).json({ success: false, data: null, error: 'You can only view reminders for employees on your own team' });
+      }
+    }
+    const reminders = await Reminders.getByAssignment(assessmentId, userId);
+    res.json({ success: true, data: reminders, error: null });
+  } catch (e) {
+    console.error('[assessments reminders list]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to load reminder history' });
   }
 });
 
