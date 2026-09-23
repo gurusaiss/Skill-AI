@@ -869,6 +869,17 @@ router.post('/manual', authenticate, requireRole('admin', 'manager'), async (req
       updatedAt: new Date().toISOString(),
       isActive: true,
       isManual: true,
+      // The client-side wizard's Step 3 already gates this call behind an
+      // explicit "✓ Approve & Assign" confirmation click (a static review
+      // summary is shown first, purely local UI state, no API call) — by the
+      // time this route runs, the admin has already approved. Persisted here
+      // so it's a real, queryable audit field (and GET /my's employee
+      // visibility gate below is defensive against any future caller of this
+      // route that doesn't go through that confirm step), not because manual
+      // assessments have a separate draft-then-approve lifecycle today.
+      status: 'approved',
+      approvedBy: req.user.userId,
+      approvedAt: new Date().toISOString(),
     };
 
     const saved = await Assessments.create(newAssessment);
@@ -1782,6 +1793,15 @@ router.get('/my', authenticate, async (req, res) => {
       const ea = a.employeeAssignments?.find(x => x.userId === req.user.userId);
       return ea && (ea.status === 'submitted' || ea.status === 'in_progress' || ea.startedAt);
     });
+
+    // A manual assessment carries an explicit status ('approved' today —
+    // the client only ever creates one already-approved, see POST /manual).
+    // Any row with a status field set to something other than 'approved'
+    // (e.g. a future draft-saving caller) must never reach an employee.
+    // Non-manual assessments and legacy manual rows predating this field
+    // have no `status` at all — undefined is treated as visible, so nothing
+    // existing is hidden by this gate.
+    mine = mine.filter(a => !a.isManual || !a.status || a.status === 'approved');
 
     const myAssessments = await Promise.all(mine.map(async (a) => {
       const myAssignment = a.employeeAssignments?.find(ea => ea.userId === req.user.userId);

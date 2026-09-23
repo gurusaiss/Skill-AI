@@ -2130,6 +2130,14 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
   const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS });
   const [creating, setCreating] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
+  // Step 3's CTA is a two-click gate, not an immediate commit: the first
+  // click only reveals a static confirmation (nothing sent to the server
+  // yet); the second, relabeled "✓ Approve & Assign" click is what actually
+  // calls handleSubmit. This is purely local UI state — no draft object is
+  // persisted server-side, since POST /manual itself already only fires
+  // after this confirmation (see assessment.js's comment on why the created
+  // record's status is set straight to 'approved').
+  const [reviewConfirming, setReviewConfirming] = useState(false);
   const fileRef = React.useRef();
 
   const toggleEmp = (id) => setSelectedUsers(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
@@ -2385,11 +2393,23 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
                 settings={settings}
                 onChange={s => setSettings(s)}
               />
+              {reviewConfirming && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-2">
+                  <p className="text-sm text-amber-300 font-semibold">Confirm before assigning</p>
+                  <p className="text-xs text-slate-400">
+                    This will immediately assign <span className="text-white font-bold">{questions.length}</span> question{questions.length !== 1 ? 's' : ''} to <span className="text-white font-bold">{selectedUsers.length}</span> employee{selectedUsers.length !== 1 ? 's' : ''}
+                    {deadline ? <> with a deadline of <span className="text-white font-bold">{new Date(deadline).toLocaleString()}</span></> : ' with no deadline'}. This cannot be undone from here.
+                  </p>
+                </div>
+              )}
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setStep(2)} className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white">← Back</button>
-                <button onClick={handleSubmit} disabled={creating}
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm font-bold text-white disabled:opacity-40">
-                  {creating ? 'Creating…' : 'Create Manual Assessment'}
+                <button onClick={() => (reviewConfirming ? setReviewConfirming(false) : setStep(2))} className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white">← Back</button>
+                <button
+                  onClick={() => (reviewConfirming ? handleSubmit() : setReviewConfirming(true))}
+                  disabled={creating}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm font-bold text-white disabled:opacity-40"
+                >
+                  {creating ? 'Assigning…' : reviewConfirming ? '✓ Approve & Assign' : 'Review →'}
                 </button>
               </div>
             </div>
