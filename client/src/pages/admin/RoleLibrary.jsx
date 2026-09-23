@@ -918,7 +918,7 @@ const Q_TYPES = [
   { value: 'subjective', label: 'Subjective',          icon: '📝', desc: 'Open-ended model answer' },
 ];
 
-function QuestionBankModal({ role, onClose, onGenerated }) {
+function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
   const { notify: toast } = useNotification();
   const { hasFeaturePermission } = useAuth();
   const [questions, setQuestions] = useState([]);
@@ -1140,7 +1140,7 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl">
+      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-[92vw] h-[92vh] max-w-none flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex-shrink-0">
           <div className="flex items-center justify-between p-5 border-b border-slate-700">
@@ -1192,6 +1192,15 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
               >
                 {regen && regenMode === 'ai-only' ? '⏳ Generating…' : '🔄 Regen AI Only'}
               </button>
+              {onApprove && questions.length > 0 && (
+                <button
+                  onClick={() => onApprove(role)}
+                  title="Review stays right here — this only opens the small scheduling confirmation"
+                  className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 transition-colors"
+                >
+                  ✓ Approve
+                </button>
+              )}
               <button onClick={onClose} className="text-slate-400 hover:text-white text-xl px-2">✕</button>
             </div>
           </div>
@@ -2056,7 +2065,7 @@ export default function RoleLibrary() {
 
       {/* Question Bank Modal */}
       {qBankRole && (
-        <QuestionBankModal role={qBankRole} onClose={() => setQBankRole(null)} onGenerated={handleBankGenerated} />
+        <QuestionBankModal role={qBankRole} onClose={() => setQBankRole(null)} onGenerated={handleBankGenerated} onApprove={setApproveRole} />
       )}
 
       {/* Approve Assessment Modal */}
