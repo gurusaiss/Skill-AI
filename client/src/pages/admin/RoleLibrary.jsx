@@ -1698,13 +1698,23 @@ function HistoryModal({ role, onClose }) {
 function ApproveModal({ role, onClose }) {
   const { notify: toast } = useNotification();
   const [assessmentDate, setAssessmentDate] = useState('');
+  // 'fixed' = one shared calendar deadline for every assignee (today's only
+  // behavior). 'relative' = each employee's own deadline is their assignment
+  // date + durationDays — the option a new employee joining later needs, so
+  // they get a fair full-length window instead of inheriting the original
+  // group's already-passed (or nearly-expired) calendar date.
+  const [schedulingMode, setSchedulingMode] = useState('fixed');
+  const [deadline, setDeadline] = useState('');
+  const [durationDays, setDurationDays] = useState(5);
   const [locking, setLocking] = useState(false);
 
   const handleLock = async () => {
     setLocking(true);
     try {
-      const payload = {};
+      const payload = { schedulingMode };
       if (assessmentDate) payload.assessmentDate = new Date(assessmentDate).toISOString();
+      if (schedulingMode === 'fixed' && deadline) payload.deadline = new Date(deadline).toISOString();
+      if (schedulingMode === 'relative') payload.durationDays = Math.max(1, parseInt(durationDays) || 5);
       const res = await authFetch(`/api/roles/${role.id}/lock`, {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -1746,6 +1756,47 @@ function ApproveModal({ role, onClose }) {
               onChange={e => setAssessmentDate(e.target.value)}
             />
             <p className="text-xs text-slate-500 mt-1">Employees won't see this assessment until this date/time. Leave blank to make it available immediately.</p>
+          </div>
+          <div>
+            <label className={labelCls}>Deadline</label>
+            <div className="flex gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => setSchedulingMode('fixed')}
+                className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${schedulingMode === 'fixed' ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-slate-600 text-slate-400'}`}
+              >
+                Fixed date
+              </button>
+              <button
+                type="button"
+                onClick={() => setSchedulingMode('relative')}
+                className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${schedulingMode === 'relative' ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-slate-600 text-slate-400'}`}
+              >
+                Duration per employee
+              </button>
+            </div>
+            {schedulingMode === 'fixed' ? (
+              <>
+                <input
+                  type="datetime-local"
+                  className={inputCls}
+                  value={deadline}
+                  onChange={e => setDeadline(e.target.value)}
+                />
+                <p className="text-xs text-slate-500 mt-1">Same calendar deadline for every employee, including anyone who joins this role later. Leave blank for no deadline.</p>
+              </>
+            ) : (
+              <>
+                <input
+                  type="number"
+                  min={1}
+                  className={inputCls}
+                  value={durationDays}
+                  onChange={e => setDurationDays(e.target.value)}
+                />
+                <p className="text-xs text-slate-500 mt-1">Days each employee gets from THEIR OWN assignment date. A new employee joining this role next month still gets the full {durationDays || 5}-day window, starting from their join date — not the original group's deadline.</p>
+              </>
+            )}
           </div>
           <div className="flex gap-3 pt-1">
             <button onClick={() => onClose(false)} className="flex-1 px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-slate-400">

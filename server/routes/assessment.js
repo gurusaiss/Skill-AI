@@ -1787,7 +1787,23 @@ router.get('/my', authenticate, async (req, res) => {
       const myAssignment = a.employeeAssignments?.find(ea => ea.userId === req.user.userId);
 
       const assessmentDate = a.assessmentDate ? new Date(a.assessmentDate) : null;
-      const deadline = a.deadline ? new Date(a.deadline) : null;
+
+      // Per-employee due_at (set once at assignment time — see
+      // handleLockAssessment/AssessmentAutoAssign) takes priority over the
+      // assessment's shared `deadline` field: this is what makes a
+      // 'relative' scheduling policy's per-employee window actually apply,
+      // instead of every employee falling back to one shared calendar date.
+      // Legacy/manual assessments have no employee_assessment_assignments
+      // row at all — `?.due_at` is simply undefined there and `a.deadline`
+      // is used exactly as before.
+      let resolvedDeadline = a.deadline || null;
+      if (a.questionBankVersionId) {
+        try {
+          const eaa = await EmployeeAssessmentAssignments.getOne(a.id, req.user.userId);
+          if (eaa?.due_at) resolvedDeadline = eaa.due_at;
+        } catch (_) {}
+      }
+      const deadline = resolvedDeadline ? new Date(resolvedDeadline) : null;
 
       const isVisible = !assessmentDate || now >= assessmentDate;
       const isExpired = deadline ? now > deadline : false;
@@ -1811,7 +1827,7 @@ router.get('/my', authenticate, async (req, res) => {
         id: a.id,
         title: a.title,
         assessmentDate: a.assessmentDate,
-        deadline: a.deadline || null,
+        deadline: resolvedDeadline,
         duration: a.duration,
         status: isExpired && assignmentStatus !== 'submitted' ? 'expired' : assignmentStatus,
         questions,
@@ -2231,7 +2247,22 @@ router.post('/:id/submit', authenticate, async (req, res) => {
       return res.status(400).json({ success: false, data: null, error: 'Assessment already submitted' });
     }
 
-    if (assessment.deadline && new Date() > new Date(assessment.deadline)) {
+    // Needed both for the deadline check below and to stamp the submission
+    // onto the versioned assignment row. Fetched whenever the assessment is
+    // version-backed (previously only when the embedded array was absent, so
+    // a version-backed assessment that also carried a legacy embedded array
+    // never recorded its submission here).
+    const eaaRow = assessment.questionBankVersionId
+      ? await EmployeeAssessmentAssignments.getOne(assessment.id, req.user.userId).catch(() => null)
+      : null;
+
+    // Per-employee due_at (set once at assignment time under a 'relative'
+    // scheduling policy) takes priority over the assessment's shared
+    // `deadline` — same resolution order as GET /my, so a submission is
+    // never rejected/accepted inconsistently with what the employee was
+    // shown as their deadline.
+    const effectiveDeadline = eaaRow?.due_at || assessment.deadline;
+    if (effectiveDeadline && new Date() > new Date(effectiveDeadline)) {
       return res.status(403).json({ success: false, data: null, error: 'Submission deadline has passed' });
     }
 
@@ -2239,14 +2270,6 @@ router.post('/:id/submit', authenticate, async (req, res) => {
     // being scored is always identical to the set that was served.
     const { questions: resolvedForScoring } = await resolveEmployeeQuestions(assessment, assignment, req.user.userId);
     const questions = resolvedForScoring || [];
-
-    // Needed below to stamp the submission onto the versioned assignment row.
-    // Fetched whenever the assessment is version-backed (previously only when
-    // the embedded array was absent, so a version-backed assessment that also
-    // carried a legacy embedded array never recorded its submission here).
-    const eaaRow = assessment.questionBankVersionId
-      ? await EmployeeAssessmentAssignments.getOne(assessment.id, req.user.userId).catch(() => null)
-      : null;
 
     // Safety net against the exact class of bug being fixed here: if the
     // client answered more questions than we just resolved, the two sides

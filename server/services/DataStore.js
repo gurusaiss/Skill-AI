@@ -1200,14 +1200,31 @@ export const EmployeeAssessmentAssignments = {
       question_order: r.questionOrder,
       status: r.status || 'assigned',
       assigned_at: r.assignedAt || new Date().toISOString(),
+      // Resolved once at assignment time — see roles.js handleLockAssessment
+      // and AssessmentAutoAssign.js, both of which compute these from the
+      // assessment's schedulingPolicy before calling bulkCreate. Optional so
+      // old callers/rows that predate this field keep working untouched.
+      start_at: r.startAt || null,
+      due_at: r.dueAt || null,
       submitted_at: null,
       scoring: null,
     }));
     const sb = getSB();
     if (sb) {
-      const { data, error } = await sb.from('employee_assessment_assignments')
+      let { data, error } = await sb.from('employee_assessment_assignments')
         .upsert(prepared, { onConflict: 'assessment_id,user_id' })
         .select('*');
+      if (error?.code === '42703') {
+        // start_at/due_at columns don't exist yet on this Supabase instance —
+        // degrade gracefully (assignment creation must not fail outright)
+        // rather than silently pretend scheduling succeeded; the one-time
+        // warning tells the admin exactly what to run.
+        console.warn('[DataStore] employee_assessment_assignments missing start_at/due_at columns — run: ALTER TABLE employee_assessment_assignments ADD COLUMN IF NOT EXISTS start_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ;');
+        const stripped = prepared.map(({ start_at, due_at, ...rest }) => rest);
+        ({ data, error } = await sb.from('employee_assessment_assignments')
+          .upsert(stripped, { onConflict: 'assessment_id,user_id' })
+          .select('*'));
+      }
       if (!error) return data || prepared;
       console.warn('[DataStore] employee_assessment_assignments.bulkCreate:', error.message);
     }

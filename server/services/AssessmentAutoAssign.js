@@ -111,6 +111,20 @@ export async function autoAssignPreAssessment(user) {
         await Assessments.create(assessment);
       }
 
+      // Resolve THIS employee's own start/due date from the assessment's
+      // scheduling policy — same immutable-at-assignment-time rule as
+      // handleLockAssessment (roles.js): a 'relative' policy means this
+      // employee's due date is anchored to the moment THEY joined this
+      // assessment (right now), not a copy of an earlier employee's
+      // deadline, which would give a late joiner an unfair/already-expired
+      // window. `schedulingPolicy` predates this employee's join if the
+      // assessment was created before this feature existed — treat that as
+      // legacy 'fixed' with whatever `assessment.deadline` already holds.
+      const policy = assessment.schedulingPolicy || { mode: 'fixed', fixedDeadline: assessment.deadline || null };
+      const dueAt = policy.mode === 'relative'
+        ? new Date(Date.now() + policy.durationDays * 86400000).toISOString()
+        : policy.fixedDeadline;
+
       const bankIds = bank.map(q => q.id);
       await EmployeeAssessmentAssignments.bulkCreate([{
         assessmentId: assessment.id,
@@ -119,6 +133,8 @@ export async function autoAssignPreAssessment(user) {
         questionOrder: shuffle(bankIds),
         status: 'assigned',
         assignedAt,
+        startAt: assignedAt,
+        dueAt,
       }]);
 
       console.log(`[auto-assessment] Assigned "${user.email}" (${user.jobRole}) to versioned assessment ${assessment.id} — full bank of ${bank.length} questions`);

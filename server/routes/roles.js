@@ -1988,7 +1988,18 @@ async function handleLockAssessment(req, res) {
     }
 
     const companyId = req.user.companyId || 'default';
-    const { assessmentDate, duration = 30 } = req.body;
+    const { assessmentDate, duration = 30, deadline, schedulingMode, durationDays } = req.body;
+    // Scheduling policy: 'fixed' = one shared calendar deadline for everyone
+    // (today's only behavior, preserved as the default); 'relative' = each
+    // employee's own deadline is computed from THEIR assignedAt + durationDays
+    // — see per-employee start_at/due_at below. mode is validated here so a
+    // bad/missing value can never silently produce a policy with no deadline
+    // at all (the bug this replaces: `deadline: null` was hardcoded below,
+    // discarding whatever the admin picked in the Approve modal).
+    const mode = schedulingMode === 'relative' ? 'relative' : 'fixed';
+    const schedulingPolicy = mode === 'relative'
+      ? { mode: 'relative', fixedDeadline: null, durationDays: Math.max(1, parseInt(durationDays) || 5) }
+      : { mode: 'fixed', fixedDeadline: deadline ? new Date(deadline).toISOString() : null, durationDays: null };
     const bank = approvedVersion.questions;
     // Every employee gets the FULL approved bank — count is never sampled or
     // subset — only the delivery ORDER is randomized per employee, and even
@@ -2040,7 +2051,12 @@ async function handleLockAssessment(req, res) {
       questionTypes: ['mcq', 'fill_blank', 'subjective'],
       difficulty: null,
       assessmentDate: assessmentDate || null,
-      deadline: null,
+      // Legacy top-level field, kept for back-compat reads (old code/reports
+      // that only know about `assessment.deadline`) — mirrors fixedDeadline
+      // when in fixed mode, null in relative mode (per-employee due_at is
+      // authoritative there; see EmployeeAssessmentAssignments.bulkCreate).
+      deadline: schedulingPolicy.fixedDeadline,
+      schedulingPolicy,
       duration,
       createdBy: req.user.userId,
       companyId,
@@ -2081,7 +2097,15 @@ async function handleLockAssessment(req, res) {
     }
 
     // One assignment row per employee: same version, distinct shuffle order.
+    // start_at/due_at are resolved ONCE here from the assessment's scheduling
+    // policy and never recomputed afterward — a later edit to
+    // schedulingPolicy (e.g. admin changes durationDays) cannot retroactively
+    // shift an already-assigned employee's window, same immutability
+    // guarantee QuestionBankVersions already gives the question content.
     const bankIds = bank.map(q => q.id);
+    const dueAtFor = (assignedAtIso) => schedulingPolicy.mode === 'relative'
+      ? new Date(new Date(assignedAtIso).getTime() + schedulingPolicy.durationDays * 86400000).toISOString()
+      : schedulingPolicy.fixedDeadline;
     await EmployeeAssessmentAssignments.bulkCreate(targets.map(user => ({
       assessmentId: newAssessment.id,
       userId: user.userId || user.id,
@@ -2089,6 +2113,8 @@ async function handleLockAssessment(req, res) {
       questionOrder: shuffle(bankIds),
       status: 'assigned',
       assignedAt,
+      startAt: assignedAt,
+      dueAt: dueAtFor(assignedAt),
     })));
 
     console.log(`[lock-assessment] Assigned bank version ${approvedVersion.id} (${qCount}q) for role "${role.roleName}" → ${targets.length} employees`);
