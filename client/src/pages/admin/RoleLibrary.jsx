@@ -943,6 +943,22 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
   const [localSupportingFiles, setLocalSupportingFiles] = useState(
     (role.supportingFiles || []).map(f => ({ id: f.id, name: f.name, questionCount: parseInt(f.questionCount) || 5, stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery }))
   );
+  // Which uploaded file(s) actually feed the NEXT generation run — separate
+  // from localJdFiles/localSupportingFiles (which hold each file's saved
+  // per-file config) so toggling a file in/out of this run never dirties
+  // that config. Defaults to only the first uploaded file (oldest by upload
+  // order, i.e. index 0 of whichever list has one) — fully changeable via
+  // the checkboxes below or "Select all".
+  const [selectedFileIds, setSelectedFileIds] = useState(() => {
+    const first = (role.jdFiles || [])[0] || (role.supportingFiles || [])[0];
+    return first ? new Set([first.id]) : new Set();
+  });
+  const toggleFileSelected = (id) => setSelectedFileIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const allFileIds = [...localJdFiles, ...localSupportingFiles].map(f => f.id);
   const [saving, setSaving] = useState(false);
   const [editIdx, setEditIdx] = useState(null);
   const [editQ, setEditQ] = useState(null);
@@ -1042,6 +1058,11 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
       if (hasFiles) {
         payload.updatedJdFiles = localJdFiles;
         payload.updatedSupportingFiles = localSupportingFiles;
+        // null (nothing selected — treated as "all", same default as before
+        // this feature existed) only if literally every file is selected;
+        // otherwise the explicit subset, so an unselected file's text never
+        // reaches generation.
+        payload.selectedFileIds = selectedFileIds.size === allFileIds.length ? null : [...selectedFileIds];
       }
       // Returns 202 immediately with a job handle — generation continues
       // server-side. Blocking on the full generation here used to guarantee a
@@ -1140,7 +1161,7 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
                 // deleting questions, instead of correctly showing the gap
                 // that Regenerate is supposed to fill back in.
                 const totalRequested = hasFiles
-                  ? [...localJdFiles, ...localSupportingFiles].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0)
+                  ? [...localJdFiles, ...localSupportingFiles].filter(f => selectedFileIds.has(f.id)).reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0)
                   : (role.questionBankTargetCount || regenCount || role.questionBankCount);
                 const manualCount = questions.filter(q => q.isManual).length;
                 const remaining = Math.max(0, totalRequested - questions.length);
@@ -1181,7 +1202,7 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
             const manualCount = questions.filter(q => q.isManual && !q.locked).length;
             const preservedCount = lockedCount + (regenMode === 'ai-only' ? manualCount : 0);
             const localTotal = hasFiles
-              ? [...localJdFiles, ...localSupportingFiles].reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0)
+              ? [...localJdFiles, ...localSupportingFiles].filter(f => selectedFileIds.has(f.id)).reduce((s, f) => s + (parseInt(f.questionCount) || 5), 0)
               : regenCount;
             return (
               <div className="mx-5 my-3 p-4 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-3">
@@ -1211,56 +1232,71 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
 
                 {hasFiles ? (
                   <div className="space-y-1">
-                    <p className="text-xs text-slate-400">
-                      {regenMode === 'ai-only' ? 'Questions per file (AI-generated portion):' : 'Questions per file — edit counts before generating:'}
-                    </p>
-                    {localJdFiles.map((f, i) => (
-                      <div key={f.id || i} className="flex items-center gap-2 text-xs bg-[#0F172A] rounded px-3 py-1.5 border border-slate-700">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-slate-400">
+                        {regenMode === 'ai-only' ? 'Questions per file (AI-generated portion):' : 'Select which document(s) feed this generation:'}
+                      </p>
+                      <button type="button"
+                        onClick={() => setSelectedFileIds(selectedFileIds.size === allFileIds.length ? new Set() : new Set(allFileIds))}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 font-medium">
+                        {selectedFileIds.size === allFileIds.length ? 'Select none' : 'Select all'}
+                      </button>
+                    </div>
+                    {localJdFiles.map((f, i) => {
+                      const selected = selectedFileIds.has(f.id);
+                      return (
+                      <div key={f.id || i} className={`flex items-center gap-2 text-xs bg-[#0F172A] rounded px-3 py-1.5 border ${selected ? 'border-slate-700' : 'border-slate-800 opacity-50'}`}>
+                        <input type="checkbox" checked={selected} onChange={() => toggleFileSelected(f.id)}
+                          className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-800 accent-indigo-500 shrink-0" />
                         <span className="truncate flex-1 text-slate-300">{f.name}</span>
                         <span className="text-indigo-400 shrink-0">JD</span>
-                        <input type="number" min="1" max="200" value={f.questionCount}
+                        <input type="number" min="1" max="200" value={f.questionCount} disabled={!selected}
                           onChange={e => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: e.target.value } : x))}
                           onBlur={() => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(x.questionCount) || 1) } : x))}
-                          className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500" />
+                          className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500 disabled:opacity-50" />
                         <span className="text-slate-500 shrink-0">Q</span>
-                        <button type="button"
+                        <button type="button" disabled={!selected}
                           onClick={() => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, stakeholder: !x.stakeholder } : x))}
                           title={f.stakeholder ? 'Stakeholder questions ON — click to disable' : 'Stakeholder questions OFF — click to enable'}
-                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
                           Stakeholder: {f.stakeholder ? 'Yes' : 'No'}
                         </button>
-                        <button type="button"
+                        <button type="button" disabled={!selected}
                           onClick={() => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, processDelivery: !x.processDelivery } : x))}
                           title={f.processDelivery ? 'Process Delivery questions ON — click to disable' : 'Process Delivery questions OFF — click to enable'}
-                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors ${f.processDelivery ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.processDelivery ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
                           Process Delivery: {f.processDelivery ? 'Yes' : 'No'}
                         </button>
                       </div>
-                    ))}
-                    {localSupportingFiles.map((f, i) => (
-                      <div key={f.id || i} className="flex items-center gap-2 text-xs bg-[#0F172A] rounded px-3 py-1.5 border border-slate-700">
+                    );})}
+                    {localSupportingFiles.map((f, i) => {
+                      const selected = selectedFileIds.has(f.id);
+                      return (
+                      <div key={f.id || i} className={`flex items-center gap-2 text-xs bg-[#0F172A] rounded px-3 py-1.5 border ${selected ? 'border-slate-700' : 'border-slate-800 opacity-50'}`}>
+                        <input type="checkbox" checked={selected} onChange={() => toggleFileSelected(f.id)}
+                          className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-800 accent-indigo-500 shrink-0" />
                         <span className="truncate flex-1 text-slate-300">{f.name}</span>
                         <span className="text-emerald-400 shrink-0">doc</span>
-                        <input type="number" min="1" max="200" value={f.questionCount}
+                        <input type="number" min="1" max="200" value={f.questionCount} disabled={!selected}
                           onChange={e => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: e.target.value } : x))}
                           onBlur={() => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(x.questionCount) || 1) } : x))}
-                          className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500" />
+                          className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500 disabled:opacity-50" />
                         <span className="text-slate-500 shrink-0">Q</span>
-                        <button type="button"
+                        <button type="button" disabled={!selected}
                           onClick={() => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, stakeholder: !x.stakeholder } : x))}
                           title={f.stakeholder ? 'Stakeholder questions ON — click to disable' : 'Stakeholder questions OFF — click to enable'}
-                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
                           Stakeholder: {f.stakeholder ? 'Yes' : 'No'}
                         </button>
-                        <button type="button"
+                        <button type="button" disabled={!selected}
                           onClick={() => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, processDelivery: !x.processDelivery } : x))}
                           title={f.processDelivery ? 'Process Delivery questions ON — click to disable' : 'Process Delivery questions OFF — click to enable'}
-                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors ${f.processDelivery ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.processDelivery ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
                           Process Delivery: {f.processDelivery ? 'Yes' : 'No'}
                         </button>
                       </div>
-                    ))}
-                    <p className="text-xs text-indigo-300 font-semibold pt-1">Total: {localTotal} questions</p>
+                    );})}
+                    <p className="text-xs text-indigo-300 font-semibold pt-1">Total: {localTotal} questions {selectedFileIds.size === 0 && <span className="text-red-400">— select at least one document</span>}</p>
                   </div>
                 ) : (
                   <div className="flex items-center gap-3">
@@ -1280,7 +1316,7 @@ function QuestionBankModal({ role, onClose, onGenerated }) {
                   </button>
                   <button
                     onClick={handleRegen}
-                    disabled={regen}
+                    disabled={regen || (hasFiles && selectedFileIds.size === 0)}
                     className={`px-4 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-50 transition-colors ${regenMode === 'ai-only' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-purple-600 hover:bg-purple-700'}`}
                   >
                     {regen ? '⏳ Generating…' : regenMode === 'ai-only' ? 'Regenerate AI Questions' : 'Confirm Regenerate All'}

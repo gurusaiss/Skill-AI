@@ -14,7 +14,7 @@
 
 import express from 'express';
 import multer from 'multer';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { createRequire } from 'module';
 import { authenticate, requireRole, requirePermission } from '../middleware/auth.js';
 import { RoleLibrary, EmployeeChecklists, Assessments, GeneratedContent, QuestionBankVersions, EmployeeAssessmentAssignments } from '../services/DataStore.js';
@@ -62,9 +62,15 @@ function buildAvoidQuestions(role, extraBank = []) {
 
 // Build the per-file source list used by generateQuestionsFromFiles.
 // Combines jdFiles + supportingFiles stored on the role document.
-function buildFileSources(role) {
-  const validJdFiles = (role.jdFiles || []).filter(f => f.text?.trim());
-  const validSupportingFiles = (role.supportingFiles || []).filter(f => f.text?.trim());
+// selectedFileIds, when given, restricts which files are included at all —
+// an excluded file's text never reaches the sources array, so it can never
+// leak into the LLM prompt (not merely "deprioritized"). null/undefined
+// means "every file", the same default behavior as before this parameter
+// existed.
+function buildFileSources(role, selectedFileIds = null) {
+  const bySelection = f => !selectedFileIds || selectedFileIds.includes(f.id);
+  const validJdFiles = (role.jdFiles || []).filter(f => f.text?.trim()).filter(bySelection);
+  const validSupportingFiles = (role.supportingFiles || []).filter(f => f.text?.trim()).filter(bySelection);
   const totalFileCount = validJdFiles.length + validSupportingFiles.length;
   // Default per-file count when the admin didn't explicitly configure one:
   // an even share of a 50-question pool across all uploaded files (min 10
@@ -82,12 +88,20 @@ function buildFileSources(role) {
     return label ? `${position} — ${label}` : (f.name || position);
   };
 
+  // Provenance: a sha256 of the exact text used for this generation. Because
+  // an approved QuestionBankVersion's generation_config is never mutated
+  // after freezing, storing this hash lets a later audit prove whether
+  // "File 2" has since changed — compare the archived hash against
+  // sha256(current file.text) — without needing a separate snapshot table,
+  // since role.jdFiles[i].text is edited in place per file id, never wiped.
+  const contentHash = (text) => createHash('sha256').update(text || '').digest('hex');
+
   const sources = [];
   validJdFiles.forEach((f, i) => {
-    sources.push({ name: sourceName(f, i), fileName: f.name, text: f.text, questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
+    sources.push({ fileId: f.id, name: sourceName(f, i), fileName: f.name, text: f.text, contentHash: contentHash(f.text), questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
   });
   validSupportingFiles.forEach((f, i) => {
-    sources.push({ name: sourceName(f, i), fileName: f.name, text: f.text, questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
+    sources.push({ fileId: f.id, name: sourceName(f, i), fileName: f.name, text: f.text, contentHash: contentHash(f.text), questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
   });
   return sources;
 }
@@ -1503,7 +1517,7 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), req
     const latestVersion = existingVersions[existingVersions.length - 1];
     const approvedVersion = existingVersions.find(v => v.status === 'approved');
 
-    const { questionCount = 50, mode = 'all', updatedJdFiles, updatedSupportingFiles } = req.body;
+    const { questionCount = 50, mode = 'all', updatedJdFiles, updatedSupportingFiles, selectedFileIds = null } = req.body;
 
     // Apply count updates if admin edited them in the regen panel — persist before generating
     let updatedRole = role;
@@ -1533,10 +1547,15 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), req
       updatedRole = { ...role, ...countUpdates };
     }
 
-    const fileSources = buildFileSources(updatedRole);
+    const fileSources = buildFileSources(updatedRole, selectedFileIds);
     const hasFiles = fileSources.length > 0;
     if (!hasFiles && !updatedRole.jobDescription) {
-      return res.status(400).json({ success: false, error: 'Role has no job description or uploaded files — add a JD first' });
+      return res.status(400).json({
+        success: false,
+        error: Array.isArray(selectedFileIds) && selectedFileIds.length > 0
+          ? 'None of the selected file(s) have usable extracted text — choose a different file or re-upload it'
+          : 'Role has no job description or uploaded files — add a JD first',
+      });
     }
 
     // Refuse to generate from source text too thin to ground questions in.
@@ -1722,7 +1741,7 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), req
           version: await QuestionBankVersions.getNextVersion(req.params.id),
           questions: bank,
           questionCount: bank.length,
-          generationConfig: { questionCount, mode, difficultyDist: { easy: 0.35, medium: 0.45, hard: 0.20 }, typeDist, fileSources: fileSources.map(f => ({ name: f.name, questionCount: f.questionCount, stakeholder: f.stakeholder, processDelivery: f.processDelivery })), finalComboCounters, lockedCount: manualQuestions.filter(q => q.locked === true).length, freshCount: aiQuestions.length },
+          generationConfig: { questionCount, mode, difficultyDist: { easy: 0.35, medium: 0.45, hard: 0.20 }, typeDist, selectedFileIds, fileSources: fileSources.map(f => ({ fileId: f.fileId, name: f.name, contentHash: f.contentHash, questionCount: f.questionCount, stakeholder: f.stakeholder, processDelivery: f.processDelivery })), finalComboCounters, lockedCount: manualQuestions.filter(q => q.locked === true).length, freshCount: aiQuestions.length },
           validationReport: validation,
         });
 
