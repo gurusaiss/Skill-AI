@@ -798,6 +798,21 @@ router.put('/:userId', authenticate, async (req, res) => {
           }
         } catch (e) { console.warn('[auto-assign modules] role change trigger:', e.message); }
       })();
+
+      // Same trigger, for the employee's active approved assessment (if any)
+      // for their NEW role — reuses the exact same function new-hire
+      // creation/bulk-import already call, so it inherits its existing
+      // idempotency (targetUsers membership check + upsert-by-user) with no
+      // new guard needed here. It looks up the role library entry for
+      // updatedUser.jobRole (now the new role) only, so moving A→B can never
+      // pick up a stale Role-A assessment approved after the employee left —
+      // there is no code path back to Role A once jobRole has changed.
+      (async () => {
+        try {
+          const { autoAssignPreAssessment } = await import('../services/AssessmentAutoAssign.js');
+          await autoAssignPreAssessment(updatedUser);
+        } catch (e) { console.warn('[auto-assign assessment] role change trigger:', e.message); }
+      })();
     }
 
     res.json({ success: true, data: sanitizeUser(updatedUser), error: null });
