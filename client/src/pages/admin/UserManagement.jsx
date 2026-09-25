@@ -703,24 +703,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                     <FieldLabel>Role</FieldLabel>
                     <select value={form.role} onChange={f('role')} aria-label="Role" className={selectCls}>
                       <option value="admin">Admin</option>
-                      <optgroup label="Management">
-                        <option value="manager">Manager</option>
-                        <option value="leadership">Leadership</option>
-                        <option value="senior-training-development-manager">Senior Training &amp; Development Manager</option>
-                        <option value="senior-quality-manager">Senior Quality Manager</option>
-                        <option value="senior-training-manager">Senior Training Manager</option>
-                        <option value="senior-operations-manager">Senior Operations Manager</option>
-                        <option value="assistant-manager-ops">Assistant Manager - Ops</option>
-                        <option value="assistant-manager-quality">Assistant Manager - Quality</option>
-                        <option value="assistant-manager-training">Assistant Manager - Training</option>
-                        <option value="wfm">WFM</option>
-                        <option value="lead">Lead</option>
-                      </optgroup>
-                      <optgroup label="Specialist">
-                        <option value="trainer">Trainer</option>
-                        <option value="quality-analyst">Quality Analyst</option>
-                        <option value="sme">SME</option>
-                      </optgroup>
+                      <option value="manager">Manager</option>
                       <option value="employee">Employee</option>
                     </select>
                   </div>
@@ -1293,24 +1276,7 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
               <FieldLabel>Role</FieldLabel>
               <select value={form.role} onChange={f('role')} aria-label="Role" className={selectCls}>
                 <option value="employee">Employee</option>
-                <optgroup label="Specialist">
-                  <option value="trainer">Trainer</option>
-                  <option value="quality-analyst">Quality Analyst</option>
-                  <option value="sme">SME</option>
-                </optgroup>
-                <optgroup label="Management">
-                  <option value="manager">Manager</option>
-                  <option value="leadership">Leadership</option>
-                  <option value="senior-training-development-manager">Senior Training &amp; Development Manager</option>
-                  <option value="senior-quality-manager">Senior Quality Manager</option>
-                  <option value="senior-training-manager">Senior Training Manager</option>
-                  <option value="senior-operations-manager">Senior Operations Manager</option>
-                  <option value="assistant-manager-ops">Assistant Manager - Ops</option>
-                  <option value="assistant-manager-quality">Assistant Manager - Quality</option>
-                  <option value="assistant-manager-training">Assistant Manager - Training</option>
-                  <option value="wfm">WFM</option>
-                  <option value="lead">Lead</option>
-                </optgroup>
+                <option value="manager">Manager</option>
                 <option value="admin">Admin</option>
               </select>
             </div>
