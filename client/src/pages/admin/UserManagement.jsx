@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
+import JobRoleCombobox from '../../components/JobRoleCombobox.jsx';
 import { SYSTEM_ROLE_JOB_TITLES } from '../../constants/roles.js';
 
 // Needed for the raw fetch that downloads the .xlsx template — authFetch
@@ -722,10 +723,14 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <FieldLabel>Primary Job Role {roleLibLookup && <span className="text-indigo-400 text-xs ml-1">↻ looking up…</span>}</FieldLabel>
-                  <input type="text" list="edit-role-options" aria-label="Primary Job Role" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Frontend Developer" autoComplete="off" />
-                  <datalist id="edit-role-options">
-                    {roleOptions.map(r => <option key={r.name} value={r.name}>{r.dept ? `${r.name} — ${r.dept}` : r.name}</option>)}
-                  </datalist>
+                  <JobRoleCombobox
+                    ariaLabel="Primary Job Role"
+                    value={form.jobRole}
+                    onChange={val => handleJobRoleChange({ target: { value: val } })}
+                    options={roleOptions}
+                    className={inputCls}
+                    placeholder="e.g. Frontend Developer"
+                  />
                   <p className="text-xs text-slate-600 mt-0.5">JD auto-fills from Role Library on match</p>
                 </div>
                 <div>
@@ -765,10 +770,14 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                 )}
                 {showAddRoleForm && (
                   <div className="rounded-xl border border-indigo-500/30 bg-slate-800/40 p-3 space-y-2">
-                    <input type="text" list="edit-role-options" aria-label="Additional role name" placeholder="Role Name (required)" value={addRoleForm.roleName}
-                      onChange={e => setAddRoleForm(p => ({ ...p, roleName: e.target.value }))}
-                      autoComplete="off"
-                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
+                    <JobRoleCombobox
+                      ariaLabel="Additional role name"
+                      value={addRoleForm.roleName}
+                      onChange={val => setAddRoleForm(p => ({ ...p, roleName: val }))}
+                      options={roleOptions}
+                      placeholder="Role Name (required)"
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
+                    />
                     <input type="text" list="edit-dept-options" aria-label="Additional role department" placeholder="Department (optional)" value={addRoleForm.department}
                       onChange={e => setAddRoleForm(p => ({ ...p, department: e.target.value }))}
                       autoComplete="off"
@@ -843,7 +852,14 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
 
               <div>
                 <FieldLabel>Job Role</FieldLabel>
-                <input type="text" list="edit-role-options" aria-label="Job Role" value={form.jobRole} onChange={f('jobRole')} className={inputCls} placeholder="e.g. Senior React Developer" autoComplete="off" />
+                <JobRoleCombobox
+                  ariaLabel="Job Role"
+                  value={form.jobRole}
+                  onChange={val => handleJobRoleChange({ target: { value: val } })}
+                  options={roleOptions}
+                  className={inputCls}
+                  placeholder="e.g. Senior React Developer"
+                />
               </div>
 
               {/* Current JD status */}
@@ -1299,24 +1315,15 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <FieldLabel>Job Role</FieldLabel>
-              <input
-                type="text"
-                list="create-role-options"
-                aria-label="Job Role"
+              <JobRoleCombobox
+                ariaLabel="Job Role"
                 value={form.jobRole}
-                onChange={e => {
-                  const val = e.target.value;
-                  setForm(prev => ({ ...prev, jobRole: val }));
-                  const match = roleOptions.find(r => r.name.toLowerCase() === val.toLowerCase());
-                  if (match?.dept) setForm(prev => ({ ...prev, jobRole: val, department: prev.department || match.dept }));
-                }}
+                onChange={val => setForm(prev => ({ ...prev, jobRole: val }))}
+                onSelect={match => match?.dept && setForm(prev => ({ ...prev, department: prev.department || match.dept }))}
+                options={roleOptions}
                 className={inputCls}
                 placeholder="e.g. Developer"
-                autoComplete="off"
               />
-              <datalist id="create-role-options">
-                {roleOptions.map(r => <option key={r.name} value={r.name}>{r.dept ? `${r.name} — ${r.dept}` : r.name}</option>)}
-              </datalist>
             </div>
             <div>
               <FieldLabel>Department</FieldLabel>
@@ -1358,12 +1365,13 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
             {showAddRoleForm && (
               <div className="bg-slate-900/50 rounded-xl p-3 space-y-2">
                 <div className="grid grid-cols-2 gap-2">
-                  <input type="text" list="create-add-role-options" value={addRoleForm.roleName}
-                    onChange={e => setAddRoleForm(prev => ({ ...prev, roleName: e.target.value }))}
-                    className={inputCls} placeholder="Role name" autoComplete="off" />
-                  <datalist id="create-add-role-options">
-                    {roleOptions.map(r => <option key={r.name} value={r.name} />)}
-                  </datalist>
+                  <JobRoleCombobox
+                    value={addRoleForm.roleName}
+                    onChange={val => setAddRoleForm(prev => ({ ...prev, roleName: val }))}
+                    options={roleOptions}
+                    className={inputCls}
+                    placeholder="Role name"
+                  />
                   <input type="text" list="create-dept-options" value={addRoleForm.department}
                     onChange={e => setAddRoleForm(prev => ({ ...prev, department: e.target.value }))}
                     className={inputCls} placeholder="Department (optional)" autoComplete="off" />

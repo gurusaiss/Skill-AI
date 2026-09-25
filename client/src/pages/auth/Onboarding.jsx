@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
 import { SYSTEM_ROLE_JOB_TITLES } from '../../constants/roles.js';
+import JobRoleCombobox from '../../components/JobRoleCombobox.jsx';
 
 export default function Onboarding() {
   const navigate = useNavigate();
@@ -165,25 +166,19 @@ export default function Onboarding() {
               <label htmlFor="jobRole" className="block text-sm font-semibold text-slate-300 mb-1.5">
                 Job Role <span className="text-red-400">*</span>
               </label>
-              <input
+              <JobRoleCombobox
                 id="jobRole"
-                name="jobRole"
-                type="text"
-                list="onboard-role-options"
+                ariaLabel="Job Role"
                 value={form.jobRole}
-                onChange={e => {
-                  const val = e.target.value;
+                onChange={val => {
                   const match = roleOptions.find(r => r.name.toLowerCase() === val.toLowerCase());
                   setForm(prev => ({ ...prev, jobRole: val, ...(match?.dept && !prev.department ? { department: match.dept } : {}) }));
                 }}
+                options={roleOptions}
                 placeholder="e.g. Frontend Developer, Data Analyst…"
                 disabled={loading}
-                autoComplete="off"
                 className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#0F172A] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
               />
-              <datalist id="onboard-role-options">
-                {roleOptions.map(r => <option key={r.name} value={r.name}>{r.dept ? `${r.name} — ${r.dept}` : r.name}</option>)}
-              </datalist>
             </div>
 
             {/* Department */}
