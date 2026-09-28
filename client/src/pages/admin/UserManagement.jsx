@@ -435,12 +435,22 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   // silently never appears as an assignable manager here.
   const managers = useMemo(() => users.filter(u => (STAFF_ROLE_SET.has(u.role) || (u.accesses || []).includes('manager')) && u.userId !== user.userId), [users, user.userId]);
   const isEmployee = form.role === 'employee';
+  // A manager can legitimately report to another manager (only admins sit
+  // outside the reporting chain) — the backend (UserStore.assignEmployeesToManager)
+  // already allows this; the UI just needs to stop hiding it for anyone
+  // whose role isn't literally 'employee'.
+  const isManagerRole = form.role === 'manager';
   const isAdmin = currentUserRole === 'admin';
 
   useEffect(() => {
-    if (user.role !== 'employee') return;
+    if (user.role === 'admin') return;
     authFetch(`/api/assignments/employee/${user.userId}/manager`)
-      .then(d => { if (d?.managerId || d?.userId) { const id = d.managerId || d.userId; setCurrentManagerId(id); setAssignManagerId(id); } })
+      // Response shape is { employeeId, managers: [...], count } — this used
+      // to check d?.managerId/d?.userId, which never existed on this
+      // response at all, so "Current: ..." never actually reflected a real
+      // assignment (for any role, not just the manager-editing case this was
+      // fixed alongside).
+      .then(d => { const mgr = d?.managers?.[0]; if (mgr) { const id = mgr.userId; setCurrentManagerId(id); setAssignManagerId(id); } })
       .catch(() => {});
   }, [user.userId, user.role]);
 
@@ -624,7 +634,9 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   const SECTIONS = [
     { id: 'profile', label: '👤 Profile' },
     { id: 'jd', label: '📄 Job Description' },
-    ...(isEmployee ? [{ id: 'assign', label: '📦 Assignments' }] : []),
+    // Managers need this tab too — just to assign/change WHO THEY report to
+    // (module assignment inside stays employee-only, gated separately below).
+    ...(isEmployee || isManagerRole ? [{ id: 'assign', label: '📦 Assignments' }] : []),
     ...(isEmployee ? [{ id: 'gap', label: '🎯 Skills Gap' }] : []),
     ...(isEmployee ? [{ id: 'checklist', label: '✅ Onboarding' }] : []),
   ];
@@ -972,24 +984,28 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
           )}
 
           {/* ── ASSIGN TAB ── */}
-          {activeSection === 'assign' && isEmployee && (
+          {activeSection === 'assign' && (isEmployee || isManagerRole) && (
             <div className="space-y-5">
-              {/* Assign Module */}
-              <div>
-                <FieldLabel>Assign Module</FieldLabel>
-                <div className="flex gap-2">
-                  <select value={assignModuleId} onChange={e => setAssignModuleId(e.target.value)} aria-label="Assign Module" className={`flex-1 ${selectCls}`}>
-                    <option value="">Select module…</option>
-                    {modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
-                  </select>
-                  <button onClick={handleAssignModule} disabled={!assignModuleId || assigning}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-xl text-white text-sm font-semibold transition-colors whitespace-nowrap">
-                    {assigning ? '…' : 'Assign'}
-                  </button>
+              {/* Assign Module — training content, employees only */}
+              {isEmployee && (
+                <div>
+                  <FieldLabel>Assign Module</FieldLabel>
+                  <div className="flex gap-2">
+                    <select value={assignModuleId} onChange={e => setAssignModuleId(e.target.value)} aria-label="Assign Module" className={`flex-1 ${selectCls}`}>
+                      <option value="">Select module…</option>
+                      {modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
+                    </select>
+                    <button onClick={handleAssignModule} disabled={!assignModuleId || assigning}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-xl text-white text-sm font-semibold transition-colors whitespace-nowrap">
+                      {assigning ? '…' : 'Assign'}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Assign Manager */}
+              {/* Assign Manager — available for employees AND managers (a
+                  manager can report to another manager); only an admin has
+                  no manager of their own, so this tab is hidden for admins. */}
               <div>
                 <FieldLabel>Assign Manager</FieldLabel>
                 {currentManagerId && (
