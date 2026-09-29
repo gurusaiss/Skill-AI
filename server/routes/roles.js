@@ -67,6 +67,44 @@ function buildAvoidQuestions(role, extraBank = []) {
 // leak into the LLM prompt (not merely "deprioritized"). null/undefined
 // means "every file", the same default behavior as before this parameter
 // existed.
+// Splits `targetTotal` questions across files that didn't get an explicit
+// per-file questionCount, proportional to how much text each one actually
+// has — capped per file at what that file's OWN content can plausibly
+// ground (chars / CHARS_PER_QUESTION_ALLOC), so a 150-char file never gets
+// asked for 10 questions again. Previously every such file got the exact
+// same flat share regardless of length: a thin supporting doc sitting next
+// to a full JD would still be told "give me 10," and — because
+// filterGrounded/verifyQuoteGrounded both silently disable themselves under
+// a small-source floor — that share fell straight into template padding,
+// diluting the whole bank's average quality score even though the role's
+// TOTAL source text (JD + doc combined) was perfectly reasonable and passed
+// assessSourceQuality's aggregate check. Any count a thin file can't
+// absorb is handed to files that still have headroom instead of being
+// dropped, so the requested total is still met whenever the material exists
+// somewhere in the role — it just comes from the right file now.
+const CHARS_PER_QUESTION_ALLOC = 80; // kept in sync with AssessmentGenerator's CHARS_PER_QUESTION
+function allocateDefaultQuestionCounts(files, targetTotal) {
+  if (files.length === 0) return [];
+  const maxGrounded = files.map(f => Math.max(3, Math.floor(f.chars / CHARS_PER_QUESTION_ALLOC)));
+  const totalChars = files.reduce((s, f) => s + f.chars, 0) || 1;
+  const alloc = files.map((f, i) => Math.min(maxGrounded[i], Math.max(3, Math.round((f.chars / totalChars) * targetTotal))));
+  let shortfall = targetTotal - alloc.reduce((a, b) => a + b, 0);
+  if (shortfall > 0) {
+    // Give any unmet share to files with real headroom left, richest first —
+    // if nobody has headroom, the shortfall is left unmet on purpose: there
+    // genuinely isn't enough grounded material anywhere in the role to ask
+    // for more without falling back to templates again.
+    const order = files.map((_, i) => i).sort((a, b) => files[b].chars - files[a].chars);
+    let guard = 0;
+    while (shortfall > 0 && order.some(i => alloc[i] < maxGrounded[i]) && guard < targetTotal * order.length) {
+      const i = order[guard % order.length];
+      if (alloc[i] < maxGrounded[i]) { alloc[i]++; shortfall--; }
+      guard++;
+    }
+  }
+  return alloc;
+}
+
 function buildFileSources(role, selectedFileIds = null) {
   const bySelection = f => !selectedFileIds || selectedFileIds.includes(f.id);
   const validJdFiles = (role.jdFiles || []).filter(f => f.text?.trim()).filter(bySelection);
@@ -77,8 +115,22 @@ function buildFileSources(role, selectedFileIds = null) {
   // each), not a flat 5. A flat 5-per-file default meant a role with 2-3
   // files never reached anywhere near "50 questions by default," starving
   // regeneration/randomization of enough distinct content to draw from.
-  // Files WITH an explicit questionCount are completely unaffected.
-  const defaultPerFile = totalFileCount > 0 ? Math.max(10, Math.floor(50 / totalFileCount)) : 10;
+  // Files WITH an explicit questionCount are completely unaffected — only
+  // the DEFAULT share (below) is now split by content length instead of
+  // evenly, via allocateDefaultQuestionCounts above.
+  const flatDefaultPerFile = totalFileCount > 0 ? Math.max(10, Math.floor(50 / totalFileCount)) : 10;
+  const allJdAndSupporting = [...validJdFiles, ...validSupportingFiles];
+  const needsDefault = allJdAndSupporting.filter(f => !parseInt(f.questionCount));
+  const defaultTargetTotal = flatDefaultPerFile * needsDefault.length;
+  const defaultAlloc = allocateDefaultQuestionCounts(
+    needsDefault.map(f => ({ chars: (f.text || '').trim().length })),
+    defaultTargetTotal
+  );
+  // Keyed by object reference, not f.id — a legacy file predating stable ids
+  // must still get its own correct allocation instead of colliding with
+  // every other id-less file under the same `undefined` key.
+  const defaultCountByFile = new Map(needsDefault.map((f, i) => [f, defaultAlloc[i]]));
+  const defaultPerFileFor = (f) => defaultCountByFile.get(f) ?? flatDefaultPerFile;
 
   // Questions cite their source by the admin's friendly label when one is set
   // ("File 2 — Ops SOP v3"), falling back to the raw filename otherwise.
@@ -98,10 +150,10 @@ function buildFileSources(role, selectedFileIds = null) {
 
   const sources = [];
   validJdFiles.forEach((f, i) => {
-    sources.push({ fileId: f.id, name: sourceName(f, i), fileName: f.name, text: f.text, contentHash: contentHash(f.text), questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
+    sources.push({ fileId: f.id, name: sourceName(f, i), fileName: f.name, text: f.text, contentHash: contentHash(f.text), questionCount: parseInt(f.questionCount) || defaultPerFileFor(f), sourceType: 'jd', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
   });
   validSupportingFiles.forEach((f, i) => {
-    sources.push({ fileId: f.id, name: sourceName(f, i), fileName: f.name, text: f.text, contentHash: contentHash(f.text), questionCount: parseInt(f.questionCount) || defaultPerFile, sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
+    sources.push({ fileId: f.id, name: sourceName(f, i), fileName: f.name, text: f.text, contentHash: contentHash(f.text), questionCount: parseInt(f.questionCount) || defaultPerFileFor(f), sourceType: 'supporting', jobRole: role.roleName, skills: role.skills || [], stakeholder: !!f.stakeholder, processDelivery: !!f.processDelivery });
   });
   return sources;
 }
@@ -1608,7 +1660,18 @@ router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), req
     // signal stays enforced across every future regenerate, not just until
     // the next version overwrites it. See recordDeletedQuestion above.
     const deletedQuestions = Array.isArray(role.deletedQuestions) ? role.deletedQuestions : [];
-    const avoidQuestions = [...(avoidById.size > 0 ? [...avoidById.values()] : existingBank), ...deletedQuestions];
+    // deletedQuestions FIRST: AssessmentGenerator's buildAvoidSection caps
+    // what it actually shows the LLM at 60 entries (AVOID_CAP) and its own
+    // doc comment says the intended priority is this-run's-pool, then
+    // deleted-question tombstones, then older bank content — but this array
+    // used to put bank content ahead of deletions, so an existing ~50-
+    // question bank could consume almost the entire 60-slot budget and leave
+    // the LLM barely told about anything an admin explicitly deleted. The
+    // programmatic mergeUnique/createSeenTracker filter still enforces
+    // against the FULL uncapped list either way — this ordering only affects
+    // what the LLM is proactively steered away from, but a deleted question
+    // deserves that steering more than already-preserved bank content does.
+    const avoidQuestions = [...deletedQuestions, ...(avoidById.size > 0 ? [...avoidById.values()] : existingBank)];
 
     // Fallback-padding combo high-water-mark from the previous generation, so
     // deterministic template content doesn't reproduce the same (skill,

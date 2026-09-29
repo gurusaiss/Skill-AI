@@ -85,15 +85,31 @@ function outputTokensFor(count) {
 // existing caller), so behavior is unchanged unless a caller opts in.
 function makeProgressEmitter(onProgress, total) {
   let lastDone = -1;
+  let lastPhase = null;
   const safe = (evt) => { if (typeof onProgress === 'function') { try { onProgress(evt); } catch { /* ignore */ } } };
   return {
     progress(done) {
       const clamped = Math.min(total, Math.max(0, done | 0));
-      if (clamped === lastDone) return;
+      // Previously returned here whenever the accepted count hadn't moved —
+      // which is exactly what happens for several batches in a row right
+      // after a throttle() pause, if the quality filters (filterGrounded/
+      // verifyQuoteGrounded/mergeUnique) reject everything a slow-but-still-
+      // working chunk produces. Because that early return skipped emitting
+      // ANY event, job.phase stayed frozen on 'throttled' with the OLD
+      // delayMs forever — so the UI kept showing a stale "Paused ~90s" long
+      // after that 90s had actually elapsed and real (if unsuccessful) work
+      // had continued, making an active job look permanently stuck at 0.
+      // Still skip only when NEITHER the count NOR the phase actually
+      // changed, so a real "still generating, still 0 accepted" state
+      // doesn't spam progress events, but a throttle→generating transition
+      // (or vice versa) always gets through immediately.
+      if (clamped === lastDone && lastPhase === 'generating') return;
       lastDone = clamped;
+      lastPhase = 'generating';
       safe({ phase: 'generating', done: clamped, total });
     },
     throttle(delayMs) {
+      lastPhase = 'throttled';
       safe({ phase: 'throttled', done: Math.max(0, lastDone), total, delayMs: delayMs | 0 });
     },
   };
@@ -322,24 +338,49 @@ function cosineSimilarity(a, b) {
   return denom > 0 ? dot / denom : 0;
 }
 
-async function applySemanticDedup(questions) {
-  if (!Array.isArray(questions) || questions.length < 2) return questions;
+// avoidQuestions (optional): embedded alongside the pool and used to SEED
+// the comparison set (never included in the returned output) — so a
+// paraphrase too subtle for createSeenTracker's stemmed-concept-overlap
+// check (e.g. a deleted question reworded with synonyms/different sentence
+// structure that still tests the same fact) still gets caught here, instead
+// of only ever being compared against other members of the CURRENT pool.
+// This was the real gap behind "deleted questions reappear after
+// regenerate": the lexical/concept dedup runs against the avoid-list
+// correctly, but this stronger embedding pass previously never did. Capped
+// (ALREADY caps the caller-side prompt-facing list at 60 for token-budget
+// reasons; this reuses the same-shaped, deleted-question-first list) so one
+// generation run never pays for embedding hundreds of historical entries.
+const SEMANTIC_AVOID_CAP = 80;
+async function applySemanticDedup(questions, avoidQuestions = []) {
+  if (!Array.isArray(questions) || questions.length === 0) return questions;
+  const avoidList = (Array.isArray(avoidQuestions) ? avoidQuestions : []).slice(0, SEMANTIC_AVOID_CAP);
+  if (questions.length < 2 && avoidList.length === 0) return questions;
   try {
-    const texts = questions.map(q => extractConceptText(q).slice(0, 1500));
-    const embeddings = await GeminiService.embedTexts(texts);
+    const poolTexts = questions.map(q => extractConceptText(q).slice(0, 1500));
+    const avoidTexts = avoidList.map(q => extractConceptText(q).slice(0, 1500));
+    const embeddings = await GeminiService.embedTexts([...avoidTexts, ...poolTexts]);
     if (!embeddings) return questions; // fail open — lexical results stand
+    const avoidEmbeddings = embeddings.slice(0, avoidTexts.length);
+    const poolEmbeddings = embeddings.slice(avoidTexts.length);
 
     const kept = [];
-    const keptEmbeddings = [];
-    let removed = 0;
+    // Seeded with the avoid-list's embeddings so a pool question too similar
+    // to something already used/deleted is rejected on the FIRST comparison,
+    // without ever being included in what's returned.
+    const keptEmbeddings = [...avoidEmbeddings];
+    let removed = 0, removedVsAvoid = 0;
     for (let i = 0; i < questions.length; i++) {
-      const isDup = keptEmbeddings.some(prev => cosineSimilarity(embeddings[i], prev) > SEMANTIC_EMBED_THRESHOLD);
-      if (isDup) { removed++; continue; }
+      const dupIdx = keptEmbeddings.findIndex(prev => cosineSimilarity(poolEmbeddings[i], prev) > SEMANTIC_EMBED_THRESHOLD);
+      if (dupIdx !== -1) {
+        removed++;
+        if (dupIdx < avoidEmbeddings.length) removedVsAvoid++;
+        continue;
+      }
       kept.push(questions[i]);
-      keptEmbeddings.push(embeddings[i]);
+      keptEmbeddings.push(poolEmbeddings[i]);
     }
     if (removed > 0) {
-      console.log(`[AssessmentGenerator] semantic embedding pass removed ${removed} question(s) whose meaning duplicated an earlier one in this bank (cosine > ${SEMANTIC_EMBED_THRESHOLD})`);
+      console.log(`[AssessmentGenerator] semantic embedding pass removed ${removed} question(s) whose meaning duplicated an earlier one (${removedVsAvoid} matched a prior/deleted question, cosine > ${SEMANTIC_EMBED_THRESHOLD})`);
     }
     return kept;
   } catch (err) {
@@ -1566,7 +1607,10 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
   // machinery every other shortfall already goes through — no separate
   // backfill logic needed, and the "exact count always delivered" contract
   // every downstream consumer relies on is never at risk from this pass.
-  pool = await applySemanticDedup(pool);
+  // Also checked against avoidQuestions (deleted-question-first, per the
+  // caller) so a paraphrase of something an admin explicitly deleted gets
+  // caught here too, not just within this run's own pool.
+  pool = await applySemanticDedup(pool, avoidQuestions);
 
   // Absolute last resort: deterministic template padding to guarantee the exact count.
   // Combos (skill x template, then skill-pair x template) are combinatorially large,
@@ -1765,8 +1809,9 @@ async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, 
   // Same semantic embedding pass as generateQuestionsFromJD, same placement
   // logic: any removal here is naturally backfilled by the padding loop
   // right below (or fillEmergencyGap further down), so the exact-count
-  // guarantee is never put at risk by this pass.
-  pool = await applySemanticDedup(pool);
+  // guarantee is never put at risk by this pass. Also checked against
+  // avoidQuestions (deleted-question-first) — see the JD-path comment above.
+  pool = await applySemanticDedup(pool, avoidQuestions);
 
   if (pool.length < num) {
     const shortage = num - pool.length;

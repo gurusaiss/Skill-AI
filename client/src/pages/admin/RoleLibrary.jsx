@@ -989,7 +989,13 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
     if (pollRef.current) clearInterval(pollRef.current);
     setGenerating(true);
     let polls = 0;
-    const MAX_POLLS = 300; // 300 x 3s = 15 minutes
+    // Multi-file/large-document generation on the free LLM tier is
+    // documented elsewhere in this codebase as legitimately taking
+    // 15-40+ minutes under heavy rate-limiting — the old 15-minute cap
+    // abandoned the poll (with the server-side job still running) well
+    // within that normal range, which is exactly what made a healthy,
+    // still-working generation look "stuck at 0" to the admin.
+    const MAX_POLLS = 900; // 900 x 3s = 45 minutes
     pollRef.current = setInterval(async () => {
       polls++;
       if (polls > MAX_POLLS) {

@@ -4,6 +4,25 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-09-30 — Role Library question generation: 4 fixes
+
+**1. Generation looked "stuck at 0" after a rate-limit pause, even after waiting 20+ minutes.**
+Fix: the progress indicator had a bug where, once it showed "Paused ~90s for rate limit," it could get frozen on that message forever — even though the generation was still actively working in the background — because the code only updated the display when the question count itself changed, and a pause followed by several rejected attempts never changed that count. The display now updates properly every time. Also increased how long the page keeps checking before giving up, from 15 minutes to 45 minutes, matching how long this can legitimately take on the free AI tier for a large multi-file role.
+Files: `server/services/AssessmentGenerator.js`, `client/src/pages/admin/RoleLibrary.jsx`
+
+**2. Generic questions when a role has one strong document and one/more thin ones.**
+Fix: every uploaded file used to be told "give me at least 10 questions," even a file with only a couple of paragraphs — which can't ground 10 real questions, so it fell back to generic template ones. Files now get a share of the question count based on how much real content they actually have; a thin file gets a small, honest number, and the difference goes to the file(s) that can actually support it. This directly raises the average quality score, since it's the generic template questions that were dragging it down.
+Files: `server/routes/roles.js`
+
+**3. Deleted questions could reappear after regenerating, if reworded slightly.**
+Fix: there's a duplicate-detection system that already catches obvious repeats and even paraphrases, but it never actually double-checked new questions against a deleted question's real *meaning* (only its similar wording) at the strongest, most accurate detection layer. It now does. Also fixed the priority order of what's told to the AI to avoid repeating — deleted questions used to lose out to existing-bank content when both couldn't fit, when they should come first.
+Files: `server/services/AssessmentGenerator.js`, `server/routes/roles.js`
+
+**4. Checked: "Regen All" respecting locked questions.**
+Confirmed already working correctly — locked questions are always preserved byte-for-byte no matter which regenerate mode is used. No code change needed here.
+
+---
+
 ## 2026-09-29 — Manager field moved to Profile tab, now supports multiple managers
 
 **Fix:** The Manager field is now shown directly in Edit User's Profile tab (previously it was buried in a separate Assignments tab). It's also no longer a single dropdown that overwrites whoever was set before — you can now add several managers to one person (e.g. a dotted-line report) and remove any one of them independently, without affecting the others. The backend already supported multiple managers per person; this was purely a UI limitation.
