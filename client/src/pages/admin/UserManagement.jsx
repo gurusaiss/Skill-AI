@@ -406,9 +406,15 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
     );
     return current?.assignable_id || current?.assignableId || current?.moduleId || '';
   });
-  const [assignManagerId, setAssignManagerId] = useState('');
-  const [currentManagerId, setCurrentManagerId] = useState(null);
+  // Multiple managers are supported — UserStore.getEmployeeManagers/
+  // assignEmployeesToManager already union across several assignment rows
+  // per employee; this is just the UI catching up to that. assignedManagers
+  // is the full current list; addManagerId is the pending pick in the "add
+  // another manager" selector below.
+  const [assignedManagers, setAssignedManagers] = useState([]);
+  const [addManagerId, setAddManagerId] = useState('');
   const [assigning, setAssigning] = useState(false);
+  const [managerBusyId, setManagerBusyId] = useState(null); // userId of a manager currently being removed
   const [activeSection, setActiveSection] = useState('profile'); // 'profile' | 'jd' | 'assign'
   // Additional job roles
   const [additionalRoles, setAdditionalRoles] = useState(user.additionalJobRoles || []);
@@ -435,11 +441,6 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   // silently never appears as an assignable manager here.
   const managers = useMemo(() => users.filter(u => (STAFF_ROLE_SET.has(u.role) || (u.accesses || []).includes('manager')) && u.userId !== user.userId), [users, user.userId]);
   const isEmployee = form.role === 'employee';
-  // A manager can legitimately report to another manager (only admins sit
-  // outside the reporting chain) — the backend (UserStore.assignEmployeesToManager)
-  // already allows this; the UI just needs to stop hiding it for anyone
-  // whose role isn't literally 'employee'.
-  const isManagerRole = form.role === 'manager';
   const isAdmin = currentUserRole === 'admin';
 
   useEffect(() => {
@@ -449,8 +450,8 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
       // to check d?.managerId/d?.userId, which never existed on this
       // response at all, so "Current: ..." never actually reflected a real
       // assignment (for any role, not just the manager-editing case this was
-      // fixed alongside).
-      .then(d => { const mgr = d?.managers?.[0]; if (mgr) { const id = mgr.userId; setCurrentManagerId(id); setAssignManagerId(id); } })
+      // fixed alongside). Now keeps the FULL list, not just the first one.
+      .then(d => setAssignedManagers(d?.managers || []))
       .catch(() => {});
   }, [user.userId, user.role]);
 
@@ -615,28 +616,44 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
     finally { setAssigning(false); }
   };
 
-  const handleAssignManager = async () => {
-    if (!assignManagerId) return;
+  // Adds a manager WITHOUT removing any existing one — a user can have
+  // several managers at once (e.g. a dotted-line report). To replace rather
+  // than add, remove the old one first via handleRemoveManager.
+  const handleAddManager = async () => {
+    if (!addManagerId || assignedManagers.some(m => m.userId === addManagerId)) return;
     setAssigning(true);
     try {
-      await authFetch(`/api/assignments/manager/${assignManagerId}/employees`, {
+      await authFetch(`/api/assignments/manager/${addManagerId}/employees`, {
         method: 'POST',
         body: JSON.stringify({ employeeIds: [user.userId] }),
       });
-      const mgr = managers.find(m => m.userId === assignManagerId);
-      setToast({ message: `Manager "${mgr?.name || 'Manager'}" assigned`, type: 'success' });
-      setCurrentManagerId(assignManagerId);
+      const mgr = managers.find(m => m.userId === addManagerId);
+      if (mgr) setAssignedManagers(prev => [...prev, mgr]);
+      setToast({ message: `Manager "${mgr?.name || 'Manager'}" added`, type: 'success' });
+      setAddManagerId('');
       onSaved();
     } catch (err) { setToast({ message: err.message, type: 'error' }); }
     finally { setAssigning(false); }
   };
 
+  const handleRemoveManager = async (managerId) => {
+    setManagerBusyId(managerId);
+    try {
+      await authFetch(`/api/assignments/manager/${managerId}/employee/${user.userId}`, { method: 'DELETE' });
+      setAssignedManagers(prev => prev.filter(m => m.userId !== managerId));
+      setToast({ message: 'Manager removed', type: 'success' });
+      onSaved();
+    } catch (err) { setToast({ message: err.message, type: 'error' }); }
+    finally { setManagerBusyId(null); }
+  };
+
   const SECTIONS = [
     { id: 'profile', label: '👤 Profile' },
     { id: 'jd', label: '📄 Job Description' },
-    // Managers need this tab too — just to assign/change WHO THEY report to
-    // (module assignment inside stays employee-only, gated separately below).
-    ...(isEmployee || isManagerRole ? [{ id: 'assign', label: '📦 Assignments' }] : []),
+    // Manager assignment lives in the Profile tab now (see below), so this
+    // tab is back to employee-only — Assign Module is its only remaining
+    // content, and modules don't apply to managers.
+    ...(isEmployee ? [{ id: 'assign', label: '📦 Assignments' }] : []),
     ...(isEmployee ? [{ id: 'gap', label: '🎯 Skills Gap' }] : []),
     ...(isEmployee ? [{ id: 'checklist', label: '✅ Onboarding' }] : []),
   ];
@@ -730,6 +747,44 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                   </select>
                 </div>
               </div>
+
+              {/* Manager(s) — a user can have more than one at once (e.g. a
+                  dotted-line report); add/remove independently rather than
+                  one dropdown that overwrites. Not shown for admins, who
+                  sit outside the reporting chain. */}
+              {user.role !== 'admin' && (
+                <div>
+                  <FieldLabel>Manager{assignedManagers.length !== 1 ? 's' : ''}</FieldLabel>
+                  {assignedManagers.length > 0 && (
+                    <div className="space-y-1.5 mb-2">
+                      {assignedManagers.map(m => (
+                        <div key={m.userId} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50">
+                          <div>
+                            <p className="text-sm text-white font-medium">{m.name}</p>
+                            <p className="text-xs text-slate-500">{m.email}</p>
+                          </div>
+                          <button onClick={() => handleRemoveManager(m.userId)} disabled={managerBusyId === m.userId}
+                            className="text-slate-500 hover:text-red-400 text-xs transition-colors disabled:opacity-40">
+                            {managerBusyId === m.userId ? '…' : '✕ Remove'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <select value={addManagerId} onChange={e => setAddManagerId(e.target.value)} aria-label="Add Manager" className={`flex-1 ${selectCls}`}>
+                      <option value="">Select manager to add…</option>
+                      {managers.filter(m => !assignedManagers.some(am => am.userId === m.userId)).map(m => (
+                        <option key={m.userId} value={m.userId}>{m.name}</option>
+                      ))}
+                    </select>
+                    <button onClick={handleAddManager} disabled={!addManagerId || assigning}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-xl text-white text-sm font-semibold transition-colors whitespace-nowrap">
+                      {assigning ? '…' : '+ Add'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Job Role + Department */}
               <div className="grid grid-cols-2 gap-4">
@@ -984,41 +1039,19 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
           )}
 
           {/* ── ASSIGN TAB ── */}
-          {activeSection === 'assign' && (isEmployee || isManagerRole) && (
+          {activeSection === 'assign' && isEmployee && (
             <div className="space-y-5">
               {/* Assign Module — training content, employees only */}
-              {isEmployee && (
-                <div>
-                  <FieldLabel>Assign Module</FieldLabel>
-                  <div className="flex gap-2">
-                    <select value={assignModuleId} onChange={e => setAssignModuleId(e.target.value)} aria-label="Assign Module" className={`flex-1 ${selectCls}`}>
-                      <option value="">Select module…</option>
-                      {modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
-                    </select>
-                    <button onClick={handleAssignModule} disabled={!assignModuleId || assigning}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-xl text-white text-sm font-semibold transition-colors whitespace-nowrap">
-                      {assigning ? '…' : 'Assign'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Assign Manager — available for employees AND managers (a
-                  manager can report to another manager); only an admin has
-                  no manager of their own, so this tab is hidden for admins. */}
               <div>
-                <FieldLabel>Assign Manager</FieldLabel>
-                {currentManagerId && (
-                  <p className="text-xs text-slate-500 mb-2">Current: <span className="text-indigo-400 font-medium">{managers.find(m => m.userId === currentManagerId)?.name || 'Unknown'}</span></p>
-                )}
+                <FieldLabel>Assign Module</FieldLabel>
                 <div className="flex gap-2">
-                  <select value={assignManagerId} onChange={e => setAssignManagerId(e.target.value)} aria-label="Assign Manager" className={`flex-1 ${selectCls}`}>
-                    <option value="">Select manager…</option>
-                    {managers.map(m => <option key={m.userId} value={m.userId}>{m.name}{m.userId === currentManagerId ? ' ✓' : ''}</option>)}
+                  <select value={assignModuleId} onChange={e => setAssignModuleId(e.target.value)} aria-label="Assign Module" className={`flex-1 ${selectCls}`}>
+                    <option value="">Select module…</option>
+                    {modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
                   </select>
-                  <button onClick={handleAssignManager} disabled={!assignManagerId || assigning || assignManagerId === currentManagerId}
+                  <button onClick={handleAssignModule} disabled={!assignModuleId || assigning}
                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-xl text-white text-sm font-semibold transition-colors whitespace-nowrap">
-                    {assigning ? '…' : assignManagerId === currentManagerId ? '✓ Set' : 'Assign'}
+                    {assigning ? '…' : 'Assign'}
                   </button>
                 </div>
               </div>

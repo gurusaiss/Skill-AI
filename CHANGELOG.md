@@ -4,6 +4,16 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-09-29 — Manager field moved to Profile tab, now supports multiple managers
+
+**Fix:** The Manager field is now shown directly in Edit User's Profile tab (previously it was buried in a separate Assignments tab). It's also no longer a single dropdown that overwrites whoever was set before — you can now add several managers to one person (e.g. a dotted-line report) and remove any one of them independently, without affecting the others. The backend already supported multiple managers per person; this was purely a UI limitation.
+
+**Files:** `client/src/pages/admin/UserManagement.jsx`
+
+**Verified:** Ran it live locally — added two different managers to a test employee (both showed with independent Remove buttons), removed one (the other stayed), and confirmed the background Users list updates immediately to match.
+
+---
+
 ## 2026-09-29 — Add a changelog
 
 **Why:** So changes are trackable at a glance instead of having to read git history.
