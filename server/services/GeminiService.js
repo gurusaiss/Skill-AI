@@ -1,15 +1,23 @@
 /**
- * GeminiService.js — Gemini (multi-key rotation) → Cerebras → Groq fallback chain
+ * GeminiService.js — Gemini (multi-key rotation) → Cerebras → OpenRouter → Groq fallback chain
  *
  * Question-bank generation (generateQuestionsBatch) tries, in order:
  *   1. Gemini 3.6-flash, rotating across every GEMINI_API_KEY[_N] configured.
  *      Free tier caps each KEY at 20 requests/day per model — rotating across
  *      keys from separate Google AI Studio projects multiplies that ceiling
  *      for free (each project gets its own independent quota).
- *   2. Cerebras (OpenAI-compatible), a much larger free tier (1M tokens/day,
- *      14,400 requests/day, no credit card) — a strong second option once
- *      every Gemini key is exhausted for the day.
- *   3. Groq openai/gpt-oss-120b, then openai/gpt-oss-20b — effectively
+ *   2. Cerebras (OpenAI-compatible) — as of Aug 2026 this now requires a
+ *      payment method to unlock even its free credits (a policy change made
+ *      after this integration was first written), so in practice this step
+ *      is a no-op for anyone unwilling to add a card. Left in place in case
+ *      that ever changes back or someone opts in deliberately; effectively
+ *      dead weight otherwise, which is exactly why OpenRouter was added
+ *      below it.
+ *   3. OpenRouter (OpenAI-compatible), free models only (id ends `:free` or
+ *      priced at $0) — genuinely no credit card required. Its own quota
+ *      bucket, independent of both Gemini's and Groq's, so it adds real
+ *      extra daily headroom rather than competing for the same limit.
+ *   4. Groq openai/gpt-oss-120b, then openai/gpt-oss-20b — effectively
  *      unlimited requests but only ~8,000 tokens/MINUTE, so it's the slowest
  *      path and stays last.
  *
@@ -84,6 +92,8 @@ class GeminiService {
     // block real question generation on that key, or vice versa.
     this._geminiEmbedKeyBlockedUntil = new Map();
     this._cerebrasModelPromise = null;
+    this._openRouterModelPromise = null;
+    this.openRouterCallCount = 0;
   }
 
   // ── Gemini credentials — multi-key rotation ──────────────────────────────
@@ -245,6 +255,112 @@ class GeminiService {
       return parsed;
     } catch (err) {
       console.warn(`[Cerebras] failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  // ── OpenRouter credentials ────────────────────────────────────────────────
+  // OpenAI-compatible API, single key, aggregates many labs' models. Free
+  // models only (id ends ":free", or $0 pricing) — confirmed no credit card
+  // required, unlike Cerebras post-Aug-2026. Real but small quota: 20
+  // requests/min, 50 free-model requests/day (until $10 has ever been spent
+  // on the account, when the daily cap rises to 1,000) — a genuinely
+  // separate bucket from Gemini's and Groq's, so it adds real extra daily
+  // headroom rather than just re-slicing an existing limit.
+  get openRouterApiKey() {
+    return process.env.OPENROUTER_API_KEY || '';
+  }
+
+  get openRouterEnabled() {
+    return !!(this.openRouterApiKey && this.openRouterApiKey.length > 10);
+  }
+
+  // Discovers a currently-available FREE model from OpenRouter's own
+  // /api/v1/models endpoint rather than hardcoding an id — free-model
+  // availability on OpenRouter churns often (models get added/retired), and
+  // this codebase already learned that lesson the hard way with hardcoded
+  // Groq/Gemini model names going stale (see _resolveCerebrasModel above).
+  // Cached per process; the hardcoded fallback below is used only if
+  // discovery itself fails (e.g. transient network error), and may itself
+  // be stale by the time that path is hit.
+  async _resolveOpenRouterModel() {
+    if (this._openRouterModelPromise) return this._openRouterModelPromise;
+    this._openRouterModelPromise = (async () => {
+      try {
+        const res = await fetch('https://openrouter.ai/api/v1/models', {
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const models = data.data || [];
+        const free = models.filter(m => {
+          const id = m.id || '';
+          const promptPrice = parseFloat(m.pricing?.prompt ?? '1');
+          const completionPrice = parseFloat(m.pricing?.completion ?? '1');
+          return id.endsWith(':free') || (promptPrice === 0 && completionPrice === 0);
+        });
+        if (free.length === 0) throw new Error('no free models currently listed');
+        // Prefer a larger/more capable-sounding instruct model when several
+        // free ones are offered; otherwise take whatever is actually available.
+        const preferred = free.find(m => /70b|72b|405b|large|deepseek|qwen|llama-3\.3/i.test(m.id)) || free[0];
+        console.log(`[OpenRouter] resolved free model: ${preferred.id} (from ${free.length} free of ${models.length} total)`);
+        return preferred.id;
+      } catch (err) {
+        console.warn(`[OpenRouter] model discovery failed (${err.message}) — using fallback name, which may be stale`);
+        return 'meta-llama/llama-3.3-70b-instruct:free';
+      }
+    })();
+    return this._openRouterModelPromise;
+  }
+
+  // OpenRouter: generate JSON. Same OpenAI-compatible shape as Cerebras/Groq.
+  // response_format is requested but not guaranteed honored by every free
+  // model, so the markdown-fence strip below is defensive, same as Gemini.
+  async _openRouterJSON(prompt, system = '', { temperature = 0.7, maxTokens = 4096 } = {}) {
+    if (!this.openRouterEnabled) return null;
+    try {
+      const model = await this._resolveOpenRouterModel();
+      const messages = [];
+      if (system) messages.push({ role: 'system', content: system });
+      messages.push({ role: 'user', content: prompt });
+
+      const res = await LLMQueue.run(() => fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.openRouterApiKey}`,
+          // Recommended (not required) by OpenRouter for attributing traffic —
+          // harmless to omit but good practice for a free-tier consumer.
+          'HTTP-Referer': 'https://skillforge.ai',
+          'X-Title': 'SkillForge AI',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+          response_format: { type: 'json_object' },
+        }),
+        signal: AbortSignal.timeout(45000),
+      }));
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        console.warn(`[OpenRouter] HTTP ${res.status} on ${model}: ${errText.slice(0, 200)}`);
+        return null;
+      }
+
+      const data = await res.json();
+      const text = data.choices?.[0]?.message?.content;
+      if (!text) { console.warn('[OpenRouter] empty response'); return null; }
+
+      const clean = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+      const parsed = JSON.parse(clean);
+      this.openRouterCallCount++;
+      console.log(`[OpenRouter] ✅ Success (${model}) — call #${this.openRouterCallCount}`);
+      return parsed;
+    } catch (err) {
+      console.warn(`[OpenRouter] failed: ${err.message}`);
       return null;
     }
   }
@@ -604,6 +720,10 @@ class GeminiService {
       const parsed = await this._cerebrasJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192) });
       if (Array.isArray(parsed?.questions)) return parsed.questions;
     }
+    if (this.openRouterEnabled) {
+      const parsed = await this._openRouterJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192) });
+      if (Array.isArray(parsed?.questions)) return parsed.questions;
+    }
     if (this.groqEnabled) {
       const parsed120b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'openai/gpt-oss-120b', onThrottle });
       if (Array.isArray(parsed120b?.questions)) return parsed120b.questions;
@@ -643,6 +763,10 @@ class GeminiService {
     }
     if (this.cerebrasEnabled) {
       const parsed = await this._cerebrasJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192) });
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+    if (this.openRouterEnabled) {
+      const parsed = await this._openRouterJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192) });
       if (parsed && typeof parsed === 'object') return parsed;
     }
     if (this.groqEnabled) {
@@ -781,8 +905,11 @@ class GeminiService {
       callCount         : this.callCount,
       groqCallCount     : this.groqCallCount,
       groqFastCallCount : this.groqFastCallCount,
+      openRouterCallCount : this.openRouterCallCount,
       geminiEnabled     : this.isEnabled(),
       groqEnabled       : this.groqEnabled,
+      cerebrasEnabled   : this.cerebrasEnabled,
+      openRouterEnabled : this.openRouterEnabled,
       model             : this.model,
       cacheStats        : LLMCache.getStats(),
       queue             : LLMQueue.getStats(),

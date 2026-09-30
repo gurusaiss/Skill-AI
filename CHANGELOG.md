@@ -4,6 +4,18 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-09-30 — Added OpenRouter as a new free AI fallback tier
+
+**What changed:** Question generation was falling through to Groq's very narrow rate limit (~7,000 tokens/minute, shared across everything) whenever Gemini's daily quota ran out, because the intended middle-tier fallback, Cerebras, silently stopped being a real option — Cerebras changed its policy in August 2026 to require a payment method even for its free credits, so it was never actually being used on this deployment (no card was ever added). OpenRouter is added as a new middle tier instead: genuinely free, no card required, its own separate model-provider quota, and it automatically discovers which free model is currently available instead of hardcoding one that could go stale.
+
+**Why:** So generation has a real, permanently-free second option before falling into Groq's slow per-minute pacing, instead of relying on a fallback (Cerebras) that quietly stopped working for free-tier users months ago.
+
+**To activate:** add `OPENROUTER_API_KEY` to wherever this app's environment variables actually live (local `.env`, or the Azure App Service configuration for the deployed instance) and restart the server. Without that key set, this tier is simply skipped, same as Cerebras today.
+
+Files: `server/services/GeminiService.js`, `.env.example`
+
+---
+
 ## 2026-09-30 — Role Library question generation: 4 fixes
 
 **1. Generation looked "stuck at 0" after a rate-limit pause, even after waiting 20+ minutes.**
