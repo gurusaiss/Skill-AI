@@ -14,6 +14,7 @@ import {
   AreaChart, Area,
 } from 'recharts';
 import { authFetch } from '../../utils/authFetch.js';
+import StatCard from '../../components/StatCard.jsx';
 
 const COLORS = {
   indigo : '#6366f1',
@@ -42,15 +43,19 @@ const ChartCard = ({ title, subtitle, children, loading, className = '' }) => (
   </div>
 );
 
-const KpiCard = ({ label, value, sub, color, icon }) => (
-  <div className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-4">
-    <div className="flex items-center justify-between mb-2">
-      <span className="text-xl">{icon}</span>
-      <span className="text-xs font-bold uppercase tracking-widest text-slate-500">{label}</span>
-    </div>
-    <p className="text-3xl font-black" style={{ color }}>{value}</p>
-    {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
-  </div>
+const KpiCard = ({ label, value, sub, color, icon, description, tooltip }) => (
+  <StatCard
+    label={label}
+    value={<span style={{ color }}>{value}</span>}
+    icon={icon}
+    sub={sub}
+    description={description}
+    tooltip={tooltip}
+    borderClass="border-slate-700/40"
+    bgClass="bg-slate-800/30"
+    textClass="text-slate-500"
+    className="rounded-2xl"
+  />
 );
 
 const customTooltipStyle = {
@@ -108,42 +113,56 @@ export default function MetricsDashboard() {
 
   const stats = adminData?.stats || {};
 
+  // Cancelled assignments are shown as their own slice and excluded from the completion rate.
   const assignmentData = [
     { name: 'Assigned',    value: stats.pendingAssignments   || 0, color: COLORS.blue },
     { name: 'In Progress', value: stats.activeAssignments    || 0, color: COLORS.amber },
     { name: 'Completed',   value: stats.completedAssignments || 0, color: COLORS.emerald },
+    { name: 'Cancelled',   value: stats.cancelledAssignments || 0, color: COLORS.slate },
   ].filter(d => d.value > 0);
 
   const userRoleData = [
-    { name: 'Employees', value: stats.employees || 0 },
-    { name: 'Managers',  value: stats.managers  || 0 },
-    { name: 'Admins',    value: 1 },
+    { name: 'Employees', value: stats.employees  || 0 },
+    { name: 'Managers',  value: stats.managers   || 0 },
+    { name: 'Admins',    value: stats.admins     || 0 },
+    { name: 'Other',     value: stats.otherRoles || 0 },
   ].filter(d => d.value > 0);
 
   const llmBarData = llmStats ? [
-    { name: 'Gemini',     calls: llmStats.geminiCallCount      || 0 },
-    { name: 'Groq 70B',   calls: llmStats.groqCallCount        || 0 },
-    { name: 'Groq 8B',    calls: llmStats.groqFastCallCount    || 0 },
-    { name: 'Cache Hits', calls: llmStats.cacheStats?.hits      || 0 },
+    { name: 'Gemini',     calls: llmStats.callCount               || 0 },
+    { name: 'Groq 70B',   calls: llmStats.groqCallCount           || 0 },
+    { name: 'Groq 8B',    calls: llmStats.groqFastCallCount       || 0 },
+    { name: 'OpenRouter', calls: llmStats.openRouterCallCount     || 0 },
+    { name: 'Cache Hits', calls: llmStats.cacheStats?.hits        || 0 },
   ] : [];
+
+  // The rec engine (python) and the JS fallback use different key names; accept both.
+  // A missing metric is returned as null and shown as n/a rather than a fake 0%.
+  const pickMetric = (...keys) => {
+    if (!recMetrics) return null;
+    for (const k of keys) {
+      const v = Number(recMetrics[k]);
+      if (recMetrics[k] != null && Number.isFinite(v)) return v;
+    }
+    return null;
+  };
+  const recP5       = pickMetric('precision_at_5', 'precision_at_k');
+  const recRecall5  = pickMetric('recall_at_5', 'recall_at_k');
+  const recNdcg     = pickMetric('ndcg_at_10', 'ndcg_at_k');
+  const recCoverage = pickMetric('coverage');
+  const fmtRec = (v) => (v == null ? 'n/a' : `${Math.round(v * 100)}%`);
 
   const recRadarData = recMetrics ? [
-    { metric: 'P@5',       value: Math.round((recMetrics.precision_at_5 || 0) * 100) },
-    { metric: 'Recall@5',  value: Math.round((recMetrics.recall_at_5    || 0) * 100) },
-    { metric: 'NDCG@10',   value: Math.round((recMetrics.ndcg_at_10     || 0) * 100) },
-    { metric: 'Coverage',  value: Math.round((recMetrics.coverage        || 0) * 100) },
-  ] : [];
+    { metric: 'P@5',      value: recP5 },
+    { metric: 'Recall@5', value: recRecall5 },
+    { metric: 'NDCG@10',  value: recNdcg },
+    { metric: 'Coverage', value: recCoverage },
+  ].filter(d => d.value != null).map(d => ({ ...d, value: Math.round(d.value * 100) })) : [];
 
-  // Simulate weekly activity trend from completion stats (no historical API needed)
-  const activityData = (() => {
-    const completed = stats.completedAssignments || 0;
-    const total     = stats.totalAssignments     || 1;
-    // Distribute realistically across 7 days using a seeded curve
-    return ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, i) => {
-      const weight = [0.18, 0.22, 0.20, 0.16, 0.14, 0.06, 0.04][i];
-      return { day, completions: Math.round(completed * weight), sessions: Math.round(total * weight * 1.3) };
-    });
-  })();
+  // Real per-day activity for the last 7 days, computed on the server from
+  // assignment completion timestamps and assessment submission timestamps.
+  const activityData = Array.isArray(stats.weeklyActivity) ? stats.weeklyActivity : [];
+  const hasActivity = activityData.some(d => d.completions > 0 || d.submissions > 0);
 
   const cacheHitRate = llmStats?.cacheStats?.hitRate
     ? parseInt(llmStats.cacheStats.hitRate)
@@ -171,9 +190,11 @@ export default function MetricsDashboard() {
       }));
   }, [modules]);
 
-  const totalLlmCalls = (llmStats?.geminiCallCount || 0)
+  // Total model calls (cache hits are not model calls, so they are excluded).
+  const totalLlmCalls = (llmStats?.callCount || 0)
     + (llmStats?.groqCallCount || 0)
-    + (llmStats?.groqFastCallCount || 0);
+    + (llmStats?.groqFastCallCount || 0)
+    + (llmStats?.openRouterCallCount || 0);
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
@@ -200,10 +221,18 @@ export default function MetricsDashboard() {
 
         {/* KPI Row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <KpiCard label="Total Users"    value={loading ? '—' : stats.totalUsers || 0}        color={COLORS.indigo}  icon="👥" sub={`${stats.activeUsers || 0} active (30d)`} />
-          <KpiCard label="Completion"     value={loading ? '—' : `${stats.completionRate || 0}%`} color={COLORS.emerald} icon="✅" sub={`${stats.completedAssignments || 0} / ${stats.totalAssignments || 0} assignments`} />
-          <KpiCard label="LLM API Calls"  value={loading ? '—' : totalLlmCalls}                color={COLORS.amber}   icon="🤖" sub={cacheHitRate !== null ? `${cacheHitRate}% cache hit rate` : 'cache stats loading'} />
-          <KpiCard label="RecSys P@5"     value={loading ? '—' : recMetrics ? `${Math.round((recMetrics.precision_at_5 || 0) * 100)}%` : 'N/A'} color={COLORS.violet} icon="✨" sub={`NDCG@10: ${recMetrics ? Math.round((recMetrics.ndcg_at_10 || 0) * 100) : 0}%`} />
+          <KpiCard label="Total Users"    value={loading ? '—' : stats.totalUsers || 0}        color={COLORS.indigo}  icon="👥" sub={`${stats.activeUsers || 0} active (30d)`}
+            description="Everyone in your company"
+            tooltip="All user accounts in your company. 'Active' = logged in during the last 30 days." />
+          <KpiCard label="Completion"     value={loading ? '—' : `${stats.completionRate || 0}%`} color={COLORS.emerald} icon="✅" sub={`${stats.completedAssignments || 0} / ${(stats.totalAssignments || 0) - (stats.cancelledAssignments || 0)} assignments`}
+            description="Share of module assignments finished"
+            tooltip="Completed assignments divided by non-cancelled assignments. Cancelled assignments are excluded." />
+          <KpiCard label="LLM API Calls"  value={loading ? '—' : totalLlmCalls}                color={COLORS.amber}   icon="🤖" sub={cacheHitRate !== null ? `${cacheHitRate}% cache hit rate` : 'cache stats loading'}
+            description="AI model requests since the server started"
+            tooltip="Sum of calls to Gemini, Groq 70B, Groq 8B and OpenRouter. Cached answers are not counted as calls." />
+          <KpiCard label="RecSys P@5"     value={loading ? '—' : fmtRec(recP5)} color={COLORS.violet} icon="✨" sub={`NDCG@10: ${fmtRec(recNdcg)}`}
+            description="Recommendation precision at 5"
+            tooltip="Of the top 5 recommended skills, the share that were relevant on the held-out test split. n/a means the engine has not reported this metric." />
         </div>
 
         {/* Charts Grid */}
@@ -306,7 +335,10 @@ export default function MetricsDashboard() {
           </ChartCard>
 
           {/* Chart 5: Weekly Activity Estimate */}
-          <ChartCard title="Weekly Activity Estimate" subtitle="Completion & session distribution (derived from totals)" loading={loading}>
+          <ChartCard title="Weekly Activity" subtitle="Last 7 days: modules completed and assessments submitted" loading={loading}>
+            {!hasActivity ? (
+              <div className="h-48 flex items-center justify-center text-slate-600 text-sm">No activity in the last 7 days</div>
+            ) : (
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={activityData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
                 <defs>
@@ -323,10 +355,11 @@ export default function MetricsDashboard() {
                 <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={customTooltipStyle} />
-                <Area type="monotone" dataKey="sessions"    name="Sessions"    stroke={COLORS.indigo}  strokeWidth={2} fill="url(#gSessions)" />
-                <Area type="monotone" dataKey="completions" name="Completions" stroke={COLORS.emerald} strokeWidth={2} fill="url(#gCompletions)" />
+                <Area type="monotone" dataKey="submissions" name="Assessments submitted" stroke={COLORS.indigo}  strokeWidth={2} fill="url(#gSessions)" />
+                <Area type="monotone" dataKey="completions" name="Modules completed" stroke={COLORS.emerald} strokeWidth={2} fill="url(#gCompletions)" />
               </AreaChart>
             </ResponsiveContainer>
+            )}
           </ChartCard>
 
           {/* Chart 6: Platform Health Summary */}
@@ -335,17 +368,21 @@ export default function MetricsDashboard() {
               {[
                 {
                   label: 'Cache Hit Rate',
-                  value: cacheHitRate !== null ? `${cacheHitRate}%` : 'N/A',
+                  value: cacheHitRate !== null && Number.isFinite(cacheHitRate) ? `${cacheHitRate}%` : 'N/A',
                   color: cacheHitRate !== null && cacheHitRate >= 40 ? COLORS.emerald : COLORS.amber,
                   icon: '⚡',
                   sub: `${llmStats?.cacheStats?.hits || 0} hits · ${llmStats?.cacheStats?.size || 0} cached`,
+                  description: 'AI answers reused from cache',
+                  tooltip: 'Share of AI requests answered from the cache instead of calling a model (hits / (hits + misses)).',
                 },
                 {
                   label: 'Rec Coverage',
-                  value: recMetrics ? `${Math.round((recMetrics.coverage || 0) * 100)}%` : 'N/A',
+                  value: fmtRec(recCoverage),
                   color: COLORS.violet,
                   icon: '🎯',
-                  sub: `${recMetrics?.total_skills || 0} skills catalogued`,
+                  sub: `${recMetrics?.total_skills ?? 'n/a'} skills catalogued`,
+                  description: 'Skills the engine can recommend',
+                  tooltip: 'Share of the skill catalogue that appears in at least one recommendation. n/a means the engine did not report coverage.',
                 },
                 {
                   label: 'Active Users',
@@ -353,6 +390,8 @@ export default function MetricsDashboard() {
                   color: COLORS.cyan,
                   icon: '🟢',
                   sub: 'last 30 days',
+                  description: 'Users seen recently',
+                  tooltip: 'Company users whose last login was within the last 30 days.',
                 },
                 {
                   label: 'Pending Actions',
@@ -360,16 +399,14 @@ export default function MetricsDashboard() {
                   color: stats.pendingApprovals > 0 ? COLORS.amber : COLORS.emerald,
                   icon: '⏳',
                   sub: 'approvals / requests',
+                  description: 'Items waiting for an admin',
+                  tooltip: 'Pending manager assignment requests plus pending approval requests in your company.',
                 },
               ].map((item) => (
-                <div key={item.label} className="rounded-xl bg-slate-800/40 border border-slate-700/30 p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span>{item.icon}</span>
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">{item.label}</span>
-                  </div>
-                  <p className="text-2xl font-black" style={{ color: item.color }}>{item.value}</p>
-                  <p className="text-xs text-slate-600 mt-0.5">{item.sub}</p>
-                </div>
+                <StatCard key={item.label} label={item.label}
+                  value={<span style={{ color: item.color }}>{item.value}</span>}
+                  icon={item.icon} sub={item.sub} description={item.description} tooltip={item.tooltip}
+                  borderClass="border-slate-700/30" bgClass="bg-slate-800/40" textClass="text-slate-500" />
               ))}
             </div>
           </ChartCard>

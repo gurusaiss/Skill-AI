@@ -4,6 +4,33 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-07 — Company name and CRUD, correct dashboard numbers, grades, 60-minute tests, employee IDs, assign/reassign, quarterly New Generation
+
+**1. Company name at the top of every portal, and full company management for the super admin.**
+Admin, manager and employee screens now show the company name exactly as the super admin entered it (top bar, plus the sidebar). The super admin can now add, view, edit and delete companies with a company code, domain, plan, status, industry, address, contact details and more. Renaming a company updates every user's stored company name. Deleting a company that still has users asks for confirmation first.
+Files: `server/routes/superadmin.js`, `server/routes/auth.js`, `client/src/components/CompanyBadge.jsx`, `Navbar.jsx`, `CorporateLayout.jsx`, `AuthContext.jsx`, `SuperAdminDashboard.jsx` and the other super admin pages.
+
+**2. Dashboard numbers audited and fixed, and every card now explains itself.**
+Fixed: "Average Completion" (now Average Progress, no longer counting cancelled work), "Assessments Done" (counts each person's assessment once, limited to your company), manager counts (now include all manager-level roles), overdue always showing 0, wrong field names that left employee popups and reports empty, and LLM call counts. Every card on every dashboard now has a one-line description and a hover pop-up explaining how its number is worked out.
+Files: `AdminDashboard.jsx`, `ManagerDashboard.jsx`, `Employee.jsx`, `employee/Analytics.jsx`, `MetricsDashboard.jsx`, `components/StatCard.jsx`, `server/routes/adminDashboard.js`, `assignments.js`.
+
+**3. Assessment time limit is now 60 minutes everywhere.** Assessments saved with the old 30-minute default are shown and timed as 60; a limit an admin chose on purpose is kept.
+Files: `server/services/assessmentDefaults.js`, `routes/roles.js`, `routes/assessment.js`, `AssessmentAutoAssign.js`, `Assessment.jsx`, `AssessmentManagement.jsx`.
+
+**4. New grades: A is 85 and above, B is 70 up to 85, C is below 70.** The grade uses the exact score, so 84.99 is a B and 70.01 is a B. Old results are regraded when shown. The employee result screen now uses the assessment's real pass mark instead of a fixed 60.
+Files: `server/services/grading.js`, `routes/assessment.js`, `client/src/utils/assessmentRules.js`, `Assessment.jsx`, `Report.jsx`, `ManagerDashboard.jsx`.
+
+**5. Employee ID / Manager ID and full profile editing.** Employee ID (labelled Manager ID for managers) and phone can be added and edited by admins in User Management and by users on their own Profile page, unique within a company. The Profile page now shows and edits every field. The broken email-change flow was replaced. Run `sql/migrations/2026-10-add-user-profile-columns.sql` on the live database so IDs are saved.
+Files: `server/routes/users.js`, `UserStore.js`, `routes/auth.js`, `UserManagement.jsx`, `Profile.jsx`, `sql/migrations/`.
+
+**6. Give an existing assessment to more employees, and reassign.** On an assessment, "+ Assign employees" opens a search (name, ID, email, role) with a start and end date for each person. "Use Existing" on the main page does the same for any existing assessment. The employee table has a tick or cross column, and a Reassign button for anyone who has not completed it (same questions, new dates, earlier attempts kept).
+Files: `server/routes/assessment.js`, `server/services/assessmentSchedule.js`, `client/src/components/AssignAssessmentModals.jsx`, `AssessmentManagement.jsx`.
+
+**7. Quarterly "New Generation" in the Role Library.** A New Generation button regenerates all questions, locked and unlocked, after a confirmation, and saves the current approved questions as Q1, Q2 and so on. The Quarters buttons show each saved set read-only in the same layout. Create the `question_bank_archives` table on the live database (see `server/utils/migrateDB.js`).
+Files: `server/routes/roles.js`, `server/services/quarterArchive.js`, `DataStore.js`, `RoleLibrary.jsx`, `components/QuestionCard.jsx`.
+
+---
+
 ## 2026-09-30 — Added OpenRouter as a new free AI fallback tier
 
 **What changed:** Question generation was falling through to Groq's very narrow rate limit (~7,000 tokens/minute, shared across everything) whenever Gemini's daily quota ran out, because the intended middle-tier fallback, Cerebras, silently stopped being a real option — Cerebras changed its policy in August 2026 to require a payment method even for its free credits, so it was never actually being used on this deployment (no card was ever added). OpenRouter is added as a new middle tier instead: genuinely free, no card required, its own separate model-provider quota, and it automatically discovers which free model is currently available instead of hardcoding one that could go stale.

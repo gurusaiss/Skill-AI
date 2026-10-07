@@ -31,6 +31,9 @@ import { generateSessionQuiz, ensureAllSessionQuizzes } from '../services/Sessio
 import { getVisibleEmployeeIds, canActAsManager } from '../services/ManagerScope.js';
 import { QUIZ_MIX, normalizeTypeName } from '../services/QuestionMix.js';
 import { startDeepContentJob } from '../services/SessionContentGenerator.js';
+import { gradeFromPercent, percentFromCounts, gradeForReport } from '../services/grading.js';
+import { ASSESSMENT_DURATION_MINUTES, normalizeDuration } from '../services/assessmentDefaults.js';
+import { resolveWindow, parseWindowInput } from '../services/assessmentSchedule.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -88,9 +91,13 @@ async function hydrateAssignmentsForAdmin(assessment) {
   const byId = new Map(version.questions.map(q => [q.id, q]));
   const eaaRows = await EmployeeAssessmentAssignments.getByAssessment(assessment.id);
   const orderByUser = new Map(eaaRows.map(r => [r.user_id, r.question_order]));
+  const windowByUser = new Map(eaaRows.map(r => [r.user_id, { startAt: r.start_at || null, dueAt: r.due_at || null }]));
   return {
     ...assessment,
-    employeeAssignments: assessment.employeeAssignments.map(ea => {
+    employeeAssignments: assessment.employeeAssignments.map(rawEa => {
+      // Surface each employee's own schedule to the admin table.
+      const w = windowByUser.get(rawEa.userId);
+      const ea = w ? { ...rawEa, startAt: rawEa.startAt || w.startAt, dueAt: rawEa.dueAt || w.dueAt } : rawEa;
       // Mirrors resolveEmployeeQuestions' precedence so an admin previewing an
       // employee's paper sees exactly what that employee gets: a locked
       // (started/submitted) assignment keeps its embedded set; anything else
@@ -187,6 +194,123 @@ async function resolveEmployeeQuestions(assessment, assignment, userId) {
   }
 
   return embedded ? { questions: embedded, source: 'embedded' } : { questions: null, source: null };
+}
+
+// Adds employees to an existing assessment, or resets an existing employee's
+// attempt so they can take it again. Same questions either way: version-backed
+// assessments keep (or get) a shuffle of the frozen bank, legacy assessments
+// copy a shuffled set from an existing roster entry. Earlier attempts are kept
+// on the roster entry under `attempts` and old reports are never deleted.
+async function assignEmployeesToAssessment({ assessmentId, users, startAt, dueAt, assignedBy, retake = false }) {
+  const assessment = await Assessments.getById(assessmentId);
+  if (!assessment) return { error: 'Assessment not found', status: 404 };
+  if (assessment.isActive === false) {
+    return { error: 'This assessment was replaced by a newer version. Assign employees from the current assessment instead.', status: 400 };
+  }
+
+  const roster = Array.isArray(assessment.employeeAssignments) ? [...assessment.employeeAssignments] : [];
+  const versionBacked = Boolean(assessment.questionBankVersionId);
+  let bankIds = null;
+  let templateQuestions = null;
+  if (versionBacked) {
+    const version = await getApprovedBankCached(assessment.questionBankVersionId);
+    bankIds = (version?.questions || []).map(q => q.id);
+    if (bankIds.length === 0) return { error: 'This assessment has no questions to assign', status: 400 };
+  } else {
+    templateQuestions = roster.find(ea => Array.isArray(ea.questions) && ea.questions.length > 0)?.questions || null;
+    if (!templateQuestions) return { error: 'This assessment has no questions to assign', status: 400 };
+  }
+
+  const nowIso = new Date().toISOString();
+  const added = [];
+  const reassigned = [];
+  const skipped = [];
+  const eaaRows = [];
+
+  for (const user of users) {
+    const userId = user.userId || user.id;
+    const idx = roster.findIndex(ea => ea.userId === userId);
+    const existing = idx >= 0 ? roster[idx] : null;
+
+    if (existing && existing.status === 'submitted' && !retake) {
+      skipped.push({ userId, name: user.name, reason: 'Already completed this assessment' });
+      continue;
+    }
+
+    let questionOrder = null;
+    if (versionBacked) {
+      const prior = existing ? await EmployeeAssessmentAssignments.getOne(assessment.id, userId).catch(() => null) : null;
+      questionOrder = prior?.question_order?.length ? prior.question_order : shuffle(bankIds);
+    }
+
+    let entry;
+    if (existing) {
+      const attempts = Array.isArray(existing.attempts) ? [...existing.attempts] : [];
+      if (existing.status === 'submitted' || existing.startedAt) {
+        attempts.push({
+          status: existing.status,
+          assignedAt: existing.assignedAt || null,
+          startedAt: existing.startedAt || null,
+          submittedAt: existing.submittedAt || null,
+          scoring: existing.scoring || null,
+          archivedAt: nowIso,
+        });
+      }
+      // Drop the previous attempt's answers/score so the employee starts clean.
+      const { responses, scoring, score, report, ...rest } = existing;
+      entry = { ...rest, status: 'assigned', assignedAt: nowIso, startedAt: null, submittedAt: null, startAt, dueAt, assignedBy, attempts };
+      roster[idx] = entry;
+      reassigned.push({ userId, name: user.name });
+    } else {
+      entry = {
+        userId,
+        userName: user.name,
+        userEmail: user.email,
+        jobRole: user.jobRole || '',
+        status: 'assigned',
+        assignedAt: nowIso,
+        startedAt: null,
+        submittedAt: null,
+        startAt,
+        dueAt,
+        assignedBy,
+      };
+      if (!versionBacked) entry.questions = shuffle(templateQuestions);
+      roster.push(entry);
+      added.push({ userId, name: user.name });
+    }
+
+    if (versionBacked) {
+      eaaRows.push({
+        assessmentId: assessment.id,
+        userId,
+        questionBankVersionId: assessment.questionBankVersionId,
+        questionOrder,
+        status: 'assigned',
+        assignedAt: nowIso,
+        startAt,
+        dueAt,
+      });
+    }
+  }
+
+  if (added.length === 0 && reassigned.length === 0) {
+    return { assessment, added, reassigned, skipped };
+  }
+
+  if (eaaRows.length > 0) await EmployeeAssessmentAssignments.bulkCreate(eaaRows);
+
+  // Re-read just before writing so a submission that landed while we were
+  // working is not overwritten by our copy of the roster.
+  const fresh = await Assessments.getById(assessmentId);
+  const freshRoster = Array.isArray(fresh?.employeeAssignments) ? fresh.employeeAssignments : [];
+  const touched = new Map(roster.filter(ea => [...added, ...reassigned].some(x => x.userId === ea.userId)).map(ea => [ea.userId, ea]));
+  const merged = freshRoster.map(ea => touched.get(ea.userId) || ea);
+  for (const [uid, ea] of touched) if (!merged.some(m => m.userId === uid)) merged.push(ea);
+
+  const targetUsers = [...new Set([...(fresh?.targetUsers || assessment.targetUsers || []), ...touched.keys()])];
+  await Assessments.update(assessmentId, { employeeAssignments: merged, targetUsers, updatedAt: nowIso });
+  return { assessment: { ...fresh, employeeAssignments: merged, targetUsers }, added, reassigned, skipped };
 }
 
 // ── Normalise answers from frontend into a dense array indexed by question pos ─
@@ -428,8 +552,11 @@ function scoreSubmission(questions, responses, passThreshold = 80, customThresho
     });
   });
 
-  const score = total > 0 ? Math.round((correct / total) * 100) : 0;
-  const grade = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
+  // rawScore is the exact, unrounded percentage. The letter grade and the
+  // pass/fail decision use it; `score` is the rounded value shown in the UI.
+  const rawScore = percentFromCounts(correct, total);
+  const score = Math.round(rawScore);
+  const grade = gradeFromPercent(rawScore);
 
   // Skill area breakdown for the report
   const skillAreas = {};
@@ -465,9 +592,9 @@ function scoreSubmission(questions, responses, passThreshold = 80, customThresho
   // the /submit route), so every later consumer — employee report, manager
   // dashboard, exports — can use the SAME pass/fail fact for this submission
   // instead of re-deriving it from a different, possibly stale assumption.
-  const passed = score >= passThreshold;
+  const passed = rawScore + 1e-9 >= passThreshold;
 
-  return { score, grade, correct, total, breakdown, skillAreas, skillBreakdown, strengths, weakAreas, missingCompetencies, performanceClassification, readinessLevel, recommendedLearningAreas, passThreshold, passed };
+  return { score, rawScore, grade, correct, total, breakdown, skillAreas, skillBreakdown, strengths, weakAreas, missingCompetencies, performanceClassification, readinessLevel, recommendedLearningAreas, passThreshold, passed };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -538,7 +665,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
       questionTypes,
       assessmentDate,
       deadline,
-      duration = 30,
+      duration = ASSESSMENT_DURATION_MINUTES,
       difficulty, // 'easy' | 'medium' | 'hard' | undefined — filter from role question bank if set
       easyPct,    // percentage of easy questions when pulling from bank (default 33)
       mediumPct,  // percentage of medium questions when pulling from bank (default 33)
@@ -762,7 +889,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
       deadline: deadline || null,
       duration,
       assessmentType: req.body.assessmentType || 'Skill Assessment',
-      settings: req.body.settings || { questionOrder: 'same', markingScheme: { easy: { correct: 1, wrong: 0 }, medium: { correct: 2, wrong: 0 }, hard: { correct: 3, wrong: 0 } }, passPercentage: 80, reattempts: 0, allowReattemptToBeatScore: false, timing: { type: 'timed', totalMinutes: 30 }, navigation: { forwardOnly: false }, results: { hideFromParticipants: false, revealOnSubmission: false, revealAfterEachQuestion: false, revealCorrectOption: false }, completion: { mandatory: false, markCompleteOnlyIfPassed: false, allowSubmitWithoutAnsweringAll: false } },
+      settings: req.body.settings || { questionOrder: 'same', markingScheme: { easy: { correct: 1, wrong: 0 }, medium: { correct: 2, wrong: 0 }, hard: { correct: 3, wrong: 0 } }, passPercentage: 80, reattempts: 0, allowReattemptToBeatScore: false, timing: { type: 'timed', totalMinutes: ASSESSMENT_DURATION_MINUTES }, navigation: { forwardOnly: false }, results: { hideFromParticipants: false, revealOnSubmission: false, revealAfterEachQuestion: false, revealCorrectOption: false }, completion: { mandatory: false, markCompleteOnlyIfPassed: false, allowSubmitWithoutAnsweringAll: false } },
       createdBy: req.user.userId,
       companyId: req.user.companyId || null,
       createdAt: new Date().toISOString(),
@@ -792,7 +919,7 @@ router.post('/manual', authenticate, requireRole('admin', 'manager'), async (req
       questionCount,
       assessmentDate,
       deadline,
-      duration = 30,
+      duration = ASSESSMENT_DURATION_MINUTES,
       questions: rawQuestions = [],
     } = req.body;
 
@@ -863,7 +990,7 @@ router.post('/manual', authenticate, requireRole('admin', 'manager'), async (req
       deadline: deadline || null,
       duration,
       assessmentType: req.body.assessmentType || 'Skill Assessment',
-      settings: req.body.settings || { questionOrder: 'same', markingScheme: { easy: { correct: 1, wrong: 0 }, medium: { correct: 2, wrong: 0 }, hard: { correct: 3, wrong: 0 } }, passPercentage: 80, reattempts: 0, allowReattemptToBeatScore: false, timing: { type: 'timed', totalMinutes: 30 }, navigation: { forwardOnly: false }, results: { hideFromParticipants: false, revealOnSubmission: false, revealAfterEachQuestion: false, revealCorrectOption: false }, completion: { mandatory: false, markCompleteOnlyIfPassed: false, allowSubmitWithoutAnsweringAll: false } },
+      settings: req.body.settings || { questionOrder: 'same', markingScheme: { easy: { correct: 1, wrong: 0 }, medium: { correct: 2, wrong: 0 }, hard: { correct: 3, wrong: 0 } }, passPercentage: 80, reattempts: 0, allowReattemptToBeatScore: false, timing: { type: 'timed', totalMinutes: ASSESSMENT_DURATION_MINUTES }, navigation: { forwardOnly: false }, results: { hideFromParticipants: false, revealOnSubmission: false, revealAfterEachQuestion: false, revealCorrectOption: false }, completion: { mandatory: false, markCompleteOnlyIfPassed: false, allowSubmitWithoutAnsweringAll: false } },
       createdBy: req.user.userId,
       companyId: req.user.companyId || null,
       createdAt: new Date().toISOString(),
@@ -956,7 +1083,7 @@ function buildExportRow(ea, report, assessmentTitle, extraMeta = {}) {
     deadline:        extraMeta.deadline || '',
     score:           correct != null ? `${correct}/${totalQs}` : 'Pending',
     percentage:      scorePct != null ? `${scorePct}%` : 'Pending',
-    grade:           sc.grade || '',
+    grade:           gradeForReport(sc),
     passFail:        scorePct != null ? (scorePct >= (extraMeta.passThreshold ?? 80) ? 'Pass' : 'Fail') : '',
     classification:  sc.performanceClassification?.label || '',
     status:          ea.status || 'assigned',
@@ -1160,7 +1287,7 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
         employeeId: empUser?.employeeId || ea.userId,
         assessmentType: assessment.assessmentType || '',
         deadline: assessment.deadline || '',
-        durationMinutes: assessment.duration,
+        durationMinutes: normalizeDuration(assessment.duration),
         passThreshold: assessment.settings?.passPercentage ?? 80,
       });
     });
@@ -1335,7 +1462,7 @@ async function buildFullReportData({ ea, report, assessment, userId, req }) {
   return {
     employee: {
       name: ea.userName || user?.name || ea.userId || '',
-      employeeId: userId,
+      employeeId: user?.employeeId || userId,
       email: ea.userEmail || user?.email || report?.userEmail || '',
       company: user?.companyName || req.user.companyId || 'default',
       group: myGroup?.name || '—',
@@ -1361,7 +1488,7 @@ async function buildFullReportData({ ea, report, assessment, userId, req }) {
       // here (rather than trusting a stored sc.passed) also keeps this
       // correct for reports submitted before passThreshold started being persisted.
       passFail: sc.score != null ? (sc.score >= (assessment.settings?.passPercentage ?? 80) ? 'Pass' : 'Fail') : 'Pending',
-      grade: sc.grade || '',
+      grade: gradeForReport(sc),
       status: ea.status || 'assigned',
     },
     questions,
@@ -1807,23 +1934,21 @@ router.get('/my', authenticate, async (req, res) => {
     const myAssessments = await Promise.all(mine.map(async (a) => {
       const myAssignment = a.employeeAssignments?.find(ea => ea.userId === req.user.userId);
 
-      const assessmentDate = a.assessmentDate ? new Date(a.assessmentDate) : null;
-
-      // Per-employee due_at (set once at assignment time — see
-      // handleLockAssessment/AssessmentAutoAssign) takes priority over the
-      // assessment's shared `deadline` field: this is what makes a
-      // 'relative' scheduling policy's per-employee window actually apply,
-      // instead of every employee falling back to one shared calendar date.
-      // Legacy/manual assessments have no employee_assessment_assignments
-      // row at all — `?.due_at` is simply undefined there and `a.deadline`
-      // is used exactly as before.
-      let resolvedDeadline = a.deadline || null;
+      // Per-employee window (see resolveWindow): an employee added or
+      // reassigned later has their own start and end, which win over the
+      // assessment's shared dates. A 'relative' scheduling policy's
+      // per-employee due_at still applies as before. Legacy/manual
+      // assessments have no employee_assessment_assignments row, so only
+      // the roster entry and the shared dates are consulted there.
+      let eaaForWindow = null;
       if (a.questionBankVersionId) {
         try {
-          const eaa = await EmployeeAssessmentAssignments.getOne(a.id, req.user.userId);
-          if (eaa?.due_at) resolvedDeadline = eaa.due_at;
+          eaaForWindow = await EmployeeAssessmentAssignments.getOne(a.id, req.user.userId);
         } catch (_) {}
       }
+      const win = resolveWindow(a, myAssignment, eaaForWindow);
+      const resolvedDeadline = win.dueAt;
+      const assessmentDate = win.startAt ? new Date(win.startAt) : null;
       const deadline = resolvedDeadline ? new Date(resolvedDeadline) : null;
 
       const isVisible = !assessmentDate || now >= assessmentDate;
@@ -1849,7 +1974,7 @@ router.get('/my', authenticate, async (req, res) => {
         title: a.title,
         assessmentDate: a.assessmentDate,
         deadline: resolvedDeadline,
-        duration: a.duration,
+        duration: normalizeDuration(a.duration),
         status: isExpired && assignmentStatus !== 'submitted' ? 'expired' : assignmentStatus,
         questions,
         assignedAt: myAssignment?.assignedAt || a.createdAt,
@@ -1963,7 +2088,7 @@ router.get('/export-all-reports', authenticate, requirePermission('reports.expor
         r.assessmentTitle || r.title || '',
         r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : '',
         sc.score != null ? `${sc.score}%` : '',
-        sc.grade || '',
+        gradeForReport(sc),
         sc.performanceClassification?.label || '',
         r.status || 'submitted',
         (sc.strengths || []).join('; '),
@@ -2223,6 +2348,163 @@ router.post('/generate', authenticate, llmLimiter, requirePermission('assessment
  * them (their own team) — the same authorization helper users.js's
  * employee-list endpoint already uses, reused rather than reimplemented.
  */
+// Emails an employee that an assessment was assigned or reassigned. Never
+// throws and never blocks the response: delivery problems must not undo an
+// assignment that was already saved.
+async function notifyAssigned(assessment, user, startAt, dueAt, reassigned) {
+  try {
+    if (!user?.email || !EmailService.isEnabled()) return false;
+    const when = dueAt ? `Please complete it by ${new Date(dueAt).toLocaleString()}.` : '';
+    const from = startAt && new Date(startAt) > new Date() ? ` It opens on ${new Date(startAt).toLocaleString()}.` : '';
+    const subject = `${reassigned ? 'Assessment reassigned' : 'New assessment assigned'}: ${assessment.title}`;
+    const htmlBody = `<p>Hi ${user.name || 'there'},</p><p>The assessment <strong>${assessment.title}</strong> has been ${reassigned ? 'reassigned to you' : 'assigned to you'}.${from} ${when}</p>`;
+    const textBody = `Hi ${user.name || 'there'}, the assessment "${assessment.title}" has been ${reassigned ? 'reassigned to you' : 'assigned to you'}.${from} ${when}`;
+    const result = await EmailService.sendEmail(user.email, subject, htmlBody, textBody);
+    return Boolean(result?.success);
+  } catch (e) {
+    console.warn('[assessments] assignment email failed:', e.message);
+    return false;
+  }
+}
+
+// Shared by assign + reassign: resolve and vet the requested employees against
+// the caller's company and (for managers) their own team.
+async function resolveAssignableUsers(req, assessment, userIds) {
+  const isAdminLike = req.user.role === 'admin' || req.user.role === 'superadmin';
+  const visible = isAdminLike ? null : await getVisibleEmployeeIds(req.user);
+  const myCompany = req.user.companyId || 'default';
+  const users = [];
+  const skipped = [];
+  const unique = [...new Set(userIds.map(String))];
+  const found = await Promise.all(unique.map(id => UserStore.getUserById(id).catch(() => null)));
+  unique.forEach((id, i) => {
+    const user = found[i];
+    if (!user) { skipped.push({ userId: id, reason: 'Employee not found' }); return; }
+    const userCompany = user.companyId || 'default';
+    const assessmentCompany = assessment.companyId || 'default';
+    if (userCompany !== assessmentCompany) { skipped.push({ userId: id, name: user.name, reason: 'Employee belongs to a different company' }); return; }
+    if (req.user.role !== 'superadmin' && myCompany !== 'default' && userCompany !== myCompany) { skipped.push({ userId: id, name: user.name, reason: 'Employee belongs to a different company' }); return; }
+    if (user.role === 'admin' || user.role === 'superadmin') { skipped.push({ userId: id, name: user.name, reason: 'Admins cannot be assigned assessments' }); return; }
+    if (user.status === 'inactive' || user.status === 'blocked') { skipped.push({ userId: id, name: user.name, reason: 'Employee account is not active' }); return; }
+    if (visible && !visible.has(id)) { skipped.push({ userId: id, name: user.name, reason: 'Employee is not on your team' }); return; }
+    users.push(user);
+  });
+  return { users, skipped };
+}
+
+function assertSameCompany(req, assessment) {
+  const myCompany = req.user.companyId || 'default';
+  if (req.user.role === 'superadmin') return true;
+  if (myCompany === 'default') return true;
+  return !assessment.companyId || assessment.companyId === myCompany;
+}
+
+/**
+ * POST /api/assessments/:id/assign
+ * Give an EXISTING assessment to more employees (a new joiner, or someone who
+ * needs it again) with their own start and end date. Same questions as everyone
+ * else on the assessment. Body:
+ *   { userIds: string[], startDate?: ISO, endDate: ISO, retake?: boolean, notify?: boolean }
+ * Employees already on the assessment and not yet completed are reassigned
+ * (fresh attempt, new dates); completed ones are skipped unless retake is true.
+ */
+router.post('/:id/assign', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const { userIds, startDate, endDate, retake = false, notify = true } = req.body || {};
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ success: false, data: null, error: 'Select at least one employee' });
+    }
+    if (userIds.length > 500) {
+      return res.status(400).json({ success: false, data: null, error: 'You can assign to at most 500 employees at a time' });
+    }
+    const win = parseWindowInput({ startDate, endDate });
+    if (win.error) return res.status(400).json({ success: false, data: null, error: win.error });
+
+    const assessment = await Assessments.getById(req.params.id);
+    if (!assessment || !assertSameCompany(req, assessment)) {
+      return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
+    }
+
+    const { users, skipped: vetoed } = await resolveAssignableUsers(req, assessment, userIds);
+    if (users.length === 0) {
+      return res.status(400).json({ success: false, data: { skipped: vetoed }, error: vetoed[0]?.reason || 'No eligible employees selected' });
+    }
+
+    const out = await assignEmployeesToAssessment({
+      assessmentId: assessment.id, users, startAt: win.startAt, dueAt: win.dueAt,
+      assignedBy: req.user.userId, retake: retake === true,
+    });
+    if (out.error) return res.status(out.status || 400).json({ success: false, data: null, error: out.error });
+
+    const byId = new Map(users.map(u => [u.userId || u.id, u]));
+    let notified = 0;
+    if (notify !== false) {
+      const results = await Promise.all([
+        ...out.added.map(x => notifyAssigned(assessment, byId.get(x.userId), win.startAt, win.dueAt, false)),
+        ...out.reassigned.map(x => notifyAssigned(assessment, byId.get(x.userId), win.startAt, win.dueAt, true)),
+      ]);
+      notified = results.filter(Boolean).length;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        added: out.added, reassigned: out.reassigned,
+        skipped: [...vetoed, ...out.skipped],
+        startAt: win.startAt, dueAt: win.dueAt, notified,
+      },
+      error: null,
+    });
+  } catch (e) {
+    console.error('[assessments assign]', e);
+    res.status(500).json({ success: false, data: null, error: 'Failed to assign the assessment' });
+  }
+});
+
+/**
+ * POST /api/assessments/:assessmentId/employees/:userId/reassign
+ * Give an employee who has NOT completed the assessment (not started, in
+ * progress, or the deadline passed) the same questions again with new dates.
+ * A completed employee needs { retake: true } and starts a new attempt; the
+ * old attempt and report stay on record.
+ * Body: { startDate?: ISO, endDate: ISO, retake?: boolean, notify?: boolean }
+ */
+router.post('/:assessmentId/employees/:userId/reassign', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const { assessmentId, userId } = req.params;
+    const { startDate, endDate, retake = false, notify = true } = req.body || {};
+    const win = parseWindowInput({ startDate, endDate });
+    if (win.error) return res.status(400).json({ success: false, data: null, error: win.error });
+
+    const assessment = await Assessments.getById(assessmentId);
+    if (!assessment || !assertSameCompany(req, assessment)) {
+      return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
+    }
+    const current = assessment.employeeAssignments?.find(ea => ea.userId === userId);
+    if (!current) return res.status(404).json({ success: false, data: null, error: 'Employee is not assigned to this assessment' });
+    if (current.status === 'submitted' && retake !== true) {
+      return res.status(400).json({ success: false, data: null, error: 'This employee already completed the assessment. Choose retake to give it again.' });
+    }
+
+    const { users, skipped } = await resolveAssignableUsers(req, assessment, [userId]);
+    if (users.length === 0) {
+      return res.status(403).json({ success: false, data: null, error: skipped[0]?.reason || 'You cannot reassign this employee' });
+    }
+
+    const out = await assignEmployeesToAssessment({
+      assessmentId, users, startAt: win.startAt, dueAt: win.dueAt,
+      assignedBy: req.user.userId, retake: retake === true,
+    });
+    if (out.error) return res.status(out.status || 400).json({ success: false, data: null, error: out.error });
+
+    const notified = notify !== false ? await notifyAssigned(assessment, users[0], win.startAt, win.dueAt, true) : false;
+    res.json({ success: true, data: { reassigned: out.reassigned, startAt: win.startAt, dueAt: win.dueAt, notified }, error: null });
+  } catch (e) {
+    console.error('[assessments reassign]', e);
+    res.status(500).json({ success: false, data: null, error: 'Failed to reassign the assessment' });
+  }
+});
+
 router.post('/:assessmentId/employees/:userId/remind', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const { assessmentId, userId } = req.params;
@@ -2256,11 +2538,10 @@ router.post('/:assessmentId/employees/:userId/remind', authenticate, requireRole
 
     // Same due_at-over-deadline priority as GET /my/submit — a 'relative'
     // scheduling policy's per-employee date, not the shared campaign date.
-    let effectiveDeadline = assessment.deadline;
-    if (assessment.questionBankVersionId) {
-      const eaa = await EmployeeAssessmentAssignments.getOne(assessmentId, userId).catch(() => null);
-      if (eaa?.due_at) effectiveDeadline = eaa.due_at;
-    }
+    const eaaForReminder = assessment.questionBankVersionId
+      ? await EmployeeAssessmentAssignments.getOne(assessmentId, userId).catch(() => null)
+      : null;
+    const effectiveDeadline = resolveWindow(assessment, assignment, eaaForReminder).dueAt;
     const employee = await UserStore.getUserById(userId);
     const deadlineText = effectiveDeadline ? `by ${new Date(effectiveDeadline).toLocaleString()}` : 'soon';
     const subject = `Reminder: "${assessment.title}" is waiting for you`;
@@ -2379,7 +2660,7 @@ router.post('/:id/submit', authenticate, async (req, res) => {
     // `deadline` — same resolution order as GET /my, so a submission is
     // never rejected/accepted inconsistently with what the employee was
     // shown as their deadline.
-    const effectiveDeadline = eaaRow?.due_at || assessment.deadline;
+    const effectiveDeadline = resolveWindow(assessment, assignment, eaaRow).dueAt;
     if (effectiveDeadline && new Date() > new Date(effectiveDeadline)) {
       return res.status(403).json({ success: false, data: null, error: 'Submission deadline has passed' });
     }

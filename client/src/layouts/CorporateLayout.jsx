@@ -17,7 +17,7 @@ import {
 
 const CorporateLayout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, logout, hasRole } = useAuth();
+  const { user, logout, hasRole, companyName } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -146,7 +146,9 @@ const CorporateLayout = ({ children }) => {
           {/* Logo */}
           <div className="flex items-center justify-center h-16 px-4 bg-gradient-to-r from-blue-600 to-indigo-600">
             <BuildingOfficeIcon className="w-8 h-8 text-white" />
-            <span className="ml-2 text-xl font-bold text-white">SkillForge</span>
+            <span className="ml-2 text-xl font-bold text-white truncate" title={companyName || 'SkillForge'}>
+              {companyName || 'SkillForge'}
+            </span>
           </div>
 
           {/* User info */}

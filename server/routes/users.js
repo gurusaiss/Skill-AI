@@ -157,8 +157,7 @@ const IMPORT_ROLES = ALL_VALID_ROLES.filter(r => r !== 'superadmin' && r !== 'ad
  */
 function validateImportRow(row, ctx) {
   const { existingEmails, existingEmpIds, seenInBatch, managerIndex, batchManagers } = ctx;
-  const errors = [];
-  const warnings = [];
+  const errors = [];  const warnings = [];
 
   const emailLc = row.email ? row.email.toLowerCase() : '';
   const isExisting = Boolean(emailLc && existingEmails.has(emailLc));
@@ -169,8 +168,17 @@ function validateImportRow(row, ctx) {
   else if (seenInBatch.has(emailLc)) errors.push('duplicate email in file');
   else seenInBatch.add(emailLc);
 
-  if (row.employeeId && existingEmpIds.has(row.employeeId) && !isExisting) {
-    errors.push('employee ID already exists');
+  if (row.employeeId) {
+    // Per-company, case-insensitive. An ID held by the SAME email (update row)
+    // is fine; held by anyone else, or repeated earlier in this file, is not.
+    const idLc = String(row.employeeId).toLowerCase();
+    const owner = existingEmpIds.get(idLc);
+    if (owner !== undefined && owner !== emailLc) {
+      errors.push('employee ID already exists');
+    } else if (ctx.seenEmpIds) {
+      if (ctx.seenEmpIds.has(idLc) && ctx.seenEmpIds.get(idLc) !== emailLc) errors.push('duplicate employee ID in file');
+      else ctx.seenEmpIds.set(idLc, emailLc);
+    }
   }
   if (row.role && !IMPORT_ROLES.includes(row.role.toLowerCase())) {
     errors.push(`invalid role "${row.role}" — use employee/manager/admin`);
@@ -219,8 +227,14 @@ function validateImportRow(row, ctx) {
  * file plus one user fetch — so validation costs the same whether the file
  * has 5 rows or 5000.
  */
-async function buildImportContext(rawRows) {
+async function buildImportContext(rawRows, companyId = 'default') {
   const allUsers = await UserStore.getAllUsers({});
+  // lowercased employee ID -> owner's lowercased email, scoped to ONE company
+  const empIdOwners = new Map();
+  for (const u of allUsers) {
+    if (!u.employeeId || (u.companyId || 'default') !== companyId) continue;
+    empIdOwners.set(String(u.employeeId).toLowerCase(), String(u.email || '').toLowerCase());
+  }
   const managerIndex = new Map();
   for (const u of allUsers) {
     const key = String(u.email || '').toLowerCase().trim();
@@ -242,7 +256,8 @@ async function buildImportContext(rawRows) {
     allUsers,
     managerIndex,
     existingEmails: new Set(managerIndex.keys()),
-    existingEmpIds: new Set(allUsers.map(u => u.employeeId).filter(Boolean)),
+    existingEmpIds: empIdOwners,
+    seenEmpIds: new Map(),
     seenInBatch: new Set(),
     batchManagers,
   };
@@ -458,6 +473,9 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
     const companyName = sanitizeText(raw.companyName, 200);
     const password    = raw.password; // passwords must not be stripped
     const managerEmail = sanitizeEmail(raw.managerEmail || '');
+    const employeeId  = sanitizeId(String(raw.employeeId ?? ''), 50);
+    const phone       = sanitizePhone(String(raw.phone ?? ''));
+    const status      = ['active', 'inactive', 'blocked'].includes(raw.status) ? raw.status : 'active';
 
     if (!email || !name) {
       return res.status(400).json({ success: false, data: null, error: { code: 'USER_INVALID_INPUT', message: 'Email and name are required' } });
@@ -472,6 +490,14 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
     const existing = await UserStore.getUserByEmail(email);
     if (existing) {
       return res.status(409).json({ success: false, data: null, error: { code: 'USER_EMAIL_EXISTS', message: 'Email already registered' } });
+    }
+
+    // Employee/manager ID must be unique within the company (case-insensitive)
+    if (employeeId) {
+      const dupId = await UserStore.getUserByEmployeeId(req.user.companyId || 'default', employeeId);
+      if (dupId) {
+        return res.status(409).json({ success: false, data: null, error: { code: 'EMPLOYEE_ID_EXISTS', message: 'Employee ID already in use' } });
+      }
     }
 
     // Non-admins (managers, including access-grant managers not currently
@@ -516,6 +542,9 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
       jobDescription: jobDescription || '',
       companyName: companyName || '',
       companyId: req.user.companyId || 'default',
+      employeeId,
+      phone,
+      status,
     });
     // Combined into ONE updateUser call — the file-fallback store does a
     // read-modify-write on the whole user record, so two concurrent
@@ -742,6 +771,33 @@ router.put('/:userId', authenticate, async (req, res) => {
       updates.email = trimmedEmail;
     }
 
+    // Employee / Manager ID — admin may edit anyone; a manager may edit
+    // other users they can access; a user may set their OWN ID only while it
+    // is still empty (afterwards: admin/manager only). Unique per company,
+    // case-insensitive. Empty string clears it (admin/manager only).
+    if (req.body.employeeId !== undefined) {
+      const newEmpId = sanitizeId(String(req.body.employeeId ?? ''), 50);
+      const curEmpId = user.employeeId || '';
+      if (newEmpId !== curEmpId) {
+        const mayEdit = isAdmin || (isManager && !isSelf) || (isSelf && !curEmpId);
+        if (!mayEdit) {
+          return res.status(403).json({ success: false, data: null, error: { code: 'AUTH_FORBIDDEN', message: 'Employee ID can only be changed by your admin' } });
+        }
+        if (newEmpId) {
+          const dup = await UserStore.getUserByEmployeeId(user.companyId || 'default', newEmpId);
+          if (dup && dup.userId !== userId) {
+            return res.status(409).json({ success: false, data: null, error: { code: 'EMPLOYEE_ID_EXISTS', message: 'Employee ID already in use' } });
+          }
+        }
+        updates.employeeId = newEmpId;
+      }
+    }
+
+    // Phone — self, admin or manager
+    if (req.body.phone !== undefined) {
+      updates.phone = sanitizePhone(String(req.body.phone ?? ''));
+    }
+
     // Role — admin only
     if (role !== undefined && isAdmin) {
       const validRoles = ALL_VALID_ROLES.filter(r => r !== 'superadmin');
@@ -755,8 +811,8 @@ router.put('/:userId', authenticate, async (req, res) => {
     }
 
     // Extended profile — admin or manager can set; self can set own
-    if (jobRole !== undefined) updates.jobRole = jobRole;
-    if (department !== undefined) updates.department = department;
+    if (jobRole !== undefined) updates.jobRole = typeof jobRole === 'string' ? jobRole : '';
+    if (department !== undefined) updates.department = typeof department === 'string' ? department : '';
     if (jobDescription !== undefined) updates.jobDescription = jobDescription; // no char limit
     if (companyName !== undefined) updates.companyName = companyName;
     if (onboardingComplete !== undefined && (isAdmin || isManager || isSelf)) {
@@ -1533,7 +1589,7 @@ router.post('/bulk-import/preview', authenticate, requireRole('admin', 'manager'
       return res.status(400).json({ success: false, error: 'File is empty or has no data rows' });
     }
 
-    const ctx = await buildImportContext(rawRows);
+    const ctx = await buildImportContext(rawRows, req.user.companyId || 'default');
     const dataRows = rawRows.filter(raw => !isCommentRow(raw));
 
     const preview = dataRows.map((raw, idx) => {
@@ -1578,7 +1634,7 @@ router.post('/bulk-import', authenticate, requireRole('admin', 'manager'), requi
     // Re-validate server-side with the SAME validator the preview used, so a
     // hand-crafted or stale client payload cannot bypass the rules and so
     // "valid in preview" can never turn into a silent skip on import.
-    const ctx = await buildImportContext(rows);
+    const ctx = await buildImportContext(rows, companyId);
     const allUsers = ctx.allUsers;
     const existingEmails = ctx.existingEmails;
 

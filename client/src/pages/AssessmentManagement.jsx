@@ -4,7 +4,10 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import { authFetch } from '../utils/authFetch.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
 import ReminderButton from '../components/ReminderButton.jsx';
+import StatCard from '../components/StatCard.jsx';
 import { useNotification } from '../contexts/NotificationContext.jsx';
+import { ASSESSMENT_DURATION_MINUTES, normalizeDuration, gradeForReport } from '../utils/assessmentRules.js';
+import { AssignEmployeesModal, ReassignModal } from '../components/AssignAssessmentModals.jsx';
 
 const QUESTION_TYPE_OPTIONS = [
   { value: 'mcq', label: 'MCQ' },
@@ -130,7 +133,7 @@ const DEFAULT_SETTINGS = {
   passPercentage: 80,
   reattempts: 0,
   allowReattemptToBeatScore: false,
-  timing: { type: 'timed', totalMinutes: 30 },
+  timing: { type: 'timed', totalMinutes: ASSESSMENT_DURATION_MINUTES },
   navigation: { forwardOnly: false },
   results: { hideFromParticipants: false, revealOnSubmission: false, revealAfterEachQuestion: false, revealCorrectOption: false },
   completion: { mandatory: false, markCompleteOnlyIfPassed: false, allowSubmitWithoutAnsweringAll: false },
@@ -153,7 +156,7 @@ const EMPTY_MODAL = {
   mediumPct: 33,
   hardPct: 33,
   assessmentDate: '',
-  duration: 30,
+  duration: ASSESSMENT_DURATION_MINUTES,
   deadline: '',
   title: '',
   assessmentType: 'Skill Assessment',
@@ -190,6 +193,9 @@ export default function AssessmentManagement() {
 
   // Detail view
   const [viewDetail, setViewDetail] = useState(null);
+  // Giving an existing assessment to more employees / reassigning one employee.
+  const [assignModal, setAssignModal] = useState(null);       // { assessment|null }
+  const [reassignTarget, setReassignTarget] = useState(null); // { assessment, ea }
   const [detailTab, setDetailTab] = useState('overview');
   const [viewReport, setViewReport] = useState(null);
   const [assigningModuleId, setAssigningModuleId] = useState(null);
@@ -292,6 +298,20 @@ export default function AssessmentManagement() {
       showToast(e.message || 'Failed to load data', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Reload one assessment (with each employee's own dates and status) after an
+  // assign/reassign, and keep the list and the open detail view in step.
+  const refreshAssessment = async (assessmentId) => {
+    try {
+      const fresh = await authFetch(`/api/assessments/${assessmentId}`);
+      if (fresh && fresh.id) {
+        setAssessments(prev => prev.map(a => (a.id === fresh.id ? { ...a, ...fresh } : a)));
+        setViewDetail(prev => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
+      }
+    } catch (e) {
+      loadAll();
     }
   };
 
@@ -443,7 +463,7 @@ export default function AssessmentManagement() {
     setEditForm({
       title: a.title || '',
       assessmentDate: a.assessmentDate ? a.assessmentDate.split('T')[0] : '',
-      duration: a.duration || 30,
+      duration: normalizeDuration(a.duration),
       deadline: a.deadline ? a.deadline.replace('Z', '') : '',
     });
   };
@@ -587,6 +607,14 @@ export default function AssessmentManagement() {
               {downloadingAll ? 'Downloading…' : 'Download All Reports'}
             </button>
             <button
+              onClick={() => setAssignModal({ assessment: null })}
+              disabled={!hasFeaturePermission('assessments.create') || assessments.length === 0}
+              title={!hasFeaturePermission('assessments.create') ? "You don't have permission to assign assessments" : 'Give an existing assessment to employees'}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold transition-all shadow-lg shadow-sky-500/20"
+            >
+              ↻ Use Existing
+            </button>
+            <button
               onClick={() => setShowManualModal(true)}
               disabled={!hasFeaturePermission('assessments.create')}
               title={!hasFeaturePermission('assessments.create') ? "You don't have permission to create assessments" : undefined}
@@ -720,7 +748,7 @@ export default function AssessmentManagement() {
                     </button>
                     <p className="text-xs text-slate-500 mt-0.5">
                       {a.questionCount ? `${a.questionCount} Qs` : ''}
-                      {a.duration ? ` · ${a.duration} min` : ''}
+                      {` · ${normalizeDuration(a.duration)} min`}
                       {a.assessmentDate ? ` · ${new Date(a.assessmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}` : ''}
                     </p>
                   </div>
@@ -1149,7 +1177,7 @@ export default function AssessmentManagement() {
                     min={5}
                     max={180}
                     value={modal.duration}
-                    onChange={e => updateModal({ duration: Math.max(5, parseInt(e.target.value) || 30) })}
+                    onChange={e => updateModal({ duration: Math.max(5, parseInt(e.target.value) || ASSESSMENT_DURATION_MINUTES) })}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
@@ -1337,7 +1365,7 @@ export default function AssessmentManagement() {
                   min={5}
                   max={180}
                   value={editForm.duration}
-                  onChange={e => setEditForm(f => ({ ...f, duration: parseInt(e.target.value) || 30 }))}
+                  onChange={e => setEditForm(f => ({ ...f, duration: parseInt(e.target.value) || ASSESSMENT_DURATION_MINUTES }))}
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
                 />
               </div>
@@ -1609,7 +1637,7 @@ export default function AssessmentManagement() {
                   .map((ea, i) => {
                     const sc = ea.scoring || {};
                     const score = sc.score ?? ea.score;
-                    const grade = sc.grade ?? ea.grade;
+                    const grade = gradeForReport(sc) || (sc.grade ?? ea.grade);
                     const strengths = sc.strengths || [];
                     const weakAreas = sc.weakAreas || [];
                     const missing = sc.missingCompetencies || [];
@@ -1718,15 +1746,23 @@ export default function AssessmentManagement() {
         // fallback every submitted employee silently scored as "0%", making
         // Avg Score show "—" and Pass%/Fail% show 0%/100% regardless of the
         // employees' real scores. Matches the per-row display's own fallback below.
-        const scoreOf = (ea) => ea.score ?? ea.percentage ?? ea.scoring?.score ?? null;
-        const scores = submitted.map(scoreOf).filter(s => s != null && s > 0);
-        const passCount = submitted.filter(ea => (scoreOf(ea) ?? 0) >= passThreshold).length;
+        const scoreOf = (ea) => {
+          const v = ea.score ?? ea.percentage ?? ea.scoring?.rawScore ?? ea.scoring?.score ?? null;
+          const n = Number(v);
+          return v == null || !Number.isFinite(n) ? null : n;
+        };
+        // A legitimate 0% still counts: only missing scores are excluded.
+        const scores = submitted.map(scoreOf).filter(s => s != null);
+        // Each submission is judged against the threshold stored with it, falling
+        // back to the assessment's configured pass percentage.
+        const thresholdOf = (ea) => ea.scoring?.passThreshold ?? passThreshold;
+        const passCount = submitted.filter(ea => (scoreOf(ea) ?? 0) >= thresholdOf(ea)).length;
         const failCount = submitted.length - passCount;
         const passRate = submitted.length ? Math.round(passCount / submitted.length * 100) : 0;
         const failRate = submitted.length ? Math.round(failCount / submitted.length * 100) : 0;
         const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-        const highScore = scores.length ? Math.max(...scores) : 0;
-        const lowScore = scores.length ? Math.min(...scores) : 0;
+        const highScore = scores.length ? Math.round(Math.max(...scores)) : 0;
+        const lowScore = scores.length ? Math.round(Math.min(...scores)) : 0;
         const jobRoles = [...new Set(empAssignments.map(ea => ea.jobRole).filter(Boolean))];
 
         const doDetailExport = (fmt) => {
@@ -1786,25 +1822,23 @@ export default function AssessmentManagement() {
                   {viewDetail.assessmentDate && <span>Start Date: <span className="text-white font-semibold">{new Date(viewDetail.assessmentDate).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })}</span></span>}
                   {viewDetail.deadline && <span>Deadline: <span className="text-amber-300 font-semibold">{new Date(viewDetail.deadline).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })}</span></span>}
                   {viewDetail.questionCount && <span>Questions: <span className="text-white font-semibold">{viewDetail.questionCount} per employee</span></span>}
-                  {viewDetail.duration && <span>Duration: <span className="text-white font-semibold">{viewDetail.duration} min</span></span>}
+                  <span>Duration: <span className="text-white font-semibold">{normalizeDuration(viewDetail.duration)} min</span></span>
                 </div>
               </div>
 
               {/* Stats cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
                 {[
-                  { label: 'Total Assigned', value: empAssignments.length, color: 'text-indigo-300', bg: 'bg-indigo-500/5 border-indigo-500/25' },
-                  { label: 'Completed', value: submitted.length, color: 'text-emerald-300', bg: 'bg-emerald-500/5 border-emerald-500/25' },
-                  { label: 'Pending', value: empAssignments.length - submitted.length, color: 'text-amber-300', bg: 'bg-amber-500/5 border-amber-500/25' },
-                  { label: 'Avg Score', value: scores.length ? `${avgScore}%` : '—', color: 'text-cyan-300', bg: 'bg-cyan-500/5 border-cyan-500/25' },
-                  { label: 'Pass %', value: submitted.length ? `${passRate}%` : '—', color: 'text-teal-300', bg: 'bg-teal-500/5 border-teal-500/25' },
-                  { label: 'Fail %', value: submitted.length ? `${failRate}%` : '—', color: 'text-red-300', bg: 'bg-red-500/5 border-red-500/25' },
-                  { label: 'Pass Threshold', value: `${passThreshold}%`, color: 'text-slate-300', bg: 'bg-slate-500/5 border-slate-500/25' },
+                  { label: 'Total Assigned', value: empAssignments.length, border: 'border-indigo-500/25', bg: 'bg-indigo-500/5', text: 'text-indigo-300', description: 'Employees given this assessment', tooltip: 'Number of employees this assessment has been assigned to. Total Assigned = Completed + Pending.' },
+                  { label: 'Completed', value: submitted.length, border: 'border-emerald-500/25', bg: 'bg-emerald-500/5', text: 'text-emerald-300', description: 'Employees who submitted', tooltip: 'Assigned employees whose assessment status is submitted.' },
+                  { label: 'Pending', value: empAssignments.length - submitted.length, border: 'border-amber-500/25', bg: 'bg-amber-500/5', text: 'text-amber-300', description: 'Not submitted yet', tooltip: 'Total Assigned minus Completed: employees who have not submitted (including expired or not yet open).' },
+                  { label: 'Avg Score', value: scores.length ? `${avgScore}%` : '—', border: 'border-cyan-500/25', bg: 'bg-cyan-500/5', text: 'text-cyan-300', description: 'Mean score of submissions', tooltip: 'Mean score of all submissions that have a score. A score of 0% is included. Shows a dash until someone submits.' },
+                  { label: 'Pass %', value: submitted.length ? `${passRate}%` : '—', border: 'border-teal-500/25', bg: 'bg-teal-500/5', text: 'text-teal-300', description: 'Submissions at or above pass mark', tooltip: 'Submissions scoring at or above their pass threshold, divided by all submissions. Uses the threshold saved with each submission, else the assessment pass mark.' },
+                  { label: 'Fail %', value: submitted.length ? `${failRate}%` : '—', border: 'border-red-500/25', bg: 'bg-red-500/5', text: 'text-red-300', description: 'Submissions below pass mark', tooltip: 'Submissions below their pass threshold divided by all submissions. Pass % + Fail % = 100%.' },
+                  { label: 'Pass Threshold', value: `${passThreshold}%`, border: 'border-slate-500/25', bg: 'bg-slate-500/5', text: 'text-slate-300', description: 'Minimum score to pass', tooltip: "This assessment's configured pass percentage (default 80%)." },
                 ].map((m, i) => (
-                  <div key={i} className={`rounded-xl border ${m.bg} px-4 py-3 text-center`}>
-                    <p className={`text-xl font-black ${m.color}`}>{m.value}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">{m.label}</p>
-                  </div>
+                  <StatCard key={i} label={m.label} value={m.value} description={m.description} tooltip={m.tooltip}
+                    borderClass={m.border} bgClass={m.bg} textClass={m.text} className="text-center" />
                 ))}
               </div>
 
@@ -1827,12 +1861,20 @@ export default function AssessmentManagement() {
                     Employees Assigned to this Assessment
                     <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 text-xs font-bold">{empAssignments.length}</span>
                   </h3>
+                  <button
+                    onClick={() => setAssignModal({ assessment: viewDetail })}
+                    disabled={!hasFeaturePermission('assessments.create') || viewDetail.isActive === false}
+                    title={viewDetail.isActive === false ? 'This assessment was replaced by a newer version' : 'Add employees to this assessment with their own start and end date'}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
+                  >
+                    + Assign employees
+                  </button>
                 </div>
                 <div className="rounded-2xl border border-slate-700/40 overflow-hidden">
                   {/* Table header */}
                   <div className="hidden lg:grid px-4 py-3 bg-slate-800/50 border-b border-slate-700/40 text-xs font-bold text-slate-500 uppercase tracking-wider"
-                    style={{ gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 0.8fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr 1.1fr' }}>
-                    {['Name','Emp ID','Email','Group','Manager','Status','Score','%','Grade','Duration','Download','Reminder'].map(h => (
+                    style={{ gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 1.1fr 0.5fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr 1.1fr 1fr' }}>
+                    {['Name','Emp ID','Email','Group','Manager','Status','Done','Score','%','Grade','Duration','Download','Reminder','Reassign'].map(h => (
                       <span key={h}>{h}</span>
                     ))}
                   </div>
@@ -1846,12 +1888,12 @@ export default function AssessmentManagement() {
                         const managerEmp = group ? employees.find(e => e.userId === group.managerId) : (emp?.managerId ? employees.find(e => e.userId === emp.managerId) : null);
                         const sc = ea.scoring || {};
                         const scorePct = ea.score ?? ea.percentage ?? sc.score ?? null;
-                        const grade = ea.grade ?? sc.grade ?? null;
+                        const grade = gradeForReport(sc) || (ea.grade ?? sc.grade ?? null);
                         const completionMs = ea.startedAt && ea.submittedAt ? new Date(ea.submittedAt) - new Date(ea.startedAt) : null;
-                        const durationStr = completionMs ? `${Math.round(completionMs / 60000)} min` : (viewDetail.duration ? `${viewDetail.duration} min` : '—');
+                        const durationStr = completionMs ? `${Math.round(completionMs / 60000)} min` : `${normalizeDuration(viewDetail.duration)} min`;
                         return (
                           <div key={i} className="px-4 py-3 hover:bg-slate-800/20 transition-colors"
-                            style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 0.8fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr 1.1fr', alignItems: 'center', gap: '8px' }}>
+                            style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 1.1fr 0.5fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr 1.1fr 1fr', alignItems: 'center', gap: '8px' }}>
                             {/* Name */}
                             <div className="min-w-0">
                               <p className="text-sm font-semibold text-white truncate">{ea.userName || emp?.name || ea.userId}</p>
@@ -1865,8 +1907,23 @@ export default function AssessmentManagement() {
                             <span className="text-xs text-slate-400 truncate">{group?.name || '—'}</span>
                             {/* Manager */}
                             <span className="text-xs text-slate-400 truncate">{managerEmp?.name || '—'}</span>
-                            {/* Status */}
-                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border capitalize w-fit ${STATUS_COLORS[ea.status || 'assigned']}`}>{ea.status || 'assigned'}</span>
+                            {/* Status + this employee's own window */}
+                            <div className="min-w-0">
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border capitalize w-fit inline-block ${STATUS_COLORS[ea.status || 'assigned'] || STATUS_COLORS.pending}`}>{(ea.status || 'assigned').replace('_', ' ')}</span>
+                              {(ea.dueAt || ea.startAt) && (
+                                <p className="text-[10px] text-slate-500 mt-1 truncate" title={`${ea.startAt ? 'From ' + new Date(ea.startAt).toLocaleString() : ''} ${ea.dueAt ? 'Until ' + new Date(ea.dueAt).toLocaleString() : ''}`}>
+                                  {ea.dueAt ? `Due ${new Date(ea.dueAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
+                                </p>
+                              )}
+                            </div>
+                            {/* Done: tick when submitted, cross otherwise */}
+                            <span
+                              className={`text-lg font-black ${ea.status === 'submitted' ? 'text-emerald-400' : 'text-red-400'}`}
+                              title={ea.status === 'submitted' ? 'Completed' : 'Not completed'}
+                              aria-label={ea.status === 'submitted' ? 'Completed' : 'Not completed'}
+                            >
+                              {ea.status === 'submitted' ? '✓' : '✗'}
+                            </span>
                             {/* Score */}
                             <span className="text-xs font-bold text-white">
                               {ea.status === 'submitted' && sc.correct != null ? `${sc.correct}/${sc.total ?? ea.questions?.length ?? 0}` : '—'}
@@ -1906,6 +1963,17 @@ export default function AssessmentManagement() {
                               lastSentAt={reminderSentAt[`${viewDetail.id}:${ea.userId}`]}
                               onSent={(sentAt) => setReminderSentAt(prev => ({ ...prev, [`${viewDetail.id}:${ea.userId}`]: sentAt }))}
                             />
+                            {/* Reassign: only for employees who have not completed it */}
+                            {ea.status !== 'submitted' ? (
+                              <button
+                                onClick={() => setReassignTarget({ assessment: viewDetail, ea })}
+                                disabled={!hasFeaturePermission('assessments.create')}
+                                title="Give this employee the same assessment again with new dates"
+                                className="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-300 text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-colors w-fit"
+                              >
+                                ↻ Reassign
+                              </button>
+                            ) : <span className="text-xs text-slate-600">—</span>}
                           </div>
                         );
                       })}
@@ -1922,7 +1990,7 @@ export default function AssessmentManagement() {
                     {[
                       ['Question Types', viewDetail.questionTypes?.join(', ') || '—'],
                       ['Question Order', viewDetail.settings.questionOrder || 'Same'],
-                      ['Timing', viewDetail.settings.timing?.type === 'timed' ? `${viewDetail.settings.timing.totalMinutes} min` : 'Untimed'],
+                      ['Timing', viewDetail.settings.timing?.type === 'timed' ? `${normalizeDuration(viewDetail.settings.timing.totalMinutes)} min` : 'Untimed'],
                       ['Reattempts', viewDetail.settings.reattempts === -1 ? 'Unlimited' : viewDetail.settings.reattempts === 0 ? 'None' : String(viewDetail.settings.reattempts ?? '—')],
                       ['Pass Threshold', `${passThreshold}%`],
                       ['Mandatory', viewDetail.settings.completion?.mandatory ? 'Yes' : 'No'],
@@ -1939,6 +2007,28 @@ export default function AssessmentManagement() {
           </div>
         );
       })()}
+
+      {assignModal && (
+        <AssignEmployeesModal
+          assessments={assessments}
+          assessment={assignModal.assessment}
+          employees={employees}
+          onClose={() => setAssignModal(null)}
+          onDone={refreshAssessment}
+          showToast={showToast}
+        />
+      )}
+
+      {reassignTarget && (
+        <ReassignModal
+          assessment={reassignTarget.assessment}
+          ea={reassignTarget.ea}
+          employeeName={reassignTarget.ea.userName || employees.find(e => e.userId === reassignTarget.ea.userId)?.name || 'this employee'}
+          onClose={() => setReassignTarget(null)}
+          onDone={refreshAssessment}
+          showToast={showToast}
+        />
+      )}
 
       {showManualModal && (
         <ManualAssessmentModal
@@ -2068,7 +2158,7 @@ function AssessmentSettingsPanel({ settings, onChange }) {
             {s.timing.type==='timed' && (
               <div className="flex items-center gap-2">
                 <input type="number" min={1} max={300} value={s.timing.totalMinutes}
-                  onChange={e => upd('timing.totalMinutes', parseInt(e.target.value)||30)}
+                  onChange={e => upd('timing.totalMinutes', parseInt(e.target.value)||ASSESSMENT_DURATION_MINUTES)}
                   className="w-20 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm text-center focus:outline-none focus:border-indigo-500" />
                 <span className="text-slate-400 text-sm">Minutes</span>
               </div>
@@ -2140,7 +2230,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
   const [title, setTitle] = useState('');
   const [assessmentDate, setAssessmentDate] = useState(new Date().toISOString().split('T')[0]);
   const [assessmentType, setAssessmentType] = useState('Skill Assessment');
-  const [duration, setDuration] = useState(30);
+  const [duration, setDuration] = useState(ASSESSMENT_DURATION_MINUTES);
   const [deadline, setDeadline] = useState('');
   const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS });
   const [creating, setCreating] = useState(false);
@@ -2395,7 +2485,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Duration (min)</label>
-                  <input type="number" min={5} max={180} value={duration} onChange={e => setDuration(parseInt(e.target.value) || 30)}
+                  <input type="number" min={5} max={180} value={duration} onChange={e => setDuration(parseInt(e.target.value) || ASSESSMENT_DURATION_MINUTES)}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none" />
                 </div>
               </div>

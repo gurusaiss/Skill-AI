@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS users (
   UNIQUE KEY uq_users_email (email),
   KEY idx_users_google_id (google_id),
   KEY idx_users_company_id (company_id),
+  KEY idx_users_company_employee_id (company_id, employee_id),
   KEY idx_users_role (role),
   KEY idx_users_manager_id (manager_id),
   CONSTRAINT fk_users_manager FOREIGN KEY (manager_id) REFERENCES users(user_id) ON DELETE SET NULL
@@ -523,6 +524,16 @@ CREATE TABLE IF NOT EXISTS assessment_thresholds (
 -- Distinct from `modules` (Tier C) — this is the JSONB-blob-pattern
 -- generated-content table, an older/parallel design for the same concept.
 CREATE TABLE IF NOT EXISTS generated_modules (
+  id           VARCHAR(191) PRIMARY KEY,
+  data         JSON      NOT NULL,
+  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- Immutable quarterly snapshots of a role's question bank (Role Library
+-- "New Generation"). JSONB-blob pattern; doc holds roleId/label/questions.
+CREATE TABLE IF NOT EXISTS question_bank_archives (
   id           VARCHAR(191) PRIMARY KEY,
   data         JSON      NOT NULL,
   created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

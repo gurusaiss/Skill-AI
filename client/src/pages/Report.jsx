@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
 import { useNotification } from '../contexts/NotificationContext.jsx';
+import { gradeForReport } from '../utils/assessmentRules.js';
 
 // Every other page that makes a raw fetch (not via authFetch, which has its
 // own internal BASE_URL) declares this locally — this file was missing it
@@ -190,7 +191,7 @@ function AdminReportView({ user, navigate }) {
         completedDate: r.submittedAt || r.completedAt || null,
         manager: employeeMeta[uid]?.manager || '—',
         group: employeeMeta[uid]?.group || '—',
-        grade: r.grade || '',
+        grade: gradeForReport(r) || r.grade || '',
         strengths: (r.strengths || []).join('; '),
         weaknesses: (r.weakAreas || []).join('; '),
         skillGaps: (r.missingCompetencies || []).join('; '),
@@ -286,7 +287,7 @@ function AdminReportView({ user, navigate }) {
         r.status,
         r.score != null ? `${Math.round(r.score)}%` : '—',
         r.progress != null ? `${Math.round(r.progress)}%` : '—',
-        r.grade || '—',
+        gradeForReport(r) || r.grade || '—',
         r.assignedDate ? new Date(r.assignedDate).toLocaleDateString() : '—',
         r.deadline ? new Date(r.deadline).toLocaleDateString() : '—',
         r.completedDate ? new Date(r.completedDate).toLocaleDateString() : '—',

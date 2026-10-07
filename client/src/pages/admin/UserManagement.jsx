@@ -97,6 +97,16 @@ function getStatusBadge(s) {
   if (s === 'blocked')  return 'bg-red-500/20 text-red-400 border-red-500/30';
   return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
 }
+// "Manager ID" for manager-tier roles, "Employee ID" for everyone else
+// (admins included). Both are stored in the same employeeId field.
+function idLabel(role) {
+  return MANAGER_TIER_ROLES.includes(role) ? 'Manager ID' : 'Employee ID';
+}
+function formatDateTime(d) {
+  if (!d) return 'Never';
+  const dt = new Date(d);
+  return isNaN(dt) ? 'Never' : dt.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
 function getAvatarColor(role) {
   if (role === 'admin') return 'bg-purple-600/30 border-purple-500/40 text-purple-300';
   if (MANAGER_TIER_ROLES.includes(role)) return 'bg-indigo-600/30 border-indigo-500/40 text-indigo-300';
@@ -203,18 +213,38 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
                 {user.onboardingComplete ? '✓ Complete' : '⏳ Pending'}
               </p>
             </div>
-            {user.jobRole && (
-              <div className="bg-slate-900/60 rounded-xl p-3">
-                <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Job Role</p>
-                <p className="text-white text-sm font-medium">{user.jobRole}</p>
-              </div>
-            )}
-            {user.department && (
-              <div className="bg-slate-900/60 rounded-xl p-3">
-                <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Department</p>
-                <p className="text-white text-sm font-medium">{user.department}</p>
-              </div>
-            )}
+            <div className="bg-slate-900/60 rounded-xl p-3">
+              <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">{idLabel(user.role)}</p>
+              <p className="text-white text-sm font-medium font-mono">{user.employeeId || '—'}</p>
+            </div>
+            <div className="bg-slate-900/60 rounded-xl p-3">
+              <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Status</p>
+              <p className="text-sm font-medium"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold border capitalize ${getStatusBadge(user.status || 'active')}`}>{user.status || 'active'}</span></p>
+            </div>
+            <div className="bg-slate-900/60 rounded-xl p-3">
+              <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Phone</p>
+              <p className="text-white text-sm font-medium">{user.phone || '—'}</p>
+            </div>
+            <div className="bg-slate-900/60 rounded-xl p-3">
+              <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Company</p>
+              <p className="text-white text-sm font-medium">{user.companyName || '—'}</p>
+            </div>
+            <div className="bg-slate-900/60 rounded-xl p-3">
+              <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Last Login</p>
+              <p className="text-slate-200 text-sm font-medium">{formatDateTime(user.lastLogin)}</p>
+            </div>
+            <div className="bg-slate-900/60 rounded-xl p-3">
+              <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Reports To</p>
+              <p className="text-white text-sm font-medium">{manager ? (manager.name || manager.email || 'Unknown') : '—'}</p>
+            </div>
+            <div className="bg-slate-900/60 rounded-xl p-3">
+              <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Job Role</p>
+              <p className="text-white text-sm font-medium">{user.jobRole || '—'}</p>
+            </div>
+            <div className="bg-slate-900/60 rounded-xl p-3">
+              <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Department</p>
+              <p className="text-white text-sm font-medium">{user.department || '—'}</p>
+            </div>
           </div>
 
           {/* JD Section — only show if JD exists */}
@@ -352,7 +382,10 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
     department: user.department || '',
     jobDescription: user.jobDescription || '',
     companyName: user.companyName || '',
+    employeeId: user.employeeId || '',
+    phone: user.phone || '',
   });
+  const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [resending, setResending] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -513,7 +546,16 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
   };
 
   const handleSave = async () => {
-    if (!form.name.trim()) { setToast({ message: 'Name is required', type: 'error' }); return; }
+    setFormError('');
+    if (!form.name.trim()) { setFormError('Name is required'); setToast({ message: 'Name is required', type: 'error' }); return; }
+    if (form.employeeId && !/^[A-Za-z0-9_-]+$/.test(form.employeeId.trim())) {
+      const m = 'ID may only contain letters, numbers, dashes and underscores';
+      setFormError(m); setToast({ message: m, type: 'error' }); return;
+    }
+    if (form.phone && !/^[0-9+\-() ]{5,30}$/.test(form.phone.trim())) {
+      const m = 'Phone may only contain digits, spaces, + - ( )';
+      setFormError(m); setToast({ message: m, type: 'error' }); return;
+    }
     setSaving(true);
     try {
       // Update profile (all fields in one call)
@@ -522,6 +564,8 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
         body: JSON.stringify({
           name: form.name.trim(),
           email: form.email.trim(),
+          employeeId: form.employeeId.trim(),
+          phone: form.phone.trim(),
           status: form.status,
           jobRole: form.jobRole.trim(),
           department: form.department.trim(),
@@ -539,6 +583,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
       onSaved();
       onClose();
     } catch (err) {
+      setFormError(err.message || 'Failed to save');
       setToast({ message: err.message, type: 'error' });
     } finally {
       setSaving(false);
@@ -726,6 +771,21 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                 <FieldLabel>Email</FieldLabel>
                 <input type="email" aria-label="Email" value={form.email} onChange={f('email')} className={inputCls} placeholder="john@company.com" />
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel>{idLabel(form.role)}</FieldLabel>
+                  <input type="text" aria-label={idLabel(form.role)} value={form.employeeId} onChange={f('employeeId')} maxLength={50} className={inputCls} placeholder="e.g. EMP-1001" autoComplete="off" />
+                </div>
+                <div>
+                  <FieldLabel>Phone</FieldLabel>
+                  <input type="tel" aria-label="Phone" value={form.phone} onChange={f('phone')} maxLength={30} className={inputCls} placeholder="+1 555 123 4567" autoComplete="off" />
+                </div>
+              </div>
+
+              {formError && (
+                <div role="alert" className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm">{formError}</div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 {isAdmin && (
@@ -1139,7 +1199,8 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
 // ─── Create User Modal ────────────────────────────────────────────────────────
 
 function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users = [] }) {
-  const [form, setForm] = useState({ name: '', email: '', role: 'employee', jobRole: '', department: '', jobDescription: '', companyName: '', managerEmail: '' });
+  const [form, setForm] = useState({ name: '', email: '', role: 'employee', jobRole: '', department: '', jobDescription: '', companyName: '', managerEmail: '', employeeId: '', phone: '', status: 'active' });
+  const [formError, setFormError] = useState('');
   const managerOptions = useMemo(() => users.filter(u => MANAGER_TIER_ROLES.includes(u.role) || u.role === 'admin' || (u.accesses || []).includes('manager')), [users]);
   const [saving, setSaving] = useState(false);
   const [roleOptions, setRoleOptions] = useState([]);
@@ -1172,16 +1233,28 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
       setToast({ message: 'A manager is required for employee accounts', type: 'error' });
       return;
     }
+    setFormError('');
+    if (form.employeeId && !/^[A-Za-z0-9_-]+$/.test(form.employeeId.trim())) {
+      const m = 'ID may only contain letters, numbers, dashes and underscores';
+      setFormError(m); setToast({ message: m, type: 'error' }); return;
+    }
+    if (form.phone && !/^[0-9+\-() ]{5,30}$/.test(form.phone.trim())) {
+      const m = 'Phone may only contain digits, spaces, + - ( )';
+      setFormError(m); setToast({ message: m, type: 'error' }); return;
+    }
     setSaving(true);
     try {
       const user = await authFetch('/api/users', {
         method: 'POST',
-        body: JSON.stringify({ ...form, name: form.name.trim(), email: form.email.trim() }),
+        body: JSON.stringify({ ...form, name: form.name.trim(), email: form.email.trim(), employeeId: form.employeeId.trim(), phone: form.phone.trim() }),
       });
-      // Add additional job roles after user creation
+      // Add additional job roles after user creation. The API returns the
+      // new user's id as `userId` (authFetch unwraps `data`).
+      const newUserId = user?.userId ?? user?.id ?? user?.user?.userId;
       for (const ar of additionalRoles) {
+        if (!newUserId) break;
         try {
-          await authFetch(`/api/users/${user.id}/job-roles`, {
+          await authFetch(`/api/users/${newUserId}/job-roles`, {
             method: 'POST',
             body: JSON.stringify({ roleName: ar.roleName, department: ar.department }),
           });
@@ -1191,7 +1264,7 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
       if (user.managerError) setToast({ message: user.managerError, type: 'error' });
       // Show credentials instead of closing immediately — admin picks what to share.
       setCreatedResult({ user, tempPassword: user.tempPassword, activationUrl: user.activationUrl });
-    } catch (err) { setToast({ message: err.message, type: 'error' }); }
+    } catch (err) { setFormError(err.message || 'Failed to create user'); setToast({ message: err.message, type: 'error' }); }
     finally { setSaving(false); }
   };
 
@@ -1239,6 +1312,18 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
                   <span className="text-xs text-slate-500 shrink-0">Role</span>
                   <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border capitalize ${getRoleBadge(user.role)}`}>{user.role}</span>
                 </div>
+                {user.employeeId && (
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500 shrink-0">{idLabel(user.role)}</span>
+                    <span className="text-sm text-slate-300 text-right font-mono">{user.employeeId}</span>
+                  </div>
+                )}
+                {user.phone && (
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500 shrink-0">Phone</span>
+                    <span className="text-sm text-slate-300 text-right">{user.phone}</span>
+                  </div>
+                )}
                 {user.jobRole && (
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-xs text-slate-500 shrink-0">Job Role</span>
@@ -1345,6 +1430,27 @@ function CreateUserModal({ onClose, onCreated, setToast, currentUserRole, users 
                 <option value="admin">Admin</option>
               </select>
             </div>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <FieldLabel>{idLabel(form.role)}</FieldLabel>
+              <input type="text" aria-label={idLabel(form.role)} value={form.employeeId} onChange={f('employeeId')} maxLength={50} className={inputCls} placeholder="e.g. EMP-1001" autoComplete="off" />
+            </div>
+            <div>
+              <FieldLabel>Phone</FieldLabel>
+              <input type="tel" aria-label="Phone" value={form.phone} onChange={f('phone')} maxLength={30} className={inputCls} placeholder="+1 555 123 4567" autoComplete="off" />
+            </div>
+          </div>
+          <div>
+            <FieldLabel>Status</FieldLabel>
+            <select value={form.status} onChange={f('status')} aria-label="Status" className={selectCls}>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="blocked">Blocked</option>
+            </select>
+          </div>
+          {formError && (
+            <div role="alert" className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm">{formError}</div>
           )}
           {form.role === 'employee' && (
             <div>
@@ -2197,7 +2303,7 @@ export default function UserManagement() {
     const list = activeTab === 'staff' ? staffUsers : employeeUsers;
     const q = search.toLowerCase();
     let filtered = q
-      ? list.filter(u => u.name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || u.jobRole?.toLowerCase().includes(q) || u.department?.toLowerCase().includes(q))
+      ? list.filter(u => u.name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || u.jobRole?.toLowerCase().includes(q) || u.department?.toLowerCase().includes(q) || u.employeeId?.toLowerCase().includes(q) || u.phone?.toLowerCase().includes(q))
       : list;
     if (activeTab === 'employees') {
       if (filterDept !== 'all') filtered = filtered.filter(u => u.department === filterDept);
@@ -2331,7 +2437,7 @@ export default function UserManagement() {
             <div className="flex-1 relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
               <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Search name, email, job role, department…"
+                placeholder="Search name, ID, email, phone, job role, department…"
                 className="w-full pl-9 pr-4 py-2.5 bg-slate-800 border border-slate-700/60 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 transition-colors" />
             </div>
 
@@ -2411,7 +2517,9 @@ export default function UserManagement() {
                 <thead className="bg-slate-800/30 border-b border-slate-700/40">
                   <tr>
                     <th className={thClass}><button onClick={() => handleSort('name')} className={thBtn}>Name <SortIcon column="name" sortBy={sortBy} sortDir={sortDir} /></button></th>
+                    <th className={thClass}><button onClick={() => handleSort('employeeId')} className={thBtn}>{activeTab === 'employees' ? 'Employee ID' : 'Manager ID'} <SortIcon column="employeeId" sortBy={sortBy} sortDir={sortDir} /></button></th>
                     <th className={thClass}><button onClick={() => handleSort('email')} className={thBtn}>Email <SortIcon column="email" sortBy={sortBy} sortDir={sortDir} /></button></th>
+                    <th className={thClass}><span className={thBtn}>Phone</span></th>
                     {activeTab === 'employees' ? (
                       <>
                         <th className={thClass}><button onClick={() => handleSort('jobRole')} className={thBtn}>Job Role <SortIcon column="jobRole" sortBy={sortBy} sortDir={sortDir} /></button></th>
@@ -2450,7 +2558,9 @@ export default function UserManagement() {
                             </div>
                           </button>
                         </td>
+                        <td className="py-3 px-4"><span className="text-slate-300 text-sm font-mono">{u.employeeId || '—'}</span></td>
                         <td className="py-3 px-4"><span className="text-slate-400 text-sm">{u.email}</span></td>
+                        <td className="py-3 px-4"><span className="text-slate-400 text-sm whitespace-nowrap">{u.phone || '—'}</span></td>
 
                         {activeTab === 'employees' ? (
                           <>
@@ -2510,7 +2620,7 @@ export default function UserManagement() {
                             <button onClick={() => setEditUser(u)} title="Edit" className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-600/10 hover:bg-blue-600/30 text-blue-400 border border-blue-600/20 hover:border-blue-500/40 transition-all text-sm">✏️</button>
                             {!isSelf && (
                               <button onClick={async () => {
-                                if (!window.confirm(`Delete "${u.name}"?`)) return;
+                                if (!window.confirm(`Delete ${u.name} (${u.email})? This cannot be undone.`)) return;
                                 try { await authFetch(`/api/users/${u.userId}`, { method: 'DELETE' }); setUsers(prev => prev.filter(x => x.userId !== u.userId)); setToast({ message: `${u.name} deleted`, type: 'success' }); }
                                 catch (err) { setToast({ message: err.message, type: 'error' }); }
                               }} title="Delete" className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-600/10 hover:bg-red-600/30 text-red-400 border border-red-600/20 hover:border-red-500/40 transition-all text-sm">🗑️</button>

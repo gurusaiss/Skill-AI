@@ -230,6 +230,16 @@ const TABLES = [
     ALTER TABLE role_library DISABLE ROW LEVEL SECURITY;`,
   },
   {
+    name: 'question_bank_archives',
+    sql: `CREATE TABLE IF NOT EXISTS question_bank_archives (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    ALTER TABLE question_bank_archives DISABLE ROW LEVEL SECURITY;`,
+  },
+  {
     name: 'employee_checklists',
     sql: `CREATE TABLE IF NOT EXISTS employee_checklists (
       id TEXT PRIMARY KEY,
@@ -295,6 +305,7 @@ const USER_COLS_SQL = `
   ALTER TABLE users ADD COLUMN IF NOT EXISTS jd_source_type        TEXT    DEFAULT 'text';
   ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified        BOOLEAN DEFAULT FALSE;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash         TEXT;
+  CREATE INDEX IF NOT EXISTS idx_users_company_employee_id ON users (company_id, lower(employee_id));
   ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 `;
 

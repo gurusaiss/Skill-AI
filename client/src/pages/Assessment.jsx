@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { authFetch } from '../utils/authFetch.js';
+import { gradeForReport, normalizeDuration } from '../utils/assessmentRules.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -9,14 +10,6 @@ function formatMmSs(seconds) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-function gradeFromScore(pct) {
-  if (pct >= 90) return 'A';
-  if (pct >= 80) return 'B';
-  if (pct >= 70) return 'C';
-  if (pct >= 60) return 'D';
-  return 'F';
 }
 
 function scoreColor(pct) {
@@ -53,7 +46,7 @@ const ConfirmDialog = ({ onConfirm, onCancel }) => (
   </div>
 );
 
-const ScoreRing = ({ pct }) => {
+const ScoreRing = ({ pct, grade }) => {
   const color = scoreColor(pct);
   const r = 54;
   const circ = 2 * Math.PI * r;
@@ -72,7 +65,7 @@ const ScoreRing = ({ pct }) => {
         style={{ transition: 'stroke-dasharray 1s ease' }}
       />
       <text x="70" y="65" textAnchor="middle" fill={color} fontSize="26" fontWeight="900" dy="0">{pct}%</text>
-      <text x="70" y="84" textAnchor="middle" fill="#94a3b8" fontSize="13" fontWeight="700">{gradeFromScore(pct)}</text>
+      <text x="70" y="84" textAnchor="middle" fill="#94a3b8" fontSize="13" fontWeight="700">{grade}</text>
     </svg>
   );
 };
@@ -159,8 +152,8 @@ export default function Assessment() {
       }
 
       // Init timer — only if visible, not expired, not submitted
-      if (found.duration && !scoring && found.isVisible !== false && found.status !== 'expired') {
-        setTimeLeft(found.duration * 60);
+      if (!scoring && found.isVisible !== false && found.status !== 'expired') {
+        setTimeLeft(normalizeDuration(found.duration) * 60);
       }
     } catch (e) {
       setError(e.message || 'Failed to load assessment');
@@ -344,6 +337,10 @@ export default function Assessment() {
 
   if (report) {
     const pct = Math.round(report.score ?? report.percentage ?? 0);
+    const reportGrade = gradeForReport(report) || '—';
+    // The server stores the pass/fail decision with the report, made against the
+    // assessment's own pass mark. Old reports without it fall back to the 80% default.
+    const didPass = report.passed ?? (Number(report.rawScore ?? report.score ?? pct) >= (report.passThreshold ?? 80));
     const correct = report.correct ?? report.correctCount ?? 0;
     const total = report.total ?? report.totalQuestions ?? (assessment?.questions?.length ?? 0);
     const strengths = report.strengths || report.strongAreas || [];
@@ -364,13 +361,13 @@ export default function Assessment() {
               <p className="text-center text-xs text-indigo-300 mb-6">{assessment.jobRole}</p>
             )}
 
-            <ScoreRing pct={pct} />
+            <ScoreRing pct={pct} grade={reportGrade} />
 
             <div className="grid grid-cols-3 gap-3 mb-4">
               {[
-                { label: 'Grade', value: gradeFromScore(pct), color: scoreColor(pct) },
+                { label: 'Grade', value: reportGrade, color: scoreColor(pct) },
                 { label: 'Correct', value: `${correct}/${total}` },
-                { label: 'Result', value: pct >= 60 ? 'Pass' : 'Fail', color: pct >= 60 ? '#10b981' : '#ef4444' },
+                { label: 'Result', value: didPass ? 'Pass' : 'Fail', color: didPass ? '#10b981' : '#ef4444' },
               ].map(item => (
                 <div key={item.label} className="rounded-xl bg-slate-800/60 border border-slate-700/30 p-3 text-center">
                   <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">{item.label}</p>
@@ -672,11 +669,9 @@ export default function Assessment() {
                 {assessment.jobRole || assessment.job_role}
               </span>
             )}
-            {assessment.duration && (
-              <span className="px-3 py-1 rounded-full bg-slate-700/50 border border-slate-700 text-slate-400 text-xs font-bold">
-                ⏱ {assessment.duration} mins
-              </span>
-            )}
+            <span className="px-3 py-1 rounded-full bg-slate-700/50 border border-slate-700 text-slate-400 text-xs font-bold">
+              ⏱ {normalizeDuration(assessment.duration)} mins
+            </span>
             {(assessment.scheduledDate || assessment.date) && (
               <span className="px-3 py-1 rounded-full bg-slate-700/50 border border-slate-700 text-slate-400 text-xs font-bold">
                 📅 {new Date(assessment.scheduledDate || assessment.date).toLocaleDateString()}

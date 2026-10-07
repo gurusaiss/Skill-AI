@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import CompanyBadge from './CompanyBadge';
 
 function useNotifications(isAuthenticated) {
   const [notifications, setNotifications] = useState([]);
@@ -160,6 +161,13 @@ function Navbar() {
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-600/20 border border-indigo-500/20 text-base flex-shrink-0">🧠</div>
           <span className="font-bold text-white text-sm tracking-wide whitespace-nowrap">SKILL FORGE</span>
         </Link>
+
+        {/* Company name (as set by the super admin) — shown on every portal page */}
+        {isAuthenticated && (
+          <div className="hidden sm:flex flex-shrink-0 mr-2">
+            <CompanyBadge />
+          </div>
+        )}
 
         {/* Role nav links — flex-1 fills remaining space; scrolls invisibly on mid screens */}
         {!hideNavLinks && (
@@ -336,6 +344,11 @@ function Navbar() {
       {!hideNavLinks && menuOpen && (
         <div className="md:hidden border-t border-slate-800 bg-[#0F172A] px-4 py-4">
           <nav className="flex flex-col gap-1">
+            {isAuthenticated && (
+              <div className="mb-2 flex">
+                <CompanyBadge maxWidthClass="max-w-[260px]" />
+              </div>
+            )}
             {roleLinks.map(({ to, label, icon }) => (
               <Link key={to} to={to} onClick={() => setMenuOpen(false)}
                 className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-all

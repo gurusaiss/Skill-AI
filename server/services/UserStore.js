@@ -66,6 +66,9 @@ function missingColumnFrom(error) {
   return m ? m[1] : null;
 }
 
+// Profile columns added by sql/migrations/2026-10-add-user-profile-columns.sql
+const PROFILE_COLS = ['employee_id', 'phone', 'status'];
+
 // ── Row ↔ App field mapping ───────────────────────────────────────────────────
 function rowToUser(row) {
   if (!row) return null;
@@ -287,8 +290,8 @@ class UserStore {
       row.onboarding_complete = newUser.onboardingComplete || false;
       row.company_name = newUser.companyName || '';
       row.company_id = newUser.companyId || 'default';
-      if (newUser.employeeId) row.employee_id = newUser.employeeId;
-      if (newUser.phone) row.phone = newUser.phone;
+      if (typeof newUser.employeeId === 'string' && newUser.employeeId) row.employee_id = newUser.employeeId;
+      if (typeof newUser.phone === 'string' && newUser.phone) row.phone = newUser.phone;
       if (newUser.status) row.status = newUser.status;
       row.permissions = newUser.permissions;
 
@@ -296,6 +299,9 @@ class UserStore {
       let guard = 0;
       let missingCol;
       while ((missingCol = missingColumnFrom(error)) && missingCol in row && guard < 10) {
+        if (PROFILE_COLS.includes(missingCol) && row[missingCol]) {
+          console.error(`[UserStore] !!! DATA LOSS: users.${missingCol} column is MISSING on Supabase, so the value was DROPPED on createUser. Run sql/migrations/2026-10-add-user-profile-columns.sql`);
+        }
         console.warn(`[UserStore] createUser: column "${missingCol}" missing on Supabase users table (migration not yet applied) — retrying without it.`);
         delete row[missingCol];
         ({ data, error } = await sb.from('users').insert(row).select().maybeSingle());
@@ -368,6 +374,33 @@ class UserStore {
     return data.users.find(u => u.email?.toLowerCase() === emailLc) || null;
   }
 
+  // Employee/manager ID lookup, scoped to one company, case-insensitive.
+  // Empty IDs never match. Returns the first match (or null).
+  async getUserByEmployeeId(companyId, employeeId) {
+    const idv = String(employeeId || '').trim();
+    if (!idv) return null;
+    const cid = companyId || 'default';
+    if (useMySQL()) {
+      const pool = mysqlDb.getPool();
+      const [rows] = await pool.query(
+        'SELECT * FROM `users` WHERE LOWER(`employee_id`) = LOWER(?) AND COALESCE(`company_id`, \'default\') = ? LIMIT 1',
+        [idv, cid]);
+      return rowToUser(rows?.[0]);
+    }
+    const sb = getSB();
+    if (sb) {
+      const escaped = idv.replace(/[%_\\]/g, c => '\\' + c);
+      let q = sb.from('users').select('*').ilike('employee_id', escaped);
+      q = cid === 'default' ? q.or('company_id.eq.default,company_id.is.null') : q.eq('company_id', cid);
+      const { data, error } = await q.limit(1);
+      if (error) { console.error('[UserStore] getUserByEmployeeId:', error.message); return null; }
+      return rowToUser(data?.[0]);
+    }
+    const data = await this.readUsersFile();
+    const lc = idv.toLowerCase();
+    return data.users.find(u => (u.employeeId || '').toLowerCase() === lc && (u.companyId || 'default') === cid) || null;
+  }
+
   async getUserByGoogleId(googleId) {
     if (useMySQL()) {
       const rows = await mysqlDb.selectWhere('users', { google_id: googleId });
@@ -419,6 +452,9 @@ class UserStore {
         let guard = 0;
         let missingCol;
         while ((missingCol = missingColumnFrom(error)) && missingCol in row && guard < 10) {
+          if (PROFILE_COLS.includes(missingCol)) {
+            console.error(`[UserStore] !!! DATA LOSS: users.${missingCol} column is MISSING on Supabase, so the edit was DROPPED on updateUser. Run sql/migrations/2026-10-add-user-profile-columns.sql`);
+          }
           console.warn(`[UserStore] updateUser: column "${missingCol}" missing on Supabase users table (migration not yet applied) — retrying without it.`);
           delete row[missingCol];
           ({ data, error } = await sb.from('users').update(row).eq('user_id', userId).select().maybeSingle());

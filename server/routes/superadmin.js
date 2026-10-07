@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import UserStore from '../services/UserStore.js';
 import AuthService from '../services/AuthService.js';
 import { Companies, AccessCodes } from '../services/DataStore.js';
+import { MANAGER_TIER_ROLES } from '../services/roleCapability.js';
 
 const router = express.Router();
 
@@ -36,6 +37,64 @@ async function generateAccessCodes(initials, companyId, createdBy) {
   const trn = await AccessCodes.create({ id: randomUUID(), companyId, code: trainerCode, role: 'trainer', isActive: true, usageCount: 0, maxUsage: null, expiresAt: null, label: 'Default Trainer Code', createdBy, createdAt: now, updatedAt: now });
   const ldr = await AccessCodes.create({ id: randomUUID(), companyId, code: leadershipCode, role: 'leadership', isActive: true, usageCount: 0, maxUsage: null, expiresAt: null, label: 'Default Leadership Code', createdBy, createdAt: now, updatedAt: now });
   return { mgrCode, empCode, trainerCode, leadershipCode, mgrId: mgr.id, empId: emp.id, trnId: trn.id, ldrId: ldr.id };
+}
+
+// ── Company detail-field validation ───────────────────────────────────────────
+const CODE_RE = /^[A-Za-z0-9-]{2,20}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const STRING_FIELDS = {
+  industry: 200, address: 200, city: 200, country: 200, phone: 50,
+  contactEmail: 200, website: 200, employeeCountRange: 200, description: 1000, logoUrl: 500,
+};
+const PLANS = ['trial', 'standard', 'enterprise'];
+const STATUSES = ['active', 'suspended'];
+const isManagerTier = (role) => role === 'manager' || MANAGER_TIER_ROLES.includes(role);
+
+/**
+ * Parse the optional detail fields from a request body.
+ * Returns { error } or { fields } (only keys present in the body).
+ */
+function parseDetailFields(body) {
+  const fields = {};
+  const src = { ...body };
+  if (src.size !== undefined && src.employeeCountRange === undefined) src.employeeCountRange = src.size;
+  for (const [key, max] of Object.entries(STRING_FIELDS)) {
+    if (src[key] === undefined || src[key] === null) continue;
+    const val = String(src[key]).trim();
+    if (val.length > max) return { error: `${key} must be at most ${max} characters` };
+    fields[key] = val;
+  }
+  if (fields.contactEmail && !EMAIL_RE.test(fields.contactEmail)) {
+    return { error: 'Contact email is not a valid email address' };
+  }
+  if (src.domain !== undefined && src.domain !== null) {
+    const d = String(src.domain).trim();
+    if (d.length > 200) return { error: 'domain must be at most 200 characters' };
+    fields.domain = d;
+  }
+  if (src.companyCode !== undefined && src.companyCode !== null && String(src.companyCode).trim() !== '') {
+    const code = String(src.companyCode).trim();
+    if (!CODE_RE.test(code)) {
+      return { error: 'Company code must be 2-20 characters: letters, numbers and hyphens only' };
+    }
+    fields.companyCode = code.toUpperCase();
+  }
+  return { fields };
+}
+
+function enrichCompany(c, allUsers) {
+  const admin = allUsers.find(u => u.userId === c.primaryAdminId);
+  const companyUsers = allUsers.filter(
+    u => (u.companyId || 'default') === c.id && u.role !== 'superadmin'
+  );
+  return {
+    ...c,
+    adminName: admin?.name || '—',
+    adminEmail: admin?.email || '—',
+    userCount: companyUsers.length,
+    employeeCount: companyUsers.filter(u => u.role === 'employee').length,
+    managerCount: companyUsers.filter(u => isManagerTier(u.role)).length,
+  };
 }
 
 /**
@@ -74,21 +133,26 @@ router.get('/companies', async (req, res) => {
     const companies = await Companies.getAll();
     const allUsers = await UserStore.getAllUsers({});
 
-    const enriched = companies.map(c => {
-      const admin = allUsers.find(u => u.userId === c.primaryAdminId);
-      const companyUsers = allUsers.filter(
-        u => (u.companyId || 'default') === c.id && u.role !== 'superadmin'
-      );
-      return {
-        ...c,
-        adminName: admin?.name || '—',
-        adminEmail: admin?.email || '—',
-        userCount: companyUsers.length,
-        employeeCount: companyUsers.filter(u => u.role === 'employee').length,
-      };
-    });
+    const enriched = companies.map(c => enrichCompany(c, allUsers));
 
     res.json({ success: true, data: enriched, error: null });
+  } catch (e) {
+    res.status(500).json({ success: false, data: null, error: e.message });
+  }
+});
+
+/**
+ * GET /api/superadmin/companies/:id
+ * Single company, enriched like the list
+ */
+router.get('/companies/:id', async (req, res) => {
+  try {
+    const company = await Companies.getById(req.params.id);
+    if (!company) {
+      return res.status(404).json({ success: false, data: null, error: 'Company not found' });
+    }
+    const allUsers = await UserStore.getAllUsers({});
+    res.json({ success: true, data: enrichCompany(company, allUsers), error: null });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
   }
@@ -100,8 +164,8 @@ router.get('/companies', async (req, res) => {
  */
 router.post('/companies', async (req, res) => {
   try {
-    const { name: _name, companyName, domain, plan = 'standard', adminName, adminEmail, adminPassword } = req.body;
-    const name = (_name || companyName || '').trim();
+    const { name: _name, companyName, plan = 'standard', adminName, adminEmail, adminPassword } = req.body;
+    const name = String(_name || companyName || '').trim();
     if (!name || !adminEmail || !adminName) {
       return res.status(400).json({
         success: false,
@@ -109,9 +173,20 @@ router.post('/companies', async (req, res) => {
         error: 'Company name, admin name and email are required',
       });
     }
+    if (name.length > 200) {
+      return res.status(400).json({ success: false, data: null, error: 'Company name must be at most 200 characters' });
+    }
+    if (!PLANS.includes(plan)) {
+      return res.status(400).json({ success: false, data: null, error: `plan must be one of: ${PLANS.join(', ')}` });
+    }
+    const parsed = parseDetailFields(req.body);
+    if (parsed.error) {
+      return res.status(400).json({ success: false, data: null, error: parsed.error });
+    }
+    const details = parsed.fields;
 
     const companies = await Companies.getAll();
-    if (companies.find(c => c.name.toLowerCase() === name.toLowerCase())) {
+    if (companies.find(c => (c.name || '').toLowerCase() === name.toLowerCase())) {
       return res.status(409).json({ success: false, data: null, error: 'Company name already exists' });
     }
 
@@ -124,18 +199,35 @@ router.post('/companies', async (req, res) => {
 
     // Generate unique company code from initials + random digits (e.g. "GSS-7823")
     const initials = name.trim().split(/\s+/).map(w => w[0]?.toUpperCase()).filter(Boolean).slice(0, 3).join('');
-    let companyCode = `${initials || 'CO'}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const allCompanies = await Companies.getAll();
-    const usedCodes = new Set((allCompanies || []).map(c => c.companyCode));
-    while (usedCodes.has(companyCode)) {
+    const usedCodes = new Set((companies || []).map(c => (c.companyCode || '').toUpperCase()));
+    let companyCode;
+    if (details.companyCode) {
+      companyCode = details.companyCode;
+      if (usedCodes.has(companyCode)) {
+        return res.status(409).json({ success: false, data: null, error: 'Company code already in use' });
+      }
+    } else {
       companyCode = `${initials || 'CO'}-${Math.floor(1000 + Math.random() * 9000)}`;
+      while (usedCodes.has(companyCode)) {
+        companyCode = `${initials || 'CO'}-${Math.floor(1000 + Math.random() * 9000)}`;
+      }
     }
 
     const company = {
       id: companyId,
-      name: name.trim(),
+      name,
       companyCode,
-      domain: domain || '',
+      domain: details.domain || '',
+      industry: details.industry || '',
+      address: details.address || '',
+      city: details.city || '',
+      country: details.country || '',
+      phone: details.phone || '',
+      contactEmail: details.contactEmail || '',
+      website: details.website || '',
+      employeeCountRange: details.employeeCountRange || '',
+      description: details.description || '',
+      logoUrl: details.logoUrl || '',
       plan,
       status: 'active',
       primaryAdminId: null,
@@ -155,6 +247,7 @@ router.post('/companies', async (req, res) => {
       emailVerified: true,
       onboardingComplete: true,
       companyId,
+      companyName: name,
     });
 
     company.primaryAdminId = adminUser.userId;
@@ -196,16 +289,54 @@ router.put('/companies/:id', async (req, res) => {
       return res.status(404).json({ success: false, data: null, error: 'Company not found' });
     }
 
-    const { name: _name, companyName, domain, plan, status } = req.body;
-    const name = (_name || companyName || '').trim();
-    const updates = { updatedAt: new Date().toISOString() };
+    const { name: _name, companyName, plan, status } = req.body;
+    const name = String(_name || companyName || '').trim();
+    if (name.length > 200) {
+      return res.status(400).json({ success: false, data: null, error: 'Company name must be at most 200 characters' });
+    }
+    if (plan && !PLANS.includes(plan)) {
+      return res.status(400).json({ success: false, data: null, error: `plan must be one of: ${PLANS.join(', ')}` });
+    }
+    if (status && !STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, data: null, error: `status must be one of: ${STATUSES.join(', ')}` });
+    }
+    const parsed = parseDetailFields(req.body);
+    if (parsed.error) {
+      return res.status(400).json({ success: false, data: null, error: parsed.error });
+    }
+
+    const all = await Companies.getAll();
+    if (name && all.find(c => c.id !== existing.id && (c.name || '').toLowerCase() === name.toLowerCase())) {
+      return res.status(409).json({ success: false, data: null, error: 'Company name already exists' });
+    }
+    if (parsed.fields.companyCode &&
+        all.find(c => c.id !== existing.id && (c.companyCode || '').toUpperCase() === parsed.fields.companyCode)) {
+      return res.status(409).json({ success: false, data: null, error: 'Company code already in use' });
+    }
+
+    const updates = { ...parsed.fields, updatedAt: new Date().toISOString() };
     if (name) updates.name = name;
-    if (domain !== undefined) updates.domain = domain;
     if (plan) updates.plan = plan;
     if (status) updates.status = status;
 
     const updated = await Companies.update(req.params.id, updates);
-    res.json({ success: true, data: updated || { ...existing, ...updates }, error: null });
+
+    // Keep denormalized companyName snapshots on users in sync with a rename
+    let usersUpdated = 0;
+    if (name && name !== existing.name) {
+      try {
+        const allUsers = await UserStore.getAllUsers({});
+        const members = allUsers.filter(u => (u.companyId || 'default') === existing.id && u.companyName !== name);
+        for (const u of members) {
+          await UserStore.updateUser(u.userId, { companyName: name });
+          usersUpdated++;
+        }
+      } catch (err) {
+        console.error('[superadmin/companies PUT] companyName propagation failed:', err.message);
+      }
+    }
+
+    res.json({ success: true, data: { ...(updated || { ...existing, ...updates }), usersUpdated }, error: null });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
   }
@@ -221,8 +352,39 @@ router.delete('/companies/:id', async (req, res) => {
     if (!existing) {
       return res.status(404).json({ success: false, data: null, error: 'Company not found' });
     }
+    const force = String(req.query.force || '').toLowerCase() === 'true';
+    const allUsers = await UserStore.getAllUsers({});
+    const members = allUsers.filter(
+      u => (u.companyId || 'default') === existing.id && u.role !== 'superadmin'
+    );
+    if (members.length > 0 && !force) {
+      return res.status(409).json({
+        success: false,
+        data: { userCount: members.length, requiresForce: true },
+        error: `Company "${existing.name}" still has ${members.length} user${members.length === 1 ? '' : 's'}. Delete anyway to remove its access codes and unlink its users.`,
+      });
+    }
+
+    let usersUnlinked = 0;
+    let codesDeleted = 0;
+    if (force) {
+      for (const u of members) {
+        await UserStore.updateUser(u.userId, { companyId: 'default', companyName: '' });
+        usersUnlinked++;
+      }
+    }
+    // Orphaned access codes would otherwise remain usable-looking; always remove them
+    const codes = await AccessCodes.getByCompany(existing.id);
+    for (const c of codes || []) {
+      await AccessCodes.delete(c.id);
+      codesDeleted++;
+    }
     await Companies.delete(req.params.id);
-    res.json({ success: true, data: { deleted: true, id: req.params.id }, error: null });
+    res.json({
+      success: true,
+      data: { deleted: true, id: req.params.id, usersUnlinked, codesDeleted },
+      error: null,
+    });
   } catch (e) {
     res.status(500).json({ success: false, data: null, error: e.message });
   }
@@ -432,7 +594,7 @@ router.get('/admins/:adminId/stats', async (req, res) => {
       (u.companyId || 'default') === (admin.companyId || 'default') && u.role !== 'superadmin'
     );
     const employees = companyUsers.filter(u => u.role === 'employee');
-    const managers = companyUsers.filter(u => u.role === 'manager');
+    const managers = companyUsers.filter(u => isManagerTier(u.role));
 
     // Load assignments and modules
     const db = await import('../db/store.js');
@@ -576,7 +738,8 @@ router.get('/reports', async (req, res) => {
         adminEmail: admin?.email || '—',
         totalUsers: companyUsers.length,
         employees: companyUsers.filter(u => u.role === 'employee').length,
-        managers: companyUsers.filter(u => u.role === 'manager').length,
+        managers: companyUsers.filter(u => isManagerTier(u.role)).length,
+        companyCode: c.companyCode || '',
         totalModules: companyModules.length,
         totalAssignments: companyAssignments.length,
         completedAssignments: completed.length,

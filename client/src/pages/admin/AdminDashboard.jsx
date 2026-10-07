@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
+import StatCard from '../../components/StatCard.jsx';
 
 // ── Utility UI ─────────────────────────────────────────────────────────────────
 
@@ -15,17 +16,19 @@ const Skeleton = ({ className = '' }) => (
   <div className={`animate-pulse rounded-lg bg-slate-700/40 ${className}`} />
 );
 
-const StatCard = ({ label, value, icon, borderClass, bgClass, textClass }) => (
-  <div className={`rounded-xl border ${borderClass} ${bgClass} p-4`}>
-    <div className="flex items-center justify-between">
-      <div>
-        <p className={`text-xs font-bold ${textClass} uppercase tracking-widest mb-2`}>{label}</p>
-        <p className="text-2xl font-black text-white">{value}</p>
-      </div>
-      <div className="text-3xl opacity-50">{icon}</div>
-    </div>
-  </div>
-);
+// Manager-tier roles (mirrors MANAGER_TIER_ROLES in server/services/roleCapability.js)
+const MANAGER_BASE_ROLES = ['manager', 'leadership', 'lead', 'wfm'];
+const isManagerTier = (role) => {
+  const r = String(role || '').toLowerCase();
+  return MANAGER_BASE_ROLES.includes(r) || r.startsWith('assistant-manager-') || r.startsWith('senior-');
+};
+
+// Shared definitions: cancelled assignments never count towards rates;
+// completed counts as 100% progress.
+const assignmentProgress = (a) => (a.status === 'completed' ? 100 : Math.min(100, Math.max(0, Number(a.progress) || 0)));
+const asArray = (d, key) => (Array.isArray(d) ? d : Array.isArray(d?.[key]) ? d[key] : []);
+const reportDate = (r) => r?.submittedAt || r?.generatedAt || null;
+const fmtPct = (n) => (Number.isFinite(n) ? `${Math.round(n)}%` : '—');
 
 // ── Access Code components ─────────────────────────────────────────────────────
 
@@ -124,12 +127,13 @@ function classTag(label) {
 function buildTimeline(empReports, empAssignments, modMap) {
   const events = [];
   for (const r of empReports) {
-    if (r.createdAt) events.push({ date: new Date(r.createdAt), icon: '📝', label: `Assessment Completed — ${r.assessmentTitle || 'Assessment'}`, sub: r.score != null ? `Score: ${r.score}%` : '', color: 'text-emerald-400' });
+    if (reportDate(r)) events.push({ date: new Date(reportDate(r)), icon: '📝', label: `Assessment Completed — ${r.assessmentTitle || 'Assessment'}`, sub: r.score != null ? `Score: ${r.score}%` : '', color: 'text-emerald-400' });
   }
   for (const a of empAssignments) {
-    if (a.assignedAt) events.push({ date: new Date(a.assignedAt), icon: '📚', label: `Module Assigned — ${modMap[a.moduleId]?.title || 'Module'}`, sub: '', color: 'text-indigo-400' });
-    if (a.startedAt) events.push({ date: new Date(a.startedAt), icon: '▶️', label: `Module Started — ${modMap[a.moduleId]?.title || 'Module'}`, sub: '', color: 'text-amber-400' });
-    if (a.completedAt) events.push({ date: new Date(a.completedAt), icon: '✅', label: `Module Completed — ${modMap[a.moduleId]?.title || 'Module'}`, sub: '', color: 'text-emerald-400' });
+    const title = modMap[a.assignable_id]?.title || a.title || 'Module';
+    if (a.created_at) events.push({ date: new Date(a.created_at), icon: '📚', label: `Module Assigned — ${title}`, sub: '', color: 'text-indigo-400' });
+    if (a.status === 'completed' && a.updated_at) events.push({ date: new Date(a.updated_at), icon: '✅', label: `Module Completed — ${title}`, sub: '', color: 'text-emerald-400' });
+    else if (a.status === 'in_progress' && a.updated_at) events.push({ date: new Date(a.updated_at), icon: '▶️', label: `Module In Progress — ${title}`, sub: `${assignmentProgress(a)}%`, color: 'text-amber-400' });
   }
   return events.sort((a, b) => a.date - b.date);
 }
@@ -140,14 +144,14 @@ function exportEmployeePDF(emp, empReports, empAssignments, modMap) {
       <td>${r.assessmentTitle || '—'}</td>
       <td>${r.score != null ? r.score + '%' : '—'}</td>
       <td>${r.performanceClassification?.label || '—'}</td>
-      <td>${r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—'}</td>
+      <td>${reportDate(r) ? new Date(reportDate(r)).toLocaleDateString() : '—'}</td>
     </tr>`).join('');
   const modRows = empAssignments.map(a => `
     <tr>
-      <td>${modMap[a.moduleId]?.title || a.moduleId || '—'}</td>
+      <td>${modMap[a.assignable_id]?.title || a.title || a.assignable_id || '—'}</td>
       <td>${a.status || '—'}</td>
-      <td>${a.assignedAt ? new Date(a.assignedAt).toLocaleDateString() : '—'}</td>
-      <td>${a.completedAt ? new Date(a.completedAt).toLocaleDateString() : '—'}</td>
+      <td>${a.created_at ? new Date(a.created_at).toLocaleDateString() : '—'}</td>
+      <td>${a.status === 'completed' && a.updated_at ? new Date(a.updated_at).toLocaleDateString() : '—'}</td>
     </tr>`).join('');
   const html = `<!DOCTYPE html><html><head><title>Employee Report — ${emp.name || emp.email}</title>
     <style>
@@ -193,8 +197,10 @@ function exportEmployeePDF(emp, empReports, empAssignments, modMap) {
 function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, modules, users, onClose }) {
   const [detailTab, setDetailTab] = useState('info');
   const uid = emp.userId || emp.id;
-  const empReports = allReports.filter(r => r.userId === uid).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-  const empAssignments = allAssignments.filter(a => a.userId === uid);
+  const empReports = allReports.filter(r => r.userId === uid).sort((a, b) => new Date(reportDate(b) || 0) - new Date(reportDate(a) || 0));
+  const empAssignments = allAssignments.filter(a => a.assigned_to_user === uid);
+  const empLiveAssignments = empAssignments.filter(a => a.status !== 'cancelled');
+  const distinctAssessments = new Set(empReports.map(r => r.assessmentId)).size;
   const modMap = Object.fromEntries(modules.map(m => [m.id, m]));
   const timeline = buildTimeline(empReports, empAssignments, modMap);
   const manager = users.find(u => (u.userId || u.id) === emp.managerId || (u.userId || u.id) === emp.manager_id);
@@ -234,9 +240,9 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
         {/* Quick stats bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-slate-700/50 border-b border-slate-700/50">
           {[
-            { label: 'Assessments', value: empReports.length, color: 'text-indigo-400' },
-            { label: 'Latest Score', value: latestReport ? `${latestReport.score}%` : '—', color: latestReport?.score >= 70 ? 'text-emerald-400' : latestReport?.score ? 'text-amber-400' : 'text-slate-500' },
-            { label: 'Avg Progress', value: empAssignments.length > 0 ? `${Math.round(empAssignments.reduce((s,a) => s+(a.progress||0),0)/empAssignments.length)}%` : '—', color: 'text-emerald-400' },
+            { label: 'Assessments', value: distinctAssessments, color: 'text-indigo-400' },
+            { label: 'Latest Score', value: latestReport && latestReport.score != null ? `${latestReport.score}%` : '—', color: latestReport?.score >= 70 ? 'text-emerald-400' : latestReport?.score != null ? 'text-amber-400' : 'text-slate-500' },
+            { label: 'Avg Progress', value: empLiveAssignments.length > 0 ? `${Math.round(empLiveAssignments.reduce((s,a) => s + assignmentProgress(a), 0) / empLiveAssignments.length)}%` : '—', color: 'text-emerald-400' },
             { label: 'Classification', value: latestReport?.performanceClassification?.label || '—', color: 'text-slate-300' },
           ].map((s, i) => (
             <div key={i} className="py-3 px-4 text-center">
@@ -301,7 +307,7 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-white truncate">{r.assessmentTitle || 'Assessment'}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—'}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{reportDate(r) ? new Date(reportDate(r)).toLocaleDateString() : '—'}</p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {r.score != null && (
@@ -348,12 +354,12 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
                   <p className="text-sm text-slate-500">No modules assigned yet</p>
                 </div>
               ) : empAssignments.map(a => {
-                const mod = modMap[a.moduleId];
+                const mod = modMap[a.assignable_id];
                 return (
-                  <div key={a.id || a.moduleId} className="rounded-xl bg-slate-800/60 border border-slate-700/40 p-4">
+                  <div key={a.id || a.assignable_id} className="rounded-xl bg-slate-800/60 border border-slate-700/40 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-white truncate">{mod?.title || a.moduleId || 'Module'}</p>
+                        <p className="text-sm font-bold text-white truncate">{mod?.title || a.title || a.assignable_id || 'Module'}</p>
                         {mod?.description && <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{mod.description}</p>}
                       </div>
                       <span className={`flex-shrink-0 text-xs font-bold px-2.5 py-0.5 rounded-full border capitalize ${
@@ -363,9 +369,10 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
                       }`}>{a.status || 'assigned'}</span>
                     </div>
                     <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
-                      {a.assignedAt && <span>Assigned: {new Date(a.assignedAt).toLocaleDateString()}</span>}
-                      {a.startedAt && <span>Started: {new Date(a.startedAt).toLocaleDateString()}</span>}
-                      {a.completedAt && <span>Completed: {new Date(a.completedAt).toLocaleDateString()}</span>}
+                      {a.created_at && <span>Assigned: {new Date(a.created_at).toLocaleDateString()}</span>}
+                      {a.status === 'in_progress' && a.updated_at && <span>Last activity: {new Date(a.updated_at).toLocaleDateString()}</span>}
+                      {a.status === 'completed' && a.updated_at && <span>Completed: {new Date(a.updated_at).toLocaleDateString()}</span>}
+                      {a.status !== 'cancelled' && <span>Progress: {Math.round(assignmentProgress(a))}%</span>}
                     </div>
                     {mod?.estimatedDuration && <p className="mt-1 text-xs text-slate-600">Duration: {mod.estimatedDuration}</p>}
                   </div>
@@ -457,7 +464,11 @@ export default function AdminDashboard() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      authFetch('/api/admin/dashboard').then(d => { if (d?.company) setCompany(d.company); }).catch(() => {});
+      // Server-side figures (company-scoped); used for pending approvals which
+      // include ApprovalRequests that the client cannot see.
+      const serverStatsPromise = authFetch('/api/admin/dashboard')
+        .then(d => { if (d?.company) setCompany(d.company); return d?.stats || null; })
+        .catch(() => null);
 
       const [usersRes, modulesRes, assignmentsRes, requestsRes, reportsRes] = await Promise.allSettled([
         authFetch('/api/users'),
@@ -467,17 +478,17 @@ export default function AdminDashboard() {
         authFetch('/api/assessments/reports/all').catch(() => []),
       ]);
 
-      const usersData = usersRes.status === 'fulfilled' ? (usersRes.value?.users || usersRes.value || []) : [];
-      const modulesData = modulesRes.status === 'fulfilled' ? (modulesRes.value?.modules || modulesRes.value || []) : [];
-      const assignmentsData = assignmentsRes.status === 'fulfilled' ? (assignmentsRes.value?.assignments || assignmentsRes.value || []) : [];
-      const requestsData = requestsRes.status === 'fulfilled' ? (requestsRes.value?.requests || requestsRes.value || []) : [];
-      const reportsData = reportsRes.status === 'fulfilled' ? (reportsRes.value || []) : [];
+      const uArr = asArray(usersRes.status === 'fulfilled' ? usersRes.value : [], 'users');
+      const mArr = asArray(modulesRes.status === 'fulfilled' ? modulesRes.value : [], 'modules');
+      const aAll = asArray(assignmentsRes.status === 'fulfilled' ? assignmentsRes.value : [], 'assignments');
+      const rqArr = asArray(requestsRes.status === 'fulfilled' ? requestsRes.value : [], 'requests');
+      const rpAll = asArray(reportsRes.status === 'fulfilled' ? reportsRes.value : [], 'reports');
 
-      const uArr = Array.isArray(usersData) ? usersData : [];
-      const mArr = Array.isArray(modulesData) ? modulesData : [];
-      const aArr = Array.isArray(assignmentsData) ? assignmentsData : [];
-      const rqArr = Array.isArray(requestsData) ? requestsData : [];
-      const rpArr = Array.isArray(reportsData) ? reportsData : [];
+      // Company scoping: only rows belonging to users returned by /api/users
+      // (reports/all can return other companies' reports for 'default' admins).
+      const companyIds = new Set(uArr.map(u => u.userId || u.id));
+      const aArr = aAll.filter(a => companyIds.has(a.assigned_to_user));
+      const rpArr = rpAll.filter(r => companyIds.has(r.userId));
 
       setUsers(uArr);
       setModules(mArr);
@@ -488,23 +499,48 @@ export default function AdminDashboard() {
       setAllRequests(reqArr);
       setPendingRequests(reqArr.filter(r => r.status === 'pending'));
 
-      const completedCount = aArr.filter(a => a.status === 'completed' || a.completed === true).length;
-      const avgCompletionRate = aArr.length > 0 ? Math.round((completedCount / aArr.length) * 100) : 0;
-      const avgAssessmentScore = rpArr.length > 0 ? Math.round(rpArr.reduce((s, r) => s + (r.score || 0), 0) / rpArr.length) : 0;
+      // Assignments: cancelled are excluded from every rate.
+      const liveAssignments = aArr.filter(a => a.status !== 'cancelled');
+      const completedCount = liveAssignments.filter(a => a.status === 'completed').length;
+      const completionRate = liveAssignments.length > 0 ? (completedCount / liveAssignments.length) * 100 : null;
+      const avgProgress = liveAssignments.length > 0
+        ? liveAssignments.reduce((s, a) => s + assignmentProgress(a), 0) / liveAssignments.length
+        : null;
+
+      // Assessments: latest report per distinct (assessmentId, userId) pair.
+      const latestByPair = new Map();
+      for (const r of rpArr) {
+        const k = `${r.assessmentId}|${r.userId}`;
+        const prev = latestByPair.get(k);
+        if (!prev || (reportDate(r) || '') >= (reportDate(prev) || '')) latestByPair.set(k, r);
+      }
+      const submissions = [...latestByPair.values()];
+      const scoreVals = submissions.map(r => Number(r.rawScore ?? r.score)).filter(n => Number.isFinite(n));
+      const avgAssessmentScore = scoreVals.length > 0 ? scoreVals.reduce((s, n) => s + n, 0) / scoreVals.length : null;
+
+      const serverStats = await serverStatsPromise;
+      const clientPending = reqArr.filter(r => r.status === 'pending').length;
+
+      const managerCount = uArr.filter(u => isManagerTier(u.role)).length;
+      const employeeCount = uArr.filter(u => u.role === 'employee').length;
 
       setStats({
         totalUsers: uArr.length,
         totalAdmins: uArr.filter(u => u.role === 'admin').length,
-        totalManagers: uArr.filter(u => u.role === 'manager').length,
-        totalEmployees: uArr.filter(u => u.role === 'employee').length,
-        activeSessions: aArr.filter(a => a.status === 'in_progress').length,
+        totalManagers: managerCount,
+        totalEmployees: employeeCount,
+        otherRoles: Math.max(0, uArr.length - managerCount - employeeCount),
+        activeSessions: liveAssignments.filter(a => a.status === 'in_progress').length,
         completedModules: completedCount,
         totalModules: mArr.length,
-        avgCompletionRate,
+        completionRate,
+        avgProgress,
         totalAssignments: aArr.length,
+        liveAssignments: liveAssignments.length,
+        cancelledAssignments: aArr.length - liveAssignments.length,
         pendingAssignments: aArr.filter(a => a.status === 'assigned').length,
-        pendingRequests: reqArr.filter(r => r.status === 'pending').length,
-        assessmentsCompleted: rpArr.length,
+        pendingRequests: Number.isFinite(serverStats?.pendingApprovals) ? serverStats.pendingApprovals : clientPending,
+        assessmentsCompleted: submissions.length,
         avgAssessmentScore,
       });
     } catch (err) {
@@ -595,11 +631,10 @@ export default function AdminDashboard() {
 
   const getEmpLastActivity = (uid) => {
     const dates = [];
-    allReports.filter(r => r.userId === uid).forEach(r => r.createdAt && dates.push(new Date(r.createdAt)));
-    allAssignments.filter(a => a.userId === uid).forEach(a => {
-      if (a.completedAt) dates.push(new Date(a.completedAt));
-      else if (a.startedAt) dates.push(new Date(a.startedAt));
-      else if (a.assignedAt) dates.push(new Date(a.assignedAt));
+    allReports.filter(r => r.userId === uid).forEach(r => reportDate(r) && dates.push(new Date(reportDate(r))));
+    allAssignments.filter(a => a.assigned_to_user === uid).forEach(a => {
+      const t = a.updated_at || a.created_at;
+      if (t) dates.push(new Date(t));
     });
     return dates.length > 0 ? dates.sort((a, b) => b - a)[0] : null;
   };
@@ -619,8 +654,8 @@ export default function AdminDashboard() {
     let av, bv;
     if (field === 'name') { av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase(); }
     else if (field === 'score') {
-      av = allReports.filter(r => r.userId === uid_a).sort((x, y) => new Date(y.createdAt || 0) - new Date(x.createdAt || 0))[0]?.score ?? -1;
-      bv = allReports.filter(r => r.userId === uid_b).sort((x, y) => new Date(y.createdAt || 0) - new Date(x.createdAt || 0))[0]?.score ?? -1;
+      av = allReports.filter(r => r.userId === uid_a).sort((x, y) => new Date(reportDate(y) || 0) - new Date(reportDate(x) || 0))[0]?.score ?? -1;
+      bv = allReports.filter(r => r.userId === uid_b).sort((x, y) => new Date(reportDate(y) || 0) - new Date(reportDate(x) || 0))[0]?.score ?? -1;
     }
     else if (field === 'activity') {
       av = getEmpLastActivity(uid_a)?.getTime() ?? 0;
@@ -644,17 +679,18 @@ export default function AdminDashboard() {
     { id: 'assignments',label: '📋 Assignments' },
   ];
 
+  const hasSubmissions = (stats?.assessmentsCompleted || 0) > 0;
   const statCards = [
-    { label: 'Total Users',       value: stats?.totalUsers ?? '—',             icon: '👥', borderClass: 'border-indigo-500/20',  bgClass: 'bg-indigo-500/5',  textClass: 'text-indigo-400' },
-    { label: 'Managers',          value: stats?.totalManagers ?? '—',           icon: '👔', borderClass: 'border-sky-500/20',     bgClass: 'bg-sky-500/5',     textClass: 'text-sky-400' },
-    { label: 'Employees',         value: stats?.totalEmployees ?? '—',          icon: '👨‍💼', borderClass: 'border-fuchsia-500/20', bgClass: 'bg-fuchsia-500/5', textClass: 'text-fuchsia-400' },
-    { label: 'Active Sessions',   value: stats?.activeSessions ?? '—',          icon: '⚡', borderClass: 'border-amber-500/20',  bgClass: 'bg-amber-500/5',   textClass: 'text-amber-400' },
-    { label: 'Modules',           value: stats?.totalModules ?? '—',            icon: '📚', borderClass: 'border-emerald-500/20', bgClass: 'bg-emerald-500/5', textClass: 'text-emerald-400' },
-    { label: 'Avg Completion',    value: stats ? `${stats.avgCompletionRate}%` : '—', icon: '📊', borderClass: 'border-cyan-500/20', bgClass: 'bg-cyan-500/5', textClass: 'text-cyan-400' },
-    { label: 'Completed',         value: stats?.completedModules ?? '—',        icon: '✅', borderClass: 'border-emerald-500/20', bgClass: 'bg-emerald-500/5', textClass: 'text-emerald-400' },
-    { label: 'Pending Approvals', value: stats?.pendingRequests ?? '—',         icon: '⏳', borderClass: 'border-rose-500/20',   bgClass: 'bg-rose-500/5',    textClass: 'text-rose-400' },
-    { label: 'Assessments Done',  value: stats?.assessmentsCompleted ?? '—',    icon: '📝', borderClass: 'border-amber-500/20',  bgClass: 'bg-amber-500/5',   textClass: 'text-amber-400' },
-    { label: 'Avg Score',         value: stats?.avgAssessmentScore ? `${stats.avgAssessmentScore}%` : '—', icon: '🎯', borderClass: 'border-indigo-500/20', bgClass: 'bg-indigo-500/5', textClass: 'text-indigo-400' },
+    { label: 'Total Users', value: stats?.totalUsers ?? '—', icon: '👥', description: 'Everyone in your company', tooltip: 'All user accounts in your company (admins, managers, employees and other roles). Super admins are not counted.', borderClass: 'border-indigo-500/20', bgClass: 'bg-indigo-500/5', textClass: 'text-indigo-400' },
+    { label: 'Managers', value: stats?.totalManagers ?? '—', icon: '👔', description: 'People who manage a team', tooltip: 'Users with a manager-level role: manager, leadership, lead, WFM, assistant-manager and senior roles.', borderClass: 'border-sky-500/20', bgClass: 'bg-sky-500/5', textClass: 'text-sky-400' },
+    { label: 'Employees', value: stats?.totalEmployees ?? '—', icon: '👨‍💼', description: 'Learners in your company', tooltip: 'Users whose role is employee. Admins, managers and other roles (trainer, SME, quality analyst) are counted separately.', borderClass: 'border-fuchsia-500/20', bgClass: 'bg-fuchsia-500/5', textClass: 'text-fuchsia-400' },
+    { label: 'In Progress', value: stats?.activeSessions ?? '—', icon: '⚡', description: 'Modules currently being worked on', tooltip: 'Module assignments with status "in progress". Each assignment counts once, cancelled ones are excluded.', borderClass: 'border-amber-500/20', bgClass: 'bg-amber-500/5', textClass: 'text-amber-400' },
+    { label: 'Modules', value: stats?.totalModules ?? '—', icon: '📚', description: 'Training modules in the library', tooltip: 'Number of modules available to your company (shared library plus your own).', borderClass: 'border-emerald-500/20', bgClass: 'bg-emerald-500/5', textClass: 'text-emerald-400' },
+    { label: 'Avg Progress', value: fmtPct(stats?.avgProgress), icon: '📊', description: 'Average learning progress across assignments', tooltip: `Mean progress of all non-cancelled module assignments, where a completed assignment counts as 100%. Completion rate (completed / non-cancelled) is ${fmtPct(stats?.completionRate)}.`, borderClass: 'border-cyan-500/20', bgClass: 'bg-cyan-500/5', textClass: 'text-cyan-400' },
+    { label: 'Completed', value: stats?.completedModules ?? '—', icon: '✅', description: 'Module assignments finished', tooltip: 'Module assignments with status "completed".', borderClass: 'border-emerald-500/20', bgClass: 'bg-emerald-500/5', textClass: 'text-emerald-400' },
+    { label: 'Pending Approvals', value: stats?.pendingRequests ?? '—', icon: '⏳', description: 'Requests waiting for your decision', tooltip: 'Pending manager assignment requests plus other pending approval requests in your company, as counted by the server.', borderClass: 'border-rose-500/20', bgClass: 'bg-rose-500/5', textClass: 'text-rose-400' },
+    { label: 'Assessments Done', value: stats?.assessmentsCompleted ?? '—', icon: '📝', description: 'Assessments submitted by learners', tooltip: 'Number of distinct (assessment, learner) pairs with a submission. Retakes are not counted twice.', borderClass: 'border-amber-500/20', bgClass: 'bg-amber-500/5', textClass: 'text-amber-400' },
+    { label: 'Avg Score', value: hasSubmissions ? fmtPct(stats?.avgAssessmentScore) : '—', icon: '🎯', description: 'Average assessment score', tooltip: 'Mean score (0-100%) of the latest submission for each distinct (assessment, learner) pair. Shows a dash until someone submits an assessment.', borderClass: 'border-indigo-500/20', bgClass: 'bg-indigo-500/5', textClass: 'text-indigo-400' },
   ];
 
   return (
@@ -801,6 +837,7 @@ export default function AdminDashboard() {
                   { label: 'Admins',    value: stats?.totalAdmins || 0, bar: stats?.totalUsers ? Math.round((stats.totalAdmins / stats.totalUsers) * 100) : 0, color: 'bg-rose-500' },
                   { label: 'Managers', value: stats?.totalManagers || 0, bar: stats?.totalUsers ? Math.round((stats.totalManagers / stats.totalUsers) * 100) : 0, color: 'bg-amber-500' },
                   { label: 'Employees',value: stats?.totalEmployees || 0, bar: stats?.totalUsers ? Math.round((stats.totalEmployees / stats.totalUsers) * 100) : 0, color: 'bg-emerald-500' },
+                  (() => { const o = Math.max(0, (stats?.totalUsers || 0) - (stats?.totalAdmins || 0) - (stats?.totalManagers || 0) - (stats?.totalEmployees || 0)); return { label: 'Other roles', value: o, bar: stats?.totalUsers ? Math.round((o / stats.totalUsers) * 100) : 0, color: 'bg-slate-500' }; })(),
                 ].map((item, i) => (
                   <div key={i}>
                     <div className="flex items-center justify-between mb-1">
@@ -823,9 +860,10 @@ export default function AdminDashboard() {
               <div className="space-y-4">
                 {[
                   { label: 'Total Modules', value: stats?.totalModules || 0, icon: '📚', sub: 'in library' },
-                  { label: 'Active Sessions', value: stats?.activeSessions || 0, icon: '⚡', sub: 'in progress' },
-                  { label: 'Completed', value: stats?.completedModules || 0, icon: '✅', sub: 'finished' },
-                  { label: 'Avg Completion', value: `${stats?.avgCompletionRate || 0}%`, icon: '📊', sub: 'overall rate' },
+                  { label: 'In Progress', value: stats?.activeSessions || 0, icon: '⚡', sub: 'module assignments started' },
+                  { label: 'Completed', value: stats?.completedModules || 0, icon: '✅', sub: 'module assignments finished' },
+                  { label: 'Avg Progress', value: fmtPct(stats?.avgProgress), icon: '📊', sub: 'across active assignments' },
+                  { label: 'Completion Rate', value: fmtPct(stats?.completionRate), icon: '🏁', sub: 'completed / non-cancelled' },
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <span className="text-xl w-8 flex-shrink-0">{item.icon}</span>
@@ -845,17 +883,17 @@ export default function AdminDashboard() {
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Assignment Pipeline</h3>
                 <span className="text-2xl">📋</span>
               </div>
+              <p className="text-[11px] text-slate-500 -mt-3 mb-4">Module assignments by status. Total = Not Started + In Progress + Completed + Cancelled.</p>
               <div className="grid grid-cols-2 gap-3 mb-4">
                 {[
-                  { label: 'Total', value: stats?.totalAssignments || 0, color: 'border-indigo-500/30 bg-indigo-500/5 text-indigo-400' },
-                  { label: 'In Progress', value: stats?.activeSessions || 0, color: 'border-amber-500/30 bg-amber-500/5 text-amber-400' },
-                  { label: 'Completed', value: stats?.completedModules || 0, color: 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400' },
-                  { label: 'Pending', value: stats?.pendingAssignments || 0, color: 'border-sky-500/30 bg-sky-500/5 text-sky-400' },
+                  { label: 'Total', value: stats?.totalAssignments || 0, description: 'All module assignments', tooltip: 'Every module assignment given to users in your company, including cancelled ones. Equals the four tiles below added together.', border: 'border-indigo-500/30', bg: 'bg-indigo-500/5', text: 'text-indigo-400' },
+                  { label: 'Not Started', value: stats?.pendingAssignments || 0, description: 'Assigned, not opened yet', tooltip: 'Assignments with status "assigned": the learner has not started the module yet.', border: 'border-sky-500/30', bg: 'bg-sky-500/5', text: 'text-sky-400' },
+                  { label: 'In Progress', value: stats?.activeSessions || 0, description: 'Started, not finished', tooltip: 'Assignments with status "in progress" (excluding cancelled).', border: 'border-amber-500/30', bg: 'bg-amber-500/5', text: 'text-amber-400' },
+                  { label: 'Completed', value: stats?.completedModules || 0, description: 'Finished modules', tooltip: 'Assignments with status "completed".', border: 'border-emerald-500/30', bg: 'bg-emerald-500/5', text: 'text-emerald-400' },
+                  { label: 'Cancelled', value: stats?.cancelledAssignments || 0, description: 'Withdrawn assignments', tooltip: 'Assignments that were cancelled. They are left out of every percentage on this dashboard.', border: 'border-slate-600/40', bg: 'bg-slate-700/20', text: 'text-slate-400' },
                 ].map((s, i) => (
-                  <div key={i} className={`rounded-xl border p-3 text-center ${s.color}`}>
-                    <p className="text-xl font-black">{s.value}</p>
-                    <p className="text-xs font-bold opacity-70 uppercase tracking-wider mt-0.5">{s.label}</p>
-                  </div>
+                  <StatCard key={i} label={s.label} value={s.value} description={s.description} tooltip={s.tooltip}
+                    borderClass={s.border} bgClass={s.bg} textClass={s.text} className={i === 0 ? 'col-span-2 text-center' : 'text-center'} />
                 ))}
               </div>
               {stats?.pendingRequests > 0 && (
@@ -922,20 +960,16 @@ export default function AdminDashboard() {
             return (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { label: 'Employee Signups', value: totalEmpSignups, icon: '👤', color: 'indigo' },
-                  { label: 'Manager Signups', value: totalMgrSignups, icon: '👔', color: 'amber' },
-                  { label: 'Active Emp Codes', value: activeEmp, icon: '🔑', color: 'emerald' },
-                  { label: 'Active Mgr Codes', value: activeMgr, icon: '🗝️', color: 'purple' },
+                  { label: 'Employee Signups', value: totalEmpSignups, icon: '👤', color: 'indigo', description: 'Sign-ups via employee codes', tooltip: 'Sum of the usage counts of all employee access codes (each successful sign-up with a code adds one).' },
+                  { label: 'Manager Signups', value: totalMgrSignups, icon: '👔', color: 'amber', description: 'Sign-ups via manager codes', tooltip: 'Sum of the usage counts of all manager access codes.' },
+                  { label: 'Active Emp Codes', value: activeEmp, icon: '🔑', color: 'emerald', description: 'Employee codes switched on', tooltip: 'Employee access codes that are enabled (not disabled). Expired codes are still counted until disabled.' },
+                  { label: 'Active Mgr Codes', value: activeMgr, icon: '🗝️', color: 'purple', description: 'Manager codes switched on', tooltip: 'Manager access codes that are enabled (not disabled). Expired codes are still counted until disabled.' },
                 ].map(s => {
                   const cls = { indigo: 'border-indigo-500/20 bg-indigo-500/5 text-indigo-400', amber: 'border-amber-500/20 bg-amber-500/5 text-amber-400', emerald: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400', purple: 'border-purple-500/20 bg-purple-500/5 text-purple-400' }[s.color];
+                  const [bc, bg, tc] = cls.split(' ');
                   return (
-                    <div key={s.label} className={`rounded-xl border p-4 ${cls}`}>
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-xs font-bold uppercase tracking-widest">{s.label}</p>
-                        <span>{s.icon}</span>
-                      </div>
-                      <p className="text-2xl font-black text-white">{s.value}</p>
-                    </div>
+                    <StatCard key={s.label} label={s.label} value={s.value} icon={s.icon} description={s.description} tooltip={s.tooltip}
+                      borderClass={bc} bgClass={bg} textClass={tc} />
                   );
                 })}
               </div>
@@ -1173,8 +1207,8 @@ export default function AdminDashboard() {
                 <div className="divide-y divide-slate-700/20">
                   {filteredEmployees.map(emp => {
                     const uid = emp.userId || emp.id;
-                    const empReports = allReports.filter(r => r.userId === uid).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-                    const empAssignments = allAssignments.filter(a => a.userId === uid);
+                    const empReports = allReports.filter(r => r.userId === uid).sort((a, b) => new Date(reportDate(b) || 0) - new Date(reportDate(a) || 0));
+                    const empAssignments = allAssignments.filter(a => a.assigned_to_user === uid);
                     const latestReport = empReports[0];
                     const completedMods = empAssignments.filter(a => a.status === 'completed').length;
                     const lastActivity = getEmpLastActivity(uid);
@@ -1228,8 +1262,9 @@ export default function AdminDashboard() {
 
                         {/* Module Progress */}
                         <div>
-                          {empAssignments.length > 0 ? (() => {
-                            const avgPct = Math.round(empAssignments.reduce((s, a) => s + (a.progress || 0), 0) / empAssignments.length);
+                          {empAssignments.filter(a => a.status !== 'cancelled').length > 0 ? (() => {
+                            const live = empAssignments.filter(a => a.status !== 'cancelled');
+                            const avgPct = Math.round(live.reduce((s, a) => s + assignmentProgress(a), 0) / live.length);
                             return (
                               <>
                                 <p className="text-sm font-semibold text-slate-300">{avgPct}%</p>
@@ -1263,17 +1298,16 @@ export default function AdminDashboard() {
       {activeTab === 'assignments' && (
         <div className="rounded-2xl border border-slate-700/40 bg-[#111827] p-6 shadow-xl">
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-5">Assignment Summary</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
             {[
-              { label: 'Total', value: stats?.totalAssignments || 0, borderCls: 'border-indigo-500/25', bgCls: 'bg-indigo-500/5', textCls: 'text-indigo-400' },
-              { label: 'In Progress', value: stats?.activeSessions || 0, borderCls: 'border-amber-500/25', bgCls: 'bg-amber-500/5', textCls: 'text-amber-400' },
-              { label: 'Completed', value: stats?.completedModules || 0, borderCls: 'border-emerald-500/25', bgCls: 'bg-emerald-500/5', textCls: 'text-emerald-400' },
-              { label: 'Pending', value: stats?.pendingAssignments || 0, borderCls: 'border-sky-500/25', bgCls: 'bg-sky-500/5', textCls: 'text-sky-400' },
+              { label: 'Total', value: stats?.totalAssignments || 0, description: 'All module assignments', tooltip: 'Every module assignment in your company including cancelled. Total = Not Started + In Progress + Completed + Cancelled.', borderCls: 'border-indigo-500/25', bgCls: 'bg-indigo-500/5', textCls: 'text-indigo-400' },
+              { label: 'Not Started', value: stats?.pendingAssignments || 0, description: 'Assigned, not opened yet', tooltip: 'Assignments with status "assigned".', borderCls: 'border-sky-500/25', bgCls: 'bg-sky-500/5', textCls: 'text-sky-400' },
+              { label: 'In Progress', value: stats?.activeSessions || 0, description: 'Started, not finished', tooltip: 'Assignments with status "in progress".', borderCls: 'border-amber-500/25', bgCls: 'bg-amber-500/5', textCls: 'text-amber-400' },
+              { label: 'Completed', value: stats?.completedModules || 0, description: 'Finished modules', tooltip: `Assignments with status "completed". Completion rate = completed / non-cancelled = ${fmtPct(stats?.completionRate)}.`, borderCls: 'border-emerald-500/25', bgCls: 'bg-emerald-500/5', textCls: 'text-emerald-400' },
+              { label: 'Cancelled', value: stats?.cancelledAssignments || 0, description: 'Withdrawn assignments', tooltip: 'Cancelled assignments; excluded from all percentages.', borderCls: 'border-slate-600/40', bgCls: 'bg-slate-700/20', textCls: 'text-slate-400' },
             ].map(s => (
-              <div key={s.label} className={`p-4 rounded-xl border ${s.borderCls} ${s.bgCls} text-center`}>
-                <p className={`text-xs font-bold ${s.textCls} uppercase tracking-widest mb-1`}>{s.label}</p>
-                <p className="text-3xl font-black text-white">{s.value}</p>
-              </div>
+              <StatCard key={s.label} label={s.label} value={s.value} description={s.description} tooltip={s.tooltip}
+                borderClass={s.borderCls} bgClass={s.bgCls} textClass={s.textCls} className="text-center" />
             ))}
           </div>
           <button onClick={() => navigate('/admin/assignments')} className="w-full py-3 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 transition-all text-sm font-bold">

@@ -1025,6 +1025,43 @@ export const GeneratedModules = {
   },
 };
 
+// ── QUESTION BANK ARCHIVES (quarterly snapshots) ──────────────────────────────
+// Table: question_bank_archives { id TEXT PK, data JSONB, created_at, updated_at }
+// Immutable deep-copy snapshots of a role's question bank, created by the Role
+// Library "New Generation" flow. Deliberately separate from
+// question_bank_versions so later edits/locks of live versions never touch them.
+// Doc: { id, roleId, companyId, label ('Q1'..), quarterNumber, createdAt,
+//        createdBy, questionCount, sourceVersionId, sourceVersion, questions }
+export const QuestionBankArchives = {
+  async getAll() {
+    return getAllHealed('question_bank_archives', 'question_bank_archives.json');
+  },
+  async getByRole(roleId) {
+    const all = await this.getAll();
+    return all.filter(r => r?.roleId === roleId)
+      .sort((a, b) => (a.quarterNumber || 0) - (b.quarterNumber || 0));
+  },
+  async getById(id) {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbGetById('question_bank_archives', id);
+      if (result) return result;
+    }
+    return readFileRecords('question_bank_archives.json').find(r => r?.id === id) || null;
+  },
+  async create(doc) {
+    const sb = getSB();
+    if (sb) {
+      const result = await sbInsert('question_bank_archives', doc.id, doc);
+      if (result) return result;
+    }
+    const all = readFileRecords('question_bank_archives.json');
+    all.push(doc);
+    writeFile('question_bank_archives.json', all);
+    return doc;
+  },
+};
+
 // ── QUESTION BANK VERSIONS ────────────────────────────────────────────────────
 // Real (non-JSONB-blob) table: version-controlled, frozen-once-approved
 // question banks for a job role. A bank is never mutated in place — every
@@ -1334,4 +1371,4 @@ export const Reminders = {
   },
 };
 
-export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds, AccessCodes, GeneratedModules, QuestionBankVersions, EmployeeAssessmentAssignments, Reminders };
+export default { Assessments, Submissions, Reports, PendingModules, ModuleAssignments, Companies, Organizations, Departments, Teams, ApprovalRequests, Groups, UserJDProfiles, RoleLibrary, ActivationTokens, EmployeeChecklists, GeneratedContent, AssessmentThresholds, AccessCodes, GeneratedModules, QuestionBankVersions, QuestionBankArchives, EmployeeAssessmentAssignments, Reminders };

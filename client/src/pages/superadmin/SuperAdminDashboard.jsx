@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
+import StatCard from '../../components/StatCard.jsx';
+import CompanyBadge from '../../components/CompanyBadge.jsx';
 
 // ─── Plan badge ───────────────────────────────────────────────────────────────
 
@@ -34,26 +36,127 @@ function StatusBadge({ status }) {
   );
 }
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
+// ─── Form helpers shared by Create / Edit / Details ──────────────────────────
 
-function StatCard({ icon, label, value, color = 'violet' }) {
-  const colors = {
-    violet:  'bg-violet-600/20 border-violet-500/20 text-violet-300',
-    emerald: 'bg-emerald-600/20 border-emerald-500/20 text-emerald-300',
-    purple:  'bg-purple-600/20 border-purple-500/20 text-purple-300',
-    blue:    'bg-blue-600/20 border-blue-500/20 text-blue-300',
-    indigo:  'bg-indigo-600/20 border-indigo-500/20 text-indigo-300',
-    amber:   'bg-amber-600/20 border-amber-500/20 text-amber-300',
-  };
+const INPUT_CLS = 'w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60';
+const LABEL_CLS = 'block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5';
+const CODE_RE = /^[A-Za-z0-9-]{2,20}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const SIZE_OPTIONS = ['', '1-10', '11-50', '51-200', '201-500', '501-1000', '1000+'];
+
+const DETAIL_KEYS = ['industry', 'address', 'city', 'country', 'phone', 'contactEmail', 'website', 'employeeCountRange', 'description', 'logoUrl'];
+
+function validateCompanyForm(form) {
+  const errors = {};
+  if (!form.companyName.trim()) errors.companyName = 'Company name is required';
+  else if (form.companyName.trim().length > 200) errors.companyName = 'Max 200 characters';
+  if (form.companyCode.trim() && !CODE_RE.test(form.companyCode.trim())) {
+    errors.companyCode = '2-20 characters: letters, numbers and hyphens only';
+  }
+  if (form.contactEmail.trim() && !EMAIL_RE.test(form.contactEmail.trim())) {
+    errors.contactEmail = 'Enter a valid email address';
+  }
+  if (form.description.length > 1000) errors.description = 'Max 1000 characters';
+  return errors;
+}
+
+function detailPayload(form) {
+  const out = {};
+  DETAIL_KEYS.forEach(k => { out[k] = (form[k] || '').trim(); });
+  return out;
+}
+
+function Field({ label, error, required, hint, children }) {
   return (
-    <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl p-5">
-      <div className={`inline-flex items-center justify-center w-10 h-10 rounded-xl border text-lg mb-3 ${colors[color]}`}>
-        {icon}
-      </div>
-      <div className="text-2xl font-bold text-white tabular-nums">{value ?? '—'}</div>
-      <div className="text-slate-400 text-sm mt-0.5">{label}</div>
+    <div>
+      <label className={LABEL_CLS}>
+        {label} {required && <span className="text-red-400">*</span>}
+        {hint && <span className="text-slate-600 font-normal normal-case"> {hint}</span>}
+      </label>
+      {children}
+      {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
     </div>
   );
+}
+
+// All company fields (everything except the admin account and status)
+function CompanyFields({ form, set, errors, codeHint, codePlaceholder }) {
+  return (
+    <>
+      <Field label="Company Name" required error={errors.companyName}>
+        <input value={form.companyName} onChange={e => set('companyName', e.target.value)} placeholder="Acme Corp" maxLength={200} className={INPUT_CLS} />
+      </Field>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field label="Company ID / Code" hint={codeHint} error={errors.companyCode}>
+          <input value={form.companyCode} onChange={e => set('companyCode', e.target.value.toUpperCase())} placeholder={codePlaceholder} maxLength={20} className={`${INPUT_CLS} font-mono`} />
+        </Field>
+        <Field label="Domain">
+          <input value={form.domain} onChange={e => set('domain', e.target.value)} placeholder="acme.com" maxLength={200} className={INPUT_CLS} />
+        </Field>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field label="Industry">
+          <input value={form.industry} onChange={e => set('industry', e.target.value)} placeholder="Software" maxLength={200} className={INPUT_CLS} />
+        </Field>
+        <Field label="Company Size">
+          <select value={form.employeeCountRange} onChange={e => set('employeeCountRange', e.target.value)} className={INPUT_CLS}>
+            {SIZE_OPTIONS.map(s => <option key={s} value={s}>{s || 'Not specified'}</option>)}
+          </select>
+        </Field>
+      </div>
+      <Field label="Address">
+        <input value={form.address} onChange={e => set('address', e.target.value)} placeholder="Street address" maxLength={200} className={INPUT_CLS} />
+      </Field>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field label="City">
+          <input value={form.city} onChange={e => set('city', e.target.value)} maxLength={200} className={INPUT_CLS} />
+        </Field>
+        <Field label="Country">
+          <input value={form.country} onChange={e => set('country', e.target.value)} maxLength={200} className={INPUT_CLS} />
+        </Field>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field label="Phone">
+          <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+1 555 0100" maxLength={50} className={INPUT_CLS} />
+        </Field>
+        <Field label="Contact Email" error={errors.contactEmail}>
+          <input type="email" value={form.contactEmail} onChange={e => set('contactEmail', e.target.value)} placeholder="hello@acme.com" maxLength={200} className={INPUT_CLS} />
+        </Field>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field label="Website">
+          <input value={form.website} onChange={e => set('website', e.target.value)} placeholder="https://acme.com" maxLength={200} className={INPUT_CLS} />
+        </Field>
+        <Field label="Logo URL">
+          <input value={form.logoUrl} onChange={e => set('logoUrl', e.target.value)} placeholder="https://.../logo.png" maxLength={500} className={INPUT_CLS} />
+        </Field>
+      </div>
+      <Field label="Description" error={errors.description} hint={`(${form.description.length}/1000)`}>
+        <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={3} maxLength={1000} className={INPUT_CLS} />
+      </Field>
+    </>
+  );
+}
+
+function formFromCompany(c) {
+  return {
+    companyName: c.name || c.companyName || '',
+    companyCode: c.companyCode || '',
+    domain: c.domain || '',
+    plan: c.plan || 'trial',
+    status: c.status || 'active',
+    industry: c.industry || '',
+    address: c.address || '',
+    city: c.city || '',
+    country: c.country || '',
+    phone: c.phone || '',
+    contactEmail: c.contactEmail || '',
+    website: c.website || '',
+    employeeCountRange: c.employeeCountRange || '',
+    description: c.description || '',
+    logoUrl: c.logoUrl || '',
+  };
 }
 
 // ─── Copy button helper ───────────────────────────────────────────────────────
@@ -327,28 +430,32 @@ function CompanyCodesModal({ company, onClose, setToast }) {
 
 function CreateCompanyModal({ onClose, onCreated, setToast }) {
   const [form, setForm] = useState({
-    companyName: '',
-    domain: '',
-    plan: 'trial',
+    ...formFromCompany({}),
     adminName: '',
     adminEmail: '',
     adminPassword: '',
   });
+  const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(er => ({ ...er, [k]: undefined })); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.companyName.trim()) { setToast({ message: 'Company name is required', type: 'error' }); return; }
-    if (!form.adminName.trim())   { setToast({ message: 'Admin full name is required', type: 'error' }); return; }
-    if (!form.adminEmail.trim())  { setToast({ message: 'Admin email is required', type: 'error' }); return; }
+    const errs = validateCompanyForm(form);
+    if (!form.adminName.trim())   errs.adminName = 'Admin full name is required';
+    if (!form.adminEmail.trim())  errs.adminEmail = 'Admin email is required';
+    else if (!EMAIL_RE.test(form.adminEmail.trim())) errs.adminEmail = 'Enter a valid email address';
+    setErrors(errs);
+    if (Object.keys(errs).length) { setToast({ message: 'Please fix the highlighted fields', type: 'error' }); return; }
     setSaving(true);
     try {
       const result = await authFetch('/api/superadmin/companies', {
         method: 'POST',
         body: JSON.stringify({
           companyName: form.companyName.trim(),
+          companyCode: form.companyCode.trim() || undefined,
+          ...detailPayload(form),
           domain: form.domain.trim() || undefined,
           plan: form.plan,
           adminName: form.adminName.trim(),
@@ -368,32 +475,13 @@ function CreateCompanyModal({ onClose, onCreated, setToast }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-[#1E293B] border border-slate-700/80 rounded-2xl w-full max-w-lg shadow-2xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60">
+      <div className="bg-[#1E293B] border border-slate-700/80 rounded-2xl w-full max-w-2xl shadow-2xl max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 flex-shrink-0">
           <h2 className="text-lg font-bold text-white">🏢 Create New Company</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors text-xl">✕</button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-              Company Name <span className="text-red-400">*</span>
-            </label>
-            <input
-              value={form.companyName}
-              onChange={e => set('companyName', e.target.value)}
-              placeholder="Acme Corp"
-              className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Domain (optional)</label>
-            <input
-              value={form.domain}
-              onChange={e => set('domain', e.target.value)}
-              placeholder="acme.com"
-              className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
-            />
-          </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
+          <CompanyFields form={form} set={set} errors={errors} codeHint="(auto-generated if blank)" codePlaceholder="e.g. ACME-01" />
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Plan</label>
             <select
@@ -420,6 +508,7 @@ function CreateCompanyModal({ onClose, onCreated, setToast }) {
                   placeholder="Jane Smith"
                   className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
                 />
+                {errors.adminName && <p className="text-red-400 text-xs mt-1">{errors.adminName}</p>}
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
@@ -432,6 +521,7 @@ function CreateCompanyModal({ onClose, onCreated, setToast }) {
                   placeholder="admin@acme.com"
                   className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
                 />
+                {errors.adminEmail && <p className="text-red-400 text-xs mt-1">{errors.adminEmail}</p>}
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
@@ -479,26 +569,26 @@ function CreateCompanyModal({ onClose, onCreated, setToast }) {
 // ─── Edit Company Modal ───────────────────────────────────────────────────────
 
 function EditCompanyModal({ company, onClose, onSaved, setToast }) {
-  const [form, setForm] = useState({
-    companyName: company.companyName || company.name || '',
-    domain: company.domain || '',
-    plan: company.plan || 'trial',
-    status: company.status || 'active',
-  });
+  const [form, setForm] = useState(formFromCompany(company));
+  const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(er => ({ ...er, [k]: undefined })); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.companyName.trim()) { setToast({ message: 'Company name is required', type: 'error' }); return; }
+    const errs = validateCompanyForm(form);
+    setErrors(errs);
+    if (Object.keys(errs).length) { setToast({ message: 'Please fix the highlighted fields', type: 'error' }); return; }
     setSaving(true);
     try {
       await authFetch(`/api/superadmin/companies/${company.id}`, {
         method: 'PUT',
         body: JSON.stringify({
           companyName: form.companyName.trim(),
-          domain: form.domain.trim() || undefined,
+          companyCode: form.companyCode.trim() || undefined,
+          ...detailPayload(form),
+          domain: form.domain.trim(),
           plan: form.plan,
           status: form.status,
         }),
@@ -515,31 +605,16 @@ function EditCompanyModal({ company, onClose, onSaved, setToast }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-[#1E293B] border border-slate-700/80 rounded-2xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60">
+      <div className="bg-[#1E293B] border border-slate-700/80 rounded-2xl w-full max-w-2xl shadow-2xl max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 flex-shrink-0">
           <h2 className="text-lg font-bold text-white">✏️ Edit Company</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors text-xl">✕</button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-              Company Name <span className="text-red-400">*</span>
-            </label>
-            <input
-              value={form.companyName}
-              onChange={e => set('companyName', e.target.value)}
-              className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Domain</label>
-            <input
-              value={form.domain}
-              onChange={e => set('domain', e.target.value)}
-              placeholder="acme.com"
-              className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
-            />
-          </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
+          <CompanyFields form={form} set={set} errors={errors} codeHint="(must be unique)" codePlaceholder="e.g. ACME-01" />
+          <p className="text-xs text-slate-500">
+            Renaming updates the name shown at the top of every admin, manager and employee portal for this company.
+          </p>
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Plan</label>
             <select
@@ -561,7 +636,6 @@ function EditCompanyModal({ company, onClose, onSaved, setToast }) {
             >
               <option value="active">Active</option>
               <option value="suspended">Suspended</option>
-              <option value="inactive">Inactive</option>
             </select>
           </div>
           <div className="flex gap-3 pt-2">
@@ -581,6 +655,111 @@ function EditCompanyModal({ company, onClose, onSaved, setToast }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Company Details Modal (read-only, GET /companies/:id) ───────────────────
+
+function CompanyDetailsModal({ companyId, onClose, setToast }) {
+  const [company, setCompany] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    authFetch(`/api/superadmin/companies/${companyId}`)
+      .then(setCompany)
+      .catch(err => { setToast({ message: err.message, type: 'error' }); onClose(); })
+      .finally(() => setLoading(false));
+  }, [companyId]);
+
+  const fmtDate = (d) => (d ? new Date(d).toLocaleString() : '—');
+  const rows = company ? [
+    ['Company Name', company.name],
+    ['Company ID / Code', company.companyCode],
+    ['Internal ID', company.id],
+    ['Domain', company.domain],
+    ['Plan', company.plan],
+    ['Status', company.status],
+    ['Industry', company.industry],
+    ['Company Size', company.employeeCountRange],
+    ['Address', company.address],
+    ['City', company.city],
+    ['Country', company.country],
+    ['Phone', company.phone],
+    ['Contact Email', company.contactEmail],
+    ['Website', company.website],
+    ['Logo URL', company.logoUrl],
+    ['Primary Admin', company.adminName && company.adminName !== '—' ? `${company.adminName} (${company.adminEmail})` : ''],
+    ['Users', company.userCount],
+    ['Employees', company.employeeCount],
+    ['Managers', company.managerCount],
+    ['Created', fmtDate(company.createdAt)],
+    ['Last Updated', fmtDate(company.updatedAt)],
+    ['Description', company.description],
+  ] : [];
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <div className="bg-[#1E293B] border border-slate-700/80 rounded-2xl w-full max-w-xl shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-700/60 flex-shrink-0">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-white">Company Details</h2>
+            {company && <CompanyBadge name={company.name} code={company.companyCode} className="mt-1 inline-flex" />}
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+            <p className="text-slate-400 text-sm text-center py-8">Loading...</p>
+          ) : (
+            <dl className="space-y-3">
+              {rows.map(([k, v]) => (
+                <div key={k} className="grid grid-cols-3 gap-3">
+                  <dt className="text-xs font-bold text-slate-500 uppercase tracking-wider pt-0.5">{k}</dt>
+                  <dd className="col-span-2 text-sm text-white break-words whitespace-pre-wrap">
+                    {v === undefined || v === null || v === '' ? <span className="text-slate-600">—</span> : String(v)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Delete-anyway confirm (company still has users) ──────────────────────────
+
+function ForceDeleteModal({ company, message, userCount, busy, onCancel, onConfirm }) {
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
+      <div className="bg-[#1E293B] border border-red-500/40 rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="px-6 py-4 border-b border-slate-700/60">
+          <h3 className="text-lg font-bold text-white">⚠️ Company still has users</h3>
+        </div>
+        <div className="p-6 space-y-3 text-sm">
+          <p className="text-slate-200">
+            <span className="font-semibold">{company.name || company.companyName}</span> still has{' '}
+            <span className="font-semibold text-amber-300">{userCount ?? 'some'}</span> user{userCount === 1 ? '' : 's'}.
+          </p>
+          <p className="text-slate-400">
+            "Delete anyway" removes the company and all of its access codes. Its users are not deleted, but they will be
+            unlinked from the company. This cannot be undone.
+          </p>
+          {message && <p className="text-xs text-slate-500">{message}</p>}
+        </div>
+        <div className="flex gap-3 px-6 pb-5">
+          <button onClick={onCancel} disabled={busy}
+            className="flex-1 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm transition-colors disabled:opacity-60">
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={busy}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-sm transition-colors disabled:opacity-60">
+            {busy ? 'Deleting...' : 'Delete anyway'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -657,6 +836,9 @@ export default function SuperAdminDashboard() {
   const [tempPasswordData, setTempPasswordData] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
   const [codesCompany, setCodesCompany] = useState(null);
+  const [detailsId, setDetailsId] = useState(null);
+  const [forceDelete, setForceDelete] = useState(null); // { company, message, userCount }
+  const [deleting, setDeleting] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -703,7 +885,30 @@ export default function SuperAdminDashboard() {
       setToast({ message: 'Company deleted', type: 'success' });
       fetchData();
     } catch (err) {
+      if (err.status === 409) {
+        // Company still has users — offer a forced delete
+        setForceDelete({ company, message: err.message, userCount: company.userCount });
+      } else {
+        setToast({ message: err.message, type: 'error' });
+      }
+    }
+  };
+
+  const confirmForceDelete = async () => {
+    if (!forceDelete) return;
+    setDeleting(true);
+    try {
+      const res = await authFetch(`/api/superadmin/companies/${forceDelete.company.id}?force=true`, { method: 'DELETE' });
+      setToast({
+        message: `Company deleted (${res?.usersUnlinked ?? 0} users unlinked, ${res?.codesDeleted ?? 0} codes removed)`,
+        type: 'success',
+      });
+      setForceDelete(null);
+      fetchData();
+    } catch (err) {
       setToast({ message: err.message, type: 'error' });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -734,6 +939,17 @@ export default function SuperAdminDashboard() {
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
       {tempPasswordData && <CompanyCreatedModal company={tempPasswordData} onClose={() => setTempPasswordData(null)} />}
+      {detailsId && <CompanyDetailsModal companyId={detailsId} onClose={() => setDetailsId(null)} setToast={setToast} />}
+      {forceDelete && (
+        <ForceDeleteModal
+          company={forceDelete.company}
+          message={forceDelete.message}
+          userCount={forceDelete.userCount}
+          busy={deleting}
+          onCancel={() => setForceDelete(null)}
+          onConfirm={confirmForceDelete}
+        />
+      )}
       {codesCompany && <CompanyCodesModal company={codesCompany} onClose={() => setCodesCompany(null)} setToast={setToast} />}
       {showCreate && (
         <CreateCompanyModal
@@ -774,13 +990,39 @@ export default function SuperAdminDashboard() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-          <StatCard icon="🏢" label="Total Companies"  value={stats?.totalCompanies}          color="violet" />
-          <StatCard icon="✅" label="Active"           value={stats?.activeCompanies}          color="emerald" />
-          <StatCard icon="⛔" label="Suspended"        value={stats?.suspendedCompanies ?? 0} color="blue" />
-          <StatCard icon="👑" label="Total Admins"     value={stats?.totalAdmins}              color="purple" />
-          <StatCard icon="📊" label="Standard Plan"   value={stats?.byPlan?.standard ?? 0}   color="indigo" />
-          <StatCard icon="⚡" label="Enterprise Plan" value={stats?.byPlan?.enterprise ?? 0}  color="amber" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
+          <StatCard icon="🏢" label="Total Companies" value={stats?.totalCompanies ?? '—'}
+            description="Every company on the platform."
+            tooltip="Count of all company records, whatever their plan or status."
+            borderClass="border-violet-500/30" bgClass="bg-violet-600/10" textClass="text-violet-300" />
+          <StatCard icon="✅" label="Active" value={stats?.activeCompanies ?? '—'}
+            description="Companies currently allowed to sign in."
+            tooltip="Companies whose status is Active. Their admins, managers and employees can log in."
+            borderClass="border-emerald-500/30" bgClass="bg-emerald-600/10" textClass="text-emerald-300" />
+          <StatCard icon="⛔" label="Suspended" value={stats?.suspendedCompanies ?? 0}
+            description="Companies that are switched off."
+            tooltip="Companies whose status is Suspended. Reactivate them from the table below."
+            borderClass="border-red-500/30" bgClass="bg-red-600/10" textClass="text-red-300" />
+          <StatCard icon="👑" label="Total Admins" value={stats?.totalAdmins ?? '—'}
+            description="Company administrator accounts."
+            tooltip="Number of user accounts with the admin role, across all companies."
+            borderClass="border-purple-500/30" bgClass="bg-purple-600/10" textClass="text-purple-300" />
+          <StatCard icon="👥" label="Total Users" value={stats?.totalUsers ?? '—'}
+            description="All people across all companies."
+            tooltip="Every user account on the platform (admins, managers, employees and others), not counting super admins."
+            borderClass="border-blue-500/30" bgClass="bg-blue-600/10" textClass="text-blue-300" />
+          <StatCard icon="🧪" label="Trial Plan" value={stats?.byPlan?.trial ?? 0}
+            description="Companies on a trial."
+            tooltip="Companies whose plan is Trial."
+            borderClass="border-amber-500/30" bgClass="bg-amber-600/10" textClass="text-amber-300" />
+          <StatCard icon="📊" label="Standard Plan" value={stats?.byPlan?.standard ?? 0}
+            description="Companies on the Standard plan."
+            tooltip="Companies whose plan is Standard."
+            borderClass="border-indigo-500/30" bgClass="bg-indigo-600/10" textClass="text-indigo-300" />
+          <StatCard icon="⚡" label="Enterprise Plan" value={stats?.byPlan?.enterprise ?? 0}
+            description="Companies on the Enterprise plan."
+            tooltip="Companies whose plan is Enterprise."
+            borderClass="border-fuchsia-500/30" bgClass="bg-fuchsia-600/10" textClass="text-fuchsia-300" />
         </div>
 
         {/* Companies Table */}
@@ -815,7 +1057,8 @@ export default function SuperAdminDashboard() {
                       <tr className="hover:bg-slate-700/20 transition-colors">
                         <td className="px-6 py-4">
                           <div>
-                            <p className="font-semibold text-white">{company.companyName || company.name}</p>
+                            <p className="font-semibold text-white">{company.name || company.companyName}</p>
+                            {company.companyCode && <p className="text-xs font-mono text-violet-300 mt-0.5">{company.companyCode}</p>}
                             {company.domain && <p className="text-xs text-slate-500 mt-0.5">{company.domain}</p>}
                           </div>
                         </td>
@@ -835,6 +1078,12 @@ export default function SuperAdminDashboard() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => setDetailsId(company.id)}
+                              className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-xs font-semibold transition-colors"
+                            >
+                              Details
+                            </button>
                             <button
                               onClick={() => toggleExpand(company.id)}
                               className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-xs font-semibold transition-colors"

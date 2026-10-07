@@ -378,14 +378,19 @@ router.get('/dashboard', authenticate, async (req, res) => {
       a => a.assigned_to_user === userId || a.assigned_by === userId
     );
 
+    // Overdue is derived from due_date (status 'overdue' is never written).
+    // Cancelled assignments are excluded from avgProgress and overdue.
+    const nowMs = Date.now();
+    const live = userAssignments.filter(a => a.status !== 'cancelled');
     const summary = {
       total: userAssignments.length,
       assigned: userAssignments.filter(a => a.status === 'assigned').length,
       inProgress: userAssignments.filter(a => a.status === 'in_progress').length,
       completed: userAssignments.filter(a => a.status === 'completed').length,
-      overdue: userAssignments.filter(a => a.status === 'overdue').length,
-      avgProgress: userAssignments.length > 0
-        ? Math.round(userAssignments.reduce((sum, a) => sum + (a.progress || 0), 0) / userAssignments.length)
+      cancelled: userAssignments.length - live.length,
+      overdue: live.filter(a => a.status !== 'completed' && a.due_date && new Date(a.due_date).getTime() < nowMs).length,
+      avgProgress: live.length > 0
+        ? Math.round(live.reduce((sum, a) => sum + (a.status === 'completed' ? 100 : Math.min(100, Math.max(0, Number(a.progress) || 0))), 0) / live.length)
         : 0,
     };
 

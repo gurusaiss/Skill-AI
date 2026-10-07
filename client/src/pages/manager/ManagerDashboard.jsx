@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
+import { gradeForReport } from '../../utils/assessmentRules.js';
+import StatCard from '../../components/StatCard.jsx';
 
 const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
@@ -47,28 +49,22 @@ const Skeleton = ({ className = '' }) => (
   <div className={`animate-pulse rounded-lg bg-slate-700/40 ${className}`} />
 );
 
-const StatCard = ({ label, value, icon, accent }) => {
-  const accentMap = {
-    indigo: 'border-indigo-500/20 bg-indigo-500/5 text-indigo-400',
-    emerald: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400',
-    amber: 'border-amber-500/20 bg-amber-500/5 text-amber-400',
-    red: 'border-red-500/20 bg-red-500/5 text-red-400',
-    purple: 'border-purple-500/20 bg-purple-500/5 text-purple-400',
-    sky: 'border-sky-500/20 bg-sky-500/5 text-sky-400',
-  };
-  const classes = accentMap[accent] || accentMap.indigo;
-  return (
-    <div className={`rounded-xl border p-5 transition-all hover:scale-[1.02] ${classes}`}>
-      <div className="flex items-center justify-between">
-        <div>
-          <p className={`text-xs font-bold uppercase tracking-widest mb-1.5 ${classes.split(' ').pop()}`}>{label}</p>
-          <p className="text-3xl font-black text-white">{value}</p>
-        </div>
-        <div className="text-3xl opacity-40">{icon}</div>
-      </div>
-    </div>
-  );
+const ACCENTS = {
+  indigo: { borderClass: 'border-indigo-500/20', bgClass: 'bg-indigo-500/5', textClass: 'text-indigo-400' },
+  emerald: { borderClass: 'border-emerald-500/20', bgClass: 'bg-emerald-500/5', textClass: 'text-emerald-400' },
+  amber: { borderClass: 'border-amber-500/20', bgClass: 'bg-amber-500/5', textClass: 'text-amber-400' },
+  red: { borderClass: 'border-red-500/20', bgClass: 'bg-red-500/5', textClass: 'text-red-400' },
+  purple: { borderClass: 'border-purple-500/20', bgClass: 'bg-purple-500/5', textClass: 'text-purple-400' },
+  sky: { borderClass: 'border-sky-500/20', bgClass: 'bg-sky-500/5', textClass: 'text-sky-400' },
 };
+const Card = ({ accent = 'indigo', ...props }) => (
+  <StatCard {...(ACCENTS[accent] || ACCENTS.indigo)} className="transition-all hover:scale-[1.02]" {...props} />
+);
+
+// Shared definitions: cancelled assignments never count towards rates;
+// a completed assignment counts as 100% progress.
+const assignmentProgress = (a) => (a.status === 'completed' ? 100 : Math.min(100, Math.max(0, Number(a.progress) || 0)));
+const reportWhen = (r) => r?.submittedAt || r?.generatedAt || '';
 
 const ProgressBar = ({ value, max = 100, color = 'indigo', size = 'md' }) => {
   const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
@@ -167,7 +163,7 @@ const timeAgo = (dateStr) => {
 };
 
 const isOverdue = (dueDate, status) => {
-  if (!dueDate || status === 'completed') return false;
+  if (!dueDate || status === 'completed' || status === 'cancelled') return false;
   try {
     return new Date(dueDate) < new Date();
   } catch (_) {
@@ -322,33 +318,60 @@ export default function ManagerDashboard() {
     employeePage * EMPLOYEES_PER_PAGE
   );
 
-  const recentAssignments = [...assignments]
-    .sort((a, b) => {
-      const dateA = new Date(a.createdAt || a.assignedDate || 0);
-      const dateB = new Date(b.createdAt || b.assignedDate || 0);
-      return dateB - dateA;
-    })
+  // Only assignments that belong to the manager's team (assigned TO one of the
+  // team's employees) — not rows merely assigned_by the manager.
+  const teamEmployeeIds = new Set(employees.map(e => e.userId || e.id));
+  const teamAssignments = assignments.filter(a => teamEmployeeIds.has(a.assigned_to_user));
+  const employeeById = new Map(employees.map(e => [e.userId || e.id, e]));
+  const assigneeName = (a) => employeeById.get(a.assigned_to_user)?.name || employeeById.get(a.assigned_to_user)?.email || 'Unassigned';
+  const dueOf = (a) => a.due_date || a.dueDate;
+
+  const recentAssignments = [...teamAssignments]
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
     .slice(0, 8);
 
-  // Always compute stats from the scoped assignments array (already filtered to manager's team by server)
+  // Cancelled assignments are excluded from every count/rate below.
+  const liveAssignments = teamAssignments.filter(a => a.status !== 'cancelled');
   const totalEmployees = employees.length;
-  const activeAssignments = assignments.filter((a) => a.status === 'in_progress' || a.status === 'active').length;
-  const completedAssignments = assignments.filter((a) => a.status === 'completed').length;
-  const avgProgress = assignments.length > 0
-    ? Math.round(assignments.reduce((s, a) => s + (a.progress || 0), 0) / assignments.length)
+  const activeAssignments = liveAssignments.filter((a) => a.status === 'in_progress').length;
+  const completedAssignments = liveAssignments.filter((a) => a.status === 'completed').length;
+  const avgProgress = liveAssignments.length > 0
+    ? Math.round(liveAssignments.reduce((s, a) => s + assignmentProgress(a), 0) / liveAssignments.length)
     : 0;
-  const overdueAssignments = assignments.filter((a) => isOverdue(a.dueDate, a.status)).length;
+  const completionRate = liveAssignments.length > 0
+    ? Math.round((completedAssignments / liveAssignments.length) * 100)
+    : 0;
+  const overdueAssignments = liveAssignments.filter((a) => isOverdue(dueOf(a), a.status)).length;
+
+  // Per-employee roll-up from the assignments list (the employees endpoint
+  // does not return progress/module counts).
+  const statsForEmployee = (empId) => {
+    const mine = liveAssignments.filter(a => a.assigned_to_user === empId);
+    const done = mine.filter(a => a.status === 'completed').length;
+    const progress = mine.length > 0 ? Math.round(mine.reduce((s, a) => s + assignmentProgress(a), 0) / mine.length) : 0;
+    const last = mine.map(a => a.updated_at || a.created_at).filter(Boolean).sort().pop() || null;
+    return { modules: mine.length, completed: done, progress, lastActive: last };
+  };
 
   // Assessment report stats. Pass/fail must use each report's OWN configured
   // threshold (set at assessment-creation time), not a flat guess — otherwise
   // this dashboard's pass rate disagrees with the employee's own report and
   // the admin's export for the exact same submission. Falls back to 80 (the
   // platform default) for reports submitted before passThreshold was persisted.
-  const teamEmployeeIds = new Set(employees.map(e => e.userId || e.id));
-  const teamReports = assessmentReports.filter(r => teamEmployeeIds.has(r.userId));
-  const isReportPassed = (r) => (r.score || 0) >= (r.passThreshold ?? 80);
+  // De-duplicated: only the LATEST report per (assessment, employee) pair counts,
+  // so retakes are not double-counted.
+  const latestPair = new Map();
+  for (const r of assessmentReports) {
+    if (!teamEmployeeIds.has(r.userId)) continue;
+    const k = `${r.assessmentId}|${r.userId}`;
+    const prev = latestPair.get(k);
+    if (!prev || reportWhen(r) >= reportWhen(prev)) latestPair.set(k, r);
+  }
+  const teamReports = [...latestPair.values()];
+  const reportScore = (r) => { const n = Number(r.rawScore ?? r.score); return Number.isFinite(n) ? n : 0; };
+  const isReportPassed = (r) => reportScore(r) >= (r.passThreshold ?? 80);
   const avgAssessmentScore = teamReports.length > 0
-    ? Math.round(teamReports.reduce((s, r) => s + (r.score || 0), 0) / teamReports.length)
+    ? Math.round(teamReports.reduce((s, r) => s + reportScore(r), 0) / teamReports.length)
     : null;
   const passedReports = teamReports.filter(isReportPassed).length;
   const needsAttention = teamReports.filter(r => !isReportPassed(r));
@@ -425,31 +448,24 @@ export default function ManagerDashboard() {
             </div>
 
             <div className="p-6 space-y-6">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 text-center">
-                  <p className="text-2xl font-black text-white">{selectedEmployee.assignedModules || employeeAssignments.length || 0}</p>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-1">Modules</p>
-                </div>
-                <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 text-center">
-                  <p className="text-2xl font-black text-emerald-400">
-                    {employeeAssignments.length > 0
-                      ? Math.round(employeeAssignments.filter((a) => a.status === 'completed').length / employeeAssignments.length * 100)
-                      : 0}
-                    %
-                  </p>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-1">Completion</p>
-                </div>
-                <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 text-center">
-                  <p className="text-2xl font-black text-amber-400">
-                    {employeeAssignments.filter((a) => isOverdue(a.dueDate, a.status)).length}
-                  </p>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-1">Overdue</p>
-                </div>
-              </div>
+              {(() => {
+                const empId = selectedEmployee.userId || selectedEmployee.id;
+                const mine = employeeAssignments.filter(a => a.status !== 'cancelled' && (!a.assigned_to_user || a.assigned_to_user === empId));
+                const done = mine.filter(a => a.status === 'completed').length;
+                return (
+                  <div className="grid grid-cols-3 gap-4">
+                    <StatCard label="Modules" value={mine.length} description="Active assignments" tooltip="Number of non-cancelled module assignments for this employee." className="text-center" />
+                    <StatCard label="Completion" value={`${mine.length > 0 ? Math.round((done / mine.length) * 100) : 0}%`} textClass="text-emerald-400" description="Share finished" tooltip="Completed assignments divided by non-cancelled assignments for this employee." className="text-center" />
+                    <StatCard label="Overdue" value={mine.filter((a) => isOverdue(dueOf(a), a.status)).length} textClass="text-amber-400" description="Past due date" tooltip="Assignments whose due date has passed and that are neither completed nor cancelled." className="text-center" />
+                  </div>
+                );
+              })()}
 
               {(() => {
                 const empId = selectedEmployee.userId || selectedEmployee.id;
-                const empReport = assessmentReports.find(r => r.userId === empId);
+                const empReport = assessmentReports
+                  .filter(r => r.userId === empId)
+                  .sort((a, b) => reportWhen(b).localeCompare(reportWhen(a)))[0];
                 if (!empReport) return null;
                 const scoreColor = isReportPassed(empReport) ? 'text-emerald-400' : 'text-red-400';
                 return (
@@ -457,7 +473,7 @@ export default function ManagerDashboard() {
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Assessment Report</h3>
                     <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 flex items-center justify-between gap-4">
                       <div>
-                        <p className={`text-2xl font-black ${scoreColor}`}>{empReport.score || 0}%<span className="text-slate-500 text-sm font-bold ml-2">{empReport.grade}</span></p>
+                        <p className={`text-2xl font-black ${scoreColor}`}>{Math.round(reportScore(empReport))}%<span className="text-slate-500 text-sm font-bold ml-2">{gradeForReport(empReport) || empReport.grade}</span></p>
                         {empReport.weakAreas?.length > 0 && (
                           <p className="text-xs text-amber-400 mt-1">⚠ Weak areas: {empReport.weakAreas.join(', ')}</p>
                         )}
@@ -486,7 +502,7 @@ export default function ManagerDashboard() {
                       <div
                         key={a.id || idx}
                         className={`rounded-xl border p-4 transition-all ${
-                          isOverdue(a.dueDate, a.status)
+                          isOverdue(dueOf(a), a.status)
                             ? 'border-red-500/20 bg-red-500/5'
                             : 'border-slate-700/40 bg-slate-800/30'
                         }`}
@@ -494,7 +510,7 @@ export default function ManagerDashboard() {
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <p className="text-sm font-semibold text-white truncate">{a.title || a.name || `Assignment #${idx + 1}`}</p>
-                            {isOverdue(a.dueDate, a.status) && (
+                            {isOverdue(dueOf(a), a.status) && (
                               <span className="shrink-0 text-xs font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2 py-0.5 rounded-full uppercase">
                                 Overdue
                               </span>
@@ -505,22 +521,22 @@ export default function ManagerDashboard() {
                         <div className="flex items-center justify-between">
                           <div className="flex-1 mr-4">
                             <ProgressBar
-                              value={a.progress || 0}
+                              value={assignmentProgress(a)}
                               color={
                                 a.status === 'completed'
                                   ? 'emerald'
-                                  : isOverdue(a.dueDate, a.status)
+                                  : isOverdue(dueOf(a), a.status)
                                   ? 'red'
                                   : 'indigo'
                               }
                               size="sm"
                             />
                           </div>
-                          <span className="text-xs font-bold text-slate-400 shrink-0">{a.progress || 0}%</span>
+                          <span className="text-xs font-bold text-slate-400 shrink-0">{Math.round(assignmentProgress(a))}%</span>
                         </div>
-                        {a.dueDate && (
-                          <p className={`text-xs mt-1.5 ${isOverdue(a.dueDate, a.status) ? 'text-red-400' : 'text-slate-500'}`}>
-                            Due: {formatDate(a.dueDate)}
+                        {dueOf(a) && (
+                          <p className={`text-xs mt-1.5 ${isOverdue(dueOf(a), a.status) ? 'text-red-400' : 'text-slate-500'}`}>
+                            Due: {formatDate(dueOf(a))}
                           </p>
                         )}
                       </div>
@@ -564,11 +580,21 @@ export default function ManagerDashboard() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-8">
-        <StatCard label="Total Employees" value={totalEmployees} icon="👥" accent="indigo" />
-        <StatCard label="Active" value={activeAssignments} icon="⚡" accent="sky" />
-        <StatCard label="Completed" value={completedAssignments} icon="✅" accent="emerald" />
-        <StatCard label="Avg Progress" value={`${avgProgress}%`} icon="📊" accent="purple" />
-        <StatCard label="Overdue" value={overdueAssignments} icon="⚠️" accent="red" />
+        <Card label="Total Employees" value={totalEmployees} icon="👥" accent="indigo"
+          description="People on your team"
+          tooltip="Number of employees who report to you." />
+        <Card label="In Progress" value={activeAssignments} icon="⚡" accent="sky"
+          description="Team modules being worked on"
+          tooltip="Team assignments with status 'in progress'. Only assignments given to your team's employees are counted; cancelled ones are excluded." />
+        <Card label="Completed" value={completedAssignments} icon="✅" accent="emerald"
+          description="Team modules finished"
+          tooltip="Team assignments with status 'completed'. Cancelled assignments are excluded." />
+        <Card label="Avg Progress" value={`${avgProgress}%`} icon="📊" accent="purple"
+          description="Average team learning progress"
+          tooltip="Mean progress across your team's non-cancelled assignments. A completed assignment counts as 100%." />
+        <Card label="Overdue" value={overdueAssignments} icon="⚠️" accent="red"
+          description="Past due and not finished"
+          tooltip="Team assignments whose due date has passed and that are neither completed nor cancelled." />
       </div>
 
       {/* ── Assessment Reports Summary ─────────────────────────────── */}
@@ -583,25 +609,29 @@ export default function ManagerDashboard() {
 
           {/* Summary stats */}
           <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="bg-slate-900/60 rounded-xl p-3 text-center">
-              <p className={`text-2xl font-black ${avgAssessmentScore >= 80 ? 'text-emerald-400' : avgAssessmentScore >= 60 ? 'text-amber-400' : 'text-red-400'}`}>
-                {avgAssessmentScore}%
-              </p>
-              <p className="text-xs text-slate-500 mt-0.5">Team Avg Score</p>
-            </div>
-            <div className="bg-slate-900/60 rounded-xl p-3 text-center">
-              <p className="text-2xl font-black text-emerald-400">{passedReports}</p>
-              <p className="text-xs text-slate-500 mt-0.5" title="Each assessment's own configured pass threshold">Passed</p>
-            </div>
-            <div className="bg-slate-900/60 rounded-xl p-3 text-center">
-              <p className={`text-2xl font-black ${needsAttention.length > 0 ? 'text-red-400' : 'text-slate-400'}`}>{needsAttention.length}</p>
-              <p className="text-xs text-slate-500 mt-0.5">Needs Attention</p>
-            </div>
+            <StatCard
+              label="Team Avg Score"
+              value={avgAssessmentScore == null ? '—' : `${avgAssessmentScore}%`}
+              description="Average assessment score"
+              tooltip="Mean score of the latest submission for each (assessment, employee) pair in your team. Retakes replace earlier attempts."
+              textClass="text-indigo-400" bgClass="bg-slate-900/60" borderClass="border-slate-700/40" className="text-center" />
+            <StatCard
+              label="Passed"
+              value={passedReports}
+              description="At or above pass mark"
+              tooltip="Submissions whose score is at or above that assessment's own pass threshold (default 80% if none was saved)."
+              textClass="text-emerald-400" bgClass="bg-slate-900/60" borderClass="border-slate-700/40" className="text-center" />
+            <StatCard
+              label="Needs Attention"
+              value={needsAttention.length}
+              description="Below pass mark"
+              tooltip="Submissions scored below their assessment's pass threshold. Passed + Needs Attention = total submissions."
+              textClass="text-red-400" bgClass="bg-slate-900/60" borderClass="border-slate-700/40" className="text-center" />
           </div>
 
           {/* Per-employee report rows */}
           <div className="space-y-2 max-h-56 overflow-y-auto">
-            {teamReports.slice().sort((a, b) => (a.score || 0) - (b.score || 0)).map((r) => {
+            {teamReports.slice().sort((a, b) => reportScore(a) - reportScore(b)).map((r) => {
               const scoreColor = isReportPassed(r) ? 'text-emerald-400' : 'text-red-400';
               const gradeBg = isReportPassed(r) ? 'bg-emerald-500/15 border-emerald-500/30' : 'bg-red-500/15 border-red-500/30';
               return (
@@ -618,8 +648,8 @@ export default function ManagerDashboard() {
                       <span className="text-xs text-amber-400 hidden sm:block">⚠ {r.weakAreas.slice(0,2).join(', ')}</span>
                     )}
                     <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${gradeBg}`}>
-                      <span className={scoreColor}>{r.score || 0}%</span>
-                      <span className="text-slate-500 ml-1">{r.grade}</span>
+                      <span className={scoreColor}>{Math.round(reportScore(r))}%</span>
+                      <span className="text-slate-500 ml-1">{gradeForReport(r) || r.grade}</span>
                     </span>
                   </div>
                 </div>
@@ -686,31 +716,31 @@ export default function ManagerDashboard() {
                         className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm shrink-0 ${
                           a.status === 'completed'
                             ? 'bg-emerald-500/15 text-emerald-400'
-                            : isOverdue(a.dueDate, a.status)
+                            : isOverdue(dueOf(a), a.status)
                             ? 'bg-red-500/15 text-red-400'
                             : 'bg-indigo-500/15 text-indigo-400'
                         }`}
                       >
-                        {a.status === 'completed' ? '✓' : isOverdue(a.dueDate, a.status) ? '!' : '→'}
+                        {a.status === 'completed' ? '✓' : isOverdue(dueOf(a), a.status) ? '!' : '→'}
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-white truncate">
                           {a.title || a.name || `Assignment #${idx + 1}`}
                         </p>
                         <p className="text-xs text-slate-500 truncate">
-                          {a.assignedToName || a.assignedTo || 'Unassigned'} • {a.type || 'Module'}
+                          {assigneeName(a)} • {a.type || 'Module'}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0 ml-3">
                       <div className="hidden sm:block w-20">
                         <ProgressBar
-                          value={a.progress || 0}
-                          color={a.status === 'completed' ? 'emerald' : isOverdue(a.dueDate, a.status) ? 'red' : 'indigo'}
+                          value={assignmentProgress(a)}
+                          color={a.status === 'completed' ? 'emerald' : isOverdue(dueOf(a), a.status) ? 'red' : 'indigo'}
                           size="sm"
                         />
                       </div>
-                      <StatusBadge status={isOverdue(a.dueDate, a.status) ? 'overdue' : a.status} />
+                      <StatusBadge status={isOverdue(dueOf(a), a.status) ? 'overdue' : a.status} />
                     </div>
                   </div>
                 ))}
@@ -744,30 +774,21 @@ export default function ManagerDashboard() {
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs text-slate-400 font-medium">Overall Progress</span>
+                    <span className="text-xs text-slate-400 font-medium" title="Mean progress of non-cancelled team assignments (completed = 100%)">Overall Progress</span>
                     <span className="text-xs font-bold text-indigo-400">{avgProgress}%</span>
                   </div>
                   <ProgressBar value={avgProgress} color="indigo" size="md" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg bg-slate-900/50 p-3 text-center">
-                    <p className="text-lg font-black text-emerald-400">{completedAssignments}</p>
-                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Done</p>
-                  </div>
-                  <div className="rounded-lg bg-slate-900/50 p-3 text-center">
-                    <p className="text-lg font-black text-amber-400">{overdueAssignments}</p>
-                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Overdue</p>
-                  </div>
+                  <StatCard label="Done" value={completedAssignments} textClass="text-emerald-400" bgClass="bg-slate-900/50" borderClass="border-slate-700/30"
+                    description="Finished modules" tooltip="Team assignments with status 'completed' (cancelled excluded)." className="text-center" />
+                  <StatCard label="Overdue" value={overdueAssignments} textClass="text-amber-400" bgClass="bg-slate-900/50" borderClass="border-slate-700/30"
+                    description="Past due, unfinished" tooltip="Due date passed and not completed or cancelled." className="text-center" />
                 </div>
                 <div className="pt-3 border-t border-slate-700/40">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">Completion Rate</span>
-                    <span className="font-bold text-white">
-                      {assignments.length > 0
-                        ? Math.round((completedAssignments / assignments.length) * 100)
-                        : 0}
-                      %
-                    </span>
+                    <span className="text-slate-500" title="Completed / non-cancelled team assignments">Completion Rate</span>
+                    <span className="font-bold text-white">{completionRate}%</span>
                   </div>
                 </div>
               </div>
@@ -816,7 +837,8 @@ export default function ManagerDashboard() {
           ) : (
             <div className="divide-y divide-slate-700/30">
               {pagedEmployees.map((emp, idx) => {
-                const empProgress = emp.progress || (emp.assignedModules > 0 ? Math.round((emp.completedModules || 0) / emp.assignedModules * 100) : 0);
+                const empStats = statsForEmployee(emp.userId || emp.id);
+                const empProgress = empStats.progress;
                 return (
                   <div
                     key={emp.userId || emp.id || idx}
@@ -839,7 +861,7 @@ export default function ManagerDashboard() {
                       </div>
                       <div className="hidden sm:block text-center">
                         <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Modules</p>
-                        <p className="text-xs text-slate-300 font-medium mt-0.5">{emp.assignedModules || 0}</p>
+                        <p className="text-xs text-slate-300 font-medium mt-0.5">{empStats.modules}</p>
                       </div>
                       <div className="w-24 hidden sm:block">
                         <div className="flex items-center justify-between mb-1">
@@ -850,7 +872,7 @@ export default function ManagerDashboard() {
                       </div>
                       <div className="hidden md:block text-right">
                         <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Last Active</p>
-                        <p className="text-xs text-slate-300 font-medium mt-0.5">{timeAgo(emp.lastActive)}</p>
+                        <p className="text-xs text-slate-300 font-medium mt-0.5">{timeAgo(emp.lastActive || empStats.lastActive)}</p>
                       </div>
                       <div className="w-9 h-7 rounded-lg bg-indigo-600/15 border border-indigo-500/25 flex items-center justify-center text-indigo-400 text-xs font-bold opacity-0 group-hover:opacity-100 transition-all">
                         →
@@ -1065,9 +1087,9 @@ export default function ManagerDashboard() {
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-slate-700/40">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">All Assignments</h3>
-            <span className="text-xs text-slate-500 font-medium">{assignments.length} total</span>
+            <span className="text-xs text-slate-500 font-medium">{teamAssignments.length} total</span>
           </div>
-          {assignments.length === 0 ? (
+          {teamAssignments.length === 0 ? (
             <EmptyState
               icon="📋"
               title="No Assignments"
@@ -1083,8 +1105,8 @@ export default function ManagerDashboard() {
             />
           ) : (
             <div className="divide-y divide-slate-700/30">
-              {assignments.map((a, idx) => {
-                const overdue = isOverdue(a.dueDate, a.status);
+              {teamAssignments.map((a, idx) => {
+                const overdue = isOverdue(dueOf(a), a.status);
                 return (
                   <div
                     key={a.id || idx}
@@ -1107,26 +1129,26 @@ export default function ManagerDashboard() {
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2">
                       <span className="text-xs text-slate-500">
-                        👤 {a.assignedToName || a.assignedTo || 'Unassigned'}
+                        👤 {assigneeName(a)}
                       </span>
                       <span className="text-xs text-slate-500">
                         📁 {a.type || 'Module'}
                       </span>
-                      {a.dueDate && (
+                      {dueOf(a) && (
                         <span className={`text-xs ${overdue ? 'text-red-400 font-semibold' : 'text-slate-500'}`}>
-                          📅 Due: {formatDate(a.dueDate)}
+                          📅 Due: {formatDate(dueOf(a))}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="flex-1">
                         <ProgressBar
-                          value={a.progress || 0}
+                          value={assignmentProgress(a)}
                           color={a.status === 'completed' ? 'emerald' : overdue ? 'red' : 'indigo'}
                           size="sm"
                         />
                       </div>
-                      <span className="text-xs font-bold text-slate-400 shrink-0 w-10 text-right">{a.progress || 0}%</span>
+                      <span className="text-xs font-bold text-slate-400 shrink-0 w-10 text-right">{Math.round(assignmentProgress(a))}%</span>
                     </div>
                   </div>
                 );

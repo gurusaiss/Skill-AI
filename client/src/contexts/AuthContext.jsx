@@ -517,7 +517,18 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (response.success && response.data) {
-        setUser(response.data);
+        // MERGE (do not replace): the PUT response is a smaller shape that omits
+        // permissions / companyId / company, which would break feature gating
+        // and the company-name header.
+        setUser(prev => ({
+          ...(prev || {}),
+          ...response.data,
+          permissions: prev?.permissions ?? response.data.permissions,
+          accesses: prev?.accesses ?? response.data.accesses,
+          companyId: prev?.companyId ?? response.data.companyId,
+          company: prev?.company ?? null,
+          companyName: prev?.company?.name ?? prev?.companyName ?? '',
+        }));
         return { success: true, data: response.data };
       } else {
         throw new Error(response.error?.message || 'Profile update failed');
@@ -609,6 +620,8 @@ export const AuthProvider = ({ children }) => {
     setAuthFromToken,
     activeRole: getEffectiveRole(),
     switchRole,
+    company: user?.company || null,
+    companyName: user?.company?.name || user?.companyName || '',
     accesses: user?.accesses || [],
     allRoles: user ? [user.role, ...(user.accesses || [])] : [],
   };

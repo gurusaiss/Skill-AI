@@ -88,7 +88,7 @@ router.get('/dashboard', authenticate, requireRole('admin'), async (req, res) =>
     const companies = await Companies.getAll();
     const company = companies.find(c => c.id === companyId) || {
       id: companyId,
-      name: 'Your Company',
+      name: '',
       plan: 'standard',
       status: 'active',
       domain: '',
@@ -120,9 +120,18 @@ router.get('/dashboard', authenticate, requireRole('admin'), async (req, res) =>
     const completedAssignments = companyAssignments.filter(a => a.status === 'completed');
     const activeAssignments = companyAssignments.filter(a => a.status === 'in_progress');
     const pendingAssignments = companyAssignments.filter(a => a.status === 'assigned');
-    const completionRate = companyAssignments.length > 0
-      ? Math.round((completedAssignments.length / companyAssignments.length) * 100)
+    // DEFINITIONS (kept identical on every dashboard):
+    //  - cancelled assignments are excluded from every rate.
+    //  - completionRate = completed / non-cancelled assignments.
+    //  - avgProgress    = mean progress (completed counts as 100) over non-cancelled assignments.
+    const liveAssignments = companyAssignments.filter(a => a.status !== 'cancelled');
+    const completionRate = liveAssignments.length > 0
+      ? Math.round((completedAssignments.length / liveAssignments.length) * 100)
       : 0;
+    const avgProgress = liveAssignments.length > 0
+      ? Math.round(liveAssignments.reduce((sum, a) => sum + (a.status === 'completed' ? 100 : Math.min(100, Math.max(0, Number(a.progress) || 0))), 0) / liveAssignments.length)
+      : 0;
+    const cancelledAssignments = companyAssignments.length - liveAssignments.length;
 
     // 4. Pending requests (both types)
     const pendingAssignmentRequests = allRequests.filter(r =>
@@ -132,6 +141,41 @@ router.get('/dashboard', authenticate, requireRole('admin'), async (req, res) =>
       a.status === 'pending' && a.companyId === companyId
     );
     const totalPendingApprovals = pendingAssignmentRequests.length + pendingApprovals.length;
+
+    // Assessments: distinct (assessmentId,userId) pairs, latest report per pair
+    let assessmentsCompleted = 0;
+    let avgAssessmentScore = null;
+    // Real activity per day for the last 7 days (oldest first), local server time.
+    const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const weeklyActivity = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i);
+      weeklyActivity.push({ key: dayKey(d), day: d.toLocaleDateString('en-US', { weekday: 'short' }), completions: 0, submissions: 0 });
+    }
+    const bumpDay = (iso, field) => {
+      if (!iso) return;
+      const t = new Date(iso);
+      if (isNaN(t.getTime())) return;
+      const slot = weeklyActivity.find(w => w.key === dayKey(t));
+      if (slot) slot[field]++;
+    };
+    companyAssignments.filter(a => a.status === 'completed').forEach(a => bumpDay(a.updated_at, 'completions'));
+    try {
+      const reports = (await Reports.getAll()) || [];
+      reports.filter(r => companyUserIds.has(r.userId)).forEach(r => bumpDay(r.submittedAt || r.generatedAt, 'submissions'));
+      const latest = new Map();
+      for (const r of reports) {
+        if (!companyUserIds.has(r.userId)) continue;
+        const k = `${r.assessmentId}|${r.userId}`;
+        const t = r.submittedAt || r.generatedAt || '';
+        const prev = latest.get(k);
+        if (!prev || t >= (prev.submittedAt || prev.generatedAt || '')) latest.set(k, r);
+      }
+      const rows = [...latest.values()];
+      assessmentsCompleted = rows.length;
+      const scores = rows.map(r => Number(r.rawScore ?? r.score)).filter(n => Number.isFinite(n));
+      if (scores.length) avgAssessmentScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    } catch (e) { console.warn('[admin/dashboard] reports stats failed:', e.message); }
 
     // 5. Active users (last 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -168,7 +212,15 @@ router.get('/dashboard', authenticate, requireRole('admin'), async (req, res) =>
           completedAssignments: completedAssignments.length,
           activeAssignments: activeAssignments.length,
           pendingAssignments: pendingAssignments.length,
+          cancelledAssignments,
           completionRate,
+          avgProgress,
+          assessmentsCompleted,
+          avgAssessmentScore,
+          pendingRequests: pendingAssignmentRequests.length,
+          admins: companyUsers.filter(u => u.role === 'admin').length,
+          otherRoles: companyUsers.length - employees.length - managers.length - companyUsers.filter(u => u.role === 'admin').length,
+          weeklyActivity: weeklyActivity.map(({ key, ...rest }) => rest),
           activeUsers,
           pendingApprovals: totalPendingApprovals,
         },

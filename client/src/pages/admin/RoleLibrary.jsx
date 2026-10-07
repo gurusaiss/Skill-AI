@@ -3,6 +3,7 @@ import { authFetch } from '../../utils/authFetch.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import { useAuth } from '../../contexts/AuthContext.jsx';
+import QuestionCard from '../../components/QuestionCard.jsx';
 
 const inputCls = 'w-full bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500';
 const labelCls = 'block text-xs font-medium text-slate-400 mb-1';
@@ -972,9 +973,35 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
   // how many questions were templated filler rather than drawn from documents.
   const [genDiagnostics, setGenDiagnostics] = useState(null);
   const pollRef = useRef(null);
+  // Quarterly archives: immutable snapshots made by 'New Generation'.
+  const [archives, setArchives] = useState([]);
+  const [nextLabel, setNextLabel] = useState('Q1');
+  const [viewArchive, setViewArchive] = useState(null); // full snapshot being viewed read-only
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [newGenConfirm, setNewGenConfirm] = useState(false);
+
+  const loadArchives = async () => {
+    try {
+      const r = await authFetch(`/api/roles/${role.id}/archives`);
+      setArchives(Array.isArray(r?.data) ? r.data : []);
+      if (r?.meta?.nextLabel) setNextLabel(r.meta.nextLabel);
+    } catch (_) { /* strip is optional — fail quietly */ }
+  };
+
+  const openArchive = async (a) => {
+    if (viewArchive?.id === a.id) { setViewArchive(null); return; }
+    setArchiveLoading(true);
+    try {
+      const r = await authFetch(`/api/roles/${role.id}/archives/${a.id}`);
+      setViewArchive(r?.data ?? null);
+      setDiffFilter('all');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setArchiveLoading(false); }
+  };
 
   useEffect(() => {
     loadBank();
+    loadArchives();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
@@ -1054,7 +1081,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
     finally { setLoading(false); }
   };
 
-  const handleRegen = async () => {
+  const handleRegen = async (isNewGeneration = false) => {
     setRegen(true);
     try {
       // Partial regeneration: locked questions are preserved verbatim by the
@@ -1074,7 +1101,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
       // server-side. Blocking on the full generation here used to guarantee a
       // 30s client abort (plus 2 automatic retries that each kicked off ANOTHER
       // competing generation), so the click appeared to do nothing.
-      const res = await authFetch(`/api/roles/${role.id}/regenerate-questions`, { method: 'POST', body: JSON.stringify(payload) });
+      const res = await authFetch(`/api/roles/${role.id}/${isNewGeneration ? 'new-generation' : 'regenerate-questions'}`, { method: 'POST', body: JSON.stringify(payload) });
       const noOp = res?.noOp || res?.data?.noOp;
       if (noOp) {
         toast(res?.message || 'All questions are locked — nothing to regenerate.');
@@ -1082,6 +1109,8 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
         return;
       }
       setRegenConfirm(false);
+      setNewGenConfirm(false);
+      if (isNewGeneration) { setViewArchive(null); loadArchives(); }
       toast(res?.data?.alreadyRunning
         ? 'Generation already in progress — tracking it now.'
         : 'Generation started — this can take a few minutes on the free AI tier.');
@@ -1198,6 +1227,16 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
               >
                 {regen && regenMode === 'ai-only' ? '⏳ Generating…' : '🔄 Regen AI Only'}
               </button>
+              {hasFeaturePermission('questions.generate') && questions.length > 0 && (
+                <button
+                  onClick={() => setNewGenConfirm(true)}
+                  disabled={regen || generating || (!role.jobDescription && !hasFiles)}
+                  title="Quarterly refresh — saves the current questions as a quarter snapshot, then regenerates ALL questions (locked ones too)"
+                  className="text-xs px-3 py-1.5 rounded-lg bg-sky-600/20 text-sky-300 border border-sky-500/30 hover:bg-sky-600/40 disabled:opacity-40 transition-colors"
+                >
+                  🗓 New Generation
+                </button>
+              )}
               {onApprove && questions.length > 0 && (
                 <button
                   onClick={() => onApprove(role)}
@@ -1210,6 +1249,46 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
               <button onClick={onClose} className="text-slate-400 hover:text-white text-xl px-2">✕</button>
             </div>
           </div>
+
+          {/* Quarters strip — archived quarterly snapshots (read-only) */}
+          {archives.length > 0 && (
+            <div className="px-5 py-2 border-b border-slate-700 flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-slate-500 mr-1">Quarters:</span>
+              <button
+                onClick={() => setViewArchive(null)}
+                className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${!viewArchive ? 'bg-indigo-600 text-white border-indigo-500' : 'text-slate-300 border-slate-600 hover:border-slate-400'}`}
+                title="Show the current (live) questions"
+              >Current</button>
+              {archives.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => openArchive(a)}
+                  disabled={archiveLoading}
+                  title={`${a.label} — archived ${a.createdAt ? new Date(a.createdAt).toLocaleDateString() : ''} · ${a.questionCount} questions`}
+                  className={`text-xs px-2.5 py-1 rounded-md border transition-colors disabled:opacity-50 ${viewArchive?.id === a.id ? 'bg-sky-600 text-white border-sky-500' : 'text-sky-300 border-sky-700/60 hover:bg-sky-600/20'}`}
+                >{a.label}</button>
+              ))}
+            </div>
+          )}
+
+          {/* New Generation confirmation pop-up */}
+          {newGenConfirm && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70">
+              <div className="bg-[#1E293B] border border-slate-600 rounded-xl max-w-md w-full p-5 shadow-2xl">
+                <h3 className="text-base font-semibold text-white">Start a new generation?</h3>
+                <p className="text-sm text-slate-300 mt-2">
+                  Start a new generation for the next quarter? ALL questions, locked and unlocked, will be regenerated.
+                  The current approved questions will be saved as <strong className="text-sky-300">{nextLabel}</strong> and stay available to view.
+                </p>
+                <div className="flex gap-2 justify-end mt-5">
+                  <button onClick={() => setNewGenConfirm(false)} disabled={regen} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-slate-400">Cancel</button>
+                  <button onClick={() => handleRegen(true)} disabled={regen} className="px-4 py-1.5 rounded-lg bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700 disabled:opacity-50">
+                    {regen ? 'Starting…' : 'Start new generation'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Inline regenerate confirmation panel */}
           {regenConfirm && (() => {
@@ -1330,7 +1409,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                     Cancel
                   </button>
                   <button
-                    onClick={handleRegen}
+                    onClick={() => handleRegen(false)}
                     disabled={regen || (hasFiles && selectedFileIds.size === 0)}
                     className={`px-4 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-50 transition-colors ${regenMode === 'ai-only' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-purple-600 hover:bg-purple-700'}`}
                   >
@@ -1389,7 +1468,20 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
 
         {/* Body */}
         <div className="overflow-y-auto flex-1 p-4 space-y-3">
-          {loading && <p className="text-slate-400 text-sm text-center py-8">Loading question bank…</p>}
+          {viewArchive ? (
+            <>
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-2.5">
+                <p className="text-xs text-sky-200">
+                  <strong>{viewArchive.label}</strong> — read-only snapshot · archived {viewArchive.createdAt ? new Date(viewArchive.createdAt).toLocaleString() : ''} · {viewArchive.questionCount} questions
+                </p>
+                <button onClick={() => setViewArchive(null)} className="text-xs px-3 py-1 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 shrink-0">← Back to current questions</button>
+              </div>
+              {(viewArchive.questions || []).map((q, i) => (
+                <QuestionCard key={q.id || i} q={q} index={i} readOnly />
+              ))}
+            </>
+          ) : (<>
+          {loading &&<p className="text-slate-400 text-sm text-center py-8">Loading question bank…</p>}
           {!loading && generating && questions.length === 0 && (
             <div className="text-center py-10 space-y-3">
               <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600/10 border border-indigo-500/30">
@@ -1510,7 +1602,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
             const realIdx = questions.indexOf(q);
             const isEditing = editIdx === realIdx;
             return (
-              <div key={q.id || i} className="bg-[#0F172A] border border-slate-700 rounded-xl p-4">
+              <div key={q.id || i} className={isEditing ? "bg-[#0F172A] border border-slate-700 rounded-xl p-4" : undefined}>
                 {isEditing ? (
                   <div className="space-y-3">
                     <textarea rows={3} className={inputCls} value={editQ.question} onChange={e => setEditQ(p => ({ ...p, question: e.target.value }))} />
@@ -1558,60 +1650,15 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                     </div>
                   </div>
                 ) : (
-                  <div>
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm text-white font-medium flex-1">{i + 1}. {q.question}</p>
-                      <div className="flex gap-1 flex-shrink-0 items-center">
-                        {q.isManual && <span className="px-1.5 py-0.5 rounded text-xs bg-violet-900/40 text-violet-400 border border-violet-700/50">edited</span>}
-                        {q.locked && <span className="px-1.5 py-0.5 rounded text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-700/50" title="Locked — preserved exactly as-is on every regenerate, until unlocked">🔒 locked</span>}
-                        {typeof q.qualityScore === 'number' && (
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-xs border ${q.qualityScore >= 70 ? 'bg-emerald-900/40 text-emerald-400 border-emerald-700/50' : q.qualityScore >= 50 ? 'bg-amber-900/40 text-amber-400 border-amber-700/50' : 'bg-red-900/40 text-red-400 border-red-700/50'}`}
-                            title="Quality score — groundedness, specificity, non-generic phrasing, and answer completeness"
-                          >
-                            Q {q.qualityScore}
-                          </span>
-                        )}
-                        <span className={`px-2 py-0.5 rounded-full text-xs border capitalize ${DIFF_COLORS[q.difficulty] || DIFF_COLORS.medium}`}>{q.difficulty || 'medium'}</span>
-                        <button
-                          onClick={() => startEdit(realIdx)}
-                          disabled={q.locked || !hasFeaturePermission('questions.edit')}
-                          title={!hasFeaturePermission('questions.edit') ? "You don't have permission to edit questions" : q.locked ? 'Unlock to edit' : undefined}
-                          className="text-xs px-2 py-1 rounded bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >Edit</button>
-                        <button
-                          onClick={() => toggleQuestionLock(q)}
-                          disabled={lockingQid === q.id || !hasFeaturePermission('questions.edit')}
-                          title={!hasFeaturePermission('questions.edit') ? "You don't have permission to edit questions" : q.locked ? 'Unlock — this question becomes regeneratable again' : 'Lock — preserve this question exactly as-is on every future regenerate'}
-                          className={`text-xs px-2 py-1 rounded disabled:opacity-40 ${q.locked ? 'bg-amber-600/20 text-amber-300 hover:bg-amber-600/40' : 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40'}`}
-                        >
-                          {lockingQid === q.id ? '…' : q.locked ? '🔓 Unlock' : '🔒 Lock'}
-                        </button>
-                        <button onClick={() => deleteQ(realIdx)} disabled={q.locked || !hasFeaturePermission('questions.edit')} title={!hasFeaturePermission('questions.edit') ? "You don't have permission to edit questions" : q.locked ? 'Unlock to delete' : undefined} className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40 disabled:opacity-40 disabled:cursor-not-allowed">Del</button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {q.skillArea && <p className="text-xs text-slate-500">Skill: {q.skillArea}</p>}
-                      <span className="text-xs text-slate-600 capitalize">{q.type === 'fill_blank' ? 'Fill in the Blank' : q.type === 'subjective' ? 'Subjective' : 'MCQ'}</span>
-                    </div>
-                    {q.type === 'mcq' && (
-                      <div className="mt-2 grid grid-cols-2 gap-1">
-                        {(q.options || []).map((opt, oi) => (
-                          <p key={oi} className={`text-xs px-2 py-1 rounded ${opt.startsWith(q.answer) ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400'}`}>{opt}</p>
-                        ))}
-                      </div>
-                    )}
-                    {(q.type === 'fill_blank' || q.type === 'subjective') && q.answer && (
-                      <p className="text-xs text-emerald-400/80 mt-2 bg-emerald-500/10 rounded px-2 py-1">
-                        <span className="text-slate-500">Answer: </span>{q.answer}
-                      </p>
-                    )}
-                    {q.explanation && <p className="text-xs text-slate-500 mt-2 italic">{q.explanation}</p>}
-                  </div>
+                  <QuestionCard
+                    q={q} index={i} canEdit={hasFeaturePermission('questions.edit')} lockingQid={lockingQid}
+                    onEdit={() => startEdit(realIdx)} onToggleLock={() => toggleQuestionLock(q)} onDelete={() => deleteQ(realIdx)}
+                  />
                 )}
               </div>
             );
           })}
+          </>)}
         </div>
 
         <div className="p-4 border-t border-slate-700 flex-shrink-0">

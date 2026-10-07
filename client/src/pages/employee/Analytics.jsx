@@ -13,6 +13,7 @@ import {
   RadialBarChart, RadialBar,
 } from 'recharts';
 import { authFetch } from '../../utils/authFetch.js';
+import StatCard from '../../components/StatCard.jsx';
 
 const COLORS = {
   indigo : '#6366f1',
@@ -31,15 +32,19 @@ const customTooltipStyle = {
   color: '#f8fafc',
 };
 
-const KpiCard = ({ label, value, sub, color, icon }) => (
-  <div className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-4">
-    <div className="flex items-center justify-between mb-2">
-      <span className="text-xl">{icon}</span>
-      <span className="text-xs font-bold uppercase tracking-widest text-slate-500">{label}</span>
-    </div>
-    <p className="text-3xl font-black" style={{ color }}>{value ?? '—'}</p>
-    {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
-  </div>
+const KpiCard = ({ label, value, sub, color, icon, description, tooltip }) => (
+  <StatCard
+    label={label}
+    value={<span style={{ color }}>{value ?? '—'}</span>}
+    icon={icon}
+    sub={sub}
+    description={description}
+    tooltip={tooltip}
+    borderClass="border-slate-700/40"
+    bgClass="bg-slate-800/30"
+    textClass="text-slate-500"
+    className="rounded-2xl"
+  />
 );
 
 const ChartCard = ({ title, subtitle, children, loading, className = '' }) => (
@@ -60,7 +65,6 @@ export default function Analytics() {
 
   const [loading, setLoading]           = useState(true);
   const [assignments, setAssignments]   = useState([]);
-  const [dashStats, setDashStats]       = useState(null);
   const [assessments, setAssessments]   = useState([]);
 
   const userId = user?.userId || user?.id;
@@ -74,13 +78,11 @@ export default function Analytics() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [asgn, stats, asmt] = await Promise.allSettled([
+      const [asgn, asmt] = await Promise.allSettled([
         authFetch(`/api/assignments?userId=${userId}`),
-        authFetch('/api/assignments/dashboard'),
         authFetch('/api/assessments/my'),
       ]);
       if (asgn.status  === 'fulfilled') setAssignments(Array.isArray(asgn.value)  ? asgn.value  : (asgn.value?.assignments || []));
-      if (stats.status === 'fulfilled') setDashStats(stats.value);
       if (asmt.status  === 'fulfilled') setAssessments(Array.isArray(asmt.value)  ? asmt.value  : (asmt.value?.assessments || []));
     } catch { /* fail silently */ }
     finally { setLoading(false); }
@@ -88,20 +90,30 @@ export default function Analytics() {
 
   // ── Derived data ──────────────────────────────────────────────────────────────
 
+  // Cancelled assignments are excluded from every figure on this page.
+  const liveAssignments = useMemo(() => assignments.filter(a => a.status !== 'cancelled'), [assignments]);
+  const isOverdue = (a) => a.status !== 'completed' && a.status !== 'cancelled' && a.due_date && new Date(a.due_date).getTime() < Date.now();
+  const overdueCount = liveAssignments.filter(isOverdue).length;
+  const completedCount = liveAssignments.filter(a => a.status === 'completed').length;
+
   const statusBreakdown = useMemo(() => {
+    // Mutually exclusive buckets: a past-due unfinished module counts as Overdue only.
     const counts = { assigned: 0, in_progress: 0, completed: 0, overdue: 0 };
-    assignments.forEach(a => { if (counts[a.status] !== undefined) counts[a.status]++; });
+    liveAssignments.forEach(a => {
+      if (a.status !== 'completed' && a.due_date && new Date(a.due_date).getTime() < Date.now()) counts.overdue++;
+      else if (counts[a.status] !== undefined) counts[a.status]++;
+    });
     return [
       { name: 'Assigned',    value: counts.assigned,    color: COLORS.indigo  },
       { name: 'In Progress', value: counts.in_progress, color: COLORS.amber   },
       { name: 'Completed',   value: counts.completed,   color: COLORS.emerald },
       { name: 'Overdue',     value: counts.overdue,     color: COLORS.rose    },
     ].filter(d => d.value > 0);
-  }, [assignments]);
+  }, [liveAssignments]);
 
   const typeBreakdown = useMemo(() => {
     const counts = {};
-    assignments.forEach(a => {
+    liveAssignments.forEach(a => {
       const t = a.type || 'module';
       counts[t] = (counts[t] || 0) + 1;
     });
@@ -109,30 +121,37 @@ export default function Analytics() {
       name: name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
       value,
     }));
-  }, [assignments]);
+  }, [liveAssignments]);
+
+  const progressOf = (a) => (a.status === 'completed' ? 100 : Math.min(100, Math.max(0, Number(a.progress) || 0)));
 
   const progressData = useMemo(() => {
-    return assignments
-      .filter(a => a.status !== 'cancelled')
-      .sort((a, b) => (b.progress || 0) - (a.progress || 0))
+    return [...liveAssignments]
+      .sort((a, b) => progressOf(b) - progressOf(a))
       .slice(0, 8)
       .map(a => ({
         name  : (a.module_name || a.title || 'Module').slice(0, 20),
-        progress: a.progress || 0,
-        color : (a.progress || 0) >= 75 ? COLORS.emerald
-              : (a.progress || 0) >= 50 ? COLORS.indigo
-              : (a.progress || 0) >= 25 ? COLORS.amber
+        progress: progressOf(a),
+        color : progressOf(a) >= 75 ? COLORS.emerald
+              : progressOf(a) >= 50 ? COLORS.indigo
+              : progressOf(a) >= 25 ? COLORS.amber
               : COLORS.rose,
       }));
-  }, [assignments]);
+  }, [liveAssignments]);
+
+  const scoreOf = (a) => {
+    const v = a.submission?.scoring?.rawScore ?? a.submission?.scoring?.score ?? a.scoring?.rawScore ?? a.scoring?.score ?? a.score ?? null;
+    const n = Number(v);
+    return v == null || !Number.isFinite(n) ? null : n;
+  };
 
   const assessmentScores = useMemo(() => {
     return assessments
-      .filter(a => a.submission?.scoring?.score != null || a.scoring?.score != null || a.score != null)
+      .filter(a => scoreOf(a) != null)
       .slice(-8)
       .map((a, i) => ({
         name : (a.title || `Test ${i + 1}`).slice(0, 18),
-        score: Math.round(a.submission?.scoring?.score ?? a.scoring?.score ?? a.score ?? 0),
+        score: Math.round(scoreOf(a)),
         // Same threshold the admin/manager/report views use for this exact
         // submission — never a hardcoded split — so "pass" means the same
         // thing everywhere this score is shown.
@@ -140,20 +159,50 @@ export default function Analytics() {
       }));
   }, [assessments]);
 
-  const streakData = useMemo(() => {
-    // Show last 7 days activity gauge from streak
-    const streak = dashStats?.streak || 0;
-    return [{ name: 'Streak', value: Math.min(streak, 7), fill: COLORS.amber }];
-  }, [dashStats]);
-
-  const completionRate = assignments.length > 0
-    ? Math.round((assignments.filter(a => a.status === 'completed').length / assignments.length) * 100)
+  // Completion = completed / non-cancelled assignments.
+  const completionRate = liveAssignments.length > 0
+    ? Math.round((completedCount / liveAssignments.length) * 100)
     : 0;
 
   const submittedAssessments = assessments.filter(a => a.status === 'submitted' || a.status === 'completed');
-  const avgAssessmentScore = submittedAssessments.length > 0
-    ? Math.round(submittedAssessments.reduce((s, a) => s + (a.submission?.scoring?.score ?? a.scoring?.score ?? a.score ?? 0), 0) / submittedAssessments.length)
+  const scoredSubmissions = submittedAssessments.map(scoreOf).filter(n => n != null);
+  const avgAssessmentScore = scoredSubmissions.length > 0
+    ? Math.round(scoredSubmissions.reduce((s, n) => s + n, 0) / scoredSubmissions.length)
     : null;
+  const bestScore = scoredSubmissions.length > 0 ? Math.round(Math.max(...scoredSubmissions)) : null;
+
+  // Learning sessions finished, taken from the assignments' saved session data.
+  const totalSessions = liveAssignments.reduce((sum, a) => {
+    const reports = a.progress_data?.sessionReports;
+    if (Array.isArray(reports)) return sum + reports.length;
+    const sp = a.session_progress;
+    if (Array.isArray(sp)) return sum + sp.length;
+    if (sp && typeof sp === 'object') return sum + (Number(sp.completedSessions) || (Array.isArray(sp.sessionReports) ? sp.sessionReports.length : 0));
+    return sum;
+  }, 0);
+
+  // Activity days: distinct calendar days with an assignment update or an assessment submission.
+  const { activeDays30, streak } = useMemo(() => {
+    const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const days = new Set();
+    const add = (v) => { if (!v) return; const d = new Date(v); if (!isNaN(d.getTime())) days.add(dayKey(d)); };
+    liveAssignments.forEach(a => { if (a.status !== 'assigned') add(a.updated_at); });
+    assessments.forEach(a => add(a.submission?.submittedAt || a.submittedAt));
+    const now = new Date();
+    let count30 = 0;
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      if (days.has(dayKey(d))) count30++;
+    }
+    let run = 0;
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      if (days.has(dayKey(d))) run++;
+      else if (i === 0) continue; // today may not have activity yet — don't break the streak
+      else break;
+    }
+    return { activeDays30: count30, streak: run };
+  }, [liveAssignments, assessments]);
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
@@ -190,24 +239,30 @@ export default function Analytics() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <KpiCard
             label="Completion"
-            value={loading ? '—' : `${completionRate}%`}
+            value={loading ? '—' : liveAssignments.length > 0 ? `${completionRate}%` : '—'}
             color={completionRate >= 70 ? COLORS.emerald : COLORS.amber}
             icon="✅"
-            sub={`${assignments.filter(a => a.status === 'completed').length} of ${assignments.length} modules`}
+            sub={`${completedCount} of ${liveAssignments.length} modules`}
+            description="How many of your modules you have finished"
+            tooltip="Completed modules divided by all your non-cancelled modules."
           />
           <KpiCard
             label="Avg Score"
-            value={loading ? '—' : dashStats?.avgScore != null ? `${dashStats.avgScore}%` : avgAssessmentScore != null ? `${avgAssessmentScore}%` : 'N/A'}
+            value={loading ? '—' : avgAssessmentScore != null ? `${avgAssessmentScore}%` : 'N/A'}
             color={COLORS.indigo}
             icon="🎯"
-            sub={dashStats?.bestScore != null ? `Best: ${dashStats.bestScore}%` : 'Complete sessions to see'}
+            sub={bestScore != null ? `Best: ${bestScore}%` : 'Submit an assessment to see'}
+            description="Your average assessment result"
+            tooltip="Mean score of the assessments you have submitted. Shows N/A until you submit one."
           />
           <KpiCard
             label="Streak"
-            value={loading ? '—' : `${dashStats?.streak || 0}d`}
+            value={loading ? '—' : `${streak}d`}
             color={COLORS.amber}
             icon="🔥"
             sub="consecutive active days"
+            description="Days in a row you were active"
+            tooltip="Consecutive days, ending today (or yesterday if you have not been active yet today), on which you updated a module or submitted an assessment."
           />
           <KpiCard
             label="Assessments"
@@ -215,6 +270,8 @@ export default function Analytics() {
             color={COLORS.violet}
             icon="📝"
             sub={`of ${assessments.length} assigned`}
+            description="Assessments you have submitted"
+            tooltip="Number of your assigned assessments with a submission, out of all assessments assigned to you."
           />
         </div>
 
@@ -316,15 +373,14 @@ export default function Analytics() {
         {!loading && (
           <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Total Sessions', value: dashStats?.totalSessions || 0, color: COLORS.indigo },
-              { label: 'Active Days',    value: dashStats?.streak || 0,        color: COLORS.amber  },
-              { label: 'Best Score',     value: dashStats?.bestScore != null ? `${dashStats.bestScore}%` : 'N/A', color: COLORS.emerald },
-              { label: 'Overdue',        value: assignments.filter(a => a.status === 'overdue').length, color: COLORS.rose },
+              { label: 'Total Sessions', value: totalSessions, color: COLORS.indigo, description: 'Learning sessions you finished', tooltip: 'Sessions completed across your modules, counted from the session reports saved on your assignments.' },
+              { label: 'Active Days',    value: activeDays30,  color: COLORS.amber, description: 'Days active in the last 30', tooltip: 'Number of distinct days in the last 30 days on which you updated a module or submitted an assessment.' },
+              { label: 'Best Score',     value: bestScore != null ? `${bestScore}%` : 'N/A', color: COLORS.emerald, description: 'Your highest assessment score', tooltip: 'Highest score among your submitted assessments.' },
+              { label: 'Overdue',        value: overdueCount, color: COLORS.rose, description: 'Modules past their due date', tooltip: 'Modules whose due date has passed and that are not completed or cancelled.' },
             ].map(item => (
-              <div key={item.label} className="rounded-xl bg-slate-800/40 border border-slate-700/30 p-3">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{item.label}</p>
-                <p className="text-xl font-black" style={{ color: item.color }}>{item.value}</p>
-              </div>
+              <StatCard key={item.label} label={item.label} value={<span style={{ color: item.color }}>{item.value}</span>}
+                description={item.description} tooltip={item.tooltip}
+                borderClass="border-slate-700/30" bgClass="bg-slate-800/40" textClass="text-slate-500" />
             ))}
           </div>
         )}

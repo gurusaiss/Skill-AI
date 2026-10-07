@@ -36,7 +36,7 @@ function StatusBadge({ status }) {
   );
 }
 
-function StatMini({ label, value, color = 'slate' }) {
+function StatMini({ label, value, color = 'slate', description, tooltip }) {
   const colors = {
     violet:  'text-violet-300',
     emerald: 'text-emerald-300',
@@ -46,9 +46,10 @@ function StatMini({ label, value, color = 'slate' }) {
     slate:   'text-slate-300',
   };
   return (
-    <div className="bg-slate-900/60 rounded-xl p-3 text-center border border-slate-700/40">
+    <div className="bg-slate-900/60 rounded-xl p-3 text-center border border-slate-700/40" title={tooltip || description}>
       <div className={`text-xl font-bold tabular-nums ${colors[color]}`}>{value ?? '—'}</div>
       <div className="text-slate-500 text-xs mt-0.5">{label}</div>
+      {description ? <div className="text-slate-600 text-[10px] leading-snug mt-1">{description}</div> : null}
     </div>
   );
 }
@@ -133,16 +134,24 @@ function AdminDetailModal({ admin, onClose, setToast, onRefresh }) {
               {/* Stats Grid */}
               <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">Live Company Stats</h3>
               <div className="grid grid-cols-4 gap-3 mb-5">
-                <StatMini label="Total Users"   value={details.stats?.totalUsers}       color="violet" />
-                <StatMini label="Employees"     value={details.stats?.employees}         color="emerald" />
-                <StatMini label="Managers"      value={details.stats?.managers}          color="blue" />
-                <StatMini label="Active (30d)"  value={details.stats?.activeUsers}       color="amber" />
+                <StatMini label="Total Users"   value={details.stats?.totalUsers}       color="violet"
+                  description="Everyone in this company" tooltip="All user accounts in this company, excluding super admins." />
+                <StatMini label="Employees"     value={details.stats?.employees}         color="emerald"
+                  description="Learners" tooltip="Users with the employee role in this company." />
+                <StatMini label="Managers"      value={details.stats?.managers}          color="blue"
+                  description="Team leads" tooltip="Users with a manager-level role (manager, trainer, leadership and similar)." />
+                <StatMini label="Active (30d)"  value={details.stats?.activeUsers}       color="amber"
+                  description="Recently signed in" tooltip="Users who logged in during the last 30 days." />
               </div>
               <div className="grid grid-cols-4 gap-3 mb-5">
-                <StatMini label="Modules"       value={details.stats?.totalModules}      color="indigo" />
-                <StatMini label="Assignments"   value={details.stats?.totalAssignments}  color="violet" />
-                <StatMini label="Completed"     value={details.stats?.completedAssignments} color="emerald" />
-                <StatMini label="Completion %"  value={`${details.stats?.completionRate ?? 0}%`} color="amber" />
+                <StatMini label="Modules"       value={details.stats?.totalModules}      color="indigo"
+                  description="Learning content" tooltip="Modules that belong to this company or were created by its admin." />
+                <StatMini label="Assignments"   value={details.stats?.totalAssignments}  color="violet"
+                  description="Items handed out" tooltip="Assignments given to users of this company." />
+                <StatMini label="Completed"     value={details.stats?.completedAssignments} color="emerald"
+                  description="Items finished" tooltip="Assignments of this company with status completed." />
+                <StatMini label="Completion %"  value={`${details.stats?.completionRate ?? 0}%`} color="amber"
+                  description="Done vs. assigned" tooltip="Completed assignments divided by total assignments, rounded to a whole percent." />
               </div>
 
               {/* Completion bar */}

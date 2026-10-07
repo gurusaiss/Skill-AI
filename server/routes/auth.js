@@ -12,6 +12,29 @@ import { generateRefreshToken, verifyRefreshToken, revokeRefreshToken, revokeAll
 import { autoAssignPreAssessment } from '../services/AssessmentAutoAssign.js';
 import { getEffectivePermissions } from '../services/permissions.js';
 
+// Live company lookup for login / me payloads. Never throws.
+async function resolveCompanyInfo(user) {
+  const cid = user?.companyId;
+  if (!cid || cid === 'default' || cid === 'platform') return { companyName: '', company: null };
+  try {
+    const c = await Companies.getById(cid);
+    if (!c) return { companyName: '', company: null };
+    return {
+      companyName: c.name || '',
+      company: {
+        id: c.id,
+        name: c.name || '',
+        companyCode: c.companyCode || '',
+        domain: c.domain || '',
+        industry: c.industry || '',
+        logoUrl: c.logoUrl || '',
+      },
+    };
+  } catch {
+    return { companyName: '', company: null };
+  }
+}
+
 // Alias — randomUUID is already imported from 'crypto' at the top of this file
 const generateUUID = randomUUID;
 
@@ -166,6 +189,14 @@ router.post('/register', async (req, res) => {
       detectedRole = linkedAccessCode.role || 'employee';
       if (jobRole?.trim()) {
         linkedRole = await RoleLibrary.findByName(jobRole.trim(), linkedCompany.id);
+      }
+    }
+
+    // Employee IDs are unique within a company (case-insensitive).
+    if (employeeId) {
+      const idOwner = await UserStore.getUserByEmployeeId(linkedCompany?.id || 'default', employeeId);
+      if (idOwner) {
+        return res.status(409).json({ success: false, data: null, error: { code: 'EMPLOYEE_ID_EXISTS', message: 'Employee ID already in use' } });
       }
     }
 
@@ -519,6 +550,7 @@ router.post('/login', rateLimitLogin, async (req, res) => {
     });
 
     const loginEffectiveAccesses = getEffectiveAccesses(user);
+    const loginCompany = await resolveCompanyInfo(user);
 
     res.json({
       success: true,
@@ -533,6 +565,8 @@ router.post('/login', rateLimitLogin, async (req, res) => {
           accesses: loginEffectiveAccesses,
           permissions: [...getEffectivePermissions(user)],
           companyId: user.companyId || null,
+          companyName: loginCompany.companyName,
+          company: loginCompany.company,
           jobRole: user.jobRole || null,
           department: user.department || null,
           learningUUID: user.learningUUID
@@ -594,6 +628,7 @@ router.post('/complete-password-change', rateLimitLogin, async (req, res) => {
     const token = AuthService.generateJWT(user.userId, user.email, user.role);
     const refreshToken = generateRefreshToken(user.userId);
     const effectiveAccesses = getEffectiveAccesses(user);
+    const pwCompany = await resolveCompanyInfo(user);
 
     res.json({
       success: true,
@@ -608,6 +643,8 @@ router.post('/complete-password-change', rateLimitLogin, async (req, res) => {
           accesses: effectiveAccesses,
           permissions: [...getEffectivePermissions(user)],
           companyId: user.companyId || null,
+          companyName: pwCompany.companyName,
+          company: pwCompany.company,
           jobRole: user.jobRole || null,
           department: user.department || null,
           learningUUID: user.learningUUID,
@@ -687,6 +724,7 @@ router.get('/me', authenticate, async (req, res) => {
     // Compute effective accesses: use stored accesses if non-empty,
     // otherwise derive sensible defaults so switch buttons appear without manual admin grant
     const effectiveAccesses = getEffectiveAccesses(user);
+    const meCompany = await resolveCompanyInfo(user);
 
     res.json({
       success: true,
@@ -698,6 +736,12 @@ router.get('/me', authenticate, async (req, res) => {
         accesses: effectiveAccesses,
         permissions: [...getEffectivePermissions(user)],
         companyId: user.companyId || null,
+        companyName: meCompany.companyName,
+        company: meCompany.company,
+        employeeId: user.employeeId || null,
+        phone: user.phone || null,
+        managerId: user.managerId || null,
+        status: user.status || 'active',
         jobRole: user.jobRole || null,
         department: user.department || null,
         learningUUID: user.learningUUID,

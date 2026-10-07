@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
 import { useNotification } from '../contexts/NotificationContext.jsx';
+import StatCard from '../components/StatCard.jsx';
 
 const SkeletonCard = () => (
   <div className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5 animate-pulse">
@@ -114,28 +115,11 @@ const TypeIcon = ({ type }) => {
   );
 };
 
-const StatBox = ({ label, value, icon, gradient, delay }) => (
-  <div
-    className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5 relative overflow-hidden group hover:border-slate-600/60 transition-all duration-300"
-    style={{ animationDelay: `${delay}ms` }}
-  >
-    <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
-    <div className="relative">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-2xl">{icon}</span>
-      </div>
-      <p className="text-3xl font-black text-white mb-1">{value}</p>
-      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{label}</p>
-    </div>
-  </div>
-);
-
 export default function Employee() {
   const { user, hasRole } = useAuth();
   const navigate = useNavigate();
 
   const [assignments, setAssignments] = useState([]);
-  const [dashboardStats, setDashboardStats] = useState(null);
   const [managerInfo, setManagerInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -221,9 +205,8 @@ export default function Employee() {
     if (!userId) return;
     setLoading(true);
     try {
-      const [assignmentsData, statsData, mgrData] = await Promise.allSettled([
+      const [assignmentsData, mgrData] = await Promise.allSettled([
         authFetch(`/api/assignments?userId=${userId}`),
-        authFetch('/api/assignments/dashboard'),
         authFetch(`/api/assignments/employee/${userId}/manager`),
       ]);
       loadAssessments();
@@ -241,12 +224,6 @@ export default function Employee() {
       } else {
         console.warn('[Employee] assignments failed to load:', assignmentsData.reason?.message);
         setAssignments([]);
-      }
-
-      if (statsData.status === 'fulfilled') {
-        setDashboardStats(statsData.value);
-      } else {
-        console.warn('[Employee] dashboard stats failed to load:', statsData.reason?.message);
       }
 
       if (mgrData.status === 'fulfilled') {
@@ -385,11 +362,17 @@ export default function Employee() {
 
   const stats = useMemo(() => {
     const base = selectedJobRole === 'all' ? assignments : assignments.filter(a => !a.jobRole || a.jobRole === selectedJobRole);
-    const active = base.filter(a => a.status !== 'completed' && a.status !== 'cancelled').length;
-    const completed = base.filter(a => a.status === 'completed').length;
-    const overdue = base.filter(a => a.status === 'overdue' || (a.due_date && new Date(a.due_date) < new Date() && a.status !== 'completed' && a.status !== 'cancelled')).length;
-    const avgProgress = base.length > 0 ? Math.round(base.reduce((s, a) => s + (a.progress || 0), 0) / base.length) : 0;
-    return { active, completed, overdue, avgProgress };
+    // Cancelled assignments are excluded from every figure.
+    const live = base.filter(a => a.status !== 'cancelled');
+    const active = live.filter(a => a.status === 'in_progress').length;
+    const notStarted = live.filter(a => a.status === 'assigned').length;
+    const completed = live.filter(a => a.status === 'completed').length;
+    const overdue = live.filter(a => a.status !== 'completed' && a.due_date && new Date(a.due_date) < new Date()).length;
+    // Mean progress, completed counts as 100.
+    const avgProgress = live.length > 0
+      ? Math.round(live.reduce((s, a) => s + (a.status === 'completed' ? 100 : Math.min(100, Math.max(0, Number(a.progress) || 0))), 0) / live.length)
+      : 0;
+    return { active, notStarted, completed, overdue, avgProgress, total: live.length };
   }, [assignments, selectedJobRole]);
 
   const formatDate = (dateStr) => {
@@ -495,15 +478,31 @@ export default function Employee() {
         </div>
 
         {loading ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            {[0, 1, 2, 3].map(i => <SkeletonStat key={i} />)}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+            {[0, 1, 2, 3, 4].map(i => <SkeletonStat key={i} />)}
           </div>
         ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <StatBox label="Active" value={stats.active} icon="⚡" gradient="from-indigo-500/10 to-blue-500/5" delay={0} />
-            <StatBox label="Completed" value={stats.completed} icon="✅" gradient="from-emerald-500/10 to-teal-500/5" delay={100} />
-            <StatBox label="Overdue" value={stats.overdue} icon="⚠️" gradient="from-red-500/10 to-orange-500/5" delay={200} />
-            <StatBox label="Avg Progress" value={`${stats.avgProgress}%`} icon="📊" gradient="from-purple-500/10 to-pink-500/5" delay={300} />
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+            <StatCard label="Not Started" value={stats.notStarted} icon="📥"
+              description="Assigned, not opened yet"
+              tooltip="Your modules with status 'assigned' that you have not started. Cancelled modules are not counted."
+              borderClass="border-blue-500/20" bgClass="bg-blue-500/5" textClass="text-blue-400" className="hover:border-slate-600/60 transition-all" />
+            <StatCard label="In Progress" value={stats.active} icon="⚡"
+              description="Modules you have started"
+              tooltip="Your modules with status 'in progress'. Cancelled modules are not counted."
+              borderClass="border-indigo-500/20" bgClass="bg-indigo-500/5" textClass="text-indigo-400" className="hover:border-slate-600/60 transition-all" />
+            <StatCard label="Completed" value={stats.completed} icon="✅"
+              description="Modules you have finished"
+              tooltip="Your modules with status 'completed'."
+              borderClass="border-emerald-500/20" bgClass="bg-emerald-500/5" textClass="text-emerald-400" className="hover:border-slate-600/60 transition-all" />
+            <StatCard label="Overdue" value={stats.overdue} icon="⚠️"
+              description="Past the due date, not finished"
+              tooltip="Modules whose due date has passed and that are not completed or cancelled."
+              borderClass="border-red-500/20" bgClass="bg-red-500/5" textClass="text-red-400" className="hover:border-slate-600/60 transition-all" />
+            <StatCard label="Avg Progress" value={stats.total > 0 ? `${stats.avgProgress}%` : '—'} icon="📊"
+              description="Your average progress across modules"
+              tooltip="Mean progress of your non-cancelled modules. A completed module counts as 100%. Shows a dash if you have no modules."
+              borderClass="border-purple-500/20" bgClass="bg-purple-500/5" textClass="text-purple-400" className="hover:border-slate-600/60 transition-all" />
           </div>
         )}
 

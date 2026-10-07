@@ -25,6 +25,12 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_role          ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_manager_id    ON users(manager_id);
 CREATE INDEX IF NOT EXISTS idx_users_learning_uuid ON users(learning_uuid);
+-- Profile columns (see sql/migrations/2026-10-add-user-profile-columns.sql)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id TEXT DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone       TEXT DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status      TEXT DEFAULT 'active';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id  TEXT DEFAULT 'default';
+CREATE INDEX IF NOT EXISTS idx_users_company_employee_id ON users (company_id, lower(employee_id));
 
 -- ── 2. sessions ────────────────────────────────────────────────
 -- id = UUID PK (matches the 36-char session JSON filename)

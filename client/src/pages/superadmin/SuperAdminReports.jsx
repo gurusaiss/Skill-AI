@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
+import StatCard from '../../components/StatCard.jsx';
 
 function PlanBadge({ plan }) {
   const styles = {
@@ -150,26 +151,26 @@ export default function SuperAdminReports() {
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
-          <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl p-4 text-center">
-            <div className="text-2xl font-bold text-violet-300 tabular-nums">{reports.length}</div>
-            <div className="text-slate-400 text-xs mt-0.5">Companies</div>
-          </div>
-          <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl p-4 text-center">
-            <div className="text-2xl font-bold text-blue-300 tabular-nums">{totals.users}</div>
-            <div className="text-slate-400 text-xs mt-0.5">Total Users</div>
-          </div>
-          <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl p-4 text-center">
-            <div className="text-2xl font-bold text-emerald-300 tabular-nums">{totals.employees}</div>
-            <div className="text-slate-400 text-xs mt-0.5">Employees</div>
-          </div>
-          <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl p-4 text-center">
-            <div className="text-2xl font-bold text-amber-300 tabular-nums">{totals.assignments}</div>
-            <div className="text-slate-400 text-xs mt-0.5">Assignments</div>
-          </div>
-          <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl p-4 text-center">
-            <div className="text-2xl font-bold text-purple-300 tabular-nums">{overallCompletion}%</div>
-            <div className="text-slate-400 text-xs mt-0.5">Avg Completion</div>
-          </div>
+          <StatCard label="Companies" value={reports.length}
+            description="Companies included in this report."
+            tooltip="Number of company records on the platform, before any filter below is applied."
+            borderClass="border-violet-500/30" bgClass="bg-violet-600/10" textClass="text-violet-300" />
+          <StatCard label="Total Users" value={totals.users}
+            description="People across all companies."
+            tooltip="Sum of every company's user count (all roles, excluding super admins)."
+            borderClass="border-blue-500/30" bgClass="bg-blue-600/10" textClass="text-blue-300" />
+          <StatCard label="Employees" value={totals.employees}
+            description="Learners across all companies."
+            tooltip="Sum of users with the employee role in every company."
+            borderClass="border-emerald-500/30" bgClass="bg-emerald-600/10" textClass="text-emerald-300" />
+          <StatCard label="Assignments" value={totals.assignments}
+            description="Learning items handed out."
+            tooltip="Total assignments given to users of all companies, whether completed or not."
+            borderClass="border-amber-500/30" bgClass="bg-amber-600/10" textClass="text-amber-300" />
+          <StatCard label="Avg Completion" value={`${overallCompletion}%`}
+            description="Share of assignments finished."
+            tooltip="Completed assignments divided by total assignments across all companies, rounded to a whole percent. It is a platform-wide ratio, not an average of company percentages."
+            borderClass="border-purple-500/30" bgClass="bg-purple-600/10" textClass="text-purple-300" />
         </div>
 
         {/* Filter Bar */}
