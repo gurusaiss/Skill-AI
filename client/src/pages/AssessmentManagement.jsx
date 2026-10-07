@@ -1889,7 +1889,8 @@ export default function AssessmentManagement() {
                         const sc = ea.scoring || {};
                         const scorePct = ea.score ?? ea.percentage ?? sc.score ?? null;
                         const grade = gradeForReport(sc) || (ea.grade ?? sc.grade ?? null);
-                        const completionMs = ea.startedAt && ea.submittedAt ? new Date(ea.submittedAt) - new Date(ea.startedAt) : null;
+                        const startMark = ea.attemptStartUnknown ? null : (ea.attemptStartedAt || ea.startedAt);
+                        const completionMs = ea.timeTakenSeconds != null ? ea.timeTakenSeconds * 1000 : (startMark && ea.submittedAt ? new Date(ea.submittedAt) - new Date(startMark) : null);
                         const durationStr = completionMs ? `${Math.round(completionMs / 60000)} min` : `${normalizeDuration(viewDetail.duration)} min`;
                         return (
                           <div key={i} className="px-4 py-3 hover:bg-slate-800/20 transition-colors"

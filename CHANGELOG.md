@@ -4,6 +4,16 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-09 — Report downloads rebuilt: complete Excel, clear section-wise PDF and Word
+
+**Excel:** the "Results" sheet now has one row for every assigned employee (including those who have not finished) with 35 columns: Employee ID, name, email, phone, job role, department, group, manager and manager ID, assessment, **assigned date, start window, due date, started at, completed date**, status, time taken, time limit, attempt number, correct, total, score, grade, pass or fail, pass mark, performance, readiness, skill scores, strengths, needs improvement, missing skills, recommendations and reminders sent. Dates are real Excel dates and numbers are real numbers, with a frozen styled header and filters. Extra sheets: Summary, Skills, Question Review.
+**PDF and Word:** reports are now split into short, plain sections. The individual report has a header, an "At a glance" box, skill scores with bars, what went well and what to improve, next steps, then a compact question review. The all-employees report has an overview, a results table, skill performance, and a "needs follow-up" list. Pages flow with no blank pages and no gaps larger than about 30 points; repeating table headers; page numbers.
+**Data now saved:** when an employee starts an assessment the start time is saved (it was never saved before, so "time taken" could not be shown). At submission the employee ID, department, manager, company, time taken and attempt number are saved with the result, so old and new reports show the same details. Old results still download, with a dash where a value was never recorded.
+**Also fixed:** "all reports" downloads in PDF and Word used to return a web page and an old Word format; they are real PDF and Word files now. Scores in the all-reports export were blank and are filled in.
+Files: `server/services/reports/` (new), `server/routes/assessment.js`, `client/src/pages/Assessment.jsx`, `Report.jsx`, `AssessmentManagement.jsx`.
+
+---
+
 ## 2026-10-08 — Question generation is much faster, and no longer falls back to generic questions
 
 **Problem:** Generating a role's question bank took 30 to 60+ minutes. When Gemini's daily limit ran out, the old code still sized its requests for Gemini and sent those oversized requests to Groq, which rejected every one, then filled the gaps with generic template questions.

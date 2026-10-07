@@ -154,6 +154,9 @@ export default function Assessment() {
       // Init timer — only if visible, not expired, not submitted
       if (!scoring && found.isVisible !== false && found.status !== 'expired') {
         setTimeLeft(normalizeDuration(found.duration) * 60);
+        // Record when the attempt really began (powers "started" / "time taken" in
+        // reports). Server side it is idempotent; a failure must never block the test.
+        authFetch(`/api/assessments/${found.id || found._id}/start`, { method: 'POST' }).catch(() => {});
       }
     } catch (e) {
       setError(e.message || 'Failed to load assessment');

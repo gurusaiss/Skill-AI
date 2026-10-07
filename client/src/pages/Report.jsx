@@ -12,6 +12,31 @@ import { gradeForReport } from '../utils/assessmentRules.js';
 // (EmployeeReportView's module pre-fetch, ModuleReport's data load).
 const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
+// Dates in downloads read like "07 Oct 2026, 3:45 PM" in the company's reporting
+// timezone (same as the server-built reports). Missing/invalid values become a dash.
+const REPORT_TZ = import.meta.env.VITE_REPORT_TIMEZONE || 'Asia/Kolkata';
+function fmtDateTime(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '—';
+  try {
+    const p = {};
+    new Intl.DateTimeFormat('en-US', { timeZone: REPORT_TZ, day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+      .formatToParts(d).forEach(x => { p[x.type] = x.value; });
+    return `${p.day} ${p.month} ${p.year}, ${p.hour}:${p.minute} ${String(p.dayPeriod || '').toUpperCase()}`;
+  } catch { return d.toLocaleString(); }
+}
+const numOrDash = (v, digits = 1) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? '—' : Math.round(Number(v) * 10 ** digits) / 10 ** digits);
+const txt = (v) => { const t = String(v ?? '').trim(); return !t || t === 'undefined' || t === 'null' || t === 'NaN' ? '—' : t; };
+function exportStatus(r) {
+  const s = String(r.status || '').toLowerCase();
+  if (s === 'submitted' || s === 'completed') return 'Completed';
+  if (s === 'in_progress') return 'In progress';
+  if (s === 'cancelled') return 'Cancelled';
+  if (s === 'assigned') return 'Not started';
+  return txt(r.status);
+}
+
 // ─── PDF Download helper ──────────────────────────────────────────────────────
 function downloadReportPDF(employeeData) {
   const { employeeName, email, completionRate, completedAssignments, totalAssignments, assignments = [] } = employeeData;
@@ -155,6 +180,7 @@ function AdminReportView({ user, navigate }) {
         id: `m-${r.userId}-${a.id}`,
         type: 'module',
         employeeId: r.userId || '—',
+        staffId: '',
         employeeName: r.employeeName || '—',
         email: r.email || '—',
         jobRole: r.jobRole || '—',
@@ -191,6 +217,12 @@ function AdminReportView({ user, navigate }) {
         completedDate: r.submittedAt || r.completedAt || null,
         manager: employeeMeta[uid]?.manager || '—',
         group: employeeMeta[uid]?.group || '—',
+        staffId: r.staffId || r.employeeId || '',
+        department: r.department || '',
+        startedAt: r.startedAtResolved || null,
+        timeTakenMin: Number.isFinite(Number(r.timeTakenSeconds)) ? Number(r.timeTakenSeconds) / 60 : null,
+        rawScore: r.rawScore ?? r.score ?? null,
+        passed: typeof r.passed === 'boolean' ? r.passed : null,
         grade: gradeForReport(r) || r.grade || '',
         strengths: (r.strengths || []).join('; '),
         weaknesses: (r.weakAreas || []).join('; '),
@@ -279,21 +311,27 @@ function AdminReportView({ user, navigate }) {
     setShowDownloadModal(false);
     try {
       // Exports always include the FULL record — every field stored, even ones
-      // simplified out of the on-screen table (Type, Assigned Date, Deadline,
-      // Manager, Group) — so no data is ever lost by downloading a report.
-      const headers = ['Employee Name', 'Employee ID', 'Email', 'Job Role', 'Type', 'Assessment / Module', 'Status', 'Score', 'Progress', 'Grade', 'Assigned Date', 'Deadline', 'Completed Date', 'Manager', 'Group', 'Strengths', 'Weaknesses', 'Skill Gaps', 'Recommendations'];
-      const rows = sorted.map(r => [
-        r.employeeName, r.employeeId, r.email, r.jobRole, r.type === 'assessment' ? 'Assessment' : 'Module', r.name,
-        r.status,
-        r.score != null ? `${Math.round(r.score)}%` : '—',
-        r.progress != null ? `${Math.round(r.progress)}%` : '—',
-        gradeForReport(r) || r.grade || '—',
-        r.assignedDate ? new Date(r.assignedDate).toLocaleDateString() : '—',
-        r.deadline ? new Date(r.deadline).toLocaleDateString() : '—',
-        r.completedDate ? new Date(r.completedDate).toLocaleDateString() : '—',
-        r.manager, r.group,
-        r.strengths || '—', r.weaknesses || '—', r.skillGaps || '—', r.recommendations || '—',
-      ]);
+      // simplified out of the on-screen table — so no data is lost by downloading.
+      // Same column names as the server-built "Results" sheet.
+      const headers = ['Employee ID', 'Employee Name', 'Email', 'Job Role', 'Department', 'Type', 'Assessment / Module', 'Status',
+        'Assigned On', 'Due Date', 'Started At', 'Completed On', 'Time Taken (min)', 'Score %', 'Grade', 'Result', 'Pass Mark %',
+        'Progress %', 'Manager', 'Group', 'Strengths', 'Needs Improvement', 'Missing Skills', 'Recommendations'];
+      const rows = sorted.map(r => {
+        const isAssessment = r.type === 'assessment';
+        const scoreVal = isAssessment ? (r.rawScore ?? r.score) : null;
+        const hasScore = isAssessment && exportStatus(r) === 'Completed' && scoreVal !== null && scoreVal !== undefined;
+        const passMark = r.passThreshold ?? 80;
+        const result = hasScore ? ((r.passed ?? (Number(scoreVal) + 1e-9 >= passMark)) ? 'Pass' : 'Fail') : '—';
+        return [
+          txt(r.staffId || r.employeeId), txt(r.employeeName), txt(r.email), txt(r.jobRole), txt(r.department),
+          isAssessment ? 'Assessment' : 'Module', txt(r.name), exportStatus(r),
+          fmtDateTime(r.assignedDate), fmtDateTime(r.deadline), fmtDateTime(r.startedAt), fmtDateTime(r.completedDate),
+          numOrDash(r.timeTakenMin), hasScore ? numOrDash(scoreVal) : '—', hasScore ? (gradeForReport(r) || r.grade || '—') : '—', result,
+          isAssessment ? numOrDash(passMark, 0) : '—',
+          !isAssessment && r.progress != null ? numOrDash(r.progress, 0) : '—',
+          txt(r.manager), txt(r.group), txt(r.strengths), txt(r.weaknesses), txt(r.skillGaps), txt(r.recommendations),
+        ];
+      });
       const token = localStorage.getItem('auth_token');
       const BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
       const res = await fetch(`${BASE}/api/assessments/export-filtered-reports`, {
@@ -471,7 +509,7 @@ function AdminReportView({ user, navigate }) {
                             <span className="font-semibold text-white truncate" title={r.employeeName}>{r.employeeName}</span>
                           </div>
                         </td>
-                        <td className={`${TD_CLS} text-slate-500 font-mono text-xs truncate max-w-[100px]`} title={r.employeeId}>{r.employeeId}</td>
+                        <td className={`${TD_CLS} text-slate-500 font-mono text-xs truncate max-w-[100px]`} title={r.staffId || r.employeeId}>{r.staffId || r.employeeId}</td>
                         <td className={`${TD_CLS} text-slate-400 truncate max-w-[130px]`} title={r.jobRole}>{r.jobRole}</td>
                         <td className={`${TD_CLS} truncate max-w-[200px]`} title={r.name}>
                           <span className="mr-1">{r.type === 'assessment' ? '📝' : '📚'}</span>{r.name}

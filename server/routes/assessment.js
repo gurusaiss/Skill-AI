@@ -20,7 +20,7 @@ import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import multer from 'multer';
 import UserStore from '../services/UserStore.js';
-import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds, Groups, QuestionBankVersions, EmployeeAssessmentAssignments, Reminders } from '../services/DataStore.js';
+import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds, Groups, Companies, QuestionBankVersions, EmployeeAssessmentAssignments, Reminders } from '../services/DataStore.js';
 import EmailService from '../services/EmailService.js';
 import * as db from '../db/store.js';
 import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
@@ -34,6 +34,11 @@ import { startDeepContentJob } from '../services/SessionContentGenerator.js';
 import { gradeFromPercent, percentFromCounts, gradeForReport } from '../services/grading.js';
 import { ASSESSMENT_DURATION_MINUTES, normalizeDuration } from '../services/assessmentDefaults.js';
 import { resolveWindow, parseWindowInput } from '../services/assessmentSchedule.js';
+import { loadAssessmentRows, loadSubmissionRows } from '../services/reports/reportLoader.js';
+import { buildSummary, safeFilename, STATUS as REPORT_STATUS, timeTakenSeconds } from '../services/reports/reportData.js';
+import { buildAssessmentWorkbook, buildAllReportsWorkbook, buildIndividualWorkbook, buildTableWorkbook } from '../services/reports/xlsxReports.js';
+import { buildConsolidatedPdf, buildIndividualPdf, buildTablePdf } from '../services/reports/pdfReports.js';
+import { buildConsolidatedDocx, buildIndividualDocx, buildTableDocx } from '../services/reports/docxReports.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -246,19 +251,23 @@ async function assignEmployeesToAssessment({ assessmentId, users, startAt, dueAt
     let entry;
     if (existing) {
       const attempts = Array.isArray(existing.attempts) ? [...existing.attempts] : [];
-      if (existing.status === 'submitted' || existing.startedAt) {
+      if (existing.status === 'submitted' || existing.startedAt || existing.attemptStartedAt) {
         attempts.push({
           status: existing.status,
+          attemptNumber: existing.attemptNumber || attempts.length + 1,
           assignedAt: existing.assignedAt || null,
           startedAt: existing.startedAt || null,
+          attemptStartedAt: existing.attemptStartedAt || null,
           submittedAt: existing.submittedAt || null,
+          timeTakenSeconds: existing.timeTakenSeconds ?? null,
           scoring: existing.scoring || null,
           archivedAt: nowIso,
         });
       }
-      // Drop the previous attempt's answers/score so the employee starts clean.
-      const { responses, scoring, score, report, ...rest } = existing;
-      entry = { ...rest, status: 'assigned', assignedAt: nowIso, startedAt: null, submittedAt: null, startAt, dueAt, assignedBy, attempts };
+      // Drop the previous attempt's answers/score (and its start/time-taken
+      // snapshot) so the employee starts clean.
+      const { responses, scoring, score, report, timeTakenSeconds: _tt, attemptNumber: _an, attemptStartUnknown: _au, ...rest } = existing;
+      entry = { ...rest, status: 'assigned', assignedAt: nowIso, startedAt: null, attemptStartedAt: null, submittedAt: null, startAt, dueAt, assignedBy, attempts };
       roster[idx] = entry;
       reassigned.push({ userId, name: user.name });
     } else {
@@ -270,6 +279,7 @@ async function assignEmployeesToAssessment({ assessmentId, users, startAt, dueAt
         status: 'assigned',
         assignedAt: nowIso,
         startedAt: null,
+        attemptStartedAt: null,
         submittedAt: null,
         startAt,
         dueAt,
@@ -866,6 +876,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
           status: 'assigned',
           assignedAt,
           startedAt: null,
+          attemptStartedAt: null,
           submittedAt: null,
         };
       })
@@ -1055,180 +1066,25 @@ router.post('/parse-questionnaire', authenticate, requireRole('admin', 'manager'
   }
 });
 
-// ── Shared helper: build export row from assessment employee assignment + DB report ──
-function buildExportRow(ea, report, assessmentTitle, extraMeta = {}) {
-  // scoring lives in both ea.scoring (immediate) and the Reports collection
-  const sc = report || ea.scoring || {};
-  const correct  = sc.correct  ?? null;
-  const totalQs  = sc.total    ?? ea.questions?.length ?? 0;
-  const scorePct = sc.score    ?? null;   // already 0-100 percentage from scoreSubmission
-
-  const recsList = (report?.improvementRecommendations || sc.recommendedLearningAreas || [])
-    .map(r => (typeof r === 'string' ? r : r?.area || String(r)));
-
-  // Duration: calculated from start→submit if available, else assessment duration
-  const durationMs = ea.startedAt && ea.submittedAt ? new Date(ea.submittedAt) - new Date(ea.startedAt) : null;
-  const durationStr = durationMs ? `${Math.round(durationMs / 60000)} min` : (extraMeta.durationMinutes ? `${extraMeta.durationMinutes} min` : '');
-
-  return {
-    employeeName:    ea.userName  || ea.name  || ea.userId || '',
-    employeeId:      extraMeta.employeeId || ea.userId || '',
-    employeeEmail:   ea.userEmail || report?.userEmail || '',
-    jobRole:         ea.jobRole   || report?.jobRole || '',
-    group:           extraMeta.groupName  || '',
-    manager:         extraMeta.managerName || '',
-    assessmentName:  assessmentTitle || '',
-    assessmentType:  extraMeta.assessmentType || '',
-    assessmentDate:  ea.assignedAt || '',
-    deadline:        extraMeta.deadline || '',
-    score:           correct != null ? `${correct}/${totalQs}` : 'Pending',
-    percentage:      scorePct != null ? `${scorePct}%` : 'Pending',
-    grade:           gradeForReport(sc),
-    passFail:        scorePct != null ? (scorePct >= (extraMeta.passThreshold ?? 80) ? 'Pass' : 'Fail') : '',
-    classification:  sc.performanceClassification?.label || '',
-    status:          ea.status || 'assigned',
-    completionDate:  ea.submittedAt || report?.submittedAt || '',
-    duration:        durationStr,
-    strengths:       (sc.strengths || []).join('; '),
-    improvementAreas:(sc.weakAreas || []).join('; '),
-    missingCompetencies: (sc.missingCompetencies || []).join('; '),
-    recommendations: recsList.join('; '),
-    skillBreakdown:  (sc.skillBreakdown || []).map(s => `${s.skill}: ${s.score ?? s.pct ?? 0}%`).join(', '),
-    aiSummary:       report?.aiSummary || sc.readinessLevel || '',
-    topicScores:     (sc.skillBreakdown || []).map(s => `${s.skill}: ${s.pct ?? s.score ?? 0}%`).join('; '),
-  };
+// ── Report downloads: the layout/data code lives in services/reports/* ─────────
+const MIME = {
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  zip: 'application/zip',
+};
+function sendDownload(res, buf, ext, filename) {
+  res.setHeader('Content-Type', MIME[ext]);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.${ext}"`);
+  return res.send(Buffer.isBuffer(buf) ? buf : Buffer.from(buf));
 }
-
-// ── PDF generation helper (single or multi-employee) ──────────────────────────
-async function generatePDFBuffer(rows, title) {
-  const PDFDocument = (await import('pdfkit')).default;
-  const chunks = [];
-  const doc = new PDFDocument({ margin: 50, size: 'A4' });
-  doc.on('data', c => chunks.push(c));
-
-  await new Promise(resolve => {
-    doc.on('end', resolve);
-
-    // Cover / title
-    doc.fontSize(20).font('Helvetica-Bold').fillColor('#111111').text(title || 'Assessment Report', { align: 'center' });
-    doc.moveDown(0.4);
-    doc.fontSize(10).font('Helvetica').fillColor('#555555').text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
-    doc.moveDown(1.5);
-
-    rows.forEach((r, i) => {
-      if (i > 0) {
-        doc.addPage();
-      }
-      doc.fontSize(14).font('Helvetica-Bold').fillColor('#111111').text(r.employeeName || 'Employee');
-      doc.fontSize(9).font('Helvetica').fillColor('#444444');
-      if (r.employeeEmail) doc.text(`Email: ${r.employeeEmail}`);
-      doc.text(`Employee ID: ${r.employeeId || 'N/A'}  |  Job Role: ${r.jobRole || 'N/A'}`);
-      doc.moveDown(0.6);
-
-      doc.fontSize(11).font('Helvetica-Bold').fillColor('#111111').text('Performance Summary');
-      doc.fontSize(9).font('Helvetica').fillColor('#222222');
-      [
-        ['Assessment', r.assessmentName],
-        ['Score', r.score],
-        ['Percentage', r.percentage],
-        ['Grade', r.grade || 'N/A'],
-        ['Classification', r.classification || 'N/A'],
-        ['Status', r.status],
-        ['Completed', r.completionDate || 'N/A'],
-      ].forEach(([k, v]) => doc.text(`${k}: ${v}`));
-
-      doc.moveDown(0.6);
-
-      if (r.skillBreakdown) {
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#111111').text('Skill Breakdown');
-        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(r.skillBreakdown || 'N/A');
-        doc.moveDown(0.4);
-      }
-
-      if (r.strengths) {
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#166534').text('Strengths');
-        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(r.strengths);
-        doc.moveDown(0.4);
-      }
-      if (r.improvementAreas) {
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#92400e').text('Improvement Areas');
-        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(r.improvementAreas);
-        doc.moveDown(0.4);
-      }
-      if (r.missingCompetencies) {
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#991b1b').text('Missing Competencies');
-        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(r.missingCompetencies);
-        doc.moveDown(0.4);
-      }
-      if (r.recommendations) {
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#3730a3').text('Recommendations');
-        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(r.recommendations);
-      }
-    });
-    doc.end();
-  });
-  return Buffer.concat(chunks);
-}
-
-// ── DOCX generation helper ─────────────────────────────────────────────────────
-async function generateDOCXBuffer(rows, title) {
-  const docxLib = await import('docx');
-  const { Document, Paragraph, TextRun, Table, TableRow, TableCell, Packer, WidthType, HeadingLevel } = docxLib;
-
-  const noBorder = { style: 'none', size: 0, color: 'auto' };
-  const cellBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
-
-  const makeCell = (text, bold = false, w = 2000) => new TableCell({
-    children: [new Paragraph({ children: [new TextRun({ text: String(text ?? ''), bold, size: 18 })] })],
-    width: { size: w, type: WidthType.DXA },
-    borders: cellBorders,
-  });
-
-  const infoRow = (k, v) => new TableRow({ children: [makeCell(k, true, 2200), makeCell(v, false, 6800)] });
-
-  const docChildren = [
-    new Paragraph({ text: title || 'Assessment Report', heading: HeadingLevel.HEADING_1 }),
-    new Paragraph({ children: [new TextRun({ text: `Generated: ${new Date().toLocaleString()}`, size: 18, color: '888888' })] }),
-    new Paragraph({ text: '' }),
-  ];
-
-  rows.forEach((r, i) => {
-    if (i > 0) docChildren.push(new Paragraph({ pageBreakBefore: true }));
-    docChildren.push(new Paragraph({ text: r.employeeName || 'Employee', heading: HeadingLevel.HEADING_2 }));
-    docChildren.push(new Table({ rows: [
-      infoRow('Employee Email',  r.employeeEmail  || 'N/A'),
-      infoRow('Employee ID',     r.employeeId     || 'N/A'),
-      infoRow('Job Role',        r.jobRole        || 'N/A'),
-      infoRow('Assessment',      r.assessmentName || 'N/A'),
-      infoRow('Score',           r.score),
-      infoRow('Percentage',      r.percentage),
-      infoRow('Grade',           r.grade          || 'N/A'),
-      infoRow('Classification',  r.classification || 'N/A'),
-      infoRow('Status',          r.status),
-      infoRow('Completed',       r.completionDate || 'N/A'),
-    ] }));
-    docChildren.push(new Paragraph({ text: '' }));
-
-    [
-      ['Skill Breakdown',       r.skillBreakdown],
-      ['Strengths',             r.strengths],
-      ['Improvement Areas',     r.improvementAreas],
-      ['Missing Competencies',  r.missingCompetencies],
-      ['Recommendations',       r.recommendations],
-    ].forEach(([label, val]) => {
-      if (val) {
-        docChildren.push(new Paragraph({ children: [new TextRun({ text: `${label}: `, bold: true, size: 20 }), new TextRun({ text: val, size: 20 })] }));
-      }
-    });
-  });
-
-  const docObj = new Document({ sections: [{ children: docChildren }] });
-  return Packer.toBuffer(docObj);
-}
+const isCompletedRow = (r) => r.status === REPORT_STATUS.COMPLETED;
 
 /**
  * GET /api/assessments/:id/export-reports
- * Export all employee reports — XLSX / PDF / DOCX / ZIP
+ * Export employee reports for ONE assessment — XLSX / PDF / DOCX / ZIP.
+ *   mode=consolidated (default): one workbook/report for everyone assigned
+ *   mode=individual + userId:     that employee's own full report
  * Manager sees only their group employees; admin sees all.
  */
 router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'), requirePermission('reports.export'), async (req, res) => {
@@ -1240,20 +1096,14 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
 
     const assessment = await Assessments.getById(id);
     if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
+    if (!canAccessAssessment(req.user, assessment)) return res.status(403).json({ success: false, data: null, error: 'Access denied' });
 
     const allReports  = await Reports.getAll();
     let assignments   = assessment.employeeAssignments || [];
 
-    // Non-admins: restrict to their own team. Was gated on
-    // `req.user.role === 'manager'` specifically — the router-level
-    // requireRole('admin','manager') gate already lets through anyone with
-    // manager capability via ANY path (primary role, access grant, or
-    // switched view), so an access-grant manager who hadn't happened to
-    // switch their active view to "Manager" could fall through this `if`
-    // with NO restriction applied at all and export every employee's report,
-    // not just their own team's — an over-exposure, not the usual
-    // under-exposure bug. Now applies whenever the caller isn't admin, and
-    // unions Groups with the durable manager_id path via getVisibleEmployeeIds.
+    // Non-admins: restrict to their own team. Applies whenever the caller isn't
+    // admin (not only when the active view is "manager") and unions Groups with
+    // the durable manager_id path via getVisibleEmployeeIds.
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       try {
         const memberIds = await getVisibleEmployeeIds(req.user);
@@ -1267,119 +1117,51 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
       ? assignments.filter(ea => ea.userId === targetUserId)
       : assignments;
 
-    // Fetch groups + users for group/manager enrichment
-    let allGroups = [], allUsers = [];
-    try {
-      const { getGroups } = await import('../db/store.js');
-      allGroups = await getGroups();
-      const usersResult = await UserStore.getAllUsers({ companyId: req.user.companyId });
-      allUsers = Array.isArray(usersResult) ? usersResult : (usersResult?.users || []);
-    } catch {}
-
-    const rows = filteredAssignments.map(ea => {
-      const report = allReports.find(r => r.assessmentId === id && r.userId === ea.userId);
-      const group = allGroups.find(g => (g.employeeIds || []).includes(ea.userId));
-      const managerUser = group ? allUsers.find(u => u.userId === group.managerId) : null;
-      const empUser = allUsers.find(u => u.userId === ea.userId);
-      return buildExportRow(ea, report, assessment.title, {
-        groupName: group?.name || '',
-        managerName: managerUser?.name || '',
-        employeeId: empUser?.employeeId || ea.userId,
-        assessmentType: assessment.assessmentType || '',
-        deadline: assessment.deadline || '',
-        durationMinutes: normalizeDuration(assessment.duration),
-        passThreshold: assessment.settings?.passPercentage ?? 80,
-      });
-    });
-
-    if (rows.length === 0) {
+    if (filteredAssignments.length === 0) {
       return res.status(404).json({ success: false, data: null, error: 'No employee assignments found for this assessment' });
     }
 
-    const safeTitle = (assessment.title || 'Assessment').replace(/[^a-zA-Z0-9-_ ]/g, '_');
-    const filename  = `${safeTitle}-Reports`;
+    const { rows, summary } = await loadAssessmentRows({
+      assessment, assignments: filteredAssignments, reports: allReports, companyId: req.user.companyId,
+    });
 
-    // ── XLSX ──────────────────────────────────────────────────────────────────
-    if (format === 'xlsx') {
-      const { default: XLSX } = await import('xlsx');
-      const headers = ['Employee Name','Employee ID','Email','Job Role','Group','Manager','Assessment','Assessment Type','Assessment Date','Deadline','Score','%','Pass/Fail','Grade','Classification','Duration','Status','Completion Date','Skill Breakdown','Topic Scores','Strengths','Improvement Areas','Missing Competencies','Recommendations','AI Summary'];
-      const toRow = r => [r.employeeName,r.employeeId,r.employeeEmail,r.jobRole,r.group,r.manager,r.assessmentName,r.assessmentType,r.assessmentDate,r.deadline,r.score,r.percentage,r.passFail,r.grade,r.classification,r.duration,r.status,r.completionDate,r.skillBreakdown,r.topicScores,r.strengths,r.improvementAreas,r.missingCompetencies,r.recommendations,r.aiSummary];
+    const filename = `${safeFilename(assessment.title, 'Assessment')}-Reports`;
+    const individual = mode === 'individual' && rows.length === 1 ? rows[0] : null;
 
-      const wb = XLSX.utils.book_new();
-      if (mode === 'individual') {
-        rows.forEach((r, i) => {
-          const ws = XLSX.utils.aoa_to_sheet([headers, toRow(r)]);
-          ws['!cols'] = headers.map((_, ci) => ({ wch: ci < 4 ? 20 : 30 }));
-          XLSX.utils.book_append_sheet(wb, ws, (r.employeeName || `Employee${i+1}`).slice(0, 31));
-        });
-      } else {
-        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows.map(toRow)]);
-        ws['!cols'] = headers.map((_, ci) => ({ wch: ci < 4 ? 20 : 30 }));
-        XLSX.utils.book_append_sheet(wb, ws, 'Reports');
+    try {
+      if (format === 'xlsx') {
+        const buf = individual ? buildIndividualWorkbook({ row: individual }) : buildAssessmentWorkbook({ rows, summary });
+        return sendDownload(res, buf, 'xlsx', filename);
       }
-
-      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
-      return res.send(buf);
-    }
-
-    // ── PDF ───────────────────────────────────────────────────────────────────
-    if (format === 'pdf') {
-      try {
-        const buf = await generatePDFBuffer(rows, assessment.title || 'Assessment Report');
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
-        return res.send(buf);
-      } catch (e) {
-        console.error('[export-reports PDF]', e);
-        return res.status(501).json({ success: false, data: null, error: 'PDF export failed: ' + e.message });
+      if (format === 'pdf') {
+        const buf = individual ? await buildIndividualPdf({ row: individual }) : await buildConsolidatedPdf({ rows, summary });
+        return sendDownload(res, buf, 'pdf', filename);
       }
-    }
-
-    // ── DOCX ──────────────────────────────────────────────────────────────────
-    if (format === 'docx') {
-      try {
-        const buf = await generateDOCXBuffer(rows, assessment.title || 'Assessment Report');
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}.docx"`);
-        return res.send(buf);
-      } catch (e) {
-        console.error('[export-reports DOCX]', e);
-        return res.status(501).json({ success: false, data: null, error: 'DOCX export failed: ' + e.message });
+      if (format === 'docx') {
+        const buf = individual ? await buildIndividualDocx({ row: individual }) : await buildConsolidatedDocx({ rows, summary });
+        return sendDownload(res, buf, 'docx', filename);
       }
-    }
-
-    // ── ZIP (individual PDFs bundled) ─────────────────────────────────────────
-    if (format === 'zip') {
-      try {
+      if (format === 'zip') {
+        // Bundle: the results workbook plus one individual report per completed employee.
         const AdmZip = (await import('adm-zip')).default;
         const zip = new AdmZip();
-
-        const subFormat = (req.query.subformat || 'pdf').toLowerCase();
-        await Promise.all(rows.map(async (r) => {
+        zip.addFile('Results.xlsx', buildAssessmentWorkbook({ rows, summary }));
+        const subFormat = (req.query.subformat || 'pdf').toLowerCase() === 'docx' ? 'docx' : 'pdf';
+        const used = new Set();
+        for (const r of rows.filter(isCompletedRow)) {
           try {
-            let fileBuffer, ext;
-            if (subFormat === 'docx') {
-              fileBuffer = await generateDOCXBuffer([r], `${r.employeeName} — ${assessment.title}`);
-              ext = 'docx';
-            } else {
-              fileBuffer = await generatePDFBuffer([r], `${r.employeeName} — ${assessment.title}`);
-              ext = 'pdf';
-            }
-            const safeName = (r.employeeName || `employee-${r.employeeId}`).replace(/[^a-zA-Z0-9-_ ]/g, '_');
-            zip.addFile(`${safeName}.${ext}`, fileBuffer);
-          } catch {}
-        }));
-
-        const zipBuf = zip.toBuffer();
-        res.setHeader('Content-Type', 'application/zip');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}.zip"`);
-        return res.send(zipBuf);
-      } catch (e) {
-        console.error('[export-reports ZIP]', e);
-        return res.status(500).json({ success: false, data: null, error: 'ZIP export failed: ' + e.message });
+            const fileBuffer = subFormat === 'docx' ? await buildIndividualDocx({ row: r }) : await buildIndividualPdf({ row: r });
+            let base = safeFilename([r.name, r.employeeId].filter(Boolean).join(' - '), `employee-${r.userId}`);
+            while (used.has(base.toLowerCase())) base += '_';
+            used.add(base.toLowerCase());
+            zip.addFile(`${base}.${subFormat}`, fileBuffer);
+          } catch (e) { console.warn('[export-reports ZIP] skipped one employee:', e.message); }
+        }
+        return sendDownload(res, zip.toBuffer(), 'zip', filename);
       }
+    } catch (e) {
+      console.error(`[export-reports ${format}]`, e);
+      return res.status(500).json({ success: false, data: null, error: `${format.toUpperCase()} export failed: ` + e.message });
     }
 
     res.status(400).json({ success: false, data: null, error: `Unsupported format: ${format}. Use xlsx, pdf, docx, or zip.` });
@@ -1388,307 +1170,6 @@ router.get('/:id/export-reports', authenticate, requireRole('admin', 'manager'),
     res.status(500).json({ success: false, data: null, error: 'Failed to export reports' });
   }
 });
-
-// ── Enterprise single-report data aggregation ──────────────────────────────────
-// Pulls together everything for one employee + one assessment into a single
-// structured object: employee details, assessment metadata, full question-by-
-// question breakdown, performance analysis, linked module info, and audit trail.
-async function buildFullReportData({ ea, report, assessment, userId, req }) {
-  const [user, allGroups] = await Promise.all([
-    UserStore.getUserById(userId).catch(() => null),
-    Groups.getAll().catch(() => []),
-  ]);
-
-  const myGroup = (allGroups || []).find(g => (g.employeeIds || []).includes(userId));
-
-  const sc = report || ea.scoring || {};
-  const durationMs = ea.startedAt && ea.submittedAt ? new Date(ea.submittedAt) - new Date(ea.startedAt) : null;
-
-  // Question-by-question breakdown: prefer the detailed `breakdown` array saved
-  // at submission time; fall back to reconstructing from questions+responses.
-  let questions = (report?.breakdown || sc.breakdown || []).map((b, i) => ({
-    index: i + 1,
-    question: b.question || '',
-    type: b.type || 'mcq',
-    options: b.options || null,
-    userAnswer: b.userAnswer ?? '',
-    correctAnswer: b.correctOptionText || b.correctAnswer || '',
-    isCorrect: !!b.isCorrect,
-    marks: b.marks ?? (b.isCorrect ? 1 : 0),
-    skillArea: b.skillArea || '',
-    explanation: b.explanation || '',
-  }));
-  if (questions.length === 0 && Array.isArray(ea.questions)) {
-    questions = ea.questions.map((q, i) => ({
-      index: i + 1,
-      question: q.question || '',
-      type: q.type || 'mcq',
-      options: q.options || null,
-      userAnswer: ea.responses?.[i]?.answer ?? '',
-      correctAnswer: q.answer ?? '',
-      isCorrect: null,
-      marks: null,
-      skillArea: q.skillArea || '',
-      explanation: q.explanation || '',
-    }));
-  }
-
-  // Linked auto-generated module (if this report triggered one)
-  let moduleInfo = null;
-  if (report?.id) {
-    try {
-      const allModAssignments = await ModuleAssignments.getAll();
-      const linked = (allModAssignments || []).find(ma => ma.assessmentReportId === report.id);
-      if (linked) {
-        const mod = await db.getModuleById(linked.moduleId);
-        if (mod) {
-          const sessions = mod.content?.sessions || mod.sessions || [];
-          moduleInfo = {
-            title: mod.title || 'Generated Module',
-            sessionCount: sessions.length,
-            sessions: sessions.map(s => ({ title: s.title, dayNumber: s.dayNumber, type: s.type || 'learning', duration: s.duration || '' })),
-            progress: linked.progress ?? 0,
-            status: linked.status || 'assigned',
-            deadline: linked.dueDate || linked.endDate || null,
-            startDate: linked.startDate || null,
-          };
-        }
-      }
-    } catch { /* module lookup is best-effort — report generation must not fail because of it */ }
-  }
-
-  const additionalRoles = (user?.additionalJobRoles || []).map(r => r.roleName).filter(Boolean);
-
-  return {
-    employee: {
-      name: ea.userName || user?.name || ea.userId || '',
-      employeeId: user?.employeeId || userId,
-      email: ea.userEmail || user?.email || report?.userEmail || '',
-      company: user?.companyName || req.user.companyId || 'default',
-      group: myGroup?.name || '—',
-      manager: myGroup?.managerName || '—',
-      jobRole: ea.jobRole || user?.jobRole || report?.jobRole || '',
-      additionalJobRoles: additionalRoles,
-    },
-    assessment: {
-      name: assessment.title || '',
-      type: assessment.targetGroup ? 'Group' : 'Individual',
-      difficulty: assessment.difficulty || 'Mixed',
-      assignedDate: ea.assignedAt || null,
-      startedDate: ea.startedAt || null,
-      completedDate: ea.submittedAt || report?.submittedAt || null,
-      durationMinutes: durationMs ? Math.round(durationMs / 60000) : null,
-      attemptNumber: ea.attemptNumber || 1,
-      finalScore: sc.score ?? null,
-      correct: sc.correct ?? null,
-      total: sc.total ?? questions.length,
-      // Always recompute from the assessment's real configured threshold —
-      // never a hardcoded cutoff — so this matches the admin's export and
-      // the manager dashboard for the exact same submission. Recomputing
-      // here (rather than trusting a stored sc.passed) also keeps this
-      // correct for reports submitted before passThreshold started being persisted.
-      passFail: sc.score != null ? (sc.score >= (assessment.settings?.passPercentage ?? 80) ? 'Pass' : 'Fail') : 'Pending',
-      grade: gradeForReport(sc),
-      status: ea.status || 'assigned',
-    },
-    questions,
-    performance: {
-      strengths: sc.strengths || [],
-      weaknesses: sc.weakAreas || [],
-      missingCompetencies: sc.missingCompetencies || [],
-      skillGap: sc.skillBreakdown || [],
-      aiSummary: report?.aiSummary || sc.readinessLevel || '',
-      recommendations: (report?.improvementRecommendations || sc.recommendedLearningAreas || []).map(r => (typeof r === 'string' ? r : r?.area || String(r))),
-      classification: sc.performanceClassification?.label || '',
-    },
-    module: moduleInfo,
-    audit: {
-      generatedDate: new Date().toISOString(),
-      lastUpdated: report?.updatedAt || report?.generatedAt || assessment.updatedAt || null,
-      generatedBy: `${req.user.name || req.user.email || req.user.userId} (${req.user.role})`,
-    },
-  };
-}
-
-function fmtDate(d) { return d ? new Date(d).toLocaleString() : '—'; }
-
-// ── Enterprise PDF report (full multi-section HR record) ──────────────────────
-async function generateEnterpriseReportPDF(data) {
-  const PDFDocument = (await import('pdfkit')).default;
-  const chunks = [];
-  const doc = new PDFDocument({ margin: 44, size: 'A4' });
-  doc.on('data', c => chunks.push(c));
-  const done = new Promise(resolve => doc.on('end', () => resolve(Buffer.concat(chunks))));
-
-  const h1 = (t) => { doc.fontSize(16).font('Helvetica-Bold').fillColor('#1e293b').text(t); doc.moveDown(0.3); };
-  const h2 = (t, color = '#4f46e5') => { doc.moveDown(0.5); doc.fontSize(11).font('Helvetica-Bold').fillColor(color).text(t.toUpperCase()); doc.moveDown(0.2); };
-  const kv = (k, v) => { doc.fontSize(9).font('Helvetica-Bold').fillColor('#334155').text(`${k}: `, { continued: true }); doc.font('Helvetica').fillColor('#1e293b').text(String(v ?? '—')); };
-
-  doc.fontSize(18).font('Helvetica-Bold').fillColor('#4f46e5').text('Enterprise Assessment Report', { align: 'center' });
-  doc.fontSize(9).font('Helvetica').fillColor('#64748b').text(`Generated: ${fmtDate(data.audit.generatedDate)}`, { align: 'center' });
-  doc.moveDown(1);
-
-  h2('Employee Details');
-  kv('Name', data.employee.name); kv('Employee ID', data.employee.employeeId); kv('Email', data.employee.email);
-  kv('Company', data.employee.company); kv('Group', data.employee.group); kv('Manager', data.employee.manager);
-  kv('Job Role', data.employee.jobRole);
-  if (data.employee.additionalJobRoles.length) kv('Additional Job Roles', data.employee.additionalJobRoles.join(', '));
-
-  h2('Assessment Details');
-  kv('Assessment Name', data.assessment.name); kv('Type', data.assessment.type); kv('Difficulty', data.assessment.difficulty);
-  kv('Date Assigned', fmtDate(data.assessment.assignedDate)); kv('Date Started', fmtDate(data.assessment.startedDate));
-  kv('Date Completed', fmtDate(data.assessment.completedDate));
-  kv('Duration', data.assessment.durationMinutes != null ? `${data.assessment.durationMinutes} min` : '—');
-  kv('Attempt Number', data.assessment.attemptNumber);
-  kv('Final Score', data.assessment.finalScore != null ? `${data.assessment.correct}/${data.assessment.total} (${data.assessment.finalScore}%)` : 'Pending');
-  kv('Grade', data.assessment.grade); kv('Pass/Fail', data.assessment.passFail);
-
-  h2('Performance Analysis');
-  kv('Classification', data.performance.classification);
-  kv('Strengths', data.performance.strengths.join(', ') || '—');
-  kv('Weaknesses', data.performance.weaknesses.join(', ') || '—');
-  kv('Skill Gaps', data.performance.missingCompetencies.join(', ') || '—');
-  if (data.performance.aiSummary) kv('AI Summary', data.performance.aiSummary);
-  if (data.performance.recommendations.length) kv('Recommendations', data.performance.recommendations.join('; '));
-
-  if (data.module) {
-    h2('Module Information');
-    kv('Generated Module', data.module.title); kv('Sessions', data.module.sessionCount);
-    kv('Progress', `${data.module.progress}%`); kv('Status', data.module.status); kv('Deadline', fmtDate(data.module.deadline));
-  }
-
-  h2('Audit Information');
-  kv('Generated Date', fmtDate(data.audit.generatedDate)); kv('Last Updated', fmtDate(data.audit.lastUpdated)); kv('Generated By', data.audit.generatedBy);
-
-  // Question-by-question breakdown — own section, paginated
-  if (data.questions.length) {
-    doc.addPage();
-    h1('Question-by-Question Breakdown');
-    data.questions.forEach(q => {
-      if (doc.y > doc.page.height - 140) doc.addPage();
-      doc.fontSize(10).font('Helvetica-Bold').fillColor('#1e293b').text(`Q${q.index}. [${q.type.toUpperCase()}] ${q.question}`, { width: 500 });
-      doc.fontSize(9).font('Helvetica').fillColor('#334155');
-      doc.text(`Employee Answer: ${q.userAnswer || '—'}`);
-      doc.text(`Correct Answer: ${q.correctAnswer || '—'}`);
-      const resultColor = q.isCorrect === true ? '#059669' : q.isCorrect === false ? '#dc2626' : '#64748b';
-      doc.fillColor(resultColor).text(`Result: ${q.isCorrect === true ? 'Correct' : q.isCorrect === false ? 'Incorrect' : 'Not graded'}${q.marks != null ? ` (${q.marks} marks)` : ''}`);
-      doc.fillColor('#334155');
-      doc.moveDown(0.5);
-    });
-  }
-
-  doc.end();
-  return done;
-}
-
-// ── Enterprise DOCX report ──────────────────────────────────────────────────────
-async function generateEnterpriseReportDOCX(data) {
-  const docxLib = await import('docx');
-  const { Document, Paragraph, TextRun, Table, TableRow, TableCell, Packer, WidthType, HeadingLevel } = docxLib;
-
-  const field = (k, v) => new Paragraph({ children: [new TextRun({ text: `${k}: `, bold: true }), new TextRun({ text: String(v ?? '—') })] });
-  const heading = (t) => new Paragraph({ text: t, heading: HeadingLevel.HEADING2, spacing: { before: 200, after: 100 } });
-
-  const children = [
-    new Paragraph({ text: 'Enterprise Assessment Report', heading: HeadingLevel.HEADING1 }),
-    new Paragraph({ text: `Generated: ${fmtDate(data.audit.generatedDate)}` }),
-
-    heading('Employee Details'),
-    field('Name', data.employee.name), field('Employee ID', data.employee.employeeId), field('Email', data.employee.email),
-    field('Company', data.employee.company), field('Group', data.employee.group), field('Manager', data.employee.manager),
-    field('Job Role', data.employee.jobRole),
-    ...(data.employee.additionalJobRoles.length ? [field('Additional Job Roles', data.employee.additionalJobRoles.join(', '))] : []),
-
-    heading('Assessment Details'),
-    field('Assessment Name', data.assessment.name), field('Type', data.assessment.type), field('Difficulty', data.assessment.difficulty),
-    field('Date Assigned', fmtDate(data.assessment.assignedDate)), field('Date Started', fmtDate(data.assessment.startedDate)),
-    field('Date Completed', fmtDate(data.assessment.completedDate)),
-    field('Duration', data.assessment.durationMinutes != null ? `${data.assessment.durationMinutes} min` : '—'),
-    field('Attempt Number', data.assessment.attemptNumber),
-    field('Final Score', data.assessment.finalScore != null ? `${data.assessment.correct}/${data.assessment.total} (${data.assessment.finalScore}%)` : 'Pending'),
-    field('Grade', data.assessment.grade), field('Pass/Fail', data.assessment.passFail),
-
-    heading('Performance Analysis'),
-    field('Classification', data.performance.classification),
-    field('Strengths', data.performance.strengths.join(', ') || '—'),
-    field('Weaknesses', data.performance.weaknesses.join(', ') || '—'),
-    field('Skill Gaps', data.performance.missingCompetencies.join(', ') || '—'),
-    ...(data.performance.aiSummary ? [field('AI Summary', data.performance.aiSummary)] : []),
-    ...(data.performance.recommendations.length ? [field('Recommendations', data.performance.recommendations.join('; '))] : []),
-
-    ...(data.module ? [
-      heading('Module Information'),
-      field('Generated Module', data.module.title), field('Sessions', data.module.sessionCount),
-      field('Progress', `${data.module.progress}%`), field('Status', data.module.status), field('Deadline', fmtDate(data.module.deadline)),
-    ] : []),
-
-    heading('Audit Information'),
-    field('Generated Date', fmtDate(data.audit.generatedDate)), field('Last Updated', fmtDate(data.audit.lastUpdated)), field('Generated By', data.audit.generatedBy),
-  ];
-
-  if (data.questions.length) {
-    children.push(heading('Question-by-Question Breakdown'));
-    const headerRow = new TableRow({
-      children: ['#', 'Type', 'Question', 'Employee Answer', 'Correct Answer', 'Result', 'Marks'].map(h =>
-        new TableCell({ shading: { fill: '1E293B' }, children: [new Paragraph({ children: [new TextRun({ text: h, bold: true, color: 'FFFFFF' })] })] })
-      ),
-    });
-    const dataRows = data.questions.map(q => new TableRow({
-      children: [
-        String(q.index), q.type, q.question, String(q.userAnswer || '—'), String(q.correctAnswer || '—'),
-        q.isCorrect === true ? 'Correct' : q.isCorrect === false ? 'Incorrect' : 'Not graded',
-        q.marks != null ? String(q.marks) : '—',
-      ].map(v => new TableCell({ children: [new Paragraph(v)] })),
-    }));
-    children.push(new Table({ rows: [headerRow, ...dataRows], width: { size: 100, type: WidthType.PERCENTAGE } }));
-  }
-
-  const doc = new Document({ sections: [{ children }] });
-  return Packer.toBuffer(doc);
-}
-
-// ── Enterprise XLSX report — multi-sheet workbook ───────────────────────────────
-async function generateEnterpriseReportXLSX(data) {
-  const XLSX = await import('xlsx');
-  const wb = XLSX.utils.book_new();
-
-  const summaryRows = [
-    ['EMPLOYEE DETAILS'], ['Name', data.employee.name], ['Employee ID', data.employee.employeeId], ['Email', data.employee.email],
-    ['Company', data.employee.company], ['Group', data.employee.group], ['Manager', data.employee.manager],
-    ['Job Role', data.employee.jobRole], ['Additional Job Roles', data.employee.additionalJobRoles.join(', ')],
-    [], ['ASSESSMENT DETAILS'],
-    ['Assessment Name', data.assessment.name], ['Type', data.assessment.type], ['Difficulty', data.assessment.difficulty],
-    ['Date Assigned', fmtDate(data.assessment.assignedDate)], ['Date Started', fmtDate(data.assessment.startedDate)],
-    ['Date Completed', fmtDate(data.assessment.completedDate)],
-    ['Duration', data.assessment.durationMinutes != null ? `${data.assessment.durationMinutes} min` : '—'],
-    ['Attempt Number', data.assessment.attemptNumber],
-    ['Final Score', data.assessment.finalScore != null ? `${data.assessment.correct}/${data.assessment.total} (${data.assessment.finalScore}%)` : 'Pending'],
-    ['Grade', data.assessment.grade], ['Pass/Fail', data.assessment.passFail],
-    [], ['PERFORMANCE ANALYSIS'],
-    ['Classification', data.performance.classification],
-    ['Strengths', data.performance.strengths.join(', ')], ['Weaknesses', data.performance.weaknesses.join(', ')],
-    ['Skill Gaps', data.performance.missingCompetencies.join(', ')], ['AI Summary', data.performance.aiSummary],
-    ['Recommendations', data.performance.recommendations.join('; ')],
-    ...(data.module ? [[], ['MODULE INFORMATION'], ['Generated Module', data.module.title], ['Sessions', data.module.sessionCount],
-      ['Progress', `${data.module.progress}%`], ['Status', data.module.status], ['Deadline', fmtDate(data.module.deadline)]] : []),
-    [], ['AUDIT INFORMATION'],
-    ['Generated Date', fmtDate(data.audit.generatedDate)], ['Last Updated', fmtDate(data.audit.lastUpdated)], ['Generated By', data.audit.generatedBy],
-  ];
-  const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
-  summarySheet['!cols'] = [{ wch: 25 }, { wch: 50 }];
-  XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
-
-  if (data.questions.length) {
-    const qHeaders = ['#', 'Type', 'Question', 'Employee Answer', 'Correct Answer', 'Result', 'Marks', 'Skill Area'];
-    const qRows = data.questions.map(q => [q.index, q.type, q.question, q.userAnswer || '—', q.correctAnswer || '—',
-      q.isCorrect === true ? 'Correct' : q.isCorrect === false ? 'Incorrect' : 'Not graded', q.marks ?? '—', q.skillArea || '—']);
-    const qSheet = XLSX.utils.aoa_to_sheet([qHeaders, ...qRows]);
-    qSheet['!cols'] = qHeaders.map((_, i) => ({ wch: i === 2 ? 50 : 20 }));
-    XLSX.utils.book_append_sheet(wb, qSheet, 'Questions');
-  }
-
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-}
 
 /**
  * GET /api/assessments/:id/reports/:userId/download
@@ -1729,40 +1210,17 @@ router.get('/:id/reports/:userId/download', authenticate, async (req, res) => {
     }
 
     const allReports = await Reports.getAll();
-    const report = allReports.find(r => r.assessmentId === id && r.userId === userId);
-    const fullData = await buildFullReportData({ ea, report, assessment, userId, req });
-    const safeTitle = (fullData.employee.name + '-' + (assessment.title || 'Report')).replace(/[^a-zA-Z0-9-_ ]/g, '_');
+    const { rows } = await loadAssessmentRows({ assessment, assignments: [ea], reports: allReports, companyId: req.user.companyId });
+    const row = rows[0];
+    const safeTitle = safeFilename(`${row.name}-${assessment.title || 'Report'}`, 'Report');
 
-    if (format === 'pdf') {
-      try {
-        const buf = await generateEnterpriseReportPDF(fullData);
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.pdf"`);
-        return res.send(buf);
-      } catch (e) {
-        return res.status(500).json({ success: false, data: null, error: 'PDF generation failed: ' + e.message });
-      }
-    }
-
-    if (format === 'docx') {
-      try {
-        const buf = await generateEnterpriseReportDOCX(fullData);
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-        res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.docx"`);
-        return res.send(buf);
-      } catch (e) {
-        return res.status(500).json({ success: false, data: null, error: 'DOCX generation failed: ' + e.message });
-      }
-    }
-
-    // XLSX — multi-sheet enterprise workbook
     try {
-      const buf = await generateEnterpriseReportXLSX(fullData);
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.xlsx"`);
-      return res.send(buf);
+      if (format === 'pdf') return sendDownload(res, await buildIndividualPdf({ row }), 'pdf', safeTitle);
+      if (format === 'docx') return sendDownload(res, await buildIndividualDocx({ row }), 'docx', safeTitle);
+      // XLSX — individual workbook (Summary, Skills, Question Review)
+      return sendDownload(res, buildIndividualWorkbook({ row }), 'xlsx', safeTitle);
     } catch (e) {
-      return res.status(500).json({ success: false, data: null, error: 'XLSX generation failed: ' + e.message });
+      return res.status(500).json({ success: false, data: null, error: `${format.toUpperCase()} generation failed: ` + e.message });
     }
   } catch (e) {
     console.error('[GET /api/assessments/:id/reports/:userId/download]', e);
@@ -2034,7 +1492,36 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
       ? reports
       : reports.filter(r => allowedIds.has(r.userId || r.user_id || r.submittedBy));
 
-    res.json({ success: true, data: filteredReports, error: null });
+    // Fill in what older reports never saved (staff ID, department, assigned and
+    // due dates) from live records so the Reports table and its downloads match.
+    const userById = new Map(allUsers.map(u => [u.userId || u.id, u]));
+    const assessmentCache = new Map();
+    const getAssessmentCached = async (aid) => {
+      if (!assessmentCache.has(aid)) assessmentCache.set(aid, await Assessments.getById(aid).catch(() => null));
+      return assessmentCache.get(aid);
+    };
+    const enriched = await Promise.all(filteredReports.map(async (r) => {
+      const uid = r.userId || r.user_id || r.submittedBy;
+      const u = userById.get(uid);
+      let assignedAt = r.assignedAt || null;
+      let dueAt = r.dueAt || null;
+      if ((!assignedAt || !dueAt) && r.assessmentId) {
+        const a = await getAssessmentCached(r.assessmentId);
+        const ea = a?.employeeAssignments?.find(e => e.userId === uid);
+        if (a) { assignedAt = assignedAt || ea?.assignedAt || null; dueAt = dueAt || resolveWindow(a, ea, null).dueAt || null; }
+      }
+      return {
+        ...r,
+        staffId: r.employeeId || u?.employeeId || '',
+        department: r.department || u?.department || '',
+        assignedAt,
+        dueAt,
+        deadline: r.deadline || dueAt,
+        startedAtResolved: r.attemptStartUnknown ? null : (r.attemptStartedAt || null),
+      };
+    }));
+
+    res.json({ success: true, data: enriched, error: null });
   } catch (e) {
     console.error('[assessments/:id/report]', e.message);
     res.status(500).json({ success: false, data: null, error: 'Failed to load reports' });
@@ -2043,7 +1530,8 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
 
 /**
  * GET /api/assessments/export-all-reports
- * Download ALL assessment reports for this company/manager as XLSX
+ * Download ALL assessment reports for this company/manager (one row per
+ * submission) as XLSX, PDF or Word (format=xlsx|pdf|doc|docx).
  */
 router.get('/export-all-reports', authenticate, requirePermission('reports.export'), async (req, res) => {
   try {
@@ -2078,160 +1566,27 @@ router.get('/export-all-reports', authenticate, requirePermission('reports.expor
     }
 
     const format = (req.query.format || 'xlsx').toLowerCase();
-    const headers = ['Name','Email','Job Role','Assessment','Date','Score %','Grade','Classification','Status','Strengths','Improvement Areas','Recommendations'];
-    const rows = reports.map(r => {
-      const sc = r.scoring || {};
-      return [
-        r.userName || r.name || '',
-        r.userEmail || r.email || '',
-        r.jobRole || '',
-        r.assessmentTitle || r.title || '',
-        r.submittedAt ? new Date(r.submittedAt).toLocaleDateString() : '',
-        sc.score != null ? `${sc.score}%` : '',
-        gradeForReport(sc),
-        sc.performanceClassification?.label || '',
-        r.status || 'submitted',
-        (sc.strengths || []).join('; '),
-        (sc.weakAreas || []).join('; '),
-        (r.improvementRecommendations || sc.recommendedLearningAreas || []).join('; '),
-      ];
-    });
+    const { rows } = await loadSubmissionRows({ reports, companyId: req.user?.companyId });
+    const summary = {
+      ...buildSummary(rows, {}, null),
+      title: 'All Assessment Reports',
+      company: rows.find(r => r.companyName)?.companyName || '',
+      multi: { assessments: new Set(rows.map(r => r.assessmentId || r.assessmentTitle)).size },
+    };
 
-    if (format === 'pdf') {
-      // Generate HTML and convert to PDF-like downloadable HTML (print-ready)
-      const htmlRows = rows.map(row => `<tr>${row.map(cell => `<td>${String(cell).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>`).join('')}</tr>`).join('');
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Assessment Reports</title>
-<style>
-body{font-family:Arial,sans-serif;padding:20px;font-size:11px;}
-h1{color:#4f46e5;font-size:18px;margin-bottom:16px;}
-table{width:100%;border-collapse:collapse;font-size:10px;}
-th{background:#1e293b;color:#fff;padding:8px 6px;text-align:left;font-size:9px;text-transform:uppercase;}
-td{padding:7px 6px;border-bottom:1px solid #e2e8f0;vertical-align:top;}
-tr:nth-child(even){background:#f8fafc;}
-.footer{margin-top:20px;text-align:center;color:#94a3b8;font-size:9px;}
-@media print{body{padding:10px;}}
-</style></head><body>
-<h1>All Assessment Reports</h1>
-<p style="color:#64748b;font-size:11px;margin-bottom:12px;">Generated: ${new Date().toLocaleString()} · Total Records: ${rows.length}</p>
-<table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
-<tbody>${htmlRows}</tbody></table>
-<div class="footer">SkillForge AI · Assessment Reports · Confidential</div>
-</body></html>`;
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.setHeader('Content-Disposition', 'attachment; filename="All-Assessment-Reports.html"');
-      res.end(html);
-    } else if (format === 'doc') {
-      // Generate DOCX-compatible HTML wrapped in Word XML
-      const tableRows = rows.map(row =>
-        `<w:tr>${row.map(cell => `<w:tc><w:p><w:r><w:t>${String(cell).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</w:t></w:r></w:p></w:tc>`).join('')}</w:tr>`
-      ).join('');
-      const headerRow = `<w:tr>${headers.map(h => `<w:tc><w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>${h}</w:t></w:r></w:p></w:tc>`).join('')}</w:tr>`;
-      const docx = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<?mso-application progid="Word.Document"?>
-<w:wordDocument xmlns:w="http://schemas.microsoft.com/office/word/2003/wordml">
-<w:body>
-<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="36"/></w:rPr><w:t>All Assessment Reports</w:t></w:r></w:p>
-<w:p><w:r><w:t>Generated: ${new Date().toLocaleString()} | Total: ${rows.length}</w:t></w:r></w:p>
-<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/><w:tblBorders><w:top w:val="single"/><w:left w:val="single"/><w:bottom w:val="single"/><w:right w:val="single"/><w:insideH w:val="single"/><w:insideV w:val="single"/></w:tblBorders></w:tblPr>
-${headerRow}${tableRows}
-</w:tbl>
-</w:body></w:wordDocument>`;
-      res.setHeader('Content-Type', 'application/msword');
-      res.setHeader('Content-Disposition', 'attachment; filename="All-Assessment-Reports.doc"');
-      res.end(docx);
-    } else {
-      // Default: XLSX
-      const XLSX = await import('xlsx');
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-      ws['!cols'] = [25,30,20,30,15,10,10,18,12,40,40,40].map(w => ({ wch: w }));
-      XLSX.utils.book_append_sheet(wb, ws, 'All Reports');
-      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', 'attachment; filename="All-Assessment-Reports.xlsx"');
-      res.end(Buffer.isBuffer(buf) ? buf : Buffer.from(buf));
+    try {
+      if (format === 'pdf') return sendDownload(res, await buildConsolidatedPdf({ rows, summary }), 'pdf', 'All-Assessment-Reports');
+      if (format === 'doc' || format === 'docx') return sendDownload(res, await buildConsolidatedDocx({ rows, summary }), 'docx', 'All-Assessment-Reports');
+      return sendDownload(res, buildAllReportsWorkbook({ rows, summary }), 'xlsx', 'All-Assessment-Reports');
+    } catch (e) {
+      console.error('[export-all-reports build]', e);
+      return res.status(500).json({ success: false, error: 'Failed to build the report file' });
     }
   } catch (e) {
     console.error('[export-all-reports]', e);
     res.status(500).json({ success: false, error: 'Failed to export reports' });
   }
 });
-
-// ── Generic tabular export helpers (real PDF/DOCX/XLSX — no HTML-as-PDF hacks) ─
-function escapeCell(v) {
-  if (v === null || v === undefined) return '';
-  return String(v);
-}
-
-async function generateTabularPDFBuffer(headers, rows, title, metaLine) {
-  const PDFDocument = (await import('pdfkit')).default;
-  const chunks = [];
-  const doc = new PDFDocument({ margin: 28, size: 'A4', layout: 'landscape' });
-  doc.on('data', (c) => chunks.push(c));
-  const done = new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
-
-  doc.fontSize(16).fillColor('#4f46e5').text(title, { align: 'left' });
-  doc.moveDown(0.2);
-  doc.fontSize(8.5).fillColor('#64748b').text(metaLine);
-  doc.moveDown(0.5);
-
-  const startX = doc.page.margins.left;
-  const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-  const n = headers.length || 1;
-  const colWidth = pageWidth / n;
-  const rowHeight = 18;
-  let y = doc.y;
-
-  const drawRow = (cells, isHeader, rowIdx) => {
-    if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
-      doc.addPage();
-      y = doc.page.margins.top;
-    }
-    if (isHeader) {
-      doc.rect(startX, y, pageWidth, rowHeight).fill('#1e293b');
-    } else if (rowIdx % 2 === 1) {
-      doc.rect(startX, y, pageWidth, rowHeight).fill('#f8fafc');
-    }
-    cells.forEach((cell, i) => {
-      doc.fontSize(7.5).fillColor(isHeader ? '#ffffff' : '#1e293b');
-      doc.text(escapeCell(cell), startX + i * colWidth + 4, y + 5, { width: colWidth - 8, height: rowHeight - 4, ellipsis: true });
-    });
-    y += rowHeight;
-  };
-
-  drawRow(headers, true, -1);
-  rows.forEach((r, idx) => drawRow(r, false, idx));
-
-  doc.end();
-  return done;
-}
-
-async function generateTabularDOCXBuffer(headers, rows, title, metaLine) {
-  const docxLib = await import('docx');
-  const { Document, Paragraph, TextRun, Table, TableRow, TableCell, Packer, WidthType, HeadingLevel } = docxLib;
-
-  const headerRow = new TableRow({
-    children: headers.map((h) => new TableCell({
-      shading: { fill: '1E293B' },
-      children: [new Paragraph({ children: [new TextRun({ text: escapeCell(h), bold: true, color: 'FFFFFF' })] })],
-    })),
-  });
-  const dataRows = rows.map((r) => new TableRow({
-    children: r.map((c) => new TableCell({ children: [new Paragraph(escapeCell(c))] })),
-  }));
-
-  const doc = new Document({
-    sections: [{
-      properties: { page: { size: { orientation: 'landscape' } } },
-      children: [
-        new Paragraph({ text: title, heading: HeadingLevel.HEADING1 }),
-        new Paragraph({ text: metaLine, spacing: { after: 200 } }),
-        new Table({ rows: [headerRow, ...dataRows], width: { size: 100, type: WidthType.PERCENTAGE } }),
-      ],
-    }],
-  });
-  return Packer.toBuffer(doc);
-}
 
 /**
  * POST /api/assessments/export-filtered-reports
@@ -2256,32 +1611,13 @@ router.post('/export-filtered-reports', authenticate, requirePermission('reports
     });
 
     const safeTitle = (title || 'Training Reports').slice(0, 200);
-    const metaLine = `Generated: ${new Date().toLocaleString()}  |  Total Records: ${uniqueRows.length}${filterSummary ? `  |  Filters: ${filterSummary}` : ''}`;
+    const metaLine = `Generated ${new Date().toLocaleString('en-GB', { timeZone: process.env.REPORT_TIMEZONE || 'Asia/Kolkata' })}  |  Total records: ${uniqueRows.length}${filterSummary ? `  |  Filters: ${filterSummary}` : ''}`;
     const fmt = String(format).toLowerCase();
     const fileBase = safeTitle.replace(/[^a-zA-Z0-9-_ ]/g, '').trim().replace(/\s+/g, '-') || 'Training-Reports';
 
-    if (fmt === 'pdf') {
-      const buf = await generateTabularPDFBuffer(headers, uniqueRows, safeTitle, metaLine);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.pdf"`);
-      return res.end(buf);
-    }
-    if (fmt === 'doc' || fmt === 'docx') {
-      const buf = await generateTabularDOCXBuffer(headers, uniqueRows, safeTitle, metaLine);
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-      res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.docx"`);
-      return res.end(buf);
-    }
-    // Default: real XLSX
-    const XLSX = await import('xlsx');
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...uniqueRows]);
-    ws['!cols'] = headers.map(() => ({ wch: 22 }));
-    XLSX.utils.book_append_sheet(wb, ws, 'Reports');
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.xlsx"`);
-    return res.end(Buffer.isBuffer(buf) ? buf : Buffer.from(buf));
+    if (fmt === 'pdf') return sendDownload(res, await buildTablePdf({ title: safeTitle, metaLine, headers, rows: uniqueRows }), 'pdf', fileBase);
+    if (fmt === 'doc' || fmt === 'docx') return sendDownload(res, await buildTableDocx({ title: safeTitle, metaLine, headers, rows: uniqueRows }), 'docx', fileBase);
+    return sendDownload(res, buildTableWorkbook({ headers, rows: uniqueRows }), 'xlsx', fileBase);
   } catch (e) {
     console.error('[export-filtered-reports]', e);
     res.status(500).json({ success: false, error: 'Failed to export reports' });
@@ -2624,6 +1960,112 @@ router.get('/:id', authenticate, async (req, res) => {
 });
 
 /**
+ * POST /api/assessments/:id/start
+ * Records when the employee actually opened the paper (`attemptStartedAt`), so
+ * reports can show "started" and "time taken". Idempotent: the first call wins,
+ * later calls (page refresh) change nothing.
+ *
+ * Deliberately NOT `startedAt` / status 'in_progress': those lock the question
+ * set (see isAssignmentLocked) and version-backed assignments hold no embedded
+ * questions, so locking here would break delivery.
+ */
+router.post('/:id/start', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const assessment = await Assessments.getById(req.params.id);
+    if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
+    const entry = assessment.employeeAssignments?.find(ea => ea.userId === userId);
+    if (!entry) return res.status(403).json({ success: false, data: null, error: 'You are not assigned to this assessment' });
+
+    // Nothing to record once the attempt is finished or already started.
+    if (entry.status === 'submitted' || entry.status === 'cancelled' || entry.attemptStartedAt) {
+      return res.json({ success: true, data: { attemptStartedAt: entry.attemptStartedAt || null, recorded: false }, error: null });
+    }
+
+    const eaaRow = assessment.questionBankVersionId
+      ? await EmployeeAssessmentAssignments.getOne(assessment.id, userId).catch(() => null)
+      : null;
+    const win = resolveWindow(assessment, entry, eaaRow);
+    const now = new Date();
+    if (win.startAt && now < new Date(win.startAt)) {
+      return res.status(403).json({ success: false, data: null, error: 'This assessment is not open yet' });
+    }
+    if (win.dueAt && now > new Date(win.dueAt)) {
+      return res.status(403).json({ success: false, data: null, error: 'The deadline for this assessment has passed' });
+    }
+
+    // The roster is one shared JSON array, so re-read right before writing and
+    // verify afterwards; another employee starting at the same moment could
+    // otherwise overwrite our write.
+    const startedIso = now.toISOString();
+    let saved = null;
+    for (let attempt = 0; attempt < 3 && !saved; attempt++) {
+      const fresh = await Assessments.getById(req.params.id);
+      const roster = Array.isArray(fresh?.employeeAssignments) ? [...fresh.employeeAssignments] : [];
+      const i = roster.findIndex(ea => ea.userId === userId);
+      if (i < 0) break;
+      if (roster[i].status === 'submitted' || roster[i].attemptStartedAt) { saved = roster[i].attemptStartedAt || null; break; }
+      roster[i] = { ...roster[i], attemptStartedAt: startedIso };
+      await Assessments.update(req.params.id, { employeeAssignments: roster, updatedAt: startedIso });
+      const check = await Assessments.getById(req.params.id);
+      const mine = check?.employeeAssignments?.find(ea => ea.userId === userId);
+      if (mine?.attemptStartedAt) saved = mine.attemptStartedAt;
+    }
+    res.json({ success: true, data: { attemptStartedAt: saved || startedIso, recorded: Boolean(saved) }, error: null });
+  } catch (e) {
+    console.error('[POST /api/assessments/:id/start]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to record the start time' });
+  }
+});
+
+/**
+ * Everything a report download needs, frozen at submit time so it never
+ * depends on a later live lookup (employee moved team, renamed, etc.).
+ */
+async function buildSubmitSnapshot({ assessment, assignment, eaaRow, actor, submittedAt }) {
+  const user = await UserStore.getUserById(actor.userId).catch(() => null);
+  let managerId = user?.managerId || null;
+  let managerName = '';
+  if (managerId) {
+    const m = await UserStore.getUserById(managerId).catch(() => null);
+    managerName = m?.name || '';
+  }
+  if (!managerName) {
+    const groups = await Groups.getAll().catch(() => []);
+    const g = (groups || []).find(x => (x.employeeIds || []).includes(actor.userId));
+    if (g) { managerId = managerId || g.managerId || null; managerName = g.managerName || ''; }
+  }
+  let companyName = user?.companyName || '';
+  if (!companyName) {
+    const cid = assessment.companyId || actor.companyId;
+    if (cid && cid !== 'default') companyName = (await Companies.getById(cid).catch(() => null))?.name || '';
+  }
+
+  const win = resolveWindow(assessment, assignment, eaaRow);
+  const limitMin = normalizeDuration(assessment.duration);
+  // No recorded start (old client, or /start failed): fall back to the submit
+  // time and flag it so exports show the start as unknown rather than invent it.
+  const startKnown = Boolean(assignment.attemptStartedAt);
+  return {
+    employeeId: user?.employeeId || '',
+    department: user?.department || '',
+    phone: user?.phone || '',
+    userEmail: actor.email || assignment.userEmail || user?.email || '',
+    managerId,
+    managerName,
+    companyName,
+    assessmentType: assessment.assessmentType || '',
+    timeTakenSeconds: startKnown ? timeTakenSeconds(assignment.attemptStartedAt, submittedAt, limitMin) : null,
+    attemptNumber: (Array.isArray(assignment.attempts) ? assignment.attempts.length : 0) + 1,
+    assignedAt: assignment.assignedAt || null,
+    startAt: win.startAt || null,
+    dueAt: win.dueAt || null,
+    attemptStartedAt: startKnown ? assignment.attemptStartedAt : submittedAt,
+    attemptStartUnknown: !startKnown,
+  };
+}
+
+/**
  * POST /api/assessments/:id/submit
  * Employee submits their assessment → auto-generates report
  */
@@ -2717,9 +2159,19 @@ router.post('/:id/submit', authenticate, async (req, res) => {
     }
 
     const submittedAt = new Date().toISOString();
+    // Snapshot for exports (identity, manager, company, schedule, time taken).
+    // Use the FRESH roster entry so a start time recorded by /start is seen.
+    const snapshot = await buildSubmitSnapshot({
+      assessment, assignment: freshAssessment.employeeAssignments[freshIdx], eaaRow, actor: req.user, submittedAt,
+    }).catch((e) => { console.warn('[submit] snapshot failed, exports will fall back to live lookups:', e.message); return {}; });
+    const { userEmail: _snapEmail, startAt: snapStart, dueAt: snapDue, ...rosterSnapshot } = snapshot;
     const updatedAssignments = [...freshAssessment.employeeAssignments];
+    const priorEntry = freshAssessment.employeeAssignments[freshIdx];
     updatedAssignments[freshIdx] = {
-      ...freshAssessment.employeeAssignments[freshIdx],
+      ...priorEntry,
+      ...rosterSnapshot,
+      startAt: priorEntry.startAt || snapStart || null,
+      dueAt: priorEntry.dueAt || snapDue || null,
       status: 'submitted',
       submittedAt,
       responses,      // save normalised responses
@@ -2740,6 +2192,7 @@ router.post('/:id/submit', authenticate, async (req, res) => {
       jobRole: assignment.jobRole,
       submittedAt,
       ...scoring,
+      ...snapshot,
       questions,
       responses,
       generatedAt: new Date().toISOString(),
