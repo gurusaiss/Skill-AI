@@ -4,6 +4,16 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-10 — No sideways scrolling anywhere, and complete database setup SQL
+
+**No horizontal scroll.** Tab bars, the top navbar and wide tables no longer scroll sideways; they shrink, wrap or move less important columns under the name instead. A new shared `TabBar` is used for every tab strip (tabs share the width, labels shorten with a tooltip, and they wrap to a second row on narrow screens). The top bar shows icons only at laptop width and labels on wider screens. The assessment employee table went from 14 columns to 7 grouped columns, and rows become stacked cards on small screens. A global rule that silently hid overflow was removed so real problems show up. `CLAUDE.md` now records this rule for future work, and `npm run check:scroll` in `client/` fails if a new horizontal scroll is added.
+Files: `client/src/components/TabBar.jsx` (new), `Navbar.jsx`, `index.css`, most dashboard and management pages, `client/scripts/check-no-scroll.mjs`, `CLAUDE.md`.
+
+**Database SQL for the company database.** A new `queries/` folder holds everything to run in the Supabase SQL editor: `01_full_schema_new_database.sql` (all 43 tables, safe to run twice), `02_update_existing_database.sql` (only the recent additions, nothing deleted), `03_verify.sql` (read-only checks), a plain-language `README.md`, and `verify_schema.mjs` which checks the code against the SQL. It also fills gaps in the old SQL files: six tables the app uses were never created anywhere (`reminders`, `platform_settings`, `access_codes`, `generated_content`, `generated_modules`, `assessment_thresholds`), and several user and assignment columns were missing. These scripts create structure only; existing data must be copied across separately (see the README).
+Files: `queries/`.
+
+---
+
 ## 2026-10-09 — Report downloads rebuilt: complete Excel, clear section-wise PDF and Word
 
 **Excel:** the "Results" sheet now has one row for every assigned employee (including those who have not finished) with 35 columns: Employee ID, name, email, phone, job role, department, group, manager and manager ID, assessment, **assigned date, start window, due date, started at, completed date**, status, time taken, time limit, attempt number, correct, total, score, grade, pass or fail, pass mark, performance, readiness, skill scores, strengths, needs improvement, missing skills, recommendations and reminders sent. Dates are real Excel dates and numbers are real numbers, with a frozen styled header and filters. Extra sheets: Summary, Skills, Question Review.

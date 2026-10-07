@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import TabBar from '../components/TabBar.jsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LineChart, Line, AreaChart, Area,
@@ -311,8 +312,8 @@ function PerformanceHeatmap({ userId }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <div className="min-w-[520px]">
+      <div className="min-w-0">
+        <div className="min-w-0">
           {/* Hour labels */}
           <div className="flex mb-1 pl-9">
             {Array.from({ length: 24 }, (_, h) => (
@@ -458,21 +459,7 @@ function MemoryBrowser({ memory, loading, error }) {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 p-1 bg-slate-800/60 rounded-xl mb-5 w-fit">
-          {MEMORY_TABS.map((tab, i) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(i)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                activeTab === i
-                  ? 'bg-indigo-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
+        <TabBar size="sm" className="mb-5" active={activeTab} onChange={setActiveTab} tabs={MEMORY_TABS.map((tab, i) => ({ key: i, label: tab }))} />
 
         <AnimatePresence mode="wait">
           {activeTab === 0 && (

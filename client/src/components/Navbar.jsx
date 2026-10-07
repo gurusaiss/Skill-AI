@@ -159,29 +159,29 @@ function Navbar() {
         {/* Brand — never shrinks, always single line */}
         <Link to="/" className="flex items-center gap-2.5 flex-shrink-0 mr-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-600/20 border border-indigo-500/20 text-base flex-shrink-0">🧠</div>
-          <span className="font-bold text-white text-sm tracking-wide whitespace-nowrap">SKILL FORGE</span>
+          <span className="font-bold text-white text-sm tracking-wide whitespace-nowrap hidden sm:inline lg:hidden xl:inline">SKILL FORGE</span>
         </Link>
 
         {/* Company name (as set by the super admin) — shown on every portal page */}
         {isAuthenticated && (
-          <div className="hidden sm:flex flex-shrink-0 mr-2">
-            <CompanyBadge />
+          <div className="hidden sm:flex min-w-0 flex-shrink mr-2">
+            <CompanyBadge maxWidthClass="max-w-[90px] xl:max-w-[200px]" />
           </div>
         )}
 
-        {/* Role nav links — flex-1 fills remaining space; scrolls invisibly on mid screens */}
+        {/* Role nav links — flex-1 fills remaining space; icon-only at lg, labels from xl; below lg the hamburger menu is used (never scrolls) */}
         {!hideNavLinks && (
-          <nav className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-hide">
+          <nav className="hidden lg:flex items-center gap-0.5 flex-1 min-w-0">
             {roleLinks.map(({ to, label, icon }) => (
-              <Link key={to} to={to}
-                className={`flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all whitespace-nowrap flex-shrink-0 text-[11px] xl:text-xs font-medium
+              <Link key={to} to={to} title={label} aria-label={label}
+                className={`flex items-center justify-center gap-1 px-1.5 xl:px-2 py-1.5 rounded-lg transition-all whitespace-nowrap min-w-0 flex-shrink text-[11px] xl:text-xs font-medium
                   ${location.pathname === to
                     || (location.pathname === '/employee/dashboard' && to === '/dashboard')
                     || (to !== '/admin/dashboard' && to !== '/dashboard' && to !== '/manager/dashboard' && location.pathname.startsWith(to))
                     ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
-                <span className="text-[13px] leading-none">{icon}</span>
-                {label}
+                <span className="text-[13px] leading-none flex-shrink-0">{icon}</span>
+                <span className="hidden xl:inline truncate min-w-0">{label}</span>
               </Link>
             ))}
           </nav>
@@ -333,7 +333,7 @@ function Navbar() {
             {/* Mobile hamburger */}
             <button onClick={() => setMenuOpen(!menuOpen)}
               aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-              className="md:hidden flex items-center justify-center w-7 h-7 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all text-sm">
+              className="lg:hidden flex items-center justify-center w-7 h-7 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all text-sm">
               {menuOpen ? '✕' : '☰'}
             </button>
           </div>
@@ -342,7 +342,7 @@ function Navbar() {
 
       {/* Mobile Menu */}
       {!hideNavLinks && menuOpen && (
-        <div className="md:hidden border-t border-slate-800 bg-[#0F172A] px-4 py-4">
+        <div className="lg:hidden border-t border-slate-800 bg-[#0F172A] px-4 py-4">
           <nav className="flex flex-col gap-1">
             {isAuthenticated && (
               <div className="mb-2 flex">

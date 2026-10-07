@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import TabBar from '../../components/TabBar.jsx';
 import { authFetch } from '../../utils/authFetch.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
@@ -475,14 +476,8 @@ function RoleModal({ role, onClose, onSaved }) {
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-slate-700 pb-3">
-            {['details', 'checklist'].map(t => (
-              <button key={t} type="button" onClick={() => setTab(t)}
-                className={`px-3 py-1.5 rounded text-xs font-semibold capitalize ${tab === t ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>
-                {t === 'checklist' ? `Onboarding Checklist (${checklist.length})` : 'Role Details'}
-              </button>
-            ))}
-          </div>
+          <TabBar size="sm" className="border-b border-slate-700 pb-3" active={tab} onChange={setTab}
+            tabs={[{ key: 'details', label: 'Role Details' }, { key: 'checklist', label: `Onboarding Checklist (${checklist.length})` }]} />
 
           {tab === 'details' && (<>
           <div>
@@ -1723,13 +1718,9 @@ function HistoryModal({ role, onClose }) {
           <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
         </div>
 
-        <div className="flex gap-1 px-5 pt-3 flex-shrink-0">
-          {[['versions', `Versions (${versions.length})`], ['audit', `Timeline (${auditLog.length})`], ['assignments', `Assignments (${assignmentHistory.length})`]].map(([key, label]) => (
-            <button key={key} onClick={() => setTab(key)}
-              className={`px-3 py-1.5 rounded-t-lg text-xs font-semibold transition-colors ${tab === key ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
-              {label}
-            </button>
-          ))}
+        <div className="px-5 pt-3 flex-shrink-0">
+          <TabBar variant="underline" size="sm" active={tab} onChange={setTab}
+            tabs={[['versions', `Versions (${versions.length})`], ['audit', `Timeline (${auditLog.length})`], ['assignments', `Assignments (${assignmentHistory.length})`]].map(([key, label]) => ({ key, label }))} />
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 pt-3">

@@ -1038,7 +1038,7 @@ export default function SuperAdminDashboard() {
               <p className="text-sm">No companies yet. Create one to get started.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="min-w-0">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-700/60">

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import TabBar from '../../components/TabBar.jsx';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
@@ -1758,7 +1759,7 @@ function ImportModal({ onClose, onImported, setToast }) {
             </div>
 
             {/* Preview table */}
-            <div className="flex-1 overflow-auto p-4">
+            <div className="flex-1 overflow-y-auto p-4 min-w-0">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-slate-800">
                   <tr className="border-b border-slate-700/60">
@@ -2342,7 +2343,7 @@ export default function UserManagement() {
     setUsers(prev => [newUser, ...prev]);
   };
 
-  const thClass = 'py-3 px-4 text-left';
+  const thClass = 'py-3 px-2 xl:px-3 text-left';
   const thBtn = 'flex items-center gap-0.5 text-xs font-bold text-slate-400 hover:text-white uppercase tracking-wider transition-colors';
 
   return (
@@ -2421,17 +2422,13 @@ export default function UserManagement() {
         <div className="space-y-3 mb-5">
           {/* Row 1: Tabs + Search + Count */}
           <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex bg-slate-800/60 border border-slate-700/60 rounded-xl p-1 gap-1">
-              {[
-                { id: 'employees', label: 'Employees', count: employeeUsers.length },
-                { id: 'staff', label: 'Management', count: staffUsers.length },
-              ].map(tab => (
-                <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSortBy('name'); setSearch(''); setFilterDept('all'); setFilterStatus('all'); }}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white'}`}>
-                  {tab.label}
-                  <span className={`px-1.5 py-0.5 rounded-md text-xs ${activeTab === tab.id ? 'bg-indigo-500/50' : 'bg-slate-700 text-slate-500'}`}>{tab.count}</span>
-                </button>
-              ))}
+            <div className="sm:w-72 sm:flex-shrink-0 min-w-0">
+              <TabBar active={activeTab}
+                onChange={(id) => { setActiveTab(id); setSortBy('name'); setSearch(''); setFilterDept('all'); setFilterStatus('all'); }}
+                tabs={[
+                  { key: 'employees', label: 'Employees', badge: employeeUsers.length },
+                  { key: 'staff', label: 'Management', badge: staffUsers.length },
+                ]} />
             </div>
 
             <div className="flex-1 relative">
@@ -2512,19 +2509,19 @@ export default function UserManagement() {
           </div>
         ) : (
           <div className="bg-[#111827] border border-slate-700/40 rounded-2xl overflow-hidden shadow-xl">
-            <div className="overflow-x-auto">
+            <div className="min-w-0">
               <table className="w-full">
                 <thead className="bg-slate-800/30 border-b border-slate-700/40">
                   <tr>
                     <th className={thClass}><button onClick={() => handleSort('name')} className={thBtn}>Name <SortIcon column="name" sortBy={sortBy} sortDir={sortDir} /></button></th>
-                    <th className={thClass}><button onClick={() => handleSort('employeeId')} className={thBtn}>{activeTab === 'employees' ? 'Employee ID' : 'Manager ID'} <SortIcon column="employeeId" sortBy={sortBy} sortDir={sortDir} /></button></th>
+                    <th className={`${thClass} hidden 2xl:table-cell`}><button onClick={() => handleSort('employeeId')} className={thBtn}>{activeTab === 'employees' ? 'Employee ID' : 'Manager ID'} <SortIcon column="employeeId" sortBy={sortBy} sortDir={sortDir} /></button></th>
                     <th className={thClass}><button onClick={() => handleSort('email')} className={thBtn}>Email <SortIcon column="email" sortBy={sortBy} sortDir={sortDir} /></button></th>
-                    <th className={thClass}><span className={thBtn}>Phone</span></th>
+                    <th className={`${thClass} hidden 2xl:table-cell`}><span className={thBtn}>Phone</span></th>
                     {activeTab === 'employees' ? (
                       <>
                         <th className={thClass}><button onClick={() => handleSort('jobRole')} className={thBtn}>Job Role <SortIcon column="jobRole" sortBy={sortBy} sortDir={sortDir} /></button></th>
                         <th className={thClass}><button onClick={() => handleSort('department')} className={thBtn}>Dept <SortIcon column="department" sortBy={sortBy} sortDir={sortDir} /></button></th>
-                        <th className={thClass}><span className={thBtn}>Manager</span></th>
+                        <th className={`${thClass} hidden xl:table-cell`}><span className={thBtn}>Manager</span></th>
                         <th className={thClass}><span className={thBtn}>JD</span></th>
                         <th className={thClass}><button onClick={() => handleSort('assignments')} className={thBtn}>Modules <SortIcon column="assignments" sortBy={sortBy} sortDir={sortDir} /></button></th>
                       </>
@@ -2546,27 +2543,28 @@ export default function UserManagement() {
 
                     return (
                       <tr key={u.userId} className="hover:bg-slate-800/30 transition-colors group">
-                        <td className="py-3 px-4">
-                          <button onClick={() => setDetailUser(u)} className="flex items-center gap-3 text-left group/name">
+                        <td className="py-3 px-2 xl:px-3 min-w-0">
+                          <button onClick={() => setDetailUser(u)} className="flex items-center gap-2 text-left group/name min-w-0 max-w-full">
                             <div className={`w-9 h-9 rounded-xl border flex items-center justify-center text-sm font-bold shrink-0 ${getAvatarColor(u.role)}`}>
                               {getAvatarInitials(u.name)}
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <span className="text-white font-semibold text-sm group-hover/name:text-indigo-300 transition-colors">
                                 {u.name}{isSelf && <span className="ml-1.5 text-xs text-slate-500">(you)</span>}
                               </span>
+                              <span className="2xl:hidden block text-[11px] font-mono text-slate-500">{u.employeeId || '—'}</span>
                             </div>
                           </button>
                         </td>
-                        <td className="py-3 px-4"><span className="text-slate-300 text-sm font-mono">{u.employeeId || '—'}</span></td>
-                        <td className="py-3 px-4"><span className="text-slate-400 text-sm">{u.email}</span></td>
-                        <td className="py-3 px-4"><span className="text-slate-400 text-sm whitespace-nowrap">{u.phone || '—'}</span></td>
+                        <td className="hidden 2xl:table-cell py-3 px-3"><span className="text-slate-300 text-sm font-mono">{u.employeeId || '—'}</span></td>
+                        <td className="py-3 px-2 xl:px-3 min-w-0"><span className="text-slate-400 text-sm break-all" title={u.email}>{u.email}</span><span className="2xl:hidden block text-[11px] text-slate-500">{u.phone || '—'}</span></td>
+                        <td className="hidden 2xl:table-cell py-3 px-3"><span className="text-slate-400 text-sm whitespace-nowrap">{u.phone || '—'}</span></td>
 
                         {activeTab === 'employees' ? (
                           <>
                             <td className="py-3 px-4">
                               {u.jobRole ? (
-                                <div className="flex flex-wrap gap-1 max-w-[220px]">
+                                <div className="flex flex-wrap gap-1 max-w-full">
                                   <span className="px-2 py-0.5 rounded-lg text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/25" title="Primary job role">{u.jobRole}</span>
                                   {(u.additionalJobRoles || []).map(r => (
                                     <span key={r.id || r.roleName} className="px-2 py-0.5 rounded-lg text-xs font-medium bg-slate-700/40 text-slate-300 border border-slate-600/40" title="Additional job role">{r.roleName}</span>
@@ -2574,8 +2572,8 @@ export default function UserManagement() {
                                 </div>
                               ) : <span className="text-slate-600 text-xs italic">—</span>}
                             </td>
-                            <td className="py-3 px-4"><span className="text-slate-400 text-sm">{u.department || '—'}</span></td>
-                            <td className="py-3 px-4">
+                            <td className="py-3 px-2 xl:px-3"><span className="text-slate-400 text-sm">{u.department || '—'}</span><span className="xl:hidden block text-[11px] text-slate-500">Mgr: {users.find(m => m.userId === u.managerId)?.name || '—'}</span></td>
+                            <td className="hidden xl:table-cell py-3 px-3">
                               {u.managerId ? (
                                 <span className="text-slate-300 text-sm">{users.find(m => m.userId === u.managerId)?.name || '—'}</span>
                               ) : <span className="text-slate-600 text-xs italic">Unassigned</span>}

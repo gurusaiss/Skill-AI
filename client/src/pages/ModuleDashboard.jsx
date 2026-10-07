@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import TabBar from '../components/TabBar.jsx';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
 import { useAuth } from '../contexts/AuthContext';
@@ -542,21 +543,11 @@ function ModuleNavbar({ moduleId, assignmentId, activeTab, onTabChange }) {
   return (
     <div className="sticky top-[57px] z-20 bg-[#0F172A]/95 backdrop-blur border-b border-slate-800/80">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
-        <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-2">
-          {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => onTabChange(t.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${
-                activeTab === t.id
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-            >
-              <span>{t.icon}</span>{t.label}
-            </button>
-          ))}
-          <div className="ml-auto flex items-center gap-1 pl-4 border-l border-slate-800 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2">
+          <div className="flex-1 min-w-[14rem]">
+            <TabBar size="sm" active={activeTab} onChange={onTabChange} tabs={tabs.map(t => ({ key: t.id, label: t.label, icon: t.icon }))} />
+          </div>
+          <div className="ml-auto flex items-center gap-1 pl-2 border-l border-slate-800 flex-shrink-0">
             {toolLinks.map(l => (
               <button
                 key={l.label}

@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import { gradeForReport } from '../../utils/assessmentRules.js';
 import StatCard from '../../components/StatCard.jsx';
+import TabBar from '../../components/TabBar.jsx';
 
 const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
@@ -666,25 +667,7 @@ export default function ManagerDashboard() {
         </div>
       )}
 
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-1 scrollbar-hide">
-        {[
-          { id: 'overview', label: 'Overview' },
-          { id: 'employees', label: 'Employees' },
-          { id: 'assignments', label: 'Assignments' },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveView(tab.id)}
-            className={`px-4 py-2 rounded-lg font-semibold whitespace-nowrap text-sm transition-all ${
-              activeView === tab.id
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
-                : 'bg-slate-800/50 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <TabBar className="mb-6" active={activeView} onChange={setActiveView} tabs={[{ key: 'overview', label: 'Overview' }, { key: 'employees', label: 'Employees' }, { key: 'assignments', label: 'Assignments' }]} />
 
       {activeView === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

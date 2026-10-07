@@ -446,7 +446,7 @@ export default function AdminManagement() {
               <p className="text-sm">{search || filterPlan !== 'all' || filterStatus !== 'all' ? 'No admins match your filters.' : 'No admins found.'}</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="min-w-0">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-700/60 bg-slate-800/30">

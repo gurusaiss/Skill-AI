@@ -205,7 +205,7 @@ export default function SuperAdminReports() {
               <p className="text-sm">{search || filterPlan !== 'all' ? 'No companies match your filters.' : 'No company data yet.'}</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="min-w-0">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-700/60 bg-slate-800/30">
@@ -229,7 +229,7 @@ export default function SuperAdminReports() {
                     <th onClick={() => handleSort('activeUsers')} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-300">
                       Active (30d) <SortIcon k="activeUsers" />
                     </th>
-                    <th onClick={() => handleSort('createdAt')} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-300">
+                    <th onClick={() => handleSort('createdAt')} className="hidden xl:table-cell text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-300">
                       Created <SortIcon k="createdAt" />
                     </th>
                   </tr>
@@ -261,11 +261,11 @@ export default function SuperAdminReports() {
                         <div className="text-slate-300 tabular-nums">{r.totalAssignments}</div>
                         <div className="text-xs text-slate-500 mt-0.5">{r.completedAssignments} done</div>
                       </td>
-                      <td className="px-4 py-4 min-w-[120px]">
+                      <td className="px-4 py-4 min-w-[80px]">
                         <CompletionBar value={r.completionRate} />
                       </td>
                       <td className="px-4 py-4 text-slate-300 tabular-nums">{r.activeUsers}</td>
-                      <td className="px-4 py-4 text-slate-500 text-xs">{formatDate(r.createdAt)}</td>
+                      <td className="hidden xl:table-cell px-4 py-4 text-slate-500 text-xs">{formatDate(r.createdAt)}</td>
                     </tr>
                   ))}
                 </tbody>

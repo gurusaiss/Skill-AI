@@ -102,8 +102,8 @@ ${assignments.map(a => `<tr>
 }
 
 // ─── Shared table styling tokens (used by the standardized Reports table) ─────
-const TH_CLS = 'px-3 py-2.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none';
-const TD_CLS = 'px-3 py-3 text-sm text-slate-200 align-middle';
+const TH_CLS = 'px-2 xl:px-3 py-2.5 text-left text-[11px] xl:text-xs font-bold text-slate-400 uppercase tracking-wider select-none';
+const TD_CLS = 'px-2 xl:px-3 py-3 text-sm text-slate-200 align-middle';
 const PAGE_SIZE = 20;
 
 function SortIcon({ active, dir }) {
@@ -474,13 +474,13 @@ function AdminReportView({ user, navigate }) {
                 Status, Score, Progress, Completed Date + Actions. Every other field (Type,
                 Deadline, Manager, Group, Assigned Date, etc.) is still stored and included in
                 every export (PDF/Excel/DOC) below — nothing is deleted, only hidden from view. */}
-            <div className="overflow-x-auto">
+            <div className="min-w-0">
               <table className="w-full border-collapse">
                 <thead className="sticky top-0 z-10 bg-slate-900">
                   <tr className="border-b border-slate-700/40">
                     <th className={TH_CLS}><button onClick={() => toggleSort('employeeName')} className="flex items-center hover:text-white transition-colors">Employee Name<SortIcon active={sortCol === 'employeeName'} dir={sortDir} /></button></th>
-                    <th className={TH_CLS}><button onClick={() => toggleSort('employeeId')} className="flex items-center hover:text-white transition-colors">Employee ID<SortIcon active={sortCol === 'employeeId'} dir={sortDir} /></button></th>
-                    <th className={TH_CLS}><button onClick={() => toggleSort('jobRole')} className="flex items-center hover:text-white transition-colors">Job Role<SortIcon active={sortCol === 'jobRole'} dir={sortDir} /></button></th>
+                    <th className={`${TH_CLS} hidden xl:table-cell`}><button onClick={() => toggleSort('employeeId')} className="flex items-center hover:text-white transition-colors">Employee ID<SortIcon active={sortCol === 'employeeId'} dir={sortDir} /></button></th>
+                    <th className={`${TH_CLS} hidden xl:table-cell`}><button onClick={() => toggleSort('jobRole')} className="flex items-center hover:text-white transition-colors">Job Role<SortIcon active={sortCol === 'jobRole'} dir={sortDir} /></button></th>
                     <th className={TH_CLS}><button onClick={() => toggleSort('name')} className="flex items-center hover:text-white transition-colors">Assessment / Module<SortIcon active={sortCol === 'name'} dir={sortDir} /></button></th>
                     <th className={TH_CLS}><button onClick={() => toggleSort('status')} className="flex items-center hover:text-white transition-colors">Status<SortIcon active={sortCol === 'status'} dir={sortDir} /></button></th>
                     <th className={TH_CLS}><button onClick={() => toggleSort('score')} className="flex items-center hover:text-white transition-colors">Score<SortIcon active={sortCol === 'score'} dir={sortDir} /></button></th>
@@ -506,11 +506,11 @@ function AdminReportView({ user, navigate }) {
                             <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500/30 to-purple-500/20 border border-indigo-500/20 flex items-center justify-center text-[10px] font-black text-indigo-300 flex-shrink-0">
                               {r.employeeName.charAt(0).toUpperCase()}
                             </div>
-                            <span className="font-semibold text-white truncate" title={r.employeeName}>{r.employeeName}</span>
+                            <div className="min-w-0"><span className="block font-semibold text-white truncate" title={r.employeeName}>{r.employeeName}</span><span className="xl:hidden block text-[11px] text-slate-500 truncate" title={`${r.staffId || r.employeeId || ''} ${r.jobRole || ''}`}>{r.staffId || r.employeeId}{r.jobRole ? ` · ${r.jobRole}` : ''}</span></div>
                           </div>
                         </td>
-                        <td className={`${TD_CLS} text-slate-500 font-mono text-xs truncate max-w-[100px]`} title={r.staffId || r.employeeId}>{r.staffId || r.employeeId}</td>
-                        <td className={`${TD_CLS} text-slate-400 truncate max-w-[130px]`} title={r.jobRole}>{r.jobRole}</td>
+                        <td className={`${TD_CLS} hidden xl:table-cell text-slate-500 font-mono text-xs truncate max-w-[100px]`} title={r.staffId || r.employeeId}>{r.staffId || r.employeeId}</td>
+                        <td className={`${TD_CLS} hidden xl:table-cell text-slate-400 truncate max-w-[130px]`} title={r.jobRole}>{r.jobRole}</td>
                         <td className={`${TD_CLS} truncate max-w-[200px]`} title={r.name}>
                           <span className="mr-1">{r.type === 'assessment' ? '📝' : '📚'}</span>{r.name}
                         </td>
@@ -518,7 +518,7 @@ function AdminReportView({ user, navigate }) {
                         <td className={TD_CLS}>{r.score != null ? <span className={`text-xs font-bold ${valueColor}`}>{Math.round(r.score)}%</span> : <span className="text-slate-600">—</span>}</td>
                         <td className={TD_CLS}>
                           {r.progress != null ? (
-                            <div className="flex items-center gap-2 min-w-[90px]">
+                            <div className="flex items-center gap-2 min-w-[60px]">
                               <div className="flex-1 h-1.5 rounded-full bg-slate-700 overflow-hidden">
                                 <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(r.progress, 100)}%`, background: r.progress >= 80 ? '#10b981' : r.progress >= 50 ? '#f59e0b' : '#ef4444' }} />
                               </div>
@@ -1022,7 +1022,7 @@ ${allWeaknesses.length > 0 ? `<h2>Areas to Improve</h2><ul>${allWeaknesses.map(s
         <div className="p-4 border-b border-slate-700/40">
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Day-by-Day Breakdown</h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="min-w-0">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-500 uppercase tracking-wider border-b border-slate-700/40">

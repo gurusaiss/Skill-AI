@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import TabBar from './TabBar.jsx';
 
 /**
  * SkillDetailModal - Deep view of a skill
@@ -137,21 +138,7 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
         </div>
 
         {/* Tab nav */}
-        <div className="px-4 pt-3 pb-0 flex gap-1.5 overflow-x-auto border-b border-slate-800">
-          {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              className={`px-3 py-2 rounded-t-lg text-xs font-bold whitespace-nowrap transition-all ${
-                activeTab === t.id
-                  ? 'bg-slate-800 text-white border-b-2 border-indigo-500'
-                  : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TabBar variant="underline" size="sm" className="px-4 pt-3" active={activeTab} onChange={setActiveTab} tabs={tabs.map(t => ({ key: t.id, label: t.label, icon: t.icon }))} />
 
         {/* Content */}
         <div className="p-6 space-y-4 max-h-[55vh] overflow-y-auto">

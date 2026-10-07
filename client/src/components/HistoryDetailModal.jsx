@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import TabBar from './TabBar.jsx';
 
 /**
  * HistoryDetailModal - Deep view of a completed session
@@ -81,21 +82,7 @@ export default function HistoryDetailModal({ isOpen, onClose, session }) {
         </div>
 
         {/* Section nav */}
-        <div className="px-4 pt-3 pb-0 flex gap-1.5 overflow-x-auto border-b border-slate-800">
-          {sections.map(sec => (
-            <button
-              key={sec}
-              onClick={() => setActiveSection(sec)}
-              className={`px-3 py-2 rounded-t-lg text-xs font-bold whitespace-nowrap transition-all ${
-                activeSection === sec
-                  ? 'bg-slate-800 text-white border-b-2 border-indigo-500'
-                  : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              {sectionLabels[sec]}
-            </button>
-          ))}
-        </div>
+        <TabBar variant="underline" size="sm" className="px-4 pt-3" active={activeSection} onChange={setActiveSection} tabs={sections.map(sec => ({ key: sec, label: sectionLabels[sec] }))} />
 
         {/* Content */}
         <div className="p-6 space-y-4 max-h-[55vh] overflow-y-auto">

@@ -434,7 +434,7 @@ function TableBlock({ block }) {
   if (columns.length < 2 || rows.length === 0) return null;
   return (
     <BlockShell tone="indigo" icon="📋" title={block.title || 'Comparison'}>
-      <div className="overflow-x-auto -mx-1">
+      <div className="-mx-1 min-w-0">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-slate-700/60">
@@ -463,7 +463,7 @@ function LessonPlanBlock({ block }) {
   if (rows.length === 0) return null;
   return (
     <BlockShell tone="emerald" icon="🗂️" title={block.title || "What you'll cover"}>
-      <div className="overflow-x-auto -mx-1">
+      <div className="-mx-1 min-w-0">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-slate-700/60">

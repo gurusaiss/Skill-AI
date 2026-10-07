@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TabBar from '../../components/TabBar.jsx';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 
@@ -274,15 +275,7 @@ export default function ContentReview() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-slate-800/50 p-1 rounded-xl mb-6 w-fit">
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === t.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
-              {t.label}
-              {t.count !== null && <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${tab === t.id ? 'bg-white/20' : 'bg-slate-700'}`}>{t.count}</span>}
-            </button>
-          ))}
-        </div>
+        <TabBar className="mb-6" active={tab} onChange={setTab} tabs={tabs.map(t => ({ key: t.id, label: t.label, badge: t.count !== null ? t.count : undefined }))} />
 
         {loading ? (
           <div className="flex items-center justify-center py-20">

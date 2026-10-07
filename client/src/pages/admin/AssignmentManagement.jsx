@@ -369,7 +369,7 @@ export default function AssignmentManagement() {
                 return (
                   <div
                     key={a.id || idx}
-                    className="group px-6 py-4 hover:bg-slate-800/30 transition-all"
+                    className="group grid-stack-lg px-4 xl:px-6 py-4 hover:bg-slate-800/30 transition-all"
                     style={{ display: 'grid', gridTemplateColumns: '2fr 2.5fr 1fr 1fr 1.2fr 1.5fr 1fr 80px', alignItems: 'center', gap: '12px' }}
                   >
                     {/* Employee */}
@@ -519,7 +519,7 @@ export default function AssignmentManagement() {
               ) : (
                 <>
                   {/* Column headers */}
-                  <div className="grid px-6 py-3 border-b border-slate-700/40 bg-slate-800/30 text-xs font-bold text-slate-500 uppercase tracking-widest"
+                  <div className="hidden md:grid px-6 py-3 border-b border-slate-700/40 bg-slate-800/30 text-xs font-bold text-slate-500 uppercase tracking-widest"
                     style={{ gridTemplateColumns: '1.8fr 2fr 1fr 1fr 1.2fr' }}>
                     <span>Employee</span>
                     <span>Module</span>
@@ -540,7 +540,7 @@ export default function AssignmentManagement() {
                         return (
                           <div
                             key={a.id || idx}
-                            className="grid px-6 py-4 items-center gap-3 hover:bg-slate-800/30 transition-all"
+                            className="grid grid-stack-md px-6 py-4 items-center gap-3 hover:bg-slate-800/30 transition-all"
                             style={{ gridTemplateColumns: '1.8fr 2fr 1fr 1fr 1.2fr' }}
                           >
                             {/* Employee */}

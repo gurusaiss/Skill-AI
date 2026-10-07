@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import TabBar from '../../components/TabBar.jsx';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
@@ -431,20 +432,8 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-700/40 px-6">
-          {DETAIL_TABS.map(tab => (
-            <button
-              key={tab}
-              onClick={() => setDetailTab(tab)}
-              className={`px-4 py-3 text-xs font-bold capitalize transition-colors border-b-2 -mb-px ${
-                detailTab === tab
-                  ? 'border-indigo-500 text-indigo-300'
-                  : 'border-transparent text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
+        <div className="px-6">
+          <TabBar variant="underline" size="sm" active={detailTab} onChange={setDetailTab} tabs={DETAIL_TABS.map(tab => ({ key: tab, label: tab.charAt(0).toUpperCase() + tab.slice(1) }))} />
         </div>
 
         {/* Tab Content */}
@@ -1247,7 +1236,7 @@ export default function ModuleManagement() {
                 return (
                   <div key={mod.id || idx}
                     onClick={() => setSelectedModule(isSelected ? null : mod)}
-                    className={`group px-6 py-4 hover:bg-slate-800/30 transition-all cursor-pointer ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : ''}`}
+                    className={`group grid-stack-lg px-4 xl:px-6 py-4 hover:bg-slate-800/30 transition-all cursor-pointer ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : ''}`}
                     style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1fr 1fr 120px', alignItems: 'center', gap: '12px' }}>
                     {/* Module info */}
                     <div className="min-w-0">

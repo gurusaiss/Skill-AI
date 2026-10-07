@@ -58,9 +58,50 @@ small, .text-xs {
   font-size: max(0.875rem, 14px);
 }
 
-/* Prevent horizontal overflow at laptop widths / zoom > 100% */
-body {
-  overflow-x: hidden;
+/* ── NO-SIDEWAYS-SCROLL SAFETY NET ─────────────────────────────────────────
+   Rule: nothing in this app scrolls horizontally. Fix the cause (shrink, wrap,
+   truncate, hide low-priority columns, stack rows) instead of clipping with
+   overflow-x:hidden on body. Intentional exceptions must carry a
+   'scroll-ok: <reason>' comment (checked by npm run check:scroll). */
+html, body, #root {
+  max-width: 100%;
+}
+img, video, canvas, svg {
+  max-width: 100%;
+}
+/* Long unbroken text (emails, ids, urls) wraps instead of widening its container.
+   'anywhere' also lowers min-content sizes so flex/grid/table cells can shrink. */
+p, h1, h2, h3, h4, h5, h6, li, td, th, dd, dt, label, blockquote {
+  overflow-wrap: anywhere;
+}
+/* Grid/flex children may shrink below their content width (inline-style grids too) */
+[style*='grid-template-columns'] > * {
+  min-width: 0;
+}
+table {
+  max-width: 100%;
+}
+/* Tables: cells wrap and use tighter padding below 2xl instead of forcing a scrollbar */
+@media (max-width: 1535px) {
+  table :is(th, td) {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+    white-space: normal !important;
+  }
+}
+/* Row grids defined with inline gridTemplateColumns stack into 2 columns on small screens.
+   .grid-stack-lg: below 1024px, .grid-stack-md: below 768px. */
+@media (max-width: 1023px) {
+  .grid-stack-lg { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 767px) {
+  .grid-stack-md { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+/* .tab-fit: tab buttons shrink with their strip and truncate (used by components/TabBar.jsx) */
+.tab-fit {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 /* Max-width containers scale down gracefully */

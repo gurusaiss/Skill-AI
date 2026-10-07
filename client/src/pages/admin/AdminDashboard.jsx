@@ -9,6 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import StatCard from '../../components/StatCard.jsx';
+import TabBar from '../../components/TabBar.jsx';
 
 // ── Utility UI ─────────────────────────────────────────────────────────────────
 
@@ -253,13 +254,8 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
         </div>
 
         {/* Inner tabs */}
-        <div className="flex gap-1 px-4 pt-3 pb-1 border-b border-slate-700/30 bg-slate-800/20">
-          {detailTabs.map(t => (
-            <button key={t.id} onClick={() => setDetailTab(t.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${detailTab === t.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700/40'}`}>
-              {t.label}
-            </button>
-          ))}
+        <div className="px-4 pt-3 pb-1 border-b border-slate-700/30 bg-slate-800/20">
+          <TabBar size="sm" active={detailTab} onChange={setDetailTab} tabs={detailTabs.map(t => ({ key: t.id, label: t.label }))} />
         </div>
 
         {/* Content */}
@@ -808,18 +804,7 @@ export default function AdminDashboard() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-        {tabs.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-all text-sm ${
-              activeTab === tab.id
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
-                : 'bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white'
-            }`}>
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <TabBar className="mb-6" active={activeTab} onChange={setActiveTab} tabs={tabs.map(t => ({ key: t.id, label: t.label }))} />
 
       {/* ═══════════════════ OVERVIEW ═══════════════════ */}
       {activeTab === 'overview' && (
@@ -1091,7 +1076,7 @@ export default function AdminDashboard() {
           </div>
 
           <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden shadow-xl">
-            <div className="grid border-b border-slate-700/40 bg-slate-800/30 px-5 py-3" style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr 160px' }}>
+            <div className="hidden md:grid border-b border-slate-700/40 bg-slate-800/30 px-5 py-3" style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr 160px' }}>
               {['Module', 'Employee', 'Manager', 'Date', 'Actions'].map(h => (
                 <div key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</div>
               ))}
@@ -1123,7 +1108,7 @@ export default function AdminDashboard() {
                   const mod = modules.find(m => m.id === req.module_id);
                   return (
                     <div key={req.id} onClick={() => setSelectedRequest(req)}
-                      className="group grid items-center px-5 py-4 hover:bg-slate-800/30 cursor-pointer transition-all"
+                      className="group grid grid-stack-md items-center px-5 py-4 hover:bg-slate-800/30 cursor-pointer transition-all"
                       style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr 160px' }}>
                       <div className="min-w-0 pr-3">
                         <p className="text-sm font-semibold text-white truncate">{mod?.title || 'Unknown Module'}</p>
@@ -1170,11 +1155,10 @@ export default function AdminDashboard() {
           </div>
 
           {/* Table */}
-          <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden shadow-xl overflow-x-auto">
+          <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden shadow-xl">
             {/* Header */}
-            <div className="min-w-[900px]">
-              <div className="grid border-b border-slate-700/40 bg-slate-800/40 px-4 py-3"
-                style={{ gridTemplateColumns: '1.8fr 1.2fr 1fr 1fr 1fr 0.8fr 1fr' }}>
+            <div className="min-w-0">
+              <div className="hidden lg:grid lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,0.9fr)] border-b border-slate-700/40 bg-slate-800/40 px-3 xl:px-4 py-3 gap-x-2">
                 {[
                   { label: 'Employee', field: 'name' },
                   { label: 'Job Role', field: 'role' },
@@ -1186,7 +1170,7 @@ export default function AdminDashboard() {
                 ].map(col => (
                   <button key={col.label}
                     onClick={() => col.field && toggleSort(col.field)}
-                    className={`text-left text-xs font-bold uppercase tracking-widest flex items-center gap-1 ${col.field ? 'text-slate-400 hover:text-slate-200 cursor-pointer' : 'text-slate-500 cursor-default'}`}>
+                    className={`text-left text-[10px] xl:text-xs font-bold uppercase tracking-wider xl:tracking-widest flex items-center gap-1 min-w-0 truncate ${col.field ? 'text-slate-400 hover:text-slate-200 cursor-pointer' : 'text-slate-500 cursor-default'}`}>
                     {col.label}
                     {col.field && reportSort.field === col.field && <span className="text-indigo-400">{reportSort.dir === 'asc' ? '↑' : '↓'}</span>}
                   </button>
@@ -1219,23 +1203,22 @@ export default function AdminDashboard() {
                         role="button" tabIndex={0}
                         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedEmployee(emp); } }}
                         aria-label={`View details for ${emp.name || emp.email || 'employee'}`}
-                        className="grid items-center px-4 py-3.5 hover:bg-slate-800/40 cursor-pointer transition-all min-w-[900px] focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-inset"
-                        style={{ gridTemplateColumns: '1.8fr 1.2fr 1fr 1fr 1fr 0.8fr 1fr' }}>
+                        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,0.9fr)] gap-x-2 gap-y-2 items-center px-3 xl:px-4 py-3.5 hover:bg-slate-800/40 cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-inset">
 
                         {/* Employee */}
-                        <div className="min-w-0 pr-3">
+                        <div className="min-w-0 col-span-2 sm:col-span-3 lg:col-span-1 pr-1">
                           <p className="text-sm font-semibold text-white truncate">{emp.name || '—'}</p>
                           <p className="text-xs text-slate-500 truncate">{emp.email}</p>
                         </div>
 
                         {/* Job Role */}
-                        <div className="min-w-0 pr-3">
-                          <p className="text-xs text-slate-300 truncate">{emp.jobRole || '—'}</p>
+                        <div className="min-w-0 pr-1">
+                          <p className="text-xs text-slate-300 truncate" title={emp.jobRole || undefined}>{emp.jobRole || '—'}</p>
                         </div>
 
                         {/* Assessment Status */}
-                        <div>
-                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+                        <div className="min-w-0">
+                          <span className={`inline-block max-w-full truncate align-middle text-[11px] xl:text-xs font-bold px-2 py-0.5 rounded-full border ${
                             assessmentStatus === 'Completed' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' :
                             assessmentStatus === 'In Progress' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
                             'bg-slate-700/40 text-slate-500 border-slate-600/40'
@@ -1243,7 +1226,7 @@ export default function AdminDashboard() {
                         </div>
 
                         {/* Score */}
-                        <div>
+                        <div className="min-w-0">
                           {latestReport?.score != null ? (
                             <span className={`text-sm font-black ${latestReport.score >= 80 ? 'text-emerald-400' : latestReport.score >= 60 ? 'text-amber-400' : 'text-red-400'}`}>
                               {latestReport.score}%
@@ -1252,23 +1235,23 @@ export default function AdminDashboard() {
                         </div>
 
                         {/* Classification */}
-                        <div>
+                        <div className="min-w-0">
                           {latestReport?.performanceClassification?.label ? (
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${classTag(latestReport.performanceClassification.label)}`}>
+                            <span title={latestReport.performanceClassification.label} className={`inline-block max-w-full truncate align-middle text-[11px] xl:text-xs font-semibold px-2 py-0.5 rounded-full border ${classTag(latestReport.performanceClassification.label)}`}>
                               {latestReport.performanceClassification.label}
                             </span>
                           ) : <span className="text-slate-600 text-xs">—</span>}
                         </div>
 
                         {/* Module Progress */}
-                        <div>
+                        <div className="min-w-0">
                           {empAssignments.filter(a => a.status !== 'cancelled').length > 0 ? (() => {
                             const live = empAssignments.filter(a => a.status !== 'cancelled');
                             const avgPct = Math.round(live.reduce((s, a) => s + assignmentProgress(a), 0) / live.length);
                             return (
                               <>
                                 <p className="text-sm font-semibold text-slate-300">{avgPct}%</p>
-                                <div className="h-1 w-16 rounded-full bg-slate-700/50 mt-1 overflow-hidden">
+                                <div className="h-1 w-full max-w-[4rem] rounded-full bg-slate-700/50 mt-1 overflow-hidden">
                                   <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${avgPct}%` }} />
                                 </div>
                               </>
@@ -1277,7 +1260,7 @@ export default function AdminDashboard() {
                         </div>
 
                         {/* Last Activity */}
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-xs text-slate-400">
                             {lastActivity ? lastActivity.toLocaleDateString() : <span className="text-slate-600">No activity</span>}
                           </p>

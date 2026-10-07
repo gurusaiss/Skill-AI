@@ -159,7 +159,7 @@ function AgentStatCard({ agent, decisions }) {
 
   return (
     <div
-      className="flex-shrink-0 w-44 p-3 rounded-xl border border-slate-700/60 bg-[#0A1628] hover:border-slate-600 transition-all"
+      className="flex-1 min-w-[9rem] basis-40 p-3 rounded-xl border border-slate-700/60 bg-[#0A1628] hover:border-slate-600 transition-all"
       style={{ borderTopWidth: 2, borderTopColor: color }}
     >
       <div className="flex items-center gap-2 mb-2">
@@ -558,7 +558,7 @@ export default function AgentControlRoom() {
             <div className="flex-1 h-px bg-slate-800" />
             <span className="text-slate-600 text-xs">Real-time metrics</span>
           </div>
-          <div className="flex gap-3 overflow-x-auto pb-2">
+          <div className="flex flex-wrap gap-3 pb-2">
             {(agentStats.length > 0 ? agentStats : NODES.map(n => ({
               name: n.name,
               icon: n.icon,

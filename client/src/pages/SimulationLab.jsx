@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import TabBar from '../components/TabBar.jsx';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
@@ -223,14 +224,7 @@ export default function SimulationLab() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-6 bg-slate-800/50 rounded-lg p-1 w-fit">
-          {[['whatif', '🔮 What-If Analyzer'], ['compare', '⚖️ Path Comparison']].map(([key, label]) => (
-            <button key={key} onClick={() => setTab(key)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${tab === key ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <TabBar className="mb-6" active={tab} onChange={setTab} tabs={[['whatif', '🔮 What-If Analyzer'], ['compare', '⚖️ Path Comparison']].map(([key, label]) => ({ key, label }))} />
 
         {tab === 'whatif' && (
           <>

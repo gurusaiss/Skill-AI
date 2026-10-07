@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import SharedTabBar from '../components/TabBar.jsx';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api, scoreColor } from '../utils/api.js';
 import Leaderboard from '../components/Leaderboard.jsx';
@@ -155,24 +156,7 @@ const TABS = [
 ];
 
 function TabBar({ active, onChange }) {
-  return (
-    <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
-      {TABS.map(t => (
-        <button
-          key={t.id}
-          onClick={() => onChange(t.id)}
-          className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex-shrink-0 ${
-            active === t.id
-              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-          }`}
-        >
-          <span>{t.icon}</span>
-          <span>{t.label}</span>
-        </button>
-      ))}
-    </div>
-  );
+  return <SharedTabBar active={active} onChange={onChange} size="md" tabs={TABS.map(t => ({ key: t.id, label: t.label, icon: t.icon }))} />;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

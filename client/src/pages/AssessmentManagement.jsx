@@ -691,11 +691,10 @@ export default function AssessmentManagement() {
 
           {/* Table Header */}
           <div
-            className="hidden md:grid px-5 py-3 border-b border-slate-700/40 bg-slate-800/30"
-            style={{ gridTemplateColumns: '3fr 1.5fr 0.8fr 0.8fr 0.8fr 0.9fr 160px' }}
+            className="hidden md:grid md:grid-cols-[minmax(0,3fr)_minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,1.3fr)] gap-3 px-4 xl:px-5 py-3 border-b border-slate-700/40 bg-slate-800/30"
           >
             {['Assessment Title', 'Type / Role', 'Assigned', 'Completed', 'Pending', 'Avg Score', 'Actions'].map(h => (
-              <span key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</span>
+              <span key={h} className="text-[10px] xl:text-xs font-bold text-slate-500 uppercase tracking-wider truncate" title={h}>{h}</span>
             ))}
           </div>
 
@@ -735,11 +734,10 @@ export default function AssessmentManagement() {
                 return (
                 <div
                   key={a.id}
-                  className="group px-5 py-4 hover:bg-slate-800/30 transition-all"
-                  style={{ display: 'grid', gridTemplateColumns: '3fr 1.5fr 0.8fr 0.8fr 0.8fr 0.9fr 160px', alignItems: 'center', gap: '12px' }}
+                  className="group grid grid-cols-2 md:grid-cols-[minmax(0,3fr)_minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,1.3fr)] items-center gap-3 px-4 xl:px-5 py-4 hover:bg-slate-800/30 transition-all"
                 >
                   {/* Title */}
-                  <div className="min-w-0">
+                  <div className="min-w-0 col-span-2 md:col-span-1">
                     <button
                       onClick={() => { setViewDetail(a); setDetailTab('overview'); }}
                       className="text-sm font-bold text-white hover:text-indigo-300 transition-colors text-left block truncate max-w-full"
@@ -754,7 +752,7 @@ export default function AssessmentManagement() {
                   </div>
                   {/* Type / Role */}
                   <div className="min-w-0">
-                    {a.assessmentType && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-500/15 text-violet-300 border border-violet-500/25 whitespace-nowrap block w-fit mb-0.5">{a.assessmentType}</span>}
+                    {a.assessmentType && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-500/15 text-violet-300 border border-violet-500/25 truncate block w-fit max-w-full mb-0.5" title={a.assessmentType}>{a.assessmentType}</span>}
                     {jobRoles.length > 0 && <span className="text-[10px] text-slate-500 truncate block">{jobRoles.slice(0,2).join(', ')}{jobRoles.length>2?` +${jobRoles.length-2}`:''}</span>}
                   </div>
                   {/* Assigned */}
@@ -770,7 +768,7 @@ export default function AssessmentManagement() {
                       : <span className="text-xs text-slate-600">—</span>}
                   </div>
                   {/* Actions */}
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5 col-span-2 md:col-span-1">
                     <button
                       onClick={() => { setViewDetail(a); setDetailTab('overview'); }}
                       className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-indigo-300 text-xs font-semibold transition-colors"
@@ -1872,10 +1870,9 @@ export default function AssessmentManagement() {
                 </div>
                 <div className="rounded-2xl border border-slate-700/40 overflow-hidden">
                   {/* Table header */}
-                  <div className="hidden lg:grid px-4 py-3 bg-slate-800/50 border-b border-slate-700/40 text-xs font-bold text-slate-500 uppercase tracking-wider"
-                    style={{ gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 1.1fr 0.5fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr 1.1fr 1fr' }}>
-                    {['Name','Emp ID','Email','Group','Manager','Status','Done','Score','%','Grade','Duration','Download','Reminder','Reassign'].map(h => (
-                      <span key={h}>{h}</span>
+                  <div className="hidden lg:grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1.1fr)] gap-x-3 px-3 xl:px-4 py-3 bg-slate-800/50 border-b border-slate-700/40 text-[10px] xl:text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    {['Employee','Group / Manager','Status','Score','Duration','Download','Actions'].map(h => (
+                      <span key={h} className="truncate" title={h}>{h}</span>
                     ))}
                   </div>
                   {empAssignments.length === 0 ? (
@@ -1893,52 +1890,52 @@ export default function AssessmentManagement() {
                         const completionMs = ea.timeTakenSeconds != null ? ea.timeTakenSeconds * 1000 : (startMark && ea.submittedAt ? new Date(ea.submittedAt) - new Date(startMark) : null);
                         const durationStr = completionMs ? `${Math.round(completionMs / 60000)} min` : `${normalizeDuration(viewDetail.duration)} min`;
                         return (
-                          <div key={i} className="px-4 py-3 hover:bg-slate-800/20 transition-colors"
-                            style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr 1.5fr 1fr 1fr 1.1fr 0.5fr 0.8fr 0.7fr 0.7fr 1fr 1.2fr 1.1fr 1fr', alignItems: 'center', gap: '8px' }}>
-                            {/* Name */}
+<div key={i} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1.1fr)] gap-x-3 gap-y-2 items-center px-3 xl:px-4 py-3 hover:bg-slate-800/20 transition-colors">
+                            {/* Employee: name + ID + email stacked */}
                             <div className="min-w-0">
-                              <p className="text-sm font-semibold text-white truncate">{ea.userName || emp?.name || ea.userId}</p>
-                              {ea.jobRole && <p className="text-xs text-slate-500 truncate">{ea.jobRole}</p>}
+                              <p className="text-sm font-semibold text-white truncate" title={ea.userName || emp?.name || ea.userId}>{ea.userName || emp?.name || ea.userId}</p>
+                              <p className="text-[11px] text-slate-500 truncate" title={ea.userEmail || emp?.email || ''}>{ea.userEmail || emp?.email || '—'}</p>
+                              <p className="text-[11px] text-slate-500 truncate" title={ea.jobRole || ''}>
+                                <span className="text-slate-400">ID {emp?.employeeId || ea.userId?.slice(-8) || '—'}</span>{ea.jobRole ? ` · ${ea.jobRole}` : ''}
+                              </p>
                             </div>
-                            {/* Emp ID */}
-                            <span className="text-xs text-slate-400 truncate">{emp?.employeeId || ea.userId?.slice(-8) || '—'}</span>
-                            {/* Email */}
-                            <span className="text-xs text-slate-400 truncate">{ea.userEmail || emp?.email || '—'}</span>
-                            {/* Group */}
-                            <span className="text-xs text-slate-400 truncate">{group?.name || '—'}</span>
-                            {/* Manager */}
-                            <span className="text-xs text-slate-400 truncate">{managerEmp?.name || '—'}</span>
-                            {/* Status + this employee's own window */}
+                            {/* Group + Manager */}
                             <div className="min-w-0">
-                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border capitalize w-fit inline-block ${STATUS_COLORS[ea.status || 'assigned'] || STATUS_COLORS.pending}`}>{(ea.status || 'assigned').replace('_', ' ')}</span>
+                              <p className="text-xs text-slate-300 truncate" title={group?.name || ''}><span className="lg:hidden text-slate-500">Group: </span>{group?.name || '—'}</p>
+                              <p className="text-[11px] text-slate-500 truncate" title={managerEmp?.name || ''}><span className="lg:hidden">Manager: </span>{managerEmp?.name || '—'}</p>
+                            </div>
+                            {/* Status + Done + this employee's own window */}
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border capitalize truncate max-w-full inline-block ${STATUS_COLORS[ea.status || 'assigned'] || STATUS_COLORS.pending}`}>{(ea.status || 'assigned').replace('_', ' ')}</span>
+                                <span
+                                  className={`text-sm font-black flex-shrink-0 ${ea.status === 'submitted' ? 'text-emerald-400' : 'text-red-400'}`}
+                                  title={ea.status === 'submitted' ? 'Completed' : 'Not completed'}
+                                  aria-label={ea.status === 'submitted' ? 'Completed' : 'Not completed'}
+                                >
+                                  {ea.status === 'submitted' ? '✓' : '✗'}
+                                </span>
+                              </div>
                               {(ea.dueAt || ea.startAt) && (
                                 <p className="text-[10px] text-slate-500 mt-1 truncate" title={`${ea.startAt ? 'From ' + new Date(ea.startAt).toLocaleString() : ''} ${ea.dueAt ? 'Until ' + new Date(ea.dueAt).toLocaleString() : ''}`}>
                                   {ea.dueAt ? `Due ${new Date(ea.dueAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
                                 </p>
                               )}
                             </div>
-                            {/* Done: tick when submitted, cross otherwise */}
-                            <span
-                              className={`text-lg font-black ${ea.status === 'submitted' ? 'text-emerald-400' : 'text-red-400'}`}
-                              title={ea.status === 'submitted' ? 'Completed' : 'Not completed'}
-                              aria-label={ea.status === 'submitted' ? 'Completed' : 'Not completed'}
-                            >
-                              {ea.status === 'submitted' ? '✓' : '✗'}
-                            </span>
-                            {/* Score */}
-                            <span className="text-xs font-bold text-white">
-                              {ea.status === 'submitted' && sc.correct != null ? `${sc.correct}/${sc.total ?? ea.questions?.length ?? 0}` : '—'}
-                            </span>
-                            {/* % */}
-                            <span className={`text-xs font-bold ${scorePct != null ? (scorePct >= passThreshold ? 'text-emerald-300' : 'text-red-300') : 'text-slate-500'}`}>
-                              {scorePct != null ? `${scorePct}%` : '—'}
-                            </span>
-                            {/* Grade */}
-                            <span className="text-xs font-bold text-white">{grade || '—'}</span>
+                            {/* Score + % + Grade together */}
+                            <div className="min-w-0 flex items-baseline flex-wrap gap-x-1.5 text-xs">
+                              <span className="font-bold text-white" title="Correct / total">
+                                {ea.status === 'submitted' && sc.correct != null ? `${sc.correct}/${sc.total ?? ea.questions?.length ?? 0}` : '—'}
+                              </span>
+                              <span className={`font-bold ${scorePct != null ? (scorePct >= passThreshold ? 'text-emerald-300' : 'text-red-300') : 'text-slate-500'}`}>
+                                {scorePct != null ? `${scorePct}%` : '—'}
+                              </span>
+                              <span className="font-bold text-white" title="Grade">{grade || '—'}</span>
+                            </div>
                             {/* Duration */}
-                            <span className="text-xs text-slate-400">{durationStr}</span>
+                            <span className="text-xs text-slate-400 truncate">{durationStr}</span>
                             {/* Download */}
-                            <div className="flex gap-1">
+                            <div className="flex flex-wrap gap-1 min-w-0">
                               {ea.status === 'submitted' ? (
                                 [['pdf','PDF'],['xlsx','XLS'],['docx','DOC']].map(([fmt,lbl]) => (
                                   <button key={fmt} onClick={() => {
@@ -1956,16 +1953,17 @@ export default function AssessmentManagement() {
                                 ))
                               ) : <span className="text-xs text-slate-600">Pending</span>}
                             </div>
-                            {/* Reminder */}
-                            <ReminderButton
+                            
+                            {/* Actions: reminder + reassign together */}
+                            <div className="min-w-0 flex flex-wrap items-center gap-1.5">
+                              <ReminderButton
                               assessmentId={viewDetail.id}
                               userId={ea.userId}
                               status={ea.status || 'assigned'}
                               lastSentAt={reminderSentAt[`${viewDetail.id}:${ea.userId}`]}
                               onSent={(sentAt) => setReminderSentAt(prev => ({ ...prev, [`${viewDetail.id}:${ea.userId}`]: sentAt }))}
                             />
-                            {/* Reassign: only for employees who have not completed it */}
-                            {ea.status !== 'submitted' ? (
+                              {ea.status !== 'submitted' ? (
                               <button
                                 onClick={() => setReassignTarget({ assessment: viewDetail, ea })}
                                 disabled={!hasFeaturePermission('assessments.create')}
@@ -1975,6 +1973,7 @@ export default function AssessmentManagement() {
                                 ↻ Reassign
                               </button>
                             ) : <span className="text-xs text-slate-600">—</span>}
+                            </div>
                           </div>
                         );
                       })}

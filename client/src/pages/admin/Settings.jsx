@@ -480,7 +480,7 @@ export default function Settings() {
                   <span className="text-xs text-slate-500">Showing up to {auditLimit} events{auditEventType ? ` · ${auditEventType}` : ''}</span>
                 </div>
 
-                <div className="overflow-x-auto">
+                <div className="min-w-0">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-700/40 text-left">
