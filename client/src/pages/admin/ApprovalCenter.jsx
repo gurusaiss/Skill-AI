@@ -102,7 +102,7 @@ export default function ApprovalCenter() {
       const [assignReqs, approvals, usersData, modulesData] = await Promise.allSettled([
         authFetch('/api/assignments/requests'),
         authFetch('/api/approvals'),
-        authFetch('/api/users'),
+        authFetch('/api/users?light=1'),
         authFetch('/api/modules?limit=1000'),
       ]);
 

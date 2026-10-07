@@ -8,7 +8,7 @@ import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, '..', 'data');
+import { DATA_DIR } from '../config/dataDir.js';
 
 // Ensure data directory exists
 try { await fs.mkdir(DATA_DIR, { recursive: true }); } catch {}

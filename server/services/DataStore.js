@@ -12,14 +12,15 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import ws from 'ws';
+import { TtlCache } from './TtlCache.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, '../data');
+import { DATA_DIR } from '../config/dataDir.js';
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
 // ── Supabase client ───────────────────────────────────────────────────────────
@@ -53,6 +54,38 @@ function writeFile(name, data) {
   const tmpPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tmpPath, JSON.stringify(data, null, 2));
   renameSync(tmpPath, targetPath);
+  invalidateFile(name);
+}
+
+// ── Read cache for whole-table reads (getAllHealed) ───────────────────────────
+// Every list page used to re-download/re-parse the WHOLE table on every call
+// (assessments, reports, users, groups...). Several of those run per request and
+// several run in parallel on one page load. This cache:
+//   * lives <= 5 s when Supabase is the source (30 s in file mode, where it is
+//     additionally validated against the backing file's mtime+size, so even a
+//     writer that bypasses DataStore is noticed immediately),
+//   * coalesces concurrent identical reads into one backend call,
+//   * is invalidated by EVERY write path in this module: sbInsert/sbUpdate/sbDelete
+//     (by table), writeFile (by file name), the direct Groups upserts, and
+//     bumpTable() for any caller that writes behind our back.
+// Callers get a shallow copy of the array (safe to push/filter/sort); the row
+// objects are shared, so rows must be treated as read-only (spread to modify).
+const tableCache = new TtlCache({ ttlMs: 5000, maxEntries: 100 });
+const tableVersions = new Map();           // table -> write counter (also read by UserStore)
+const fileToTables = new Map();            // file name -> Set(table) (filled on first read)
+export function getTableVersion(table) { return tableVersions.get(table) || 0; }
+function invalidateTable(table) {
+  tableVersions.set(table, getTableVersion(table) + 1);
+  tableCache.invalidate(table);
+}
+function invalidateFile(name) {
+  for (const t of fileToTables.get(name) || []) invalidateTable(t);
+}
+export function bumpTable(table) { invalidateTable(table); }
+export function clearReadCache() { tableCache.invalidateAll(); }
+export function readCacheStats() { return tableCache.stats(); }
+function fileSig(name) {
+  try { const st = statSync(join(DATA_DIR, name)); return `${st.mtimeMs}:${st.size}`; } catch { return 'none'; }
 }
 
 // ── Generic JSONB table CRUD ──────────────────────────────────────────────────
@@ -102,6 +135,7 @@ async function sbInsert(table, id, doc) {
       .upsert({ id, data: rest }, { onConflict: 'id' })
       .select('id, data')
       .maybeSingle();
+    invalidateTable(table);
     if (error) { console.error(`[DataStore] ${table} insert:`, error.message); return null; }
     return data ? { id: data.id, ...data.data } : doc;
   } catch (e) { console.error(`[DataStore] ${table} insert exception:`, e.message); return null; }
@@ -130,6 +164,7 @@ async function sbUpdate(table, id, updates) {
         .select('id, data')
         .maybeSingle());
     }
+    invalidateTable(table);
     if (error) { console.error(`[DataStore] ${table} update:`, error.message); return null; }
     return data ? { id: data.id, ...data.data } : merged;
   } catch (e) { console.error(`[DataStore] ${table} update exception:`, e.message); return null; }
@@ -140,6 +175,7 @@ async function sbDelete(table, id) {
   if (!sb) return false;
   try {
     const { error } = await sb.from(table).delete().eq('id', id);
+    invalidateTable(table);
     if (error) { console.error(`[DataStore] ${table} delete:`, error.message); return false; }
     return true;
   } catch (e) { return false; }
@@ -166,6 +202,17 @@ function readFileRecords(fileName) {
 }
 
 async function getAllHealed(table, fileName) {
+  if (!fileToTables.has(fileName)) fileToTables.set(fileName, new Set());
+  fileToTables.get(fileName).add(table);
+  const rows = await tableCache.get(table, () => getAllHealedUncached(table, fileName), {
+    ttlMs: getSB() ? 5000 : 30000,
+    meta: () => fileSig(fileName),
+    validate: (sig) => sig === fileSig(fileName),
+  });
+  return rows.slice();
+}
+
+async function getAllHealedUncached(table, fileName) {
   const sb = getSB();
   if (!sb) return readFileRecords(fileName);
 
@@ -238,7 +285,10 @@ export const Assessments = {
       const result = await sbGetById('assessments', id);
       if (result) return result;  // truthy = found; null (error or not-found) falls through to file
     }
-    const all = readFile('assessments.json');
+    // File fallback: use the mtime-validated read cache instead of re-parsing the
+    // whole assessments.json (tens of MB with rosters) for a single row.
+    // (With Supabase on, keep the old cheap local-file lookup: no extra table download.)
+    const all = sb ? readFile('assessments.json') : await getAllHealed('assessments', 'assessments.json');
     return all.find(a => a.id === id) || null;
   },
   async getByUserId(userId) {
@@ -662,6 +712,7 @@ export const Groups = {
         .upsert({ id: doc.id, name: doc.name, data: rest }, { onConflict: 'id' })
         .select('id, data')
         .maybeSingle();
+      invalidateTable('groups');
       if (error) throw new Error(`Failed to save group: ${error.message} (code: ${error.code})`);
       return data ? { id: data.id, ...data.data } : doc;
     }
@@ -692,6 +743,7 @@ export const Groups = {
             .select('id, data')
             .maybeSingle());
         }
+        invalidateTable('groups');
         if (!error && data) return { id: data.id, ...data.data, name: mergedName || data.data?.name };
         if (error) console.error('[DataStore] groups update:', error.message);
       } catch (e) {

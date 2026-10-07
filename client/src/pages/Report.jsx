@@ -646,7 +646,7 @@ function EmployeeReportView({ user, navigate }) {
       try {
         const [assignRes, assessRes] = await Promise.allSettled([
           authFetch(`/api/assignments?userId=${user.userId || user.id}`),
-          authFetch('/api/assessments/my'),
+          authFetch('/api/assessments/my?light=1'),
         ]);
         if (assignRes.status === 'fulfilled') {
           const raw = assignRes.value?.data ?? assignRes.value;

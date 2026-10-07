@@ -23,7 +23,7 @@ import { canActAsManager, getVisibleEmployeeIds } from '../services/ManagerScope
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const __moduleDir = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__moduleDir, '../data');
+import { DATA_DIR } from '../config/dataDir.js';
 
 const router = express.Router();
 

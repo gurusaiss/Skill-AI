@@ -306,3 +306,8 @@ html.theme-light ::-webkit-scrollbar-thumb:hover {
 .animate-slide-in {
   animation: slide-in 0.3s ease-out;
 }
+
+/* ── Two-tier header (Navbar.jsx): light-theme tweaks for nav pills ── */
+html.theme-light header nav a { color: #475569; }
+html.theme-light header nav a:hover { color: #0f172a; background-color: #f1f5f9; }
+html.theme-light header nav a[aria-current="page"] { color: #4338ca; background-color: rgba(99, 102, 241, 0.12); }

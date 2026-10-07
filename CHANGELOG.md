@@ -4,6 +4,17 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-11 — Pages load much faster, new header, and a read-only database check
+
+**Faster pages.** The biggest cause was the assessment list sending every employee's full question set (about 340 MB for a large assessment, taking 14 to 36 seconds) and the reports list sending every answer (about 170 MB, and in a large case it ran the server out of memory). Lists now send only what the screen shows (about 0.7 MB and 2.5 MB), and the full details load only when you open a row. Measured on synthetic data: assessments list 24 s to 0.02 s, reports 21 s to 0.14 s, admin dashboard 1.2 s to 0.07 s, the dashboard's first load 30 s to 0.15 s. Also: the server now remembers the signed-in user and table reads for a few seconds instead of asking the database on every call; static files are cached by the browser; missing files return 404 instead of the home page; the animation library loads only when needed.
+**Slowness can be traced.** Slow requests (over 0.8 s) are logged in one line, every API response carries a timing header, and `/api/health` shows the slowest routes under `performance`.
+**New header.** Full navigation names (no "Dashb..."), wrapping to a second line instead of cutting off or scrolling, consistent line icons, a clear active tab, the company name only (no ID, no "Admin Panel"), a profile menu that is never clipped, and no back/forward arrows. The company banner at the top of the admin dashboard was removed.
+**Read-only database check.** `queries/supabase/00_check_nothing_lost_READ_ONLY.sql` lists every table, whether it exists, and its row count, without changing anything. Run it before and after any script and compare.
+Note: the caches are per server process, so with several server copies a change shows on the others within about 5 seconds. Real database speed could not be measured here; the gains are from far smaller downloads and fewer database calls.
+Files: `server/services/assessmentListView.js`, `TtlCache.js`, `server/middleware/requestTiming.js`, `DataStore.js`, `UserStore.js`, `routes/assessment.js`, `routes/users.js`, `middleware/auth.js`, `client/src/components/Navbar.jsx` (+ `CompanyChip`, `NavIcons`, `UserMenu`), `client/vite.config.js`, several client pages, `queries/`.
+
+---
+
 ## 2026-10-10 (b) — Fix: new settings now reach the container, and the live version can be checked
 
 **Why:** Changes pushed to GitHub were not showing on the company server. Pushing does not update that server by itself; it only changes when the app is rebuilt and restarted (the screens are built into the image). Also, `docker-compose.yml` only passed a fixed short list of settings into the container, so new ones (extra Gemini keys, the OpenRouter key, generation and report settings) were silently dropped.

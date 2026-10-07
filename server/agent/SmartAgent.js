@@ -31,7 +31,7 @@ import GeminiService from '../services/GeminiService.js';
 import AgentDebate from './AgentDebate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, '../data');
+import { DATA_DIR } from '../config/dataDir.js';
 
 if (!existsSync(DATA_DIR)) {
   mkdirSync(DATA_DIR, { recursive: true });

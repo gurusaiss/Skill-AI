@@ -73,7 +73,7 @@ export default function Settings() {
   const [activeUserCount, setActiveUserCount] = useState(null);
   useEffect(() => {
     if (activeSection !== 'billing') return;
-    authFetch('/api/users')
+    authFetch('/api/users?light=1')
       .then(res => {
         const data = res?.data ?? res;
         const list = data?.users || (Array.isArray(data) ? data : []);

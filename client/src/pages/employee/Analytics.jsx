@@ -80,7 +80,7 @@ export default function Analytics() {
     try {
       const [asgn, asmt] = await Promise.allSettled([
         authFetch(`/api/assignments?userId=${userId}`),
-        authFetch('/api/assessments/my'),
+        authFetch('/api/assessments/my?light=1'),
       ]);
       if (asgn.status  === 'fulfilled') setAssignments(Array.isArray(asgn.value)  ? asgn.value  : (asgn.value?.assignments || []));
       if (asmt.status  === 'fulfilled') setAssessments(Array.isArray(asmt.value)  ? asmt.value  : (asmt.value?.assessments || []));

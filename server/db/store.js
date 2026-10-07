@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { readFile, writeFile, rename, access, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { GeneratedModules, Groups as GroupsStore } from '../services/DataStore.js';
+import { GeneratedModules, Groups as GroupsStore, bumpTable } from '../services/DataStore.js';
 import * as mysqlDb from './mysql.js';
 
 // Same opt-in contract as DataStore.js/UserStore.js: unset DB_BACKEND (the
@@ -19,7 +19,7 @@ function useMySQL() {
 // fileURLToPath+dirname pattern DataStore.js/UserStore.js already use
 // avoids that entirely.
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, '../data');
+import { DATA_DIR } from '../config/dataDir.js';
 let supabase = null;
 let enabled = false;
 
@@ -959,6 +959,9 @@ export async function getAssignments(filters = {}) {
 }
 
 export async function createAssignment(assignment) {
+  try { return await _createAssignment(assignment); } finally { bumpTable('assignments'); }
+}
+async function _createAssignment(assignment) {
   if (useMySQL()) {
     const id = assignment.id || `assign_${Date.now()}`;
     const row = { ...assignment, id, created_at: new Date().toISOString() };
@@ -981,6 +984,9 @@ export async function createAssignment(assignment) {
 }
 
 export async function updateAssignment(id, updates) {
+  try { return await _updateAssignment(id, updates); } finally { bumpTable('assignments'); }
+}
+async function _updateAssignment(id, updates) {
   if (useMySQL()) {
     const row = { ...updates, updated_at: new Date().toISOString() };
     await mysqlDb.updateRow('assignments', id, row, 'id');

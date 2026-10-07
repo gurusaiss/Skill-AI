@@ -1,12 +1,15 @@
 import fs from 'fs/promises';
+import { statSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { createClient } from '@supabase/supabase-js';
 import ws from 'ws';
-import { UserJDProfiles, Groups } from './DataStore.js';
+import { UserJDProfiles, Groups, getTableVersion, bumpTable } from './DataStore.js';
+import { TtlCache } from './TtlCache.js';
 import { canActAsManager } from './roleCapability.js';
 import * as mysqlDb from '../db/mysql.js';
+import { DATA_DIR } from '../config/dataDir.js';
 
 // MySQL is opt-in via DB_BACKEND=mysql — unset (the default) or any other
 // value leaves every existing Supabase/file behavior completely untouched.
@@ -162,11 +165,30 @@ function mergeJD(user, jdProfile) {
   };
 }
 
+// ── Read caches ─────────────────────────────────────────────────────────────
+// authenticate() looked the user up in the DB on EVERY request, and list pages
+// re-read the full users table several times per page load. Both are cached for
+// <= 5 s with explicit invalidation on every user write path (createUser,
+// updateUser [also used by role/permission/access/manager changes], deleteUser,
+// writeUsersFile). A revoked permission or role change therefore takes effect
+// immediately in this process, and at the very latest after the TTL.
+export const AUTH_USER_TTL_MS = 4000;
+const userByIdCache = new TtlCache({ ttlMs: AUTH_USER_TTL_MS, maxEntries: 2000 });
+const allUsersCache = new TtlCache({ ttlMs: 5000, maxEntries: 2 });
+// Unfiltered assignments list (admin/manager dashboards). Invalidated through
+// bumpTable('assignments') by every writer (UserStore + db/store.js).
+const assignmentsCache = new TtlCache({ ttlMs: 5000, maxEntries: 2 });
+function invalidateUserCaches(userId) {
+  if (userId) userByIdCache.invalidate(userId); else userByIdCache.invalidateAll();
+  allUsersCache.invalidateAll();
+}
+export function clearUserCaches() { invalidateUserCaches(); }
+
 class UserStore {
   constructor() {
-    this.usersFilePath       = path.join(__dirname, '../data/users.json');
-    this.assignmentsFilePath = path.join(__dirname, '../data/assignments.json');
-    this.auditFilePath       = path.join(__dirname, '../data/audit.json');
+    this.usersFilePath       = path.join(DATA_DIR, 'users.json');
+    this.assignmentsFilePath = path.join(DATA_DIR, 'assignments.json');
+    this.auditFilePath       = path.join(DATA_DIR, 'audit.json');
     this.validRoles          = ['superadmin', 'admin', 'manager', 'employee', 'trainer', 'quality-analyst', 'sme', 'leadership', 'senior-training-development-manager', 'senior-quality-manager', 'senior-training-manager', 'senior-operations-manager', 'assistant-manager-ops', 'assistant-manager-quality', 'assistant-manager-training', 'wfm', 'lead'];
   }
 
@@ -190,6 +212,7 @@ class UserStore {
   }
   async writeUsersFile(data) {
     await this._writeJsonAtomic(this.usersFilePath, data);
+    invalidateUserCaches();
   }
   async readAssignmentsFile() {
     try {
@@ -199,6 +222,7 @@ class UserStore {
   }
   async writeAssignmentsFile(data) {
     await this._writeJsonAtomic(this.assignmentsFilePath, data);
+    bumpTable('assignments');
   }
   async readAuditFile() {
     try {
@@ -213,6 +237,10 @@ class UserStore {
   // ── User CRUD ─────────────────────────────────────────────────────────────
 
   async createUser(userData) {
+    try { return await this._createUser(userData); } finally { invalidateUserCaches(); }
+  }
+
+  async _createUser(userData) {
     const sb = getSB();
     const newUser = {
       userId:             `auth_user_${uuidv4().slice(0, 8)}`,
@@ -325,6 +353,24 @@ class UserStore {
     return newUser;
   }
 
+  // Auth-path lookup: same result as getUserById, cached for AUTH_USER_TTL_MS.
+  // "Not found" is never cached.
+  async getUserByIdCached(userId) {
+    if (!userId) return null;
+    const user = await userByIdCache.get(userId, () => this.getUserById(userId), {
+      meta: () => this._usersSig(),
+      validate: (sig) => sig === this._usersSig(),
+    });
+    if (!user) userByIdCache.invalidate(userId);
+    return user;
+  }
+
+  // File-mode safety net: a change to users.json by anything other than this
+  // class (e.g. a seed script) is noticed through the file signature.
+  _usersSig() {
+    try { const st = statSync(this.usersFilePath); return `${st.mtimeMs}:${st.size}:${getTableVersion('user_jd_profiles')}`; } catch { return `none:${getTableVersion('user_jd_profiles')}`; }
+  }
+
   async getUserById(userId) {
     if (useMySQL()) {
       const row = await mysqlDb.selectById('users', userId, 'user_id');
@@ -417,6 +463,10 @@ class UserStore {
   }
 
   async updateUser(userId, updates) {
+    try { return await this._updateUser(userId, updates); } finally { invalidateUserCaches(userId); }
+  }
+
+  async _updateUser(userId, updates) {
     // Always persist JD fields to separate table — immune to users table schema gaps
     const jdUpdates = {};
     JD_FIELDS.forEach(f => { if (updates[f] !== undefined) jdUpdates[f] = updates[f]; });
@@ -487,6 +537,10 @@ class UserStore {
   }
 
   async deleteUser(userId) {
+    try { return await this._deleteUser(userId); } finally { invalidateUserCaches(userId); bumpTable('assignments'); }
+  }
+
+  async _deleteUser(userId) {
     // Cascade cleanup first — a hard delete of the user row with dangling
     // references left behind (assignments, group membership, JD profile)
     // breaks admin dashboards/exports that try to resolve a now-nonexistent
@@ -559,7 +613,21 @@ class UserStore {
     try { await UserJDProfiles.delete(userId); } catch (e) { console.warn('[deleteUser] JD profile cleanup failed:', e.message); }
   }
 
+  // Cached full list; role / emailVerified filters are applied in memory (same
+  // semantics as the old per-backend query filters). Returns a fresh array per
+  // call; user objects are shared and must be treated as read-only.
   async getAllUsers(filters = {}) {
+    const all = await allUsersCache.get('all', () => this._getAllUsersRaw({}), {
+      meta: () => this._usersSig(),
+      validate: (sig) => sig === this._usersSig(),
+    });
+    let users = all;
+    if (filters.role) users = users.filter(u => u.role === filters.role);
+    if (filters.emailVerified !== undefined) users = users.filter(u => !!u.emailVerified === !!filters.emailVerified);
+    return users === all ? all.slice() : users;
+  }
+
+  async _getAllUsersRaw(filters = {}) {
     if (useMySQL()) {
       let rows = await mysqlDb.selectAll('users');
       if (filters.role) rows = rows.filter(r => r.role === filters.role);
@@ -750,7 +818,23 @@ class UserStore {
 
   // ── Content assignments ───────────────────────────────────────────────────
 
+  _assignmentsSig() {
+    try { const st = statSync(this.assignmentsFilePath); return `${st.mtimeMs}:${st.size}:${getTableVersion('assignments')}`; } catch { return `none:${getTableVersion('assignments')}`; }
+  }
+
+  // Unfiltered calls are cached (<= 5 s, invalidated on every assignment write);
+  // filtered calls always hit the backend, exactly as before.
   async getAssignments(filters = {}) {
+    const hasFilter = Object.values(filters || {}).some(v => v !== undefined && v !== null && v !== '');
+    if (hasFilter) return this._getAssignmentsRaw(filters);
+    const all = await assignmentsCache.get('all', () => this._getAssignmentsRaw({}), {
+      meta: () => this._assignmentsSig(),
+      validate: (sig) => sig === this._assignmentsSig(),
+    });
+    return all.slice();
+  }
+
+  async _getAssignmentsRaw(filters = {}) {
     if (useMySQL()) {
       const pool = mysqlDb.getPool();
       const clauses = [];
@@ -790,6 +874,10 @@ class UserStore {
   }
 
   async createAssignment(assignmentData) {
+    try { return await this._createAssignment(assignmentData); } finally { bumpTable('assignments'); }
+  }
+
+  async _createAssignment(assignmentData) {
     const sb = getSB();
     const newA = {
       id:                 `assign_${uuidv4().slice(0, 8)}`,
@@ -877,6 +965,10 @@ class UserStore {
   }
 
   async updateAssignment(assignmentId, updates) {
+    try { return await this._updateAssignment(assignmentId, updates); } finally { bumpTable('assignments'); }
+  }
+
+  async _updateAssignment(assignmentId, updates) {
     if (useMySQL()) {
       const mysqlUpdates = { updated_at: new Date().toISOString() };
       if (updates.status !== undefined)           mysqlUpdates.status = updates.status;
@@ -924,6 +1016,10 @@ class UserStore {
   }
 
   async deleteAssignment(assignmentId) {
+    try { return await this._deleteAssignment(assignmentId); } finally { bumpTable('assignments'); }
+  }
+
+  async _deleteAssignment(assignmentId) {
     if (useMySQL()) {
       const deleted = await mysqlDb.deleteRow('assignments', assignmentId, 'id');
       if (!deleted) throw new Error('Assignment not found');

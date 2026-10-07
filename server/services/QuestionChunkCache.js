@@ -23,7 +23,8 @@ import { fileURLToPath } from 'url';
 import { hashString } from './TextRanking.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_FILE = path.join(__dirname, '..', 'data', 'qgen-chunk-cache.json');
+import { DATA_DIR as _DD } from '../config/dataDir.js';
+const DEFAULT_FILE = path.join(_DD, 'qgen-chunk-cache.json');
 
 export function chunkCacheKey(chunkText, params = {}) {
   const p = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&');

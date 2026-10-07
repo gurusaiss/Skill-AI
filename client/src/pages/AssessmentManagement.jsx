@@ -266,7 +266,7 @@ export default function AssessmentManagement() {
     try {
       const [assessRes, empRes, groupRes] = await Promise.allSettled([
         authFetch('/api/assessments'),
-        authFetch('/api/users?role=employee'),
+        authFetch('/api/users?role=employee&light=1'),
         // Same endpoint the Groups admin page itself uses (GroupManagement.jsx)
         // — /api/content/groups was backed by a second, independent group
         // store that never agreed with this one, so an existing group never
@@ -305,7 +305,7 @@ export default function AssessmentManagement() {
   // assign/reassign, and keep the list and the open detail view in step.
   const refreshAssessment = async (assessmentId) => {
     try {
-      const fresh = await authFetch(`/api/assessments/${assessmentId}`);
+      const fresh = await authFetch(`/api/assessments/${assessmentId}?light=1`);
       if (fresh && fresh.id) {
         setAssessments(prev => prev.map(a => (a.id === fresh.id ? { ...a, ...fresh } : a)));
         setViewDetail(prev => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));

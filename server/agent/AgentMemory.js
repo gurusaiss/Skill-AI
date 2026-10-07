@@ -15,7 +15,8 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MEMORY_DIR = join(__dirname, '../data/memory');
+import { DATA_DIR as _DD } from '../config/dataDir.js';
+const MEMORY_DIR = join(_DD, 'memory');
 
 class AgentMemory {
   constructor() {

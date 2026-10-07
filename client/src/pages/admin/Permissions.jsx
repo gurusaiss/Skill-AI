@@ -100,7 +100,7 @@ export default function Permissions() {
       setLoadingRoleDefaults(true);
       try {
         const [usersRes, catalogRes, roleDefaultsRes] = await Promise.allSettled([
-          authFetch('/api/users'),
+          authFetch('/api/users?light=1'),
           authFetch('/api/permissions/catalog'),
           authFetch('/api/permissions/role-defaults'),
         ]);

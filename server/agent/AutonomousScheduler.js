@@ -11,8 +11,8 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, '../data');
-const BRIEFS_DIR = join(__dirname, '../data/briefs');
+import { DATA_DIR } from '../config/dataDir.js';
+const BRIEFS_DIR = join(DATA_DIR, 'briefs');
 
 class AutonomousScheduler {
   constructor() {

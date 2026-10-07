@@ -1,3 +1,4 @@
+import { DATA_DIR } from '../config/dataDir.js';
 /**
  * migrateGSS.js — One-time migration: assign all default/unassigned users to GSS company
  * Idempotent: safe to run on every startup (no-ops if already done)
@@ -100,7 +101,7 @@ export async function migrateDefaultUsersToGSS() {
                 const { join } = await import('path');
                 const { fileURLToPath } = await import('url');
                 const __dirname = (await import('path')).dirname(fileURLToPath(import.meta.url));
-                const filePath = join(__dirname, '..', 'data', 'modules.json');
+                const filePath = join(DATA_DIR, 'modules.json');
                 if (existsSync(filePath)) {
                   const data = JSON.parse(readFileSync(filePath, 'utf-8'));
                   const updated = (Array.isArray(data) ? data : data.modules || []).map(mod =>

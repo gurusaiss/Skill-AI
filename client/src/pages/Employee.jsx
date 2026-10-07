@@ -282,7 +282,7 @@ export default function Employee() {
   const loadAssessments = async () => {
     setAssessmentsLoading(true);
     try {
-      const res = await authFetch('/api/assessments/my');
+      const res = await authFetch('/api/assessments/my?light=1');
       const list = Array.isArray(res) ? res : (res?.assessments || []);
       setMyAssessments(list);
     } catch {

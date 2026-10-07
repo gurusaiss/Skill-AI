@@ -7,7 +7,10 @@ Monorepo (npm workspaces): `client/` (React 18 + Vite + Tailwind, dark slate the
 - Instead: shrink font/padding, wrap, `truncate` + `title` tooltip, `min-w-0` on flex/grid children, `minmax(0,1fr)` grid columns, hide low-priority columns at narrower breakpoints (`hidden xl:table-cell`) while keeping the info reachable (secondary line under the name, or a detail modal), and stack rows as cards below `lg`.
 - Tabs: ALWAYS use `client/src/components/TabBar.jsx` (props: `tabs=[{key,label,icon,badge,disabled}]`, `active`, `onChange`, `size 'md'|'sm'`, `variant 'pill'|'underline'`, `className`). It shrinks, truncates and wraps to a second row; it never scrolls. Same for any new tab, page or modal.
 - Metric cards: ALWAYS use `client/src/components/StatCard.jsx`. Every card needs a `description` and a hover `tooltip`.
-- Navbar links collapse to icons at `lg`, labels from `xl`, hamburger below `lg`. Add new links to `Navbar.jsx` with a `title`.
+- Header (`Navbar.jsx`, two tiers on `lg`+): navigation labels ALWAYS show in full; if they do not fit one line they wrap to a second row (never truncate, never scroll). Below `lg` a hamburger opens a full-height drawer with every full label. Add new links to the `ADMIN_LINKS` / `ROLE_LINKS` arrays in `Navbar.jsx`.
+- No company ID and no "Admin Panel" text in the header or page banners; the company name appears only in the header company chip (`CompanyChip.jsx`).
+- No emoji icons in navigation: use heroicons OUTLINE (20px, stroke 1.75, currentColor) via `NavIcons.jsx`.
+- The user chip (`UserMenu.jsx`) is `shrink-0` and must never be clipped; its name truncates (with tooltip) before the chip overflows. No back/forward arrows in the header (browser provides them); pages keep their own in-page "Back to ..." links.
 - Row grids defined with inline `gridTemplateColumns` get class `grid-stack-lg` / `grid-stack-md` (see `index.css`) so they stack on small screens.
 - Test every new/changed page at 1024, 1280 and 1440 px widths (and a phone width). Vertical scroll is fine; sideways scroll is a bug.
 - Intentional exceptions (code blocks, chart internals) must carry a comment `scroll-ok: <reason>` on the same or previous line.

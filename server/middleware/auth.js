@@ -74,7 +74,7 @@ export const authenticate = async (req, res, next) => {
     }
 
     // Get full user data from store
-    const user = await UserStore.getUserById(decoded.userId);
+    const user = await UserStore.getUserByIdCached(decoded.userId);
     
     if (!user) {
       return res.status(401).json({

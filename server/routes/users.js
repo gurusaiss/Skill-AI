@@ -56,8 +56,9 @@ function generatePassword() {
 // "always assign the complete approved bank, never a hardcoded subset" logic.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOADS_DIR = path.join(__dirname, '../data/uploads/jd');
-const IMPORT_DIR  = path.join(__dirname, '../data/uploads/import');
+import { DATA_DIR as _DATA_DIR } from '../config/dataDir.js';
+const UPLOADS_DIR = path.join(_DATA_DIR, 'uploads/jd');
+const IMPORT_DIR  = path.join(_DATA_DIR, 'uploads/import');
 if (!existsSync(UPLOADS_DIR)) mkdirSync(UPLOADS_DIR, { recursive: true });
 if (!existsSync(IMPORT_DIR))  mkdirSync(IMPORT_DIR,  { recursive: true });
 
@@ -323,9 +324,15 @@ async function checkFileMime(filePath) {
 // resolved with zero extra queries and no N+1. Previously only `managerId`
 // was returned, which is why no screen could show a manager's name without a
 // second round-trip (and the one place that tried was reading the wrong field).
-function sanitizeUser(user, managerIndex) {
+// light=true (list pages that never edit/show the full JD): the multi-kB
+// jobDescription text and the JD skill list are replaced by a boolean flag
+// (`hasJD`) plus a short preview; the full record is still returned by
+// GET /api/users/:userId and by the default (non-light) list.
+function sanitizeUser(user, managerIndex, light = false) {
   const mgr = user.managerId && managerIndex ? managerIndex.get(user.managerId) : null;
+  const jd = user.jobDescription || '';
   return {
+    ...(light ? { hasJD: !!(jd || user.jobDescriptionFile), jobDescriptionPreview: jd.slice(0, 400), _light: true } : {}),
     userId: user.userId || user.id,
     email: user.email,
     name: user.name,
@@ -341,14 +348,14 @@ function sanitizeUser(user, managerIndex) {
     // Extended profile
     jobRole: user.jobRole || '',
     department: user.department || '',
-    jobDescription: user.jobDescription || '',
+    jobDescription: light ? '' : jd,
     jobDescriptionFile: user.jobDescriptionFile || null,
     onboardingComplete: user.onboardingComplete || false,
     companyName: user.companyName || '',
     employeeId: user.employeeId || '',
     phone: user.phone || '',
     status: user.status || 'active',
-    jdSkills: user.jdSkills || [],
+    jdSkills: light ? [] : (user.jdSkills || []),
     jdSourceUrl: user.jdSourceUrl || '',
     jdSourceType: user.jdSourceType || 'text',
     accesses: user.accesses || [],
@@ -448,7 +455,8 @@ router.get('/', authenticate, requirePermission('users.view_all'), async (req, r
     const managerIndex = new Map(
       allUsers.map(u => [u.userId || u.id, { name: u.name, email: u.email }])
     );
-    const sanitizedUsers = users.map(u => sanitizeUser(u, managerIndex));
+    const lightList = req.query.light === '1';
+    const sanitizedUsers = users.map(u => sanitizeUser(u, managerIndex, lightList));
 
     res.json({ success: true, data: { users: sanitizedUsers, count: sanitizedUsers.length }, error: null });
   } catch (error) {

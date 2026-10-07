@@ -62,7 +62,8 @@ export default function AssignmentManagement() {
   useEffect(() => {
     if (!user || (!isAdmin && !isManager)) { navigate('/dashboard'); return; }
     loadAll();
-    const interval = setInterval(loadAll, 30000); // refresh every 30s
+    // refresh every 30s, but only while the tab is visible (hidden tabs used to re-download everything)
+    const interval = setInterval(() => { if (document.visibilityState === 'visible') loadAll(); }, 30000);
     return () => clearInterval(interval);
   }, [user, navigate, isAdmin, isManager]);
 
@@ -71,7 +72,7 @@ export default function AssignmentManagement() {
     try {
       const [assignRes, userRes, modRes, grRes] = await Promise.allSettled([
         authFetch('/api/assignments'),
-        authFetch('/api/users'),
+        authFetch('/api/users?light=1'),
         authFetch('/api/modules?limit=1000'),
         authFetch('/api/content/groups'),
       ]);

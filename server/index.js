@@ -17,6 +17,7 @@ import { swaggerSpec } from './swagger.js';
 
 import AuthService from './services/AuthService.js';
 import { authenticate, requireRole } from './middleware/auth.js';
+import { requestTiming, getPerformanceSummary } from './middleware/requestTiming.js';
 import { MANAGER_TIER_ROLES } from './services/roleCapability.js';
 
 import goalRouter from './routes/goal.js';
@@ -64,7 +65,7 @@ import LLMCache from './services/LLMCache.js';
 import geminiService from './services/GeminiService.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const dataPath = join(__dirname, 'data');
+import { DATA_DIR as dataPath } from './config/dataDir.js';
 
 // Load .env from project root
 loadEnv(join(__dirname, '..'));
@@ -139,6 +140,10 @@ app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   permittedCrossDomainPolicies: false,
 }));
+
+// Request timing (Server-Timing header, slow-request log, rolling aggregate for
+// /api/health). Mounted BEFORE compression so it counts bytes on the wire.
+app.use('/api', requestTiming);
 
 // Compress all JSON/text responses — reduces payload 70-85%
 app.use(compression());
@@ -252,6 +257,7 @@ app.get('/api/health', (req, res) => {
       uptime: Math.round(process.uptime()) + 's',
       timestamp: new Date().toISOString(),
       db: process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'placeholder' ? 'supabase' : 'file',
+      performance: getPerformanceSummary(),
       llm: geminiService.getStats(),
       integrations: {
         supabase: process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'placeholder',
@@ -361,12 +367,31 @@ app.get('/api/scheduler/status', authenticate, requireRole('admin', 'superadmin'
 // /app/client/dist inside the container (and works for local prod builds too).
 const clientDist = join(__dirname, '..', 'client', 'dist');
 if (existsSync(clientDist)) {
-  app.use(express.static(clientDist));
-  // SPA fallback — all non-API routes return index.html
-  app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api')) {
-      res.sendFile(join(clientDist, 'index.html'));
+  // Vite emits content-hashed files under /assets: safe to cache for a year.
+  // Everything else (index.html, favicon...) must be revalidated so a deploy is
+  // picked up immediately.
+  app.use(express.static(clientDist, {
+    index: false,
+    setHeaders: (res, filePath) => {
+      const normalized = filePath.split('\\').join('/');
+      if (normalized.includes('/assets/')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } else {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
+    },
+  }));
+  // SPA fallback — non-API, non-file routes return index.html. A request for a
+  // missing file (has an extension, e.g. a stale /assets/x.js after a deploy)
+  // must be a real 404, not index.html served as 200 (which the browser would
+  // then try to execute as JavaScript and cache under the asset URL).
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    if (/\.[a-zA-Z0-9]{1,8}$/.test(req.path)) {
+      return res.status(404).type('text/plain').send('Not found');
     }
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(join(clientDist, 'index.html'));
   });
   console.log('[static] Serving React build from', clientDist);
 }

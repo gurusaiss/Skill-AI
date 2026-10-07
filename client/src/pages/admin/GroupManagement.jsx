@@ -341,7 +341,7 @@ export default function GroupManagement() {
     try {
       const [groupsData, usersData] = await Promise.allSettled([
         authFetch('/api/groups'),
-        authFetch('/api/users'),
+        authFetch('/api/users?light=1'),
       ]);
 
       const grps = groupsData.status === 'fulfilled'

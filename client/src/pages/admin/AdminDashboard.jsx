@@ -281,10 +281,10 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
                   </div>
                 ))}
               </div>
-              {emp.jobDescription && (
+              {(emp.jobDescription || emp.jobDescriptionPreview) && (
                 <div className="rounded-xl bg-slate-800/60 border border-slate-700/40 p-3">
                   <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Job Description</p>
-                  <p className="text-xs text-slate-400 leading-relaxed line-clamp-4">{emp.jobDescription}</p>
+                  <p className="text-xs text-slate-400 leading-relaxed line-clamp-4">{emp.jobDescription || emp.jobDescriptionPreview}</p>
                 </div>
               )}
             </div>
@@ -419,7 +419,7 @@ export default function AdminDashboard() {
 
   // Core
   const [loading, setLoading] = useState(true);
-  const [company, setCompany] = useState(null);
+  const [, setCompany] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
@@ -467,7 +467,7 @@ export default function AdminDashboard() {
         .catch(() => null);
 
       const [usersRes, modulesRes, assignmentsRes, requestsRes, reportsRes] = await Promise.allSettled([
-        authFetch('/api/users'),
+        authFetch('/api/users?light=1'),
         authFetch('/api/modules?limit=1000'),
         authFetch('/api/assignments'),
         authFetch('/api/assignments/requests'),
@@ -751,31 +751,11 @@ export default function AdminDashboard() {
         );
       })()}
 
-      {/* Company Info Banner */}
-      {company && (
-        <div className="mb-5 flex items-center justify-between rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-5 py-3">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🏢</span>
-            <div>
-              <p className="font-bold text-white text-sm">{company.name}</p>
-              <p className="text-xs text-slate-400">{company.domain || 'Admin Panel'} &nbsp;·&nbsp; <span className="text-slate-500">ID: {company.id || '—'}</span></p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${
-              company.plan === 'enterprise' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' :
-              company.plan === 'standard'   ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' :
-              'bg-amber-500/20 text-amber-300 border-amber-500/30'
-            }`}>{company.plan ? company.plan.charAt(0).toUpperCase() + company.plan.slice(1) : 'Trial'}</span>
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${company.status === 'active' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>
-              {company.status ? company.status.charAt(0).toUpperCase() + company.status.slice(1) : 'Active'}
-            </span>
-            {stats?.pendingRequests > 0 && (
-              <button onClick={() => setActiveTab('approvals')} className="ml-2 flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30 transition-all">
-                ⚠️ {stats.pendingRequests} Pending
-              </button>
-            )}
-          </div>
+      {stats?.pendingRequests > 0 && (
+        <div className="mb-5 flex justify-end">
+          <button onClick={() => setActiveTab('approvals')} className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30 transition-all">
+            ⚠️ {stats.pendingRequests} Pending
+          </button>
         </div>
       )}
 

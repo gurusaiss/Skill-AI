@@ -34,6 +34,7 @@ import { startDeepContentJob } from '../services/SessionContentGenerator.js';
 import { gradeFromPercent, percentFromCounts, gradeForReport } from '../services/grading.js';
 import { ASSESSMENT_DURATION_MINUTES, normalizeDuration } from '../services/assessmentDefaults.js';
 import { resolveWindow, parseWindowInput } from '../services/assessmentSchedule.js';
+import { toListAssessment, toListReport } from '../services/assessmentListView.js';
 import { loadAssessmentRows, loadSubmissionRows } from '../services/reports/reportLoader.js';
 import { buildSummary, safeFilename, STATUS as REPORT_STATUS, timeTakenSeconds } from '../services/reports/reportData.js';
 import { buildAssessmentWorkbook, buildAllReportsWorkbook, buildIndividualWorkbook, buildTableWorkbook } from '../services/reports/xlsxReports.js';
@@ -44,7 +45,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const DATA_DIR = join(__dirname, '../data');
+import { DATA_DIR } from '../config/dataDir.js';
 
 const router = express.Router();
 
@@ -89,7 +90,7 @@ function stripInternalMetadata(q) {
 // manager-facing views (question preview/edit panels, exports) still expect
 // `employeeAssignments[i].questions` to be populated, so this hydrates it back
 // on read for privileged callers, without ever writing it back to storage.
-async function hydrateAssignmentsForAdmin(assessment) {
+async function hydrateAssignmentsForAdmin(assessment, { shared = false } = {}) {
   if (!assessment?.questionBankVersionId || !Array.isArray(assessment.employeeAssignments)) return assessment;
   const version = await getApprovedBankCached(assessment.questionBankVersionId);
   if (!version?.questions?.length) return assessment;
@@ -112,8 +113,15 @@ async function hydrateAssignmentsForAdmin(assessment) {
       if (isAssignmentLocked(ea) && Array.isArray(ea.questions)) return ea;
       const order = orderByUser.get(ea.userId) || version.questions.map(q => q.id);
       const resolved = order.map(qid => byId.get(qid)).filter(Boolean);
-      return resolved.length > 0 ? { ...ea, questions: resolved } : ea;
+      if (resolved.length === 0) return ea;
+      // shared mode: every employee of a version-backed assessment gets the
+      // SAME frozen bank in a different order, so instead of repeating
+      // 300 question objects per employee send the ids once per employee and
+      // the bank once per assessment (clients rebuild `questions` from it).
+      if (shared) return { ...ea, questionIds: resolved.map(q => q.id) };
+      return { ...ea, questions: resolved };
     }),
+    ...(shared ? { sharedQuestions: version.questions } : {}),
   };
 }
 
@@ -141,7 +149,7 @@ function isAssignmentLocked(assignment) {
   return Boolean(assignment.startedAt) || ['in_progress', 'submitted'].includes(assignment.status);
 }
 
-async function resolveEmployeeQuestions(assessment, assignment, userId) {
+async function resolveEmployeeQuestions(assessment, assignment, userId, prefetchedEaa) {
   if (!assignment) return { questions: null, source: null };
 
   const embedded = Array.isArray(assignment.questions)
@@ -156,7 +164,7 @@ async function resolveEmployeeQuestions(assessment, assignment, userId) {
   if (assessment?.questionBankVersionId) {
     try {
       const [eaa, version] = await Promise.all([
-        EmployeeAssessmentAssignments.getOne(assessment.id, userId),
+        prefetchedEaa !== undefined ? prefetchedEaa : EmployeeAssessmentAssignments.getOne(assessment.id, userId),
         getApprovedBankCached(assessment.questionBankVersionId),
       ]);
       if (version?.questions?.length) {
@@ -611,6 +619,19 @@ function scoreSubmission(questions, responses, passThreshold = 80, customThresho
 // ROUTES
 // ─────────────────────────────────────────────────────────────────────────────
 
+// List payload. Default is LIGHT (no question text, answers or per-question
+// breakdown; roster keeps ids/status/dates/scalar scores) and costs no
+// per-assessment lookups. `?full=1` restores the old fully-hydrated payload.
+// Detail (questions, shared bank) comes from GET /api/assessments/:id.
+async function buildListPayload(rows, req) {
+  if (req.query?.full === '1') {
+    const isAdminList = req.user.role === 'admin' || req.user.role === 'superadmin';
+    const isMgr = !isAdminList && canActAsManager(req.user);
+    return (isAdminList || isMgr) ? Promise.all(rows.map(a => hydrateAssignmentsForAdmin(a))) : rows;
+  }
+  return rows.map(toListAssessment);
+}
+
 /**
  * GET /api/assessments
  * All assessments — admin sees all company assessments, manager sees only assessments for their group employees
@@ -639,7 +660,7 @@ router.get('/', authenticate, async (req, res) => {
             a.employeeAssignments?.some(ea => myEmpIds.has(ea.userId)) ||
             a.targetUsers?.some(uid => myEmpIds.has(uid))
           );
-      return res.json({ success: true, data: await Promise.all(result.map(hydrateAssignmentsForAdmin)), error: null });
+      return res.json({ success: true, data: await buildListPayload(result, req), error: null });
     }
 
     const result = isAdminList
@@ -649,7 +670,7 @@ router.get('/', authenticate, async (req, res) => {
           a.targetUsers?.includes(req.user.userId)
         );
 
-    res.json({ success: true, data: isAdminList ? await Promise.all(result.map(hydrateAssignmentsForAdmin)) : result, error: null });
+    res.json({ success: true, data: await buildListPayload(result, req), error: null });
   } catch (e) {
     console.error('[assessments GET /]', e.message);
     res.status(500).json({ success: false, data: null, error: 'Failed to load assessments' });
@@ -1389,6 +1410,18 @@ router.get('/my', authenticate, async (req, res) => {
     // existing is hidden by this gate.
     mine = mine.filter(a => !a.isManual || !a.status || a.status === 'approved');
 
+    // ?light=1 (dashboards/analytics): same rows, but no question text — the
+    // exam page (which needs the questions) calls /my without it.
+    const lightMy = req.query?.light === '1';
+    // One lookup of this employee's version rows instead of one per assessment
+    // (was 2 sequential queries per assessment: window + question order).
+    const eaaByAssessment = new Map();
+    if (mine.some(a => a.questionBankVersionId)) {
+      try {
+        for (const r of await EmployeeAssessmentAssignments.getByUser(req.user.userId)) eaaByAssessment.set(r.assessment_id, r);
+      } catch (_) { /* same as before: window falls back to roster/shared dates */ }
+    }
+
     const myAssessments = await Promise.all(mine.map(async (a) => {
       const myAssignment = a.employeeAssignments?.find(ea => ea.userId === req.user.userId);
 
@@ -1398,12 +1431,7 @@ router.get('/my', authenticate, async (req, res) => {
       // per-employee due_at still applies as before. Legacy/manual
       // assessments have no employee_assessment_assignments row, so only
       // the roster entry and the shared dates are consulted there.
-      let eaaForWindow = null;
-      if (a.questionBankVersionId) {
-        try {
-          eaaForWindow = await EmployeeAssessmentAssignments.getOne(a.id, req.user.userId);
-        } catch (_) {}
-      }
+      const eaaForWindow = a.questionBankVersionId ? (eaaByAssessment.get(a.id) || null) : null;
       const win = resolveWindow(a, myAssignment, eaaForWindow);
       const resolvedDeadline = win.dueAt;
       const assessmentDate = win.startAt ? new Date(win.startAt) : null;
@@ -1423,8 +1451,8 @@ router.get('/my', authenticate, async (req, res) => {
       // `questions` directly on the assignment — read straight through for
       // backward compatibility.
       let questions = null;
-      if (isVisible && myAssignment) {
-        ({ questions } = await resolveEmployeeQuestions(a, myAssignment, req.user.userId));
+      if (isVisible && myAssignment && !lightMy) {
+        ({ questions } = await resolveEmployeeQuestions(a, myAssignment, req.user.userId, a.questionBankVersionId ? eaaForWindow : undefined));
       }
 
       return {
@@ -1495,11 +1523,20 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
     // Fill in what older reports never saved (staff ID, department, assigned and
     // due dates) from live records so the Reports table and its downloads match.
     const userById = new Map(allUsers.map(u => [u.userId || u.id, u]));
+    // Cache the PROMISE (not the result): with the old result-cache, every
+    // report with missing dates started its own getById before the first one
+    // resolved - thousands of concurrent whole-table/row reads (and in file
+    // mode thousands of full JSON parses, which exhausted the heap). Seed from
+    // the (cached) assessments list so most lookups need no query at all.
     const assessmentCache = new Map();
-    const getAssessmentCached = async (aid) => {
-      if (!assessmentCache.has(aid)) assessmentCache.set(aid, await Assessments.getById(aid).catch(() => null));
+    if (filteredReports.some(r => r.assessmentId && (!r.assignedAt || !r.dueAt))) {
+      try { for (const a of (await Assessments.getAll()) || []) assessmentCache.set(a.id, Promise.resolve(a)); } catch (_) { /* fall back to per-id lookups */ }
+    }
+    const getAssessmentCached = (aid) => {
+      if (!assessmentCache.has(aid)) assessmentCache.set(aid, Assessments.getById(aid).catch(() => null));
       return assessmentCache.get(aid);
     };
+    const fullReports = req.query?.full === '1';
     const enriched = await Promise.all(filteredReports.map(async (r) => {
       const uid = r.userId || r.user_id || r.submittedBy;
       const u = userById.get(uid);
@@ -1510,8 +1547,11 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
         const ea = a?.employeeAssignments?.find(e => e.userId === uid);
         if (a) { assignedAt = assignedAt || ea?.assignedAt || null; dueAt = dueAt || resolveWindow(a, ea, null).dueAt || null; }
       }
+      // Light by default: per-question arrays (questions/responses/breakdown)
+      // are the bulk of each report and no list page reads them. ?full=1 keeps
+      // the old payload for any external consumer.
       return {
-        ...r,
+        ...(fullReports ? r : toListReport(r)),
         staffId: r.employeeId || u?.employeeId || '',
         department: r.department || u?.department || '',
         assignedAt,
@@ -1952,7 +1992,11 @@ router.get('/:id', authenticate, async (req, res) => {
       return res.status(403).json({ success: false, data: null, error: 'Access denied' });
     }
 
-    res.json({ success: true, data: await hydrateAssignmentsForAdmin(assessment), error: null });
+    // ?light=1: same slim roster as the list (no question text) - used to refresh one
+    // row after assign/reassign without re-downloading every employee's paper.
+    if (req.query?.light === '1') return res.json({ success: true, data: toListAssessment(assessment), error: null });
+
+    res.json({ success: true, data: await hydrateAssignmentsForAdmin(assessment, { shared: req.query?.shared === '1' }), error: null });
   } catch (e) {
     console.error('[assessments/:id] error:', e.message);
     res.status(500).json({ success: false, data: null, error: 'Failed to load assessment' });
