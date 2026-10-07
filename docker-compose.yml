@@ -8,11 +8,19 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: http://localhost:3001
+        APP_COMMIT: ${APP_COMMIT:-unknown}
     image: skillforge-ai:local
     container_name: skillforge-server
     restart: unless-stopped
     ports:
       - '3001:3001'
+    # Every variable in .env reaches the container, including ones added later
+    # (extra Gemini keys, OpenRouter, generation settings). Before this, only the
+    # names listed under `environment` were passed through and new keys were
+    # silently dropped.
+    env_file:
+      - path: .env
+        required: false
     environment:
       NODE_ENV: production
       PORT: 3001

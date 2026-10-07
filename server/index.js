@@ -234,6 +234,14 @@ app.get('/api/health', (req, res) => {
       model: geminiService.resolvedModel,
       geminiKeys: geminiService.geminiKeys.length,
       cerebras: geminiService.cerebrasEnabled ? 'enabled' : 'disabled',
+      openrouter: geminiService.openRouterEnabled ? 'enabled' : 'disabled',
+      // Which build is actually running. APP_COMMIT is set at image build time
+      // (see Dockerfile); startedAt changes on every restart, so after a deploy
+      // a new startedAt proves the server restarted.
+      build: {
+        commit: process.env.APP_COMMIT || 'unknown',
+        startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+      },
       agents: [
         'GoalAgent', 'DecomposeAgent', 'DiagnosticAgent',
         'ScoringAgent', 'CurriculumAgent', 'EvaluatorAgent',

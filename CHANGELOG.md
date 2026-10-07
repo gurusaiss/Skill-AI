@@ -4,6 +4,14 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-10 (b) — Fix: new settings now reach the container, and the live version can be checked
+
+**Why:** Changes pushed to GitHub were not showing on the company server. Pushing does not update that server by itself; it only changes when the app is rebuilt and restarted (the screens are built into the image). Also, `docker-compose.yml` only passed a fixed short list of settings into the container, so new ones (extra Gemini keys, the OpenRouter key, generation and report settings) were silently dropped.
+**Changes:** `docker-compose.yml` now loads every variable from `.env` into the container. `/api/health` now shows `build.startedAt` (changes on every restart) and `build.commit`, plus whether OpenRouter is enabled, so you can see which version is really live. The Dockerfile accepts `APP_COMMIT` at build time. New runbook `docs/DEPLOY_COMPANY_SERVER.md` lists the exact steps to put a new version on the company server.
+Files: `docker-compose.yml`, `Dockerfile`, `server/index.js`, `docs/DEPLOY_COMPANY_SERVER.md`.
+
+---
+
 ## 2026-10-10 — No sideways scrolling anywhere, and complete database setup SQL
 
 **No horizontal scroll.** Tab bars, the top navbar and wide tables no longer scroll sideways; they shrink, wrap or move less important columns under the name instead. A new shared `TabBar` is used for every tab strip (tabs share the width, labels shorten with a tooltip, and they wrap to a second row on narrow screens). The top bar shows icons only at laptop width and labels on wider screens. The assessment employee table went from 14 columns to 7 grouped columns, and rows become stacked cards on small screens. A global rule that silently hid overflow was removed so real problems show up. `CLAUDE.md` now records this rule for future work, and `npm run check:scroll` in `client/` fails if a new horizontal scroll is added.

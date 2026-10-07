@@ -39,6 +39,9 @@ COPY --from=client-builder /app/client/dist ./client/dist
 # Copy knowledge bank
 COPY server/knowledge/ ./server/knowledge/
 
+ARG APP_COMMIT=unknown
+ENV APP_COMMIT=$APP_COMMIT
+
 ENV NODE_ENV=production
 ENV PORT=3001
 
