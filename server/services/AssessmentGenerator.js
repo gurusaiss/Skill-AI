@@ -6,111 +6,126 @@
 import { randomUUID } from 'crypto';
 import { classifyJDVsProcessSections } from '../utils/textPreprocessor.js';
 import GeminiService from './GeminiService.js';
+import LLMQueue from './LLMQueue.js';
 import { ASSESSMENT_MIX, mixCounts, buildTypeSequence, typeDeficit as typeDeficitFor } from './QuestionMix.js';
+import { chunkDensity, contentTokens, BM25 } from './TextRanking.js';
+import { buildDocumentModel, generateExtractiveQuestions } from './ExtractiveQuestionGenerator.js';
+import { TaskPool, TimeBudget, mapPool } from './GenScheduler.js';
+import questionChunkCache, { chunkCacheKey } from './QuestionChunkCache.js';
 
-// Groq's free/on-demand tier enforces a hard per-REQUEST token budget (prompt
-// tokens + requested max_tokens combined) — observed limit: 12,000 TPM for
-// openai/gpt-oss-120b (Groq). A single request whose own (input + max_tokens)
-// exceeds that is rejected outright with HTTP 413, before generating
-// anything — this is not a rate/timing issue solvable by spacing calls out.
-// The original chunk sizes (80,000 chars) and max_tokens (16,000+) were sized
-// for Groq's paid-tier 128k context window, which silently assumed the free
-// tier wasn't in play. These smaller budgets keep each individual request
-// comfortably under the free-tier ceiling — at the cost of more attempts
-// needed to fill a large question count (a real quality/latency tradeoff,
-// not a full fix; the free tier itself is the actual constraint. See
-// docs/DEPLOYMENT_GUIDE.md for upgrading to a paid Groq/Gemini tier).
-// Per-request budgets. These were sized for Groq's free/on-demand tier, whose
-// ~8,000 tokens-per-MINUTE ceiling forces many small, paced requests — which
-// is what made a multi-PDF bank take 15-40+ minutes. Gemini has no comparable
-// per-minute squeeze here (measured: 20 questions in one call, 5 concurrent
-// calls all fine), so when Gemini is the active provider we use far larger
-// batches and bigger source chunks: the same bank becomes a couple of calls
-// instead of dozens. Falls back to the tight Groq numbers automatically when
-// Gemini isn't configured, so nothing breaks on a Groq-only deployment.
-const GROQ_SOURCE_CHAR_BUDGET    = 6000;   // ~1,500 tokens of source text per request
-const GROQ_MAX_OUTPUT_TOKENS     = 3000;
+// ── Generation tuning ────────────────────────────────────────────────────────
+// Where the time used to go: Groq's free tier allows only ~7,000 tokens per
+// MINUTE (enforced by LLMQueue's limiter, which counts prompt + requested
+// max_tokens), and the old pipeline sent one big instruction-heavy prompt per
+// (chunk x attempt), strictly one after another, each reserving a large
+// max_tokens: ~2 calls/minute, ~8 questions each, with 30-40% of them rejected
+// by the quality filters => 30-60+ minutes for a bank. The levers now:
+//   - compact prompt + compact output schema (fewer tokens per question),
+//   - tight max_tokens (truncated replies are salvaged, not thrown away),
+//   - only the information-dense chunks get an LLM call (BM25-style density),
+//   - an extractive, zero-API-call generator supplies the factual share
+//     instantly and fills any shortfall (replacing generic template padding),
+//   - bounded concurrency across files/chunks and across providers,
+//   - a wall-clock budget after which the extractive generator completes the
+//     bank so the job always finishes.
+// Per-request budgets. Sized by the provider that will REALLY serve the call:
+// a configured-but-quota-exhausted Gemini key must not make us size requests
+// for Gemini and then send them to Groq (that sent ~8k-token prompts + 14k
+// max_tokens to a 7k-TPM pipe: every call was rejected with HTTP 413 and the
+// whole bank degraded to generic templates).
+const GROQ_MAX_OUTPUT_TOKENS      = 3200;
 const GROQ_MAX_QUESTIONS_PER_CALL = 8;
+const PROMPT_OVERHEAD_TOKENS      = 800;   // system prompt + instruction lines + a short avoid list
 
-const GEMINI_SOURCE_CHAR_BUDGET   = 24000; // ~6,000 tokens — fewer, richer chunks
-// gemini-3.6-flash is a THINKING model: reasoning tokens are billed against
-// the same output budget as the answer (a measured call spent 2,161 tokens
-// thinking before writing a single question). Our question schema is also
-// large — type/question/4 options/answer/explanation/skillArea/sourceSection/
-// sourceQuote runs ~250-350 tokens each. An 8,192 budget truncated the JSON
-// mid-string ("Unterminated string in JSON at position 9371") and the whole
-// batch was discarded. Gemini has no tight per-minute token squeeze here, so
-// there's no reason to be stingy: give it real headroom.
-const GEMINI_MAX_OUTPUT_TOKENS    = 32768;
-// Gemini's FREE tier caps REQUESTS at 20 per DAY per model — requests, not
-// tokens, are the scarce resource. So pack as many questions into each call as
-// the output budget safely allows: at 25/call a 50-question bank costs ~2-3
-// requests instead of ~7, which is the difference between a handful of banks
-// per day and running dry after one. 32k output tokens comfortably covers 25
-// questions (~350 tokens each) plus the model's reasoning overhead.
+const GEMINI_SOURCE_CHAR_BUDGET   = 24000;  // fewer, richer chunks (no per-minute token squeeze)
+const GEMINI_MAX_OUTPUT_TOKENS    = 32768;  // thinking model: reasoning tokens share this budget
+// Gemini's FREE tier caps REQUESTS (20/day/key), not tokens — pack many
+// questions into each call.
 const GEMINI_MAX_QUESTIONS_PER_CALL = 25;
 
+// True only when a Gemini key can take a call right now (configured AND not in
+// a quota cooldown).
 function geminiPrimary() {
-  const k = process.env.GEMINI_API_KEY;
-  return !!(k && k.length > 10);
+  try { return GeminiService.generationStatus().gemini; } catch { return false; }
 }
-function sourceCharBudget()    { return geminiPrimary() ? GEMINI_SOURCE_CHAR_BUDGET   : GROQ_SOURCE_CHAR_BUDGET; }
+// Groq: the TPM limiter reserves (prompt + max_tokens) per call for a full
+// 60 s window, so a call costing more than HALF the per-minute budget means
+// ONE call per minute (4,360 of 7,000 -> the next call must wait for the whole
+// window to roll over). Size the excerpt so two calls fill the window almost
+// exactly instead: that alone is ~1.6-2x the throughput of the old sizing.
+function groqExcerptChars() {
+  const callBudget = Math.floor((LLMQueue.tpmLimit || 7000) / 2) - 120;
+  const excerptTokens = callBudget - PROMPT_OVERHEAD_TOKENS - outputTokensForGroq(GROQ_MAX_QUESTIONS_PER_CALL);
+  return Math.min(6000, Math.max(2400, excerptTokens * 4));
+}
+function sourceCharBudget()    { return geminiPrimary() ? GEMINI_SOURCE_CHAR_BUDGET   : groqExcerptChars(); }
 function maxQuestionsPerCall() { return geminiPrimary() ? GEMINI_MAX_QUESTIONS_PER_CALL : GROQ_MAX_QUESTIONS_PER_CALL; }
 function maxOutputTokensCap()  { return geminiPrimary() ? GEMINI_MAX_OUTPUT_TOKENS    : GROQ_MAX_OUTPUT_TOKENS; }
 
-// A question in our JSON format runs ~250-350 output tokens (stem, 4 options,
-// answer, explanation, skillArea, sourceSection, sourceQuote).
-//
-// Two very different sizing regimes:
-//  - Groq: the API counts REQUESTED max_tokens against the ~8,000/min budget,
-//    so over-reserving directly costs throughput. Size tightly.
-//  - Gemini: no comparable per-minute squeeze, AND it's a thinking model whose
-//    reasoning tokens share the output budget — under-reserving truncates the
-//    JSON mid-object and the entire batch is thrown away. Size generously,
-//    with a flat reasoning allowance on top of the per-question estimate.
+// A question in the COMPACT schema (t/d/q/o/a/k/z) is ~130-170 output tokens.
+//  - Groq/OpenRouter: max_tokens is charged against the per-minute budget, so
+//    size tightly (a truncated tail is salvaged by the provider layer).
+//  - Gemini: thinking tokens share the output budget; keep generous headroom.
+function outputTokensForGroq(n) { return Math.min(GROQ_MAX_OUTPUT_TOKENS, Math.max(700, n * 160 + 420)); }
 function outputTokensFor(count) {
   const n = count || 1;
-  if (geminiPrimary()) {
-    return Math.min(maxOutputTokensCap(), Math.max(4000, n * 400 + 6000)); // +6k reasoning headroom
-  }
-  return Math.min(maxOutputTokensCap(), Math.max(600, n * 200 + 400));
+  if (geminiPrimary()) return Math.min(maxOutputTokensCap(), Math.max(4000, n * 220 + 4000));
+  return outputTokensForGroq(n);
 }
 
-// Wraps an optional caller-supplied onProgress callback into two safe emitters
-// used throughout generation. `progress(done)` reports how many questions are
-// accepted so far (monotonic, clamped to total). `throttle(delayMs)` reports a
-// rate-limit pause so the UI can show "pausing for rate limit ~Ns" instead of
-// looking frozen. Both swallow callback errors — a progress hook must never
-// break generation. No-ops entirely when onProgress isn't provided (every
-// existing caller), so behavior is unchanged unless a caller opts in.
+const envInt = (k, d) => { const v = parseInt(process.env[k] || '', 10); return Number.isFinite(v) ? v : d; };
+const envFloat = (k, d) => { const v = parseFloat(process.env[k] || ''); return Number.isFinite(v) ? v : d; };
+// Read at call time so tests / deployments can change them without a restart.
+export function generationConfig() {
+  return {
+    timeBudgetMs:    Math.max(5000, envInt('GEN_TIME_BUDGET_MS', 8 * 60 * 1000)), // hard wall-clock budget for LLM work; the bank is completed extractively afterwards
+    concurrency:     Math.max(0, envInt('GEN_CONCURRENCY', 0)),                    // 0 = auto from available providers
+    extractiveShare: Math.min(0.9, Math.max(0, envFloat('GEN_EXTRACTIVE_SHARE', 0.35))), // share of each source's questions generated locally up front
+    maxRounds:       Math.max(1, envInt('GEN_MAX_ROUNDS', 2)),                     // LLM rounds per source (1 = no top-up retry)
+    cache:           process.env.GEN_CACHE !== '0',
+    embedMax:        Math.max(0, envInt('GEN_EMBED_MAX', 120)),                    // cap on texts sent to the embedding dedup pass (0 = off)
+    taskMinMs:       Math.max(3000, envInt('GEN_TASK_MIN_MS', 15000)),             // do not START an LLM call with less than this left
+    pace:            Math.min(1, Math.max(0.2, envFloat('GEN_LLM_PACE', 0.7))),     // stop STARTING new LLM calls after this fraction of the budget (in-flight ones may finish)
+  };
+}
+
+function autoConcurrency() {
+  const st = GeminiService.generationStatus();
+  let c = 0;
+  if (st.gemini) c += Math.min(4, st.geminiKeysUsable * 2);
+  if (st.openrouter) c += 1;
+  if (st.groq) c += 2;
+  if (st.cerebras) c += 1;
+  return Math.max(1, Math.min(c, Math.max(1, (LLMQueue.max || 5) - 1))); // always leave one LLMQueue slot for interactive calls
+}
+
+// Progress for the whole run. `done` = questions accepted so far across every
+// source (extractive picks count immediately — they are real accepted
+// questions); phase is 'throttled' only while EVERY in-flight LLM call is
+// parked on a rate limit, and flips back to 'generating' the moment one is
+// released (the old emitter could leave a stale "paused ~90s" on screen
+// because it never saw the end of the wait).
 function makeProgressEmitter(onProgress, total) {
   let lastDone = -1;
   let lastPhase = null;
+  let lastDelay = -1;
   const safe = (evt) => { if (typeof onProgress === 'function') { try { onProgress(evt); } catch { /* ignore */ } } };
   return {
     progress(done) {
       const clamped = Math.min(total, Math.max(0, done | 0));
-      // Previously returned here whenever the accepted count hadn't moved —
-      // which is exactly what happens for several batches in a row right
-      // after a throttle() pause, if the quality filters (filterGrounded/
-      // verifyQuoteGrounded/mergeUnique) reject everything a slow-but-still-
-      // working chunk produces. Because that early return skipped emitting
-      // ANY event, job.phase stayed frozen on 'throttled' with the OLD
-      // delayMs forever — so the UI kept showing a stale "Paused ~90s" long
-      // after that 90s had actually elapsed and real (if unsuccessful) work
-      // had continued, making an active job look permanently stuck at 0.
-      // Still skip only when NEITHER the count NOR the phase actually
-      // changed, so a real "still generating, still 0 accepted" state
-      // doesn't spam progress events, but a throttle→generating transition
-      // (or vice versa) always gets through immediately.
+      // Emit when the count OR the phase changed; stay quiet otherwise.
       if (clamped === lastDone && lastPhase === 'generating') return;
-      lastDone = clamped;
-      lastPhase = 'generating';
+      lastDone = clamped; lastPhase = 'generating'; lastDelay = -1;
       safe({ phase: 'generating', done: clamped, total });
     },
     throttle(delayMs) {
-      lastPhase = 'throttled';
-      safe({ phase: 'throttled', done: Math.max(0, lastDone), total, delayMs: delayMs | 0 });
+      const d = delayMs | 0;
+      if (lastPhase === 'throttled' && lastDelay === d) return;
+      lastPhase = 'throttled'; lastDelay = d;
+      safe({ phase: 'throttled', done: Math.max(0, lastDone), total, delayMs: d });
+    },
+    resume() {
+      if (lastPhase === 'throttled') { lastPhase = 'generating'; lastDelay = -1; safe({ phase: 'generating', done: Math.max(0, lastDone), total }); }
     },
   };
 }
@@ -351,9 +366,14 @@ function cosineSimilarity(a, b) {
 // reasons; this reuses the same-shaped, deleted-question-first list) so one
 // generation run never pays for embedding hundreds of historical entries.
 const SEMANTIC_AVOID_CAP = 80;
+// batchEmbedContents embeds at most 100 texts per request (GeminiService.embedTexts
+// truncates beyond that, which used to misalign pool vs avoid-list embeddings
+// whenever avoid + pool exceeded 100): the avoid list is capped to what is left.
+const EMBED_REQUEST_CAP = 100;
 async function applySemanticDedup(questions, avoidQuestions = []) {
   if (!Array.isArray(questions) || questions.length === 0) return questions;
-  const avoidList = (Array.isArray(avoidQuestions) ? avoidQuestions : []).slice(0, SEMANTIC_AVOID_CAP);
+  if (questions.length > EMBED_REQUEST_CAP) return questions; // too big for one request: lexical dedup stands
+  const avoidList = (Array.isArray(avoidQuestions) ? avoidQuestions : []).slice(0, Math.min(SEMANTIC_AVOID_CAP, EMBED_REQUEST_CAP - questions.length));
   if (questions.length < 2 && avoidList.length === 0) return questions;
   try {
     const poolTexts = questions.map(q => extractConceptText(q).slice(0, 1500));
@@ -437,301 +457,139 @@ function trimToTarget(questions, target, types) {
   return result.slice(0, target);
 }
 
-function buildSystemPrompt() {
-  return `You are an expert HR assessment designer who creates role-specific assessments for ALL job functions across ALL industries — HR, Operations, Finance, Sales, Marketing, Customer Success, Procurement, L&D, Project Management, IT, Engineering, Healthcare, Legal, and any other domain.
+// ── Compact prompts ──────────────────────────────────────────────────────────
+// The previous prompts were ~3,000 tokens of instructions per call (document
+// path: 4 "STEP" blocks, a 14-style rotation list, a banned-phrase list, a
+// verbose output schema, a 60-item avoid list) — re-sent on EVERY call and
+// charged against Groq's 7k tokens/minute. These carry the same rules (verbatim
+// quote grounding, no generic stems, exact count, per-call type + difficulty
+// mix, avoid-list) in roughly a fifth of the tokens, and ask for a compact JSON
+// schema that is expanded locally (options get their "A)" prefix, the
+// explanation / sourceSection are derived from the quote, not generated).
+const COMPACT_TAIL = `3. "z" is a verbatim 6-25 word quote copied character-for-character from the excerpt, the exact text the question tests. No quote that can be copied from the excerpt = do not write the question.
+4. No generic or definition-style stems ("purpose of X", "which best describes X", "what does X mean"). One fact per question; no two questions on the same fact. Never use stakeholder-management, change-management, leadership or best-practice phrasing unless quoted from the excerpt.
+5. Prefer application: a concrete situation that needs a rule, threshold, sequence or exception from the excerpt ("Given X, what happens next?"). At most 1 in 10 questions may begin with "As a [role]".
+6. mcq: 4 distinct, plausible options built from the excerpt's own terms, exactly one correct, never "all/none of the above", vary the correct letter. fill: answer is a 1-5 word term/value from the excerpt. subj: answer is 2-3 points joined by " | ", each under 20 words.
+OUTPUT: JSON only, no prose: {"questions":[{"t":"mcq|fill|subj","d":"easy|medium|hard","q":"question text","o":["opt","opt","opt","opt"],"a":"A-D for mcq, else the answer text","k":"skill area, 2-4 words","z":"verbatim quote"}]}
+"o" is only for mcq and holds plain option texts WITHOUT "A)" prefixes.`;
 
-ABSOLUTE RULES:
-1. Read and extract the actual domain, responsibilities, tools, and required knowledge from the JD FIRST.
-2. Generate questions ONLY about what the JD explicitly requires — never introduce topics from unrelated domains.
-3. Domain must match: HR role → HR questions. Finance role → Finance questions. Operations → Operations questions. Do NOT cross domains.
-4. Every question must trace directly to a specific responsibility, skill, process, tool, or competency in the JD.
-5. Match seniority level: Executive/Director → strategy, policy, P&L, stakeholder decisions. Manager → team management, planning, escalation, reporting. Specialist/Executive → applied process, tools, day-to-day procedures. Junior/Coordinator → foundational knowledge, process steps.
-6. Never generate software coding or engineering architecture questions unless the JD explicitly lists programming as a requirement.
-7. Always return valid JSON with exactly a "questions" array.
-8. QUESTION WORDING — CRITICAL: At most 1 out of every 10 questions may begin with "As a [role]", "In your role as", "While working as", or "As an [role]". The other 9+ questions must open naturally — ask directly about the concept, situation, scenario, or decision. Write questions like a real corporate assessment, not like a role-play prompt.
-9. NO DUPLICATE QUESTIONS: Every question must test a DIFFERENT concept, situation, and scenario. No two questions may share the same meaning, even if the wording differs. Every question must have unique answer options — no repeated option sets across questions.
-10. NO CROSS-DIFFICULTY REPEATS — STRICTLY ENFORCED: A concept or scenario tested at Easy MUST NOT reappear at Medium or Hard, even reworded or at higher complexity. Each difficulty tier covers ENTIRELY DIFFERENT scenarios. Before writing a single question, mentally list all scenarios you will cover and assign each to exactly one difficulty tier — then generate from that plan.
-11. NO REPEATED MCQ OPTION SETS: Every MCQ must have a unique set of four answer choices. Never reuse the same options (even reworded) from a previous question.
-12. QUESTION STYLE VARIETY — MANDATORY: Write questions in varied styles throughout the set. Required styles include (rotate through them): real workplace scenarios, decision-making under pressure, situational judgment, multi-step process questions, customer/client interaction scenarios, team collaboration dilemmas, compliance and policy questions, root-cause problem solving, communication and escalation, case-based analysis, tool/system usage, performance measurement, stakeholder management, and risk assessment. No single style may appear more than 20% of the time.
-13. OPTION QUALITY: MCQ distractors must be plausible but clearly distinguishable from the correct answer. Avoid "all of the above", "none of the above", and trick options. Each wrong option should represent a genuinely mistaken approach, not an obviously silly one.`;
+function buildCompactSystemPrompt(mode = 'doc') {
+  const head = mode === 'jd'
+    ? `You write role-specific assessment questions from a job-description excerpt (it may include process documents).
+RULES
+1. Every question tests a responsibility, skill, process, tool or competency EXPLICITLY present in the excerpt, in the JD's own domain and at its seniority level, using its terminology. No outside knowledge; no coding questions unless the JD requires programming.
+2. Never ask about titles, headings, authors, versions, dates, page numbers or file names.`
+    : `You write precise, document-specific assessment questions from ONE source excerpt.
+RULES
+1. Test only facts, steps, rules, thresholds, codes, systems and exceptions EXPLICITLY stated in the excerpt, using its exact terminology. No outside knowledge, no general best practice.
+2. Never ask about titles, headings, authors, reviewers, versions, dates, page numbers, file names or confidentiality labels. Draw on procedure steps, tables, decision rules, exceptions and body text.`;
+  return `${head}\n${COMPACT_TAIL}`;
 }
 
-// Builds a capped "these were already used, produce different scenarios"
-// prompt section for regeneration — sourced from the SAME avoid-set the
-// post-hoc cross-version reject filter uses (see mergeUnique/mergeFallbackUnique
-// callers), so the LLM's own attempt to diverge and the reject filter never
-// disagree on what counts as "already used". Capped at ~40 prior questions,
-// first ~12 words each — enough to nudge divergence without the token/latency
-// cost of injecting full prior question text on every regenerate call.
-function buildAvoidSection(avoidQuestions) {
+// Short "already covered" list for the prompt. Ranked by BM25 relevance to the
+// excerpt being sent (an avoided question about a DIFFERENT part of the
+// document cannot be repeated from this excerpt, so it is wasted tokens),
+// capped, and each entry trimmed to its first words.
+function buildAvoidSection(avoidQuestions, excerpt = '') {
+  const AVOID_PROMPT_CAP = geminiPrimary() ? 30 : 12;
   if (!Array.isArray(avoidQuestions) || avoidQuestions.length === 0) return '';
-  // Callers now pass [...currentAttemptPool, ...crossVersionAvoidSet] — the
-  // caller's own array order IS the priority order (nearest/most-urgent
-  // first: what THIS generation run already produced, so a retry doesn't
-  // waste its budget re-deriving the same facts; then deleted-question
-  // tombstones; then older bank content). De-dupe by exact text first so two
-  // near-identical entries don't both burn a slot, then take the raised cap.
   const seen = new Set();
-  const deduped = [];
+  const items = [];
   for (const q of avoidQuestions) {
-    const text = (q?.question || q || '').toString().trim().toLowerCase();
-    if (!text || seen.has(text)) continue;
-    seen.add(text);
-    deduped.push(q);
-  }
-  const AVOID_CAP = 60;
-  const capped = deduped.slice(0, AVOID_CAP).map(q => {
     const text = (q?.question || q || '').toString().trim();
-    const words = text.split(/\s+/).slice(0, 12).join(' ');
-    return `- ${words}${text.split(/\s+/).length > 12 ? '...' : ''}`;
-  }).filter(Boolean);
-  if (capped.length === 0) return '';
-  return `
-=== ALREADY USED — DO NOT REPEAT (from this run, deleted questions, and prior versions) ===
-This is a REGENERATION. The items below were already produced (in this same generation run, in a version an admin explicitly deleted, or in a prior approved version already seen by employees). Every new question must cover DIFFERENT scenarios, wording, and examples — testing the same underlying knowledge point is fine, repeating how it was asked, or asking it in a different question TYPE, is not.
-${capped.join('\n')}
-`;
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) continue;
+    seen.add(key); items.push(text);
+  }
+  if (items.length === 0) return '';
+  let chosen = items;
+  if (items.length > AVOID_PROMPT_CAP) {
+    const bm = new BM25(items.map(t => contentTokens(t)));
+    const freq = new Map();
+    for (const w of contentTokens(excerpt)) freq.set(w, (freq.get(w) || 0) + 1);
+    const query = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 150).map(e => e[0]);
+    const ranked = bm.rank(query, AVOID_PROMPT_CAP).map(r => items[r.i]);
+    chosen = ranked.length >= 6 ? ranked : items.slice(0, AVOID_PROMPT_CAP);
+  }
+  const lines = chosen.map(t => { const w = t.split(/\s+/); return `- ${w.slice(0, 10).join(' ')}${w.length > 10 ? '...' : ''}`; });
+  return `\nAlready covered (earlier in this run, deleted by an admin, or in a prior version) - cover DIFFERENT facts and wording:\n${lines.join('\n')}\n`;
 }
 
-function buildUserPrompt({ count, jobRole, jdText, skillsList, types, seed, supportingDocsText, avoidQuestions = [] }) {
-  const easyCount   = Math.round(count * 0.35);
-  const mediumCount = Math.round(count * 0.45);
-  const hardCount   = Math.max(1, count - easyCount - mediumCount);
-  const maxRoleOpener = Math.max(1, Math.floor(count * 0.08));
-  const hasProcessDocs = !!(supportingDocsText?.trim());
+function distribute(total, weights) {
+  const sum = weights.reduce((a, b) => a + b, 0) || 1;
+  const raw = weights.map(w => (total * w) / sum);
+  const out = raw.map(Math.floor);
+  let left = total - out.reduce((a, b) => a + b, 0);
+  const order = raw.map((r, i) => [r - Math.floor(r), i]).sort((a, b) => b[0] - a[0]);
+  for (let i = 0; left > 0; i = (i + 1) % order.length, left--) out[order[i][1]]++;
+  return out;
+}
 
-  const STYLE_LIST = [
-    'real workplace scenario',
-    'decision under pressure',
-    'situational judgment',
-    'multi-step process',
-    'client/customer interaction',
-    'team collaboration dilemma',
-    'compliance or policy',
-    'root-cause problem solving',
-    'communication or escalation',
-    'case-based analysis',
-    'tool or system usage',
-    'performance measurement',
-    'stakeholder management',
-    'risk assessment',
-  ];
+function buildCompactUserPrompt({ count, mode = 'doc', jobRole, sourceText, sourceName, sourceType, seed, skillsContext = [], stakeholder = false, processDelivery = false, avoidQuestions = [], typeNeeds = null, diffNeeds = null }) {
+  const docLabel = mode === 'jd' || sourceType === 'jd' ? 'Job Description' : 'Process Document / Internal Reference';
+  const typeCounts = typeNeeds || { mcq: count };
+  const tparts = [['mcq', 'mcq'], ['fill_blank', 'fill'], ['subjective', 'subj']].filter(([k]) => typeCounts[k] > 0).map(([k, s]) => `${s} x${typeCounts[k]}`);
+  const dc = diffNeeds || (() => { const [e, m, h] = distribute(count, [35, 45, 20]); return { easy: e, medium: m, hard: h }; })();
+  const dparts = ['easy', 'medium', 'hard'].filter(k => dc[k] > 0).map(k => `${k} x${dc[k]}`);
+  const scope = [];
+  scope.push(stakeholder
+    ? 'Stakeholder/escalation content: allowed only where the excerpt states the exact steps, paths or approvals.'
+    : 'Do NOT ask about stakeholder communication, client relationships, team interaction or escalation behaviour; stick to functional steps, rules, validations and system actions.');
+  scope.push(processDelivery
+    ? 'SLA/KPI/governance content: allowed only where the excerpt states the exact thresholds, KPI names or reporting formats.'
+    : 'Do NOT ask about governance, SLA/KPI management, reporting or delivery management unless that is the whole subject of the excerpt.');
+  const skills = skillsContext.length > 0 ? `Role skills (context only, not a question source): ${skillsContext.slice(0, 12).join(', ')}\n` : '';
+  return `Role: ${jobRole || 'Professional'} | Source: ${sourceName || 'Source Document'} (${docLabel}) | Seed: ${seed}
+Write exactly ${count} questions (${tparts.join(', ')}; ${dparts.join(', ')}). Scenario/application questions where the excerpt allows; direct recall only for hard facts.
+${scope.join(' ')}
+${skills}${buildAvoidSection(avoidQuestions, sourceText)}
+EXCERPT:
+${sourceText}`;
+}
 
-  const processDocsSection = hasProcessDocs ? `
-=== INTERNAL PROCESS DOCUMENTS ===
-These documents describe the organization's actual operating procedures, workflows, and standards.
-They are the PRIMARY source for process-based, SOP, and operational questions.
-Generate 30–40% of questions directly from these documents when they are present.
-
-${supportingDocsText}
-
-` : '';
-
-  const processDocsStep = hasProcessDocs ? `
-• Extract key processes, SOPs, workflows, and operational standards from the INTERNAL PROCESS DOCUMENTS
-• Identify company-specific terminology, step sequences, approval flows, and decision criteria` : '';
-
-  const processDocsMix = hasProcessDocs ? `
-• ${Math.round(count * 0.35)} questions from the INTERNAL PROCESS DOCUMENTS (real SOP/workflow scenarios)
-• ${count - Math.round(count * 0.35)} questions from the JD responsibilities and required competencies
-• Blend both sources — questions should feel like they come from the same organisation` : `
-• All scenarios drawn from the JD responsibilities and required competencies`;
-
-  return `Generate exactly ${count} unique assessment questions for the role described below.
-
-=== EMPLOYEE PROFILE ===
-Job Role: ${jobRole || 'Professional'}
-Variation Seed: ${seed}
-${skillsList.length ? `Skills from JD: ${skillsList.join(', ')}` : ''}
-
-=== JOB DESCRIPTION ===
-${jdText || '(No JD provided — infer responsibilities from the job role)'}
-${processDocsSection}${buildAvoidSection(avoidQuestions)}
-=== MANDATORY PRE-GENERATION STEPS ===
-
-STEP 1 — EXTRACT ROLE PROFILE (do this before writing any question):
-• Primary domain/industry
-• Seniority level
-• Top responsibilities from the JD
-• Required tools, platforms, systems
-• Required processes and workflows
-• Required knowledge areas
-• Required soft skills and competencies${processDocsStep}
-
-STEP 2 — PLAN ${count} UNIQUE SCENARIOS (do this before writing any question):
-List ${count} DISTINCT real-work scenarios, one per question slot.
-Source mix:${processDocsMix}
-
-RULES for scenario planning:
-• Each scenario covers a different responsibility, process, or competency
-• No two scenarios overlap in topic, situation, or wording
-• Assign each scenario to exactly ONE difficulty tier — never reuse a scenario across tiers
-• Easy scenarios: ${easyCount} — foundational knowledge, clear-cut decisions, standard process steps
-• Medium scenarios: ${mediumCount} — applied judgment, multi-step decisions, moderate complexity
-• Hard scenarios: ${hardCount} — strategic trade-offs, edge cases, cross-functional conflicts, ambiguous situations
-• Distribute styles across ALL ${count} questions (no style > 20% of total):
-  ${STYLE_LIST.join(' | ')}
-
-STEP 3 — WRITE QUESTIONS FROM THE PLANNED SCENARIOS:
-
-QUESTION TYPE SEQUENCE (cycle in this exact order): ${types.join(', ')}
-
-WORDING RULES:
-• MAX ${maxRoleOpener} question(s) total may start with "As a [role]" / "In your role as" / "While working as"
-• ALL other questions must open with a direct scenario or concept — never with the role title
-• Good openers: "When evaluating...", "A colleague raises...", "Which approach best...", "A client reports...", "During a review of...", "What is the recommended...", "A team faces..."
-• Bad openers: "As an HR Executive...", "In your role as Finance Manager..."
-
-MCQ OPTION RULES:
-• Every MCQ must have 4 UNIQUE options not shared with any other question
-• Options must be plausible but distinguishable — no trick options, no "all/none of the above"
-• Vary which letter (A/B/C/D) is correct — do not default to A
-
-STEP 4 — SELF-CHECK BEFORE OUTPUT:
-✓ Exactly ${count} questions total (${easyCount} easy, ${mediumCount} medium, ${hardCount} hard)
-✓ No two questions test the same scenario, concept, or wording
-✓ No difficulty tier repeats a scenario from another tier
-✓ No repeated MCQ option sets across questions
-✓ Question styles are varied — no single style exceeds 20%
-${hasProcessDocs ? '✓ Process-doc questions reference actual procedures from the uploaded documents' : ''}
-✓ sourceQuote is filled with a real, verbatim excerpt from the JD/process text above for every question — not a paraphrase, not invented
-
-=== OUTPUT FORMAT — return only this JSON ===
-{
-  "questions": [
-    {
-      "type": "mcq|fill_blank|subjective",
-      "question": "naturally worded question — scenario-first, not role-first",
-      "difficulty": "easy|medium|hard",
-      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
-      "answer": "A/B/C/D for mcq | exact phrase for fill_blank | detailed model answer for subjective",
-      "explanation": "which JD responsibility, skill, or process document section this tests",
-      "sourceQuote": "a short (5-25 word) excerpt copied VERBATIM, character-for-character, from the JOB DESCRIPTION or INTERNAL PROCESS DOCUMENTS text above — the exact sentence or phrase this question is testing. Do not paraphrase or summarize it. If nothing in the provided text supports this question, do not generate the question at all.",
-      "skillArea": "specific competency, tool, process, or SOP from the JD or process docs"
+// ── Reply normalisation: compact (or legacy full) schema -> app question shape ─
+const TYPE_ALIASES = { mcq: 'mcq', multiple_choice: 'mcq', 'multiple-choice': 'mcq', fill: 'fill_blank', fill_blank: 'fill_blank', fill_in_blank: 'fill_blank', 'fill-blank': 'fill_blank', subj: 'subjective', subjective: 'subjective', short: 'subjective', essay: 'subjective', short_answer: 'subjective' };
+function normalizeLLMQuestions(raw, { fallbackSection = null, findSection = null } = {}) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const r of raw) {
+    if (!r || typeof r !== 'object') continue;
+    const question = String(r.q ?? r.question ?? '').trim();
+    if (!question) continue;
+    let type = TYPE_ALIASES[String(r.t ?? r.type ?? '').toLowerCase().trim()];
+    const rawOpts = Array.isArray(r.o) ? r.o : Array.isArray(r.options) ? r.options : null;
+    if (!type) type = rawOpts ? 'mcq' : 'subjective';
+    const difficulty = ['easy', 'medium', 'hard'].includes(String(r.d ?? r.difficulty).toLowerCase()) ? String(r.d ?? r.difficulty).toLowerCase() : 'medium';
+    const quote = String(r.z ?? r.sourceQuote ?? '').trim();
+    const answerRaw = String(r.a ?? r.answer ?? '').trim();
+    const q = { type, question, difficulty };
+    if (type === 'mcq') {
+      const opts = (rawOpts || []).map(o => String(o ?? '').replace(/^\s*[A-Da-d][).:]\s*/, '').trim());
+      if (opts.length !== 4 || opts.some(o => !o) || new Set(opts.map(o => o.toLowerCase())).size !== 4) continue;
+      if (opts.some(o => /^(all|none) of the above$/i.test(o))) continue;
+      let letter = (/^\s*([A-Da-d])\s*(?:[).:]|$)/.exec(answerRaw) || [])[1];
+      if (!letter) { const idx = opts.findIndex(o => o.toLowerCase() === answerRaw.replace(/^[A-Da-d][).:]\s*/, '').toLowerCase()); if (idx >= 0) letter = 'ABCD'[idx]; }
+      if (!letter) continue;
+      q.options = opts.map((o, i) => `${'ABCD'[i]}) ${o}`);
+      q.answer = letter.toUpperCase();
+    } else if (type === 'fill_blank') {
+      if (!answerRaw || answerRaw.split(/\s+/).length > 10) continue;
+      q.answer = answerRaw;
+    } else {
+      if (!answerRaw) continue;
+      const parts = answerRaw.split(/\s*\|\s*|\n+/).map(p => p.replace(/^[•\-*\d.)\s]+/, '').trim()).filter(Boolean).slice(0, 3);
+      if (parts.length === 0) continue;
+      q.answer = parts.map(p => `• ${p}`).join(' | ');
     }
-  ]
-}`;
-}
-
-// ── Document-focused prompt builders ─────────────────────────────────────────
-// Used by generateQuestionsFromDocument (file-based path).
-// Unlike the JD path, these enforce 100% document-sourced questions and remove
-// generic corporate styles that cause irrelevant output for process documents.
-
-function buildDocumentSystemPrompt() {
-  return `You are an expert assessment designer who creates precise, document-specific questions for employee capability assessments.
-
-ABSOLUTE RULES:
-1. Every question MUST derive directly from content EXPLICITLY STATED in the SOURCE DOCUMENT provided.
-2. Use the exact terminology, step names, system names, thresholds, codes, and decision rules found in the document. If the document says "Step 3: Validate the TR field", reference that exact step.
-3. DO NOT introduce generic business concepts UNLESS the document explicitly covers them by name.
-4. Each question must be answerable using ONLY information from the document. No external knowledge, general best practices, or assumed industry norms.
-5. Test actual operational knowledge: specific steps, rules, exception conditions, validation criteria, approval thresholds, system actions, decision points.
-6. If the document describes a payment process → ask about payment steps, error codes, and thresholds. If it describes data validation → ask about validation rules, error types, correction steps.
-7. Always return valid JSON with exactly a "questions" array.
-8. NO DUPLICATE QUESTIONS: Every question must test a DIFFERENT specific item from the document.
-9. NO REPEATED MCQ OPTION SETS: Every MCQ must have unique answer choices derived from document content.
-10. MAX 1 question in 10 may begin with "As a [role]" opener — all others open naturally with the scenario.
-11. NEVER generate questions about: headings, section titles, document titles, author names, reviewer names, version numbers, page numbers, file names, dates, confidentiality labels, or any document metadata. Generate questions ONLY from the main body content: procedures, steps, rules, tables, criteria, thresholds, and decision logic.
-12. CONTENT PRIORITY (highest to lowest): (1) numbered/lettered procedure steps, (2) tables and data grids, (3) decision rules and conditions, (4) exception/error handling, (5) body paragraphs, (6) examples and case descriptions. NEVER from headings alone.
-
-STRICTLY BANNED — these phrases MUST NOT appear in any question, option, or explanation unless they are quoted verbatim from the source document:
-- "stakeholder management", "stakeholder communication", "stakeholder engagement"
-- "change management", "change control"
-- "leadership", "leadership style", "leadership qualities"
-- "strategic thinking", "strategic alignment", "strategic objectives"
-- "continuous improvement", "best practices", "industry standards"
-- "professional context", "organizational goals", "team collaboration" (as standalone concepts)
-- ANY document metadata: author names, reviewer names, version numbers, file names, dates, page numbers
-Any question containing these phrases without a direct quote from the source document will be REJECTED. Generate document-grounded alternatives instead.
-
-ANSWER FORMAT RULES (strictly enforced):
-- fill_blank answers: Single word, short phrase (2–5 words maximum), or a specific value/code/number from the document. NEVER a full sentence.
-- subjective answers: Exactly 2–3 concise bullet points. Each point under 20 words. No paragraphs. No essays. Format: "• Point 1 | • Point 2 | • Point 3"
-- mcq answers: Letter only (A, B, C, or D).`;
-}
-
-function buildDocumentUserPrompt({ count, jobRole, sourceText, sourceName, sourceType, types, seed, skillsContext = [], stakeholder = false, processDelivery = false, avoidQuestions = [] }) {
-  const easyCount   = Math.round(count * 0.35);
-  const mediumCount = Math.round(count * 0.45);
-  const hardCount   = Math.max(1, count - easyCount - mediumCount);
-  const docLabel    = sourceType === 'jd' ? 'Job Description' : 'Process Document / Internal Reference';
-  const skillsLine  = skillsContext.length > 0
-    ? `\nRole Skills (context only — do NOT use as question source): ${skillsContext.join(', ')}`
-    : '';
-  const stakeholderDirective = stakeholder
-    ? `\nSTAKEHOLDER CONTENT — ENABLED: Where the document describes interactions with stakeholders (clients, teams, managers, vendors, customers), you MAY generate questions that test the specific communication steps, escalation paths, or approval flows explicitly described. These must still use the document's exact terminology — no generic "stakeholder management" questions.`
-    : `\nSTAKEHOLDER CONTENT — DISABLED: Do NOT generate any questions about stakeholder communication, client relationships, team interactions, escalation, or interpersonal scenarios. Focus exclusively on functional steps, technical rules, validation criteria, operational decisions, and system-specific actions described in the document.`;
-
-  const processDeliveryDirective = processDelivery
-    ? `\nPROCESS DELIVERY/MANAGEMENT — ENABLED: Where the document explicitly describes governance, SLA/KPI targets, reporting cycles, escalation frameworks, or operational management controls, you MAY generate questions testing those specific delivery mechanisms. Reference the document's exact SLA thresholds, KPI names, escalation paths, and reporting formats — no generic management questions.`
-    : `\nPROCESS DELIVERY/MANAGEMENT — DISABLED: Do NOT generate any questions about process governance, SLA management, KPI tracking, reporting, escalation management, operational management, or delivery management unless these exact topics are the entire subject of the document. Focus on execution-level procedural knowledge: steps, rules, validations, and system actions.`;
-
-  return `Generate exactly ${count} assessment questions derived EXCLUSIVELY from the source document below.
-
-=== CONTEXT ===
-Role: ${jobRole || 'Professional'}
-Document: ${sourceName || 'Source Document'}
-Document Type: ${docLabel}
-Generation Seed: ${seed}${skillsLine}${stakeholderDirective}${processDeliveryDirective}
-
-=== SOURCE DOCUMENT ===
-${sourceText}
-${buildAvoidSection(avoidQuestions)}
-=== MANDATORY PRE-GENERATION STEPS ===
-
-STEP 1 — READ THE DOCUMENT AND EXTRACT (do this before writing any question):
-EXTRACT ONLY FROM: paragraphs, numbered/lettered steps, tables, decision criteria, examples, exception conditions, formulas, and definitions stated in the document body.
-IGNORE COMPLETELY: document title, section headings used alone (only use their body content), author/reviewer names, version numbers, dates, page numbers, file name, confidentiality labels, copyright text, watermarks, and any metadata.
-• Every specific procedure, step sequence, and workflow described in the body
-• Every rule, threshold, condition, and validation criterion stated
-• Every system, form, field, tool, code, or platform mentioned in the content
-• Every exception case, error condition, or escalation path defined
-• Every definition, formula, calculation method, or data validation rule provided
-• Specific values, codes, percentages, timeframes, and thresholds found in the document
-• Domain-specific terminology unique to this document
-
-STEP 2 — PLAN ${count} DISTINCT TEST ITEMS (one per question slot):
-Each item covers a DIFFERENT specific piece of content from Step 1.
-CRITICAL: If the document does not explicitly cover a topic, do NOT generate questions about it.
-• Easy (${easyCount}): Direct recall — a specific step, rule, definition, or fact stated verbatim in the document
-• Medium (${mediumCount}): Application — apply a multi-step procedure or decision rule from the document
-• Hard (${hardCount}): Exception handling — edge case, error condition, or complex judgment described in the document
-
-STEP 3 — WRITE QUESTIONS FROM YOUR PLANNED ITEMS:
-Question type cycle: ${types.join(', ')}
-• MCQ: All 4 options grounded in the document — correct answer explicitly supported, distractors are plausible but incorrect interpretations of document content
-• Fill-in-blank: The correct answer must be a specific term, value, or phrase from the document
-• Subjective: The model answer must cite specific document content (step numbers, rule names, thresholds, field names, etc.)
-
-STEP 4 — SELF-CHECK (reject and replace any question that fails):
-✓ Every question uses at least one specific term, value, name, code, or step from the source document BODY (not the heading)
-✓ Every question is answerable using ONLY information stated in the source document
-✓ No question was generated from a heading, author name, version number, date, filename, page number, or metadata
-✓ No question contains banned phrases unless quoted verbatim from document
-✓ No question could be asked for ANY other role or company — it is specific to THIS document's exact content
-✓ fill_blank answers are 2–5 words max (a specific term/value/code from the document)
-✓ subjective answers are exactly 2–3 bullet points, each under 20 words
-✓ Exactly ${count} questions (${easyCount} easy, ${mediumCount} medium, ${hardCount} hard)
-✓ sourceSection field is filled with the actual section name or step identifier from the document
-✓ sourceQuote is a real, verbatim excerpt from the document text above — copy it exactly, do not paraphrase
-
-=== OUTPUT FORMAT — return only this JSON ===
-{
-  "questions": [
-    {
-      "type": "mcq|fill_blank|subjective",
-      "question": "question text using document terminology",
-      "difficulty": "easy|medium|hard",
-      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
-      "answer": "A/B/C/D for mcq | 2–5 word phrase/value from document for fill_blank | '• point1 | • point2 | • point3' (2–3 bullet points, each ≤20 words) for subjective",
-      "explanation": "which specific section, step, or rule in the document this question tests",
-      "skillArea": "specific procedure, system, rule, or concept from the document",
-      "sourceSection": "exact section heading, step number, or paragraph identifier from the source document (e.g. 'Section 3.2', 'Step 4 — Payment Validation', 'Escalation Criteria')",
-      "sourceQuote": "a short (5-25 word) excerpt copied VERBATIM, character-for-character, from the SOURCE DOCUMENT text above — the exact sentence or phrase this question is testing. Do not paraphrase, summarize, or invent it — if you cannot find real text to quote, do not generate the question."
-    }
-  ]
-}`;
+    q.skillArea = String(r.k ?? r.skillArea ?? '').trim() || fallbackSection || 'Document content';
+    q.sourceQuote = quote;
+    const sec = String(r.sourceSection ?? '').trim() || (typeof findSection === 'function' ? findSection(quote) : null) || fallbackSection || null;
+    q.sourceSection = sec;
+    q.explanation = String(r.explanation ?? '').trim() || `Stated in the document${sec ? ` (${sec})` : ''}: "${quote.split(/\s+/).slice(0, 28).join(' ')}"`;
+    q.generatedBy = 'llm';
+    out.push(q);
+  }
+  return out;
 }
 
 // Extract high-frequency content words from a document — used as fallback skill list
@@ -1484,215 +1342,466 @@ function fillEmergencyGap(existing, num, { types, skillsList, jobRole, avoidQues
   return combined.slice(0, num);
 }
 
-export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed, supportingDocs, avoidQuestions = [], startingComboCounters = null, onProgress = null }) {
-  const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
-  const emit = makeProgressEmitter(onProgress, num);
-  const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
-  const baseSeed = employeeSeed || randomUUID().slice(0, 8);
-  const jdText = (jobDescription || '').trim();
-  const skillsList = Array.isArray(jdSkills) && jdSkills.length ? jdSkills : [];
-  const system = buildSystemPrompt();
+// ═══════════════════════════════════════════════════════════════════════════════
+// Generation engine
+// ═══════════════════════════════════════════════════════════════════════════════
+const GEN_PROMPT_VERSION = 'c1'; // bump when the prompt/schema changes: invalidates QuestionChunkCache entries
 
-  // Build supporting docs text, then combine with the JD text.
-  let supportingDocsText = '';
-  if (Array.isArray(supportingDocs) && supportingDocs.length > 0) {
-    const parts = [];
-    for (const doc of supportingDocs) {
-      if (!doc?.text) continue;
-      parts.push(`--- Document: ${doc.name || 'Untitled'} ---\n${doc.text}`);
-    }
-    supportingDocsText = parts.join('\n\n');
-  }
-  const combinedSource = [jdText, supportingDocsText].filter(Boolean).join('\n\n');
+// The quality gates every LLM batch must pass (identical for fresh calls and
+// cache hits): not a generic stem shape, mentions document vocabulary, carries
+// a quote that really appears in the excerpt, and is not about page/version/
+// file-name/person metadata (validateQuestionBank would reject those later).
+function isMetadataDerived(q) {
+  const t = q?.question || '';
+  return HEADER_FOOTER_PATTERNS.some(re => re.test(t)) || PERSON_NAME_PATTERNS.some(re => re.test(t));
+}
+function qualityFilter(batch, windowText) {
+  const noGeneric = filterGenericPhrasing(batch);
+  const keywordPrefiltered = filterGrounded(noGeneric, windowText);
+  const grounded = verifyQuoteGrounded(keywordPrefiltered, windowText);
+  return grounded.filter(q => !isMetadataDerived(q));
+}
 
-  // Split the FULL combined source into chunks so every part of the JD and
-  // every supporting doc contributes to generation, regardless of length —
-  // mirrors generateQuestionsFromDocument's chunking exactly. The previous
-  // version hard-truncated to FREE_TIER_SOURCE_CHAR_BUDGET (~1,500 tokens,
-  // ~6,000 chars) with NO chunking: every one of the 5 retry attempts saw
-  // the exact same first slice, so anything beyond roughly the first page
-  // of a JD or any supporting doc was NEVER seen by the LLM — the direct,
-  // confirmed cause of generated questions not matching the uploaded
-  // JD/file for anything longer than a page or two.
-  const CHUNK_SIZE = sourceCharBudget();
-  const CHUNK_OVERLAP = 300;
+function splitIntoChunks(text, size, overlap = 300) {
+  if (text.length <= size) return [{ text, start: 0 }];
   const chunks = [];
-  if (combinedSource.length <= CHUNK_SIZE) {
-    chunks.push(combinedSource);
-  } else {
-    let pos = 0;
-    while (pos < combinedSource.length) {
-      let end = Math.min(pos + CHUNK_SIZE, combinedSource.length);
-      if (end < combinedSource.length) {
-        const boundary = combinedSource.lastIndexOf('\n\n', end);
-        if (boundary > pos + CHUNK_SIZE / 2) end = boundary;
-      }
-      chunks.push(combinedSource.slice(pos, end));
-      if (end >= combinedSource.length) break;
-      pos = Math.max(pos + 1, end - CHUNK_OVERLAP);
+  let pos = 0;
+  while (pos < text.length) {
+    let end = Math.min(pos + size, text.length);
+    if (end < text.length) {
+      const boundary = text.lastIndexOf('\n\n', end);
+      if (boundary > pos + size / 2) end = boundary;
     }
-    console.log(`[generateQuestionsFromJD] "${jobRole}": ${combinedSource.length} chars (JD + supporting docs) split into ${chunks.length} chunks for full coverage`);
+    chunks.push({ text: text.slice(pos, end), start: pos });
+    if (end >= text.length) break;
+    pos = Math.max(pos + 1, end - overlap);
+  }
+  return chunks;
+}
+
+/**
+ * Chooses WHICH parts of a source get an LLM call. Chunks are scored by
+ * information density (numbers, codes, entities, rule cues, steps — see
+ * TextRanking.chunkDensity; repeated boilerplate counts once) and only the
+ * richest `wantWindows` are used; when the document is small relative to the
+ * number of calls wanted it is re-split into more, smaller windows instead.
+ * (The extractive pass still covers the whole document.)
+ */
+function planWindows(text, { charBudget, wantWindows, minWin = 1800 }) {
+  let chunks = splitIntoChunks(text, charBudget);
+  if (chunks.length < wantWindows && text.length / wantWindows >= minWin) {
+    chunks = splitIntoChunks(text, Math.max(minWin, Math.ceil(text.length / wantWindows) + 300));
+  }
+  const scored = chunks.map((c, i) => ({ ...c, i, ...chunkDensity(c.text) }));
+  const ranked = scored.slice().sort((a, b) => (b.info - a.info) || (a.i - b.i)).slice(0, Math.max(1, Math.min(scored.length, wantWindows)));
+  const useful = ranked.filter(w => w.info >= 3);
+  return (useful.length ? useful : ranked.slice(0, 1)).map((w, rank) => ({ ...w, rank }));
+}
+
+// Splits `total` asks over windows in proportion to their information, each
+// clamped to [2, perCall]; overflow from clamped windows moves to those with room.
+function allocateAsks(windows, total, perCall) {
+  const asks = distribute(Math.min(total, windows.length * perCall), windows.map(w => Math.max(1, w.info)));
+  for (let pass = 0; pass < 3; pass++) {
+    let overflow = 0;
+    for (let i = 0; i < asks.length; i++) if (asks[i] > perCall) { overflow += asks[i] - perCall; asks[i] = perCall; }
+    for (let i = 0; i < asks.length && overflow > 0; i++) { const room = perCall - asks[i]; const g = Math.min(room, overflow); asks[i] += g; overflow -= g; }
+  }
+  return asks;
+}
+
+const normLoc = (s) => (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+function tallyTypes(types, count) {
+  const c = { mcq: 0, fill_blank: 0, subjective: 0 };
+  for (const t of types) { if (t === 'fill_blank') c.fill_blank++; else if (t === 'subjective') c.subjective++; else c.mcq++; }
+  const sum = c.mcq + c.fill_blank + c.subjective;
+  if (sum !== count) c.mcq = Math.max(0, c.mcq + (count - sum));
+  return c;
+}
+function tallyDifficulty(list) {
+  const c = { easy: 0, medium: 0, hard: 0 };
+  for (const q of list) c[q.difficulty === 'easy' || q.difficulty === 'hard' ? q.difficulty : 'medium']++;
+  return c;
+}
+const countType = (list, t) => list.filter(q => (q.type || 'mcq') === t).length;
+
+// ── per-source state ─────────────────────────────────────────────────────────
+function prepareSource(spec, rt) {
+  const { cfg, status } = rt;
+  const text = (spec.text || '').trim();
+  const count = Math.min(100, Math.max(1, parseInt(spec.count) || 5));
+  const types = Array.isArray(spec.types) && spec.types.length ? spec.types : buildTypeSequence(count, ASSESSMENT_MIX);
+  const typeCounts = tallyTypes(types, count);
+  const [dE, dM, dH] = distribute(count, [35, 45, 20]);
+  const diffTargets = { easy: dE, medium: dM, hard: Math.max(0, count - dE - dM) };
+  const S = {
+    spec, idx: spec.idx, name: spec.name || 'Source', text, count, types, typeCounts, diffTargets, mode: spec.mode || 'doc',
+    tracker: createSeenTracker(spec.avoidQuestions || []),
+    extractive: [], llm: [], model: null, normSent: null, closed: false,
+    usedSentences: new Set(), llmTarget: 0, llmTypeLeft: { ...typeCounts }, llmDiffLeft: { ...diffTargets },
+    windows: [], pending: 0, asked: 0, got: 0, rounds: 0, cacheHits: 0, failures: 0,
+    accepted() { return this.extractive.length + this.llm.length; },
+    findSection(quote) {
+      if (!this.model) return null;
+      const nq = normLoc(quote).split(' ').slice(0, 6).join(' ');
+      if (nq.length < 12) return null;
+      if (!this.normSent) this.normSent = this.model.all.map(s => normLoc(s.text));
+      const i = this.normSent.findIndex(t => t.includes(nq));
+      return i >= 0 ? (this.model.all[i].section || null) : null;
+    },
+  };
+  if (!text) return S;
+  S.model = buildDocumentModel(text, { name: S.name });
+
+  // 1) extractive first pass — instant, zero API calls, grounded by construction
+  const llmPossible = status.anyLLM;
+  let E;
+  if (!llmPossible) E = count;
+  else { const share = S.mode === 'jd' ? cfg.extractiveShare * 0.7 : cfg.extractiveShare; E = Math.min(count, Math.round(count * share)); }
+  if (E > 0) {
+    const fill = Math.min(typeCounts.fill_blank, E);
+    const mcq = Math.min(typeCounts.mcq, E - fill);
+    const subj = llmPossible ? 0 : Math.min(typeCounts.subjective, Math.max(0, E - fill - mcq));
+    const eTypes = { mcq: mcq + Math.max(0, E - fill - mcq - subj), fill_blank: fill, subjective: subj };
+    const eDiff = llmPossible ? { easy: Math.ceil(E * 0.55), medium: Math.ceil(E * 0.35), hard: Math.ceil(E * 0.1) } : diffTargets;
+    const picks = generateExtractiveQuestions(S.model, {
+      count: E, typeCounts: eTypes, difficultyTargets: eDiff, seed: `${spec.seed}-x`,
+      exclude: (q) => { if (S.tracker.isDuplicate(q)) return true; S.tracker.add(q); return false; },
+    });
+    for (const q of picks) { for (const i of q._sentences || []) S.usedSentences.add(i); delete q._sentences; }
+    S.extractive = picks;
   }
 
-  const totalChunkLen = chunks.reduce((s, c) => s + c.length, 0);
-  const chunkTargets  = chunks.map(c => Math.max(2, Math.ceil(num * (c.length / totalChunkLen) * 1.4)));
+  // 2) LLM share: what the extractive pass did not cover, aimed at the richest windows
+  S.llmTarget = llmPossible ? Math.max(0, count - S.extractive.length) : 0;
+  if (S.llmTarget > 0) {
+    const eT = { mcq: countType(S.extractive, 'mcq'), fill_blank: countType(S.extractive, 'fill_blank'), subjective: countType(S.extractive, 'subjective') };
+    for (const k of Object.keys(S.llmTypeLeft)) S.llmTypeLeft[k] = Math.max(0, typeCounts[k] - eT[k]);
+    const eD = tallyDifficulty(S.extractive);
+    for (const k of Object.keys(S.llmDiffLeft)) S.llmDiffLeft[k] = Math.max(0, diffTargets[k] - eD[k]);
+    const perCall = maxQuestionsPerCall();
+    const totalAsk = Math.ceil(S.llmTarget * 1.25) + 1;
+    const want = Math.max(1, Math.ceil(totalAsk / perCall));
+    S.windows = planWindows(text, { charBudget: sourceCharBudget(), wantWindows: want });
+    const asks = allocateAsks(S.windows, totalAsk, perCall);
+    S.windows.forEach((w, i) => { w.ask = asks[i]; w.cacheKey = chunkCacheKey(w.text, { v: GEN_PROMPT_VERSION, mode: S.mode, st: !!spec.stakeholder, pd: !!spec.processDelivery, ty: spec.sourceType || '' }); });
 
-  let pool = [];
-  // Each attempt is one LLM request. On Gemini's free tier requests are capped
-  // at 20 PER DAY per model, so retry budget is genuinely expensive there —
-  // keep it tight. Groq has effectively unlimited requests (only a slow token
-  // budget), so it can afford more attempts to reach the target count.
-  const MAX_ATTEMPTS = geminiPrimary() ? 2 : (chunks.length > 1 ? 3 : 5);
-
-  for (let ci = 0; ci < chunks.length; ci++) {
-    if (pool.length >= num) break; // already have enough from earlier chunks
-    const chunk = chunks[ci];
-    const chunkTarget = chunkTargets[ci];
-    const poolBeforeThisChunk = pool.length;
-    const isLastChunk = ci === chunks.length - 1;
-    // Cap what THIS chunk may contribute to its own proportional share,
-    // unless it's the last chunk (which absorbs any shortfall so the exact
-    // count is still guaranteed). Without this cap, an early chunk that
-    // happens to produce more than enough content hogs the entire question
-    // budget and later chunks — and everything they cover in the JD/uploaded
-    // file — never get proportional representation, even though the
-    // chunking loop technically "ran." This was silently defeating the
-    // point of chunking for full-document coverage.
-    const chunkCeiling = isLastChunk ? num : Math.min(num, poolBeforeThisChunk + chunkTarget);
-
-    for (let attempt = 0; attempt < MAX_ATTEMPTS && pool.length < chunkCeiling; attempt++) {
-      const stillNeeded = chunkCeiling - pool.length;
-      // Escalating buffer: first attempt +40%, later attempts ask for progressively more
-      // headroom since each additional attempt tends to yield a lower unique-acceptance rate.
-      // Capped at FREE_TIER_MAX_QUESTIONS_PER_CALL (not 100) so a single
-      // request's expected output stays small enough to fit the free-tier
-      // per-request token budget alongside its proportional max_tokens.
-      const bufferMultiplier = 1.4 + attempt * 0.3;
-      const askFor = Math.min(maxQuestionsPerCall(), Math.max(stillNeeded, Math.ceil(stillNeeded * bufferMultiplier)));
-      const seed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 6)}`;
-      // Same fix as generateQuestionsFromDocument: retries now see what THIS
-      // run already accumulated, not just the static cross-version avoid set.
-      const prompt = buildUserPrompt({ count: askFor, jobRole, jdText: chunk, skillsList, types, seed, supportingDocsText: '', avoidQuestions: [...pool, ...avoidQuestions] });
-
-      let batch = await GeminiService.generateQuestionsBatch(prompt, system, { maxTokens: outputTokensFor(askFor), onThrottle: emit.throttle });
-      if (batch && batch.length > 0) {
-        const noGeneric = filterGenericPhrasing(batch);
-        const keywordPrefiltered = filterGrounded(noGeneric, chunk);
-        const grounded = verifyQuoteGrounded(keywordPrefiltered, chunk);
-        if (grounded.length < batch.length) {
-          console.warn(`[generateQuestionsFromJD] chunk${ci} attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded/unquoted questions`);
+    // 3) content-hash cache: unchanged chunks cost nothing on regeneration
+    if (cfg.cache) {
+      for (const w of S.windows) {
+        const cached = questionChunkCache.get(w.cacheKey);
+        if (!cached) continue;
+        let taken = 0;
+        for (const q of qualityFilter(cached, w.text)) {
+          if (taken >= w.ask || S.llm.length >= S.llmTarget) break;
+          if (S.tracker.isDuplicate(q)) continue; // never serve a cached question that repeats an avoided / earlier one
+          S.tracker.add(q); S.llm.push(q); taken++;
         }
-        pool = mergeUnique(pool, grounded, avoidQuestions);
+        if (taken > 0) { S.cacheHits += taken; w.ask = Math.max(0, w.ask - taken); }
       }
-      emit.progress(pool.length);
     }
   }
+  return S;
+}
 
-  // Starting combo counters seed fallback padding's position in the
-  // skill x template grid. Defaults to {0,0,0} for a fresh generation, but a
-  // regenerate call passes in the previous version's finalComboCounters
-  // (via withFinalCombo) so it starts from where the last version left off —
-  // guaranteeing no (skill, template) pairing repeats until the grid is
-  // actually exhausted, instead of every regenerate deterministically
-  // reproducing the same fallback content from index 0.
-  const comboCounters = startingComboCounters
-    ? { ...startingComboCounters }
-    : { easy: 0, medium: 0, hard: 0 };
+function typeNeedsFor(S, ask) {
+  const left = S.llmTypeLeft;
+  const parts = distribute(ask, [left.mcq, left.fill_blank, left.subjective].map(x => (x > 0 ? x : 0)));
+  const sum = parts.reduce((a, b) => a + b, 0);
+  const needs = sum > 0 ? { mcq: parts[0], fill_blank: parts[1], subjective: parts[2] } : { mcq: ask, fill_blank: 0, subjective: 0 };
+  S.llmTypeLeft = { mcq: Math.max(0, left.mcq - needs.mcq), fill_blank: Math.max(0, left.fill_blank - needs.fill_blank), subjective: Math.max(0, left.subjective - needs.subjective) };
+  return needs;
+}
+function diffNeedsFor(S, ask) {
+  const left = S.llmDiffLeft;
+  const w = [left.easy, left.medium, left.hard];
+  const parts = distribute(ask, w.reduce((a, b) => a + b, 0) > 0 ? w : [35, 45, 20]);
+  S.llmDiffLeft = { easy: Math.max(0, left.easy - parts[0]), medium: Math.max(0, left.medium - parts[1]), hard: Math.max(0, left.hard - parts[2]) };
+  return { easy: parts[0], medium: parts[1], hard: parts[2] };
+}
 
-  // Semantic embedding pass — one batched call, catches true paraphrase/
-  // cross-type duplicates the lexical tracker's stemming can't (see
-  // applySemanticDedup above for why: "first step" vs "initially" share no
-  // stems at all). Placed HERE, before the padding block below, so any
-  // removal is naturally backfilled by the exact same count-guarantee
-  // machinery every other shortfall already goes through — no separate
-  // backfill logic needed, and the "exact count always delivered" contract
-  // every downstream consumer relies on is never at risk from this pass.
-  // Also checked against avoidQuestions (deleted-question-first, per the
-  // caller) so a paraphrase of something an admin explicitly deleted gets
-  // caught here too, not just within this run's own pool.
-  pool = await applySemanticDedup(pool, avoidQuestions);
+function specificityOf(q, S) {
+  const df = S.model?.stats?.df;
+  if (!df) return 0;
+  const toks = contentTokens(`${q.question} ${q.type === 'mcq' ? '' : q.answer || ''} ${q.skillArea || ''}`);
+  if (toks.length === 0) return 0;
+  const hit = toks.filter(w => df.has(w)).length / toks.length;
+  return hit + (/\d/.test(q.question) ? 0.15 : 0) + (/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+/.test(q.question) ? 0.1 : 0);
+}
 
-  // Absolute last resort: deterministic template padding to guarantee the exact count.
-  // Combos (skill x template, then skill-pair x template) are combinatorially large,
-  // so a shared counter across rounds always finds fresh, non-duplicate content.
-  if (pool.length < num) {
-    const shortage = num - pool.length;
-    console.warn(`[AssessmentGenerator] LLM produced only ${pool.length}/${num} unique questions after ${MAX_ATTEMPTS} attempts — padding ${shortage} with template questions.`);
+// ── one LLM call ─────────────────────────────────────────────────────────────
+async function runLLMTask(task, rt) {
+  const { S } = task;
+  let win = task.win;
+  if (S.closed || rt.budget.expired) return { skipped: true };
+  const need = Math.max(0, S.llmTarget - S.llm.length);
+  if (need === 0) return { skipped: true };
+  let ask = Math.max(1, Math.min(task.ask, Math.ceil(need * 1.35) + 1));
+  // The window may have been sized for Gemini and Gemini has since run out of quota (first 429 of the run):
+  // shrink to the densest not-yet-used Groq-sized sub-window instead of sending a request Groq must reject.
+  if (!geminiPrimary() && win.text.length > groqExcerptChars() * 1.25) {
+    S.subUsed = S.subUsed || new Set();
+    const subs = splitIntoChunks(win.text, groqExcerptChars()).map((c, i) => ({ ...c, i: win.i * 100 + i, start: win.start + c.start, rank: win.rank, cacheKey: win.cacheKey, ...chunkDensity(c.text) }));
+    const fresh = subs.filter(w => !S.subUsed.has(`${win.i}:${w.start}`));
+    const best = (fresh.length ? fresh : subs).sort((a, b) => b.info - a.info)[0];
+    S.subUsed.add(`${win.i}:${best.start}`);
+    win = best;
+    ask = Math.min(ask, maxQuestionsPerCall());
+  }
+  const spec = S.spec;
+  const system = rt.systemFor(S.mode);
+  if (task.round > 0) refreshNeeds(S); // top-up: aim the new call at what is actually still missing
+  // This run's own earlier output (so a retry/sibling call covers new ground) first, then cross-version avoid items; relevance-ranked per excerpt
+  const avoid = [...S.llm.slice(-40), ...(spec.avoidQuestions || [])];
+  // The sentences the extractive pass already turned into questions are cut out of the excerpt: the model
+  // spends its tokens on content that is NOT yet covered (complementary, not duplicate, questions; fewer prompt tokens).
+  const excerpt = maskedExcerpt(S, win);
+  if (excerpt.split('[...]').join('').trim().length < 400) return { skipped: true };
+  const prompt = buildCompactUserPrompt({
+    count: ask, mode: S.mode, jobRole: spec.jobRole, sourceText: excerpt, sourceName: S.name, sourceType: spec.sourceType,
+    seed: `${spec.seed}-w${win.i}-r${task.round}`, skillsContext: spec.skillsContext || [], stakeholder: !!spec.stakeholder, processDelivery: !!spec.processDelivery,
+    avoidQuestions: avoid, typeNeeds: task.typeNeeds && task.round === 0 ? scaleNeeds(task.typeNeeds, ask) : typeNeedsFor(S, ask), diffNeeds: task.diffNeeds && task.round === 0 ? scaleNeeds(task.diffNeeds, ask) : diffNeedsFor(S, ask),
+  });
+  let throttled = false;
+  const onThrottle = (ms) => { if (!throttled) { throttled = true; rt.throttled++; } if (rt.throttled >= rt.inflight && rt.inflight > 0) rt.emit.throttle(ms); };
+  const onResume = () => { if (throttled) { throttled = false; rt.throttled--; rt.emit.resume(); } };
+  rt.inflight++; rt.stats.calls++;
+  let res;
+  try {
+    res = await GeminiService.generateQuestionsBatchEx(prompt, system, { maxTokens: outputTokensFor(ask), onThrottle, onResume, deadlineAt: rt.budget.deadlineAt, signal: rt.abort.signal });
+  } finally { rt.inflight--; if (throttled) { throttled = false; rt.throttled--; } }
+  if (!res) { rt.stats.failed++; S.failures++; return { failed: true }; }
+  if (S.closed) return { skipped: true };
+  rt.stats.ok++; rt.stats.byProvider[res.provider] = (rt.stats.byProvider[res.provider] || 0) + 1;
 
-    const targetEasy = Math.round(num * 0.35);
-    const targetMedium = Math.round(num * 0.45);
-    const targetHard = Math.max(1, num - targetEasy - targetMedium);
-    const { mcq: targetMcqCount, fill_blank: targetFillCount, subjective: targetSubjCount } =
-      mixCounts(num, ASSESSMENT_MIX);
+  const normalized = normalizeLLMQuestions(res.questions, { fallbackSection: null, findSection: (quote) => S.findSection(quote) });
+  const kept = qualityFilter(normalized, win.text);
+  if (kept.length < res.questions.length) console.log(`[GenEngine] "${S.name}" window ${win.i}: kept ${kept.length}/${res.questions.length} after schema + grounding + generic filters (${res.provider}, ${Math.round(res.ms / 1000)}s)`);
+  if (rt.cfg.cache && kept.length) questionChunkCache.set(win.cacheKey, kept);
+  let accepted = 0;
+  for (const q of kept) {
+    if (S.tracker.isDuplicate(q)) continue;
+    S.tracker.add(q); S.llm.push(q); accepted++;
+  }
+  S.asked += ask; S.got += accepted;
+  return { accepted };
+}
+// Window text with the sentences already used by extractive questions replaced by "[...]".
+function maskedExcerpt(S, win) {
+  if (!S.model || S.usedSentences.size === 0) return win.text;
+  const spans = [];
+  for (const i of S.usedSentences) {
+    const s = S.model.byIdx.get(i);
+    if (s && s.start >= win.start && s.end <= win.start + win.text.length) spans.push([s.start - win.start, s.end - win.start]);
+  }
+  if (spans.length === 0) return win.text;
+  spans.sort((a, b) => a[0] - b[0]);
+  let out = ''; let pos = 0;
+  for (const [a, b] of spans) { if (a < pos) continue; out += win.text.slice(pos, a) + ' [...] '; pos = b; }
+  out += win.text.slice(pos);
+  return out.replace(/(\s*\[\.\.\.\]\s*){2,}/g, ' [...] ');
+}
+function refreshNeeds(S) {
+  const all = [...S.extractive, ...S.llm];
+  const hv = { mcq: countType(all, 'mcq'), fill_blank: countType(all, 'fill_blank'), subjective: countType(all, 'subjective') };
+  for (const k of Object.keys(S.llmTypeLeft)) S.llmTypeLeft[k] = Math.max(0, S.typeCounts[k] - hv[k]);
+  const hd = tallyDifficulty(all);
+  for (const k of Object.keys(S.llmDiffLeft)) S.llmDiffLeft[k] = Math.max(0, S.diffTargets[k] - hd[k]);
+}
+function scaleNeeds(needs, ask) {
+  const keys = Object.keys(needs);
+  const parts = distribute(ask, keys.map(k => needs[k]));
+  return Object.fromEntries(keys.map((k, i) => [k, parts[i]]));
+}
 
-    let attempt = 0;
-    while (pool.length < num && attempt < 30) {
-      const remaining = num - pool.length;
-      // Recomputed every round (unlike a fixed deficit) so type balance
-      // converges toward target even as padding rounds add content —
-      // this is what fixes banks that ended up 80%+ mcq: the type mix
-      // still needed is measured against what's ACTUALLY in the pool right
-      // now, not a snapshot from before any padding was added.
-      const curEasy   = pool.filter(q => (q.difficulty || 'medium') === 'easy').length;
-      const curMedium = pool.filter(q => (q.difficulty || 'medium') === 'medium').length;
-      const curHard   = pool.filter(q => (q.difficulty || 'medium') === 'hard').length;
-      const curMcq  = pool.filter(q => !q.type || q.type === 'mcq').length;
-      const curFill = pool.filter(q => q.type === 'fill_blank').length;
-      const curSubj = pool.filter(q => q.type === 'subjective').length;
-      const fallbackBatch = buildFallbackQuestions(remaining, {
-        types,
-        skillsList,
-        jobRole,
-        difficultyDeficit: {
-          easy: Math.max(0, targetEasy - curEasy),
-          medium: Math.max(0, targetMedium - curMedium),
-          hard: Math.max(0, targetHard - curHard),
-        },
-        typeDeficit: {
-          mcq: Math.max(0, targetMcqCount - curMcq),
-          fill_blank: Math.max(0, targetFillCount - curFill),
-          subjective: Math.max(0, targetSubjCount - curSubj),
-        },
-        comboCounters, // shared & mutated across rounds so no combo repeats
-      });
-      pool = mergeFallbackUnique(pool, fallbackBatch, avoidQuestions);
-      attempt++;
-    }
+// ── template padding (LAST resort: only when the document is too small for the extractive generator) ──
+function padWithTemplates(pool, num, { types, skillsList, jobRole, avoidQuestions, comboCounters }) {
+  const targetEasy = Math.round(num * 0.35);
+  const targetMedium = Math.round(num * 0.45);
+  const targetHard = Math.max(1, num - targetEasy - targetMedium);
+  const tc = tallyTypes(types, num);
+  let att = 0;
+  while (pool.length < num && att < 30) {
+    const remaining = num - pool.length;
+    const fb = buildFallbackQuestions(remaining, {
+      types, skillsList, jobRole,
+      difficultyDeficit: {
+        easy:   Math.max(0, targetEasy   - pool.filter(q => (q.difficulty || 'medium') === 'easy').length),
+        medium: Math.max(0, targetMedium - pool.filter(q => (q.difficulty || 'medium') === 'medium').length),
+        hard:   Math.max(0, targetHard   - pool.filter(q => (q.difficulty || 'medium') === 'hard').length),
+      },
+      typeDeficit: {
+        mcq:        Math.max(0, tc.mcq - pool.filter(q => !q.type || q.type === 'mcq').length),
+        fill_blank: Math.max(0, tc.fill_blank - pool.filter(q => q.type === 'fill_blank').length),
+        subjective: Math.max(0, tc.subjective - pool.filter(q => q.type === 'subjective').length),
+      },
+      comboCounters,
+    });
+    pool = mergeFallbackUnique(pool, fb, avoidQuestions);
+    att++;
+  }
+  return pool;
+}
+
+// ── finalize one source: dedup, complete extractively, trim, tag ─────────────
+async function finalizeSource(S, rt) {
+  S.closed = true;
+  const { spec, count, types } = S;
+  const cfg = rt.cfg;
+  const meta = { generatedFrom: spec.sourceType === 'jd' || S.mode === 'jd' ? 'jd' : 'document', stakeholderFlag: !!spec.stakeholder, processDeliveryFlag: !!spec.processDelivery };
+  const comboCounters = spec.startingComboCounters ? { ...spec.startingComboCounters } : { easy: 0, medium: 0, hard: 0 };
+  if (!S.text) {
+    // nothing to read: the old behaviour (empty for a document, template padding for a JD with skills)
+    if (S.mode !== 'jd') return withFinalCombo([], comboCounters);
   }
 
-  // Final trim to exact target
-  const trimmed = trimToTarget(pool, num, types);
+  // semantic (embedding) dedup — only over LLM output, only when time and quota allow
+  let llm = S.llm.slice().sort((a, b) => specificityOf(b, S) - specificityOf(a, S));
+  const canEmbed = cfg.embedMax > 0 && llm.length > 1 && rt.budget.remainingMs > 25000 && GeminiService.embedAvailable?.();
+  if (canEmbed) {
+    const timeoutMs = Math.min(15000, Math.max(3000, rt.budget.remainingMs - 10000));
+    llm = await withTimeout(applySemanticDedup(llm.slice(0, cfg.embedMax), spec.avoidQuestions || []), timeoutMs, llm);
+  }
+
+  let pool = [...S.extractive, ...llm];
+
+  // complete extractively (document-specific) before ever touching generic templates
+  if (S.text && pool.length < count) {
+    const have = { mcq: countType(pool, 'mcq'), fill_blank: countType(pool, 'fill_blank'), subjective: countType(pool, 'subjective') };
+    const deficit = count - pool.length;
+    const td = { mcq: Math.max(0, S.typeCounts.mcq - have.mcq), fill_blank: Math.max(0, S.typeCounts.fill_blank - have.fill_blank), subjective: Math.max(0, S.typeCounts.subjective - have.subjective) };
+    let tsum = td.mcq + td.fill_blank + td.subjective;
+    if (tsum < deficit) td.mcq += deficit - tsum;
+    const hd = tallyDifficulty(pool);
+    const extra = generateExtractiveQuestions(S.model, {
+      count: deficit, typeCounts: td, seed: `${spec.seed}-fill`, usedSentences: S.usedSentences,
+      difficultyTargets: { easy: Math.max(0, S.diffTargets.easy - hd.easy), medium: Math.max(0, S.diffTargets.medium - hd.medium), hard: Math.max(0, S.diffTargets.hard - hd.hard) },
+      exclude: (q) => { if (S.tracker.isDuplicate(q)) return true; S.tracker.add(q); return false; },
+    });
+    for (const q of extra) { for (const i of q._sentences || []) S.usedSentences.add(i); delete q._sentences; }
+    if (extra.length) console.log(`[GenEngine] "${S.name}": completed ${extra.length} slot(s) with document-specific extractive questions`);
+    pool = [...pool, ...extra];
+    // the type mix can still be short (e.g. no extractive subjective possible): a second, type-agnostic try
+    if (pool.length < count) {
+      const more = generateExtractiveQuestions(S.model, { count: count - pool.length, typeCounts: { mcq: count - pool.length, fill_blank: 0, subjective: 0 }, seed: `${spec.seed}-fill2`, usedSentences: S.usedSentences,
+        exclude: (q) => { if (S.tracker.isDuplicate(q)) return true; S.tracker.add(q); return false; } });
+      for (const q of more) { for (const i of q._sentences || []) S.usedSentences.add(i); delete q._sentences; }
+      pool = [...pool, ...more];
+    }
+  }
+  S.templateCount = 0;
+  if (pool.length < count) {
+    const before = pool.length;
+    const docEntities = S.text ? extractDocEntities(S.text, 8) : [];
+    const docKeywords = S.text ? extractDocKeywords(S.text, 8) : [];
+    const skillsList = S.mode === 'jd' && (spec.skillsList || []).length ? spec.skillsList : (docEntities.length ? docEntities : (docKeywords.length ? docKeywords : (spec.skillsList || []).length ? spec.skillsList : [SAFE_FALLBACK_TOPIC]));
+    console.warn(`[GenEngine] "${S.name}": ${count - before} slot(s) still open after LLM + extractive — padding with templates (document too small/unstructured)`);
+    pool = padWithTemplates(pool, count, { types, skillsList, jobRole: spec.jobRole, avoidQuestions: spec.avoidQuestions || [], comboCounters });
+    S.templateCount = pool.length - before;
+  }
+
+  const trimmed = trimToTarget(pool, count, types);
   const rebalanced = rebalanceDifficulty(trimmed);
-
-  // Post-generation safety net: if count is still off (should never happen after the
-  // fallback loop, but guard against any future edge case), force to exact count.
-  const scoringSource = `${jdText}\n${supportingDocsText}`;
-
-  if (rebalanced.length !== num) {
-    console.warn(`[AssessmentGenerator] Post-rebalance count mismatch: ${rebalanced.length}/${num} — applying emergency fix`);
-    if (rebalanced.length > num) {
-      return withFinalCombo(attachQualityScores(rebalanced.slice(0, num), scoringSource), comboCounters);
-    }
-    // Still short — generate emergency fallback for the remaining gap. Now
-    // DOES try avoidQuestions first (fillEmergencyGap tries up to 10 rounds
-    // against it before its own final ignore-avoid guarantee kicks in) — a
-    // deleted or prior-version question reappearing here was exactly the
-    // "regenerated 6 times, deleted questions come back" failure mode this
-    // was previously trading away on purpose. The exact-count contract is
-    // still never broken: fillEmergencyGap's own last-resort step accepts a
-    // rare repeat only if truly nothing else is left to generate.
-    const final = fillEmergencyGap(rebalanced, num, { types, skillsList, jobRole, avoidQuestions });
-    return withFinalCombo(attachQualityScores(tagMetadata(final, { generatedFrom: 'jd' }), scoringSource), comboCounters);
+  if (rebalanced.length > count) return withFinalCombo(attachQualityScores(tagMetadata(rebalanced.slice(0, count), meta), S.text || spec.text || ''), comboCounters);
+  if (rebalanced.length < count) {
+    const final = fillEmergencyGap(rebalanced, count, { types, skillsList: [SAFE_FALLBACK_TOPIC], jobRole: spec.jobRole, avoidQuestions: spec.avoidQuestions || [] });
+    return withFinalCombo(attachQualityScores(tagMetadata(final, meta), S.text || ''), comboCounters);
   }
+  return withFinalCombo(attachQualityScores(tagMetadata(rebalanced, meta), S.text || ''), comboCounters);
+}
 
-  return withFinalCombo(attachQualityScores(tagMetadata(rebalanced, { generatedFrom: 'jd' }), scoringSource), comboCounters);
+function withTimeout(promise, ms, fallback) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(fallback), ms);
+    t.unref?.();
+    promise.then((v) => { clearTimeout(t); resolve(v); }, () => { clearTimeout(t); resolve(fallback); });
+  });
+}
+
+/**
+ * Runs generation for one or many sources together.
+ * specs: [{idx,name,text,sourceType,count,types,seed,jobRole,skillsContext,stakeholder,processDelivery,mode,skillsList,startingComboCounters,avoidQuestions}]
+ * Returns { batches: Array<question[]>, states }.
+ */
+async function runGeneration(specs, { onProgress = null, label = 'bank' } = {}) {
+  const cfg = generationConfig();
+  const status = GeminiService.generationStatus();
+  const budget = new TimeBudget(cfg.timeBudgetMs);
+  const total = specs.reduce((s, sp) => s + (sp && sp.text !== undefined ? Math.min(100, Math.max(1, parseInt(sp.count) || 5)) : 0), 0);
+  const emit = makeProgressEmitter(onProgress, total);
+  const rt = {
+    cfg, status, budget, emit, abort: new AbortController(), inflight: 0, throttled: 0,
+    stats: { calls: 0, ok: 0, failed: 0, byProvider: {} },
+    systemFor: (mode) => buildCompactSystemPrompt(mode),
+  };
+  const t0 = Date.now();
+  const concurrency = cfg.concurrency || autoConcurrency();
+  console.log(`[GenBudget] ${label}: ${specs.length} source(s), ${total} question(s); time budget ${Math.round(cfg.timeBudgetMs / 1000)}s, LLM concurrency ${concurrency}, extractive share ${cfg.extractiveShare}, providers gemini=${status.geminiKeysUsable} openrouter=${status.openrouter} groq=${status.groq}`);
+  if (!status.anyLLM) console.warn('[GenBudget] no LLM provider is available right now — the bank is generated locally from the documents (extractive).');
+
+  const states = specs.map(sp => prepareSource(sp, rt));
+  const updateProgress = () => emit.progress(states.reduce((s, S) => s + Math.min(S.count, S.accepted()), 0));
+  updateProgress();
+
+  // LLM phase: one priority queue across ALL sources — every source's richest window first
+  const pool = new TaskPool({
+    concurrency: () => concurrency,
+    budget,
+    run: (task) => runLLMTask(task, rt),
+    shouldSkip: (task) => task.S.closed || task.S.llm.length >= task.S.llmTarget || !budget.hasRoom(cfg.taskMinMs) || budget.fractionUsed() >= cfg.pace,
+    onSkip: (task) => { task.S.pending--; },
+    onDone: (task, res, err) => {
+      const S = task.S; S.pending--;
+      if (err) console.warn(`[GenEngine] "${S.name}" window ${task.win.i} failed: ${err.message}`);
+      if (res?.failed && task.retries < 1 && budget.hasRoom(cfg.taskMinMs * 2)) { task.retries++; S.pending++; pool.add(task, 300 - task.round * 50); }
+      updateProgress();
+      if (S.pending === 0 && !S.closed && S.llm.length < S.llmTarget && S.rounds + 1 < cfg.maxRounds && budget.hasRoom(cfg.taskMinMs * 2)) scheduleTopUp(S);
+    },
+  });
+  const scheduleTopUp = (S) => {
+    S.rounds++;
+    const need = S.llmTarget - S.llm.length;
+    const yieldRate = Math.min(1, Math.max(0.3, S.asked > 0 ? S.got / S.asked : 0.6));
+    const perCall = maxQuestionsPerCall();
+    const totalAsk = Math.ceil((need / yieldRate) * 1.1);
+    const nTasks = Math.min(4, Math.max(1, Math.ceil(totalAsk / perCall)));
+    const asks = distribute(totalAsk, Array(nTasks).fill(1));
+    for (let i = 0; i < nTasks; i++) {
+      const win = S.windows[i % S.windows.length];
+      if (!win) break;
+      S.pending++;
+      pool.add({ S, win, ask: Math.min(perCall, Math.max(2, asks[i])), round: S.rounds, retries: 0 }, 400 - S.rounds * 50);
+    }
+    console.log(`[GenEngine] "${S.name}": ${need} short after round ${S.rounds} (yield ${yieldRate.toFixed(2)}) — scheduling ${nTasks} top-up call(s)`);
+  };
+  for (const S of states) {
+    S.windows.forEach((w, i) => {
+      if (w.ask < 1 || S.llmTarget === 0) return;
+      const ask = Math.min(maxQuestionsPerCall(), Math.max(2, w.ask));
+      const task = { S, win: w, ask, round: 0, retries: 0, typeNeeds: typeNeedsFor(S, ask), diffNeeds: diffNeedsFor(S, ask) };
+      S.pending++;
+      pool.add(task, 1000 - w.rank * 100 + Math.min(99, Math.round(w.info)));
+    });
+  }
+  const drained = await pool.drain();
+  if (drained.expired) {
+    rt.abort.abort();
+    console.warn(`[GenBudget] ${label}: time budget (${Math.round(cfg.timeBudgetMs / 1000)}s) reached with ${drained.abandoned || 0} call(s) still running and ${drained.queued || 0} queued — completing the rest of the bank from the documents.`);
+  }
+  updateProgress();
+
+  const batches = await mapPool(states, 4, (S) => finalizeSource(S, rt));
+  const llmTotal = states.reduce((s, S) => s + S.llm.length, 0);
+  const exTotal = states.reduce((s, S) => s + S.extractive.length, 0);
+  const cacheHits = states.reduce((s, S) => s + S.cacheHits, 0);
+  console.log(`[GenBudget] ${label}: done in ${Math.round((Date.now() - t0) / 1000)}s — ${rt.stats.calls} LLM call(s) (${rt.stats.ok} ok, ${rt.stats.failed} failed, by provider ${JSON.stringify(rt.stats.byProvider)}), ${llmTotal} LLM question(s) (${cacheHits} from cache), ${exTotal} extractive up-front, template padding ${states.reduce((s, S) => s + (S.templateCount || 0), 0)}`);
+  updateProgress();
+  return { batches: batches.map(b => (b && !b.error ? b : withFinalCombo([], { easy: 0, medium: 0, hard: 0 }))), states, rt };
 }
 
 // Stamps every question with the metadata fields required for provenance
-// tracking (Issue 10): id, generatedFrom, stakeholder/processDelivery flags,
-// createdAt. Stored on the question but never shown to employees — the
-// employee-facing serializer in the assessment routes strips these before
-// returning a question to the client.
+// (Issue 10): id, generatedFrom, stakeholder/processDelivery flags, createdAt.
 function tagMetadata(questions, { generatedFrom, stakeholderFlag = false, processDeliveryFlag = false } = {}) {
   const now = new Date().toISOString();
   return questions.map(q => ({
@@ -1705,185 +1814,50 @@ function tagMetadata(questions, { generatedFrom, stakeholderFlag = false, proces
   }));
 }
 
-// ── Document-focused question generation ─────────────────────────────────────
-// Used by generateQuestionsFromFiles — generates questions grounded exclusively
-// in the source document's content. Skills from the role are passed as context
-// only (so the LLM understands the employee profile) but are NOT used as a
-// question source. This prevents role skills from overriding document content.
-async function generateQuestionsFromDocument(sourceText, { jobRole, sourceName, sourceType, questionCount, questionTypes, seed, skillsContext = [], stakeholder = false, processDelivery = false, avoidQuestions = [], startingComboCounters = null, onProgress = null } = {}) {
-  const num   = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
-  const emit  = makeProgressEmitter(onProgress, num);
+export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed, supportingDocs, avoidQuestions = [], startingComboCounters = null, onProgress = null }) {
+  const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
-  const baseSeed = seed || randomUUID().slice(0, 8);
-  const text  = (sourceText || '').trim();
-  if (!text) return [];
+  const baseSeed = employeeSeed || randomUUID().slice(0, 8);
+  const jdText = (jobDescription || '').trim();
+  const skillsList = Array.isArray(jdSkills) && jdSkills.length ? jdSkills : [];
 
-  const system = buildDocumentSystemPrompt();
-
-  // Split document into chunks so ALL content contributes to question generation,
-  // regardless of document size. FREE_TIER_SOURCE_CHAR_BUDGET (not the
-  // context-window-sized 80,000 chars this used to be) keeps each chunk's
-  // request comfortably under Groq's free-tier per-request token cap — see
-  // the constant's comment near the top of this file. Chunks overlap to
-  // avoid missing content at section boundaries.
-  const CHUNK_SIZE = sourceCharBudget();
-  const CHUNK_OVERLAP = 300;
-  const chunks = [];
-  if (text.length <= CHUNK_SIZE) {
-    chunks.push(text);
-  } else {
-    let pos = 0;
-    while (pos < text.length) {
-      // Prefer to break at a paragraph boundary near the chunk end
-      let end = Math.min(pos + CHUNK_SIZE, text.length);
-      if (end < text.length) {
-        const boundary = text.lastIndexOf('\n\n', end);
-        if (boundary > pos + CHUNK_SIZE / 2) end = boundary;
-      }
-      chunks.push(text.slice(pos, end));
-      if (end >= text.length) break;
-      pos = Math.max(pos + 1, end - CHUNK_OVERLAP);
+  // JD + every supporting document, so all of it contributes (windows are chosen from the whole)
+  let supportingDocsText = '';
+  if (Array.isArray(supportingDocs) && supportingDocs.length > 0) {
+    const parts = [];
+    for (const doc of supportingDocs) {
+      if (!doc?.text) continue;
+      parts.push(`--- Document: ${doc.name || 'Untitled'} ---\n${doc.text}`);
     }
-    console.log(`[generateQuestionsFromDocument] "${sourceName}": ${text.length} chars split into ${chunks.length} chunks for full-document coverage`);
+    supportingDocsText = parts.join('\n\n');
   }
-
-  // Per-chunk: how many questions to aim for before moving to the next chunk.
-  // Proportional to chunk share of total text length, with a 1.4x buffer for dedup.
-  const totalChunkLen = chunks.reduce((s, c) => s + c.length, 0);
-  const chunkTargets  = chunks.map(c => Math.max(2, Math.ceil(num * (c.length / totalChunkLen) * 1.4)));
-
-  let pool = [];
-  const MAX_ATTEMPTS = geminiPrimary() ? 2 : 4; // per chunk — see generateQuestionsFromJD for why Gemini gets fewer
-
-  for (let ci = 0; ci < chunks.length; ci++) {
-    if (pool.length >= num) break; // already have enough from earlier chunks
-    const chunk    = chunks[ci];
-    const chunkTarget = chunkTargets[ci];
-    const poolBeforeThisChunk = pool.length;
-    const isLastChunk = ci === chunks.length - 1;
-    // Cap this chunk's contribution to its own proportional share (see
-    // generateQuestionsFromJD for the full explanation) — without this, an
-    // early chunk that happens to produce enough content on its own hogs the
-    // entire question budget and later parts of the uploaded document never
-    // get proportional representation, even though chunking technically ran.
-    const chunkCeiling = isLastChunk ? num : Math.min(num, poolBeforeThisChunk + chunkTarget);
-
-    for (let attempt = 0; attempt < MAX_ATTEMPTS && pool.length < chunkCeiling; attempt++) {
-      const stillNeeded = chunkCeiling - pool.length;
-      const bufferMultiplier = 1.4 + attempt * 0.3;
-      const askFor = Math.min(maxQuestionsPerCall(), Math.max(1, Math.ceil(stillNeeded * bufferMultiplier)));
-      const attemptSeed = `${baseSeed}-c${ci}-a${attempt}-${randomUUID().slice(0, 4)}`;
-      // Feed what THIS run has already accumulated (pool) into the prompt,
-      // not just the static cross-version avoidQuestions. Previously a
-      // retry attempt saw the exact same chunk + instructions with only a
-      // different random seed and NO knowledge of what attempt 0 already
-      // produced — the model naturally re-derived the same salient facts,
-      // and mergeUnique correctly discarded nearly all of it post-hoc. That
-      // silent waste (not the dedup logic) was the actual plateau mechanism:
-      // attempt 1 was rarely getting any real chance to add NEW content.
-      const prompt = buildDocumentUserPrompt({
-        count: askFor, jobRole, sourceText: chunk, sourceName, sourceType, types, seed: attemptSeed, skillsContext, stakeholder, processDelivery,
-        avoidQuestions: [...pool, ...avoidQuestions],
-      });
-
-      let batch = await GeminiService.generateQuestionsBatch(prompt, system, { maxTokens: outputTokensFor(askFor), onThrottle: emit.throttle });
-      if (batch && batch.length > 0) {
-        const noGeneric = filterGenericPhrasing(batch);
-        const keywordPrefiltered = filterGrounded(noGeneric, chunk);
-        const grounded = verifyQuoteGrounded(keywordPrefiltered, chunk);
-        if (grounded.length < batch.length) {
-          console.warn(`[generateQuestionsFromDocument] "${sourceName}" chunk${ci} attempt${attempt}: filters removed ${batch.length - grounded.length}/${batch.length} generic/ungrounded/unquoted questions`);
-        }
-        pool = mergeUnique(pool, grounded, avoidQuestions);
-      }
-      emit.progress(pool.length);
-    }
-  }
-
-  // See generateQuestionsFromJD for why this is seeded from the previous
-  // version instead of always starting at {0,0,0}.
-  const comboCounters = startingComboCounters
-    ? { ...startingComboCounters }
-    : { easy: 0, medium: 0, hard: 0 };
-
-  // Same semantic embedding pass as generateQuestionsFromJD, same placement
-  // logic: any removal here is naturally backfilled by the padding loop
-  // right below (or fillEmergencyGap further down), so the exact-count
-  // guarantee is never put at risk by this pass. Also checked against
-  // avoidQuestions (deleted-question-first) — see the JD-path comment above.
-  pool = await applySemanticDedup(pool, avoidQuestions);
-
-  if (pool.length < num) {
-    const shortage = num - pool.length;
-    console.warn(`[generateQuestionsFromDocument] "${sourceName}": LLM gave ${pool.length}/${num} across all chunks — padding ${shortage} with doc-keyword templates`);
-    // Prefer real named entities (systems, forms, thresholds — e.g. "Payment
-    // Gateway", "48 hours") over generic frequent words when available; they
-    // make fallback template questions read as genuinely document-specific
-    // rather than just topically-adjacent.
-    const docEntities = extractDocEntities(text, 8);
-    const docKeywords = extractDocKeywords(text, 8);
-    const fallbackSkills = docEntities.length > 0 ? docEntities : (docKeywords.length > 0 ? docKeywords : [SAFE_FALLBACK_TOPIC]);
-    const targetEasy   = Math.round(num * 0.35);
-    const targetMedium = Math.round(num * 0.45);
-    const targetHard   = Math.max(1, num - targetEasy - targetMedium);
-    const { mcq: targetMcqCount, fill_blank: targetFillCount, subjective: targetSubjCount } =
-      mixCounts(num, ASSESSMENT_MIX);
-    let att = 0;
-    while (pool.length < num && att < 30) {
-      const remaining = num - pool.length;
-      const fb = buildFallbackQuestions(remaining, {
-        types, skillsList: fallbackSkills, jobRole,
-        difficultyDeficit: {
-          easy:   Math.max(0, targetEasy   - pool.filter(q => q.difficulty === 'easy').length),
-          medium: Math.max(0, targetMedium - pool.filter(q => q.difficulty === 'medium').length),
-          hard:   Math.max(0, targetHard   - pool.filter(q => q.difficulty === 'hard').length),
-        },
-        typeDeficit: {
-          mcq:        Math.max(0, targetMcqCount  - pool.filter(q => !q.type || q.type === 'mcq').length),
-          fill_blank: Math.max(0, targetFillCount - pool.filter(q => q.type === 'fill_blank').length),
-          subjective: Math.max(0, targetSubjCount - pool.filter(q => q.type === 'subjective').length),
-        },
-        comboCounters,
-      });
-      pool = mergeFallbackUnique(pool, fb, avoidQuestions);
-      att++;
-    }
-  }
-
-  const trimmed   = trimToTarget(pool, num, types);
-  const rebalanced = rebalanceDifficulty(trimmed);
-
-  const meta = { generatedFrom: sourceType === 'jd' ? 'jd' : 'document', stakeholderFlag: stakeholder, processDeliveryFlag: processDelivery };
-
-  if (rebalanced.length !== num) {
-    if (rebalanced.length > num) return withFinalCombo(attachQualityScores(rebalanced.slice(0, num), sourceText), comboCounters);
-    // Same as generateQuestionsFromJD's emergency path — tries avoidQuestions
-    // first via fillEmergencyGap's own rounds, only falling through to an
-    // unavoidable repeat if truly nothing else is left.
-    const final = fillEmergencyGap(rebalanced, num, { types, skillsList: [SAFE_FALLBACK_TOPIC], jobRole, avoidQuestions });
-    return withFinalCombo(attachQualityScores(tagMetadata(final, meta), sourceText), comboCounters);
-  }
-  return withFinalCombo(attachQualityScores(tagMetadata(rebalanced, meta), sourceText), comboCounters);
+  const combinedSource = [jdText, supportingDocsText].filter(Boolean).join('\n\n');
+  const spec = {
+    idx: 0, name: jobRole || 'Job Description', text: combinedSource, sourceType: 'jd', count: num, types,
+    seed: baseSeed, jobRole, skillsContext: skillsList, mode: 'jd', skillsList, startingComboCounters, avoidQuestions,
+  };
+  const { batches } = await runGeneration([spec], { onProgress, label: `JD "${jobRole || ''}"` });
+  const result = batches[0];
+  if (typeof onProgress === 'function') { try { onProgress({ phase: 'generating', done: Math.min(num, result.length), total: num }); } catch { /* never break generation */ } }
+  if (result.length === num) return result;
+  // Safety net (the engine already guarantees the count): never hand back a short bank.
+  const meta = { generatedFrom: 'jd' };
+  const final = fillEmergencyGap(result.length > num ? result.slice(0, num) : result, num, { types, skillsList, jobRole, avoidQuestions });
+  return withFinalCombo(attachQualityScores(tagMetadata(final, meta), combinedSource), result.finalComboCounters || { easy: 0, medium: 0, hard: 0 });
 }
 
 // ── Per-file multi-source generation ─────────────────────────────────────────
-// Generates exactly the requested number of questions from EACH source file
-// independently, tags every question with sourceFile + sourceType, then merges
-// with cross-file deduplication. The result length equals the sum of all
-// per-file questionCount values.
-
-// Kept as a named local so the per-file call sites below read unchanged; the
-// ratio itself is the shared one (was a 5th copy of the old 50/25/25 math).
+// Generates exactly the requested number of questions from EACH source file,
+// tags every question with sourceFile + sourceType, then merges with
+// cross-file deduplication. The result length equals the sum of all per-file
+// questionCount values.
 function buildTypeSeqLocal(num) {
   return buildTypeSequence(num, ASSESSMENT_MIX);
 }
 
 // When a single uploaded file mixes JD-like content and process/SOP-like
-// content (common for "one PDF has everything" uploads), splits it into two
-// effective sources with proportionally-split question counts, instead of
-// generating the whole file as one undifferentiated blob under a single
-// sourceType. A file that doesn't meaningfully split (the normal case — a
-// single-purpose JD or a single-purpose SOP) passes through unchanged.
+// content, splits it into two effective sources with proportionally-split
+// question counts. A file that doesn't meaningfully split passes through.
 function expandSplitSources(fileSources) {
   const expanded = [];
   for (const source of fileSources) {
@@ -1910,86 +1884,36 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
     onProgress = null,                    // optional progress hook (see makeProgressEmitter)
   } = globalContext;
   fileSources = expandSplitSources(fileSources);
-  // Aggregate progress across ALL sources. Because generation now runs in
-  // PARALLEL across sources (see phase 1 below), progress arrives interleaved
-  // from several files at once — so track each source's latest reported count
-  // separately and sum them, rather than assuming a sequential baseline.
   const overallTotal = fileSources.reduce((s, f) => s + Math.min(100, Math.max(1, parseInt(f.questionCount) || 5)), 0);
-  const perSourceDone = new Array(fileSources.length).fill(0);
-  const emitFor = (idx) => (evt) => {
-    if (typeof onProgress !== 'function') return;
-    try {
-      perSourceDone[idx] = Math.max(perSourceDone[idx], evt?.done || 0);
-      const done = perSourceDone.reduce((a, b) => a + b, 0);
-      onProgress({
-        phase: evt?.phase || 'generating',
-        done: Math.min(overallTotal, done),
-        total: overallTotal,
-        delayMs: evt?.delayMs,
-      });
-    } catch { /* progress hook must never break generation */ }
-  };
   const allQuestions = [];
-  // Shared fuzzy tracker across ALL files (upgraded from exact-text-only
-  // matching) — two different uploaded documents that thematically overlap
-  // (e.g. an Order Processing SOP and an Escalation Handling guide that both
-  // mention "vendor coordination") can produce genuinely near-duplicate
-  // questions across files even though neither file duplicates itself.
-  // Exact-text matching never caught this; the same 70%-overlap standard
-  // used everywhere else in this file now applies here too. Pre-seeded with
-  // avoidQuestions so cross-version diversity is enforced at this level too,
-  // not just inside each per-source generateQuestionsFromDocument call.
+  // Shared fuzzy tracker across ALL files — pre-seeded with avoidQuestions so
+  // cross-version diversity is enforced at this level too.
   const tracker = createSeenTracker(avoidQuestions);
   const finalComboCountersBySource = {};
 
-  // ── PHASE 1: generate every source's questions IN PARALLEL ────────────────
-  // Generation is entirely network-bound (minutes of LLM latency) while the
-  // cross-file dedup below is pure in-memory work (microseconds), so running
-  // the LLM calls concurrently is where all the wall-clock savings are: three
-  // PDFs that took ~6 minutes sequentially finish in roughly the time of the
-  // slowest single file.
-  //
-  // This does NOT change dedup semantics. Each per-source call already
-  // received only the cross-VERSION `avoidQuestions` set and never saw what
-  // sibling files produced in the same run — all cross-file deduplication
-  // happens afterwards, in phase 2, against the shared tracker. Phase 2 still
-  // walks sources in their original order, so the accepted set is identical to
-  // what the sequential version produced.
-  //
-  // Concurrency is bounded for free by LLMQueue's semaphore (default 5 in
-  // flight), so a role with many uploaded files can't fan out unbounded HTTP
-  // requests at the provider.
-  const batches = await Promise.all(fileSources.map((source, idx) => {
+  // ── PHASE 1: every source generated TOGETHER by one scheduler ──────────────
+  // (bounded, provider-aware concurrency; richest chunks first across all
+  // files; one wall-clock budget; extractive completion at the end)
+  const specs = fileSources.map((source, idx) => {
     const text = (source.text || '').trim();
-    if (!text) return null;
     const count = Math.min(100, Math.max(1, parseInt(source.questionCount) || 5));
-    // Seed includes the index: with parallel starts, Date.now() alone can be
-    // identical across sources and would make two files share a seed.
     const srcSeed = `${baseSeed || 'fs'}-${(source.name || 'file').replace(/\W/g, '').slice(0, 20)}-${idx}-${Date.now()}`;
-    // Uses generateQuestionsFromDocument (not generateQuestionsFromJD) so the
-    // prompt is framed around document content, not JD roles/responsibilities.
-    // srcSkills is passed as context-only — it does not drive question topics.
-    return generateQuestionsFromDocument(text, {
-      jobRole:         source.jobRole || jobRole,
-      sourceName:      source.name,
-      sourceType:      source.sourceType || 'supporting',
-      questionCount:   count,
-      questionTypes:   buildTypeSeqLocal(count),
-      seed:            srcSeed,
-      skillsContext:   source.skills || skills,
-      stakeholder:     !!source.stakeholder,
-      processDelivery: !!source.processDelivery,
-      avoidQuestions,
-      startingComboCounters: startingComboCountersBySource[source.name] || null,
-      onProgress: emitFor(idx),
-    }).catch(e => {
-      // One bad file must never abort the whole bank — phase 2 pads for it.
-      console.error(`[generateQuestionsFromFiles] "${source.name}" generation failed: ${e.message}`);
-      return null;
-    });
-  }));
+    return {
+      idx, name: source.name, text, sourceType: source.sourceType || 'supporting', count, types: buildTypeSeqLocal(count), seed: srcSeed,
+      jobRole: source.jobRole || jobRole, skillsContext: source.skills || skills, stakeholder: !!source.stakeholder, processDelivery: !!source.processDelivery,
+      mode: 'doc', avoidQuestions, startingComboCounters: startingComboCountersBySource[source.name] || null,
+    };
+  });
+  let batches = [], states = [];
+  try {
+    ({ batches, states } = await runGeneration(specs.map(sp => (sp.text ? sp : { ...sp, text: '' })), { onProgress, label: `${specs.length} file(s)` }));
+  } catch (e) {
+    // One failure must never abort the whole bank — phase 2 pads from the documents.
+    console.error(`[generateQuestionsFromFiles] generation engine failed: ${e.message}`);
+    batches = specs.map(() => null); states = [];
+  }
 
-  // ── PHASE 2: accept / dedup / pad SEQUENTIALLY (order-stable, as before) ──
+  // ── PHASE 2: accept / dedup / complete SEQUENTIALLY (order-stable) ─────────
   for (const [sourceIdx, source] of fileSources.entries()) {
     const text = (source.text || '').trim();
     const count = Math.min(100, Math.max(1, parseInt(source.questionCount) || 5));
@@ -2001,9 +1925,6 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
     const batch = batches[sourceIdx];
     if (batch?.finalComboCounters) finalComboCountersBySource[source.name] = batch.finalComboCounters;
 
-    // Accept non-duplicates up to `count` — tracked in a per-source array
-    // (not just a count) so the padding step below can measure the actual
-    // type mix already accepted for THIS source, not just how many are short.
     const acceptedForSource = [];
     for (const q of (batch || [])) {
       if (acceptedForSource.length >= count) break;
@@ -2020,23 +1941,32 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
       acceptedForSource.push(tagged);
     }
 
-    // Pad with fallback templates if the LLM came up short after cross-file dedup.
-    // RC-2 fix: use document keywords (not role skills) so fallback content stays
-    // grounded in this document's vocabulary rather than generic corporate terms.
-    //
-    // This is a bounded LOOP with a per-source starting combo offset and a
-    // forced final top-up — a single non-looping attempt here was a real bug:
-    // if two files happen to extract overlapping keywords (common — e.g. two
-    // SOPs both mentioning "escalation" and "vendor coordination"), they
-    // previously started padding from the SAME flat {99999,99999,99999}
-    // combo counters, producing byte-IDENTICAL fallback questions across
-    // files. Those then collided in the shared cross-file `seenKeys` set and
-    // were silently dropped with no retry — causing the whole bank to come
-    // up short of the requested total (observed: 40/50, then 25/50 on a
-    // second regenerate). The per-source hash offset below prevents two
-    // files from ever starting at the same combo point, and the loop +
-    // forced top-up guarantees this source's slice always reaches `count`.
-    const gap = count - acceptedForSource.length;
+    // Cross-file dedup can drop a few: complete from the document first
+    // (document-specific extractive questions), then — only if the document is
+    // too small for that — the old generic templates.
+    let gap = count - acceptedForSource.length;
+    const S = states[sourceIdx];
+    if (gap > 0 && S?.model && S.model.usable.length > 0) {
+      const tc = tallyTypes(buildTypeSeqLocal(count), count);
+      const have = { mcq: countType(acceptedForSource, 'mcq'), fill_blank: countType(acceptedForSource, 'fill_blank'), subjective: countType(acceptedForSource, 'subjective') };
+      const td = { mcq: Math.max(0, tc.mcq - have.mcq), fill_blank: Math.max(0, tc.fill_blank - have.fill_blank), subjective: Math.max(0, tc.subjective - have.subjective) };
+      const tsum = td.mcq + td.fill_blank + td.subjective;
+      if (tsum < gap) td.mcq += gap - tsum;
+      const extra = generateExtractiveQuestions(S.model, {
+        count: gap, typeCounts: td, seed: `${S.spec.seed}-p2`, usedSentences: S.usedSentences,
+        exclude: (q) => { if (tracker.isDuplicate(q)) return true; tracker.add(q); return false; },
+      });
+      for (const q of extra) {
+        if (acceptedForSource.length >= count) break;
+        for (const i of q._sentences || []) S.usedSentences.add(i);
+        delete q._sentences;
+        const tagged = { ...q, id: randomUUID(), generatedFrom: S.spec.sourceType === 'jd' ? 'jd' : 'document', sourceFile: source.name || 'Unknown', sourceType: source.sourceType || 'jd', qualityScore: computeQuestionQualityScore(q, text), createdAt: new Date().toISOString(), stakeholderFlag: !!source.stakeholder, processDeliveryFlag: !!source.processDelivery };
+        allQuestions.push(tagged);
+        acceptedForSource.push(tagged);
+      }
+      gap = count - acceptedForSource.length;
+    }
+
     if (gap > 0) {
       console.warn(`[generateQuestionsFromFiles] "${source.name}": got ${acceptedForSource.length}/${count} after cross-file dedup — padding ${gap} with doc-keyword templates`);
       const docEntitiesForPad = extractDocEntities(text, 12);
@@ -2066,9 +1996,6 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
           skillsList:    paddingSkills,
           jobRole:       srcJobRole,
           comboCounters: padComboCounters,
-          // Deficit measured against THIS source's own target count and what's
-          // actually accepted for it — not a fresh 50/25/25 split of just the
-          // gap, which was the root cause of banks skewing 80%+ toward mcq.
           typeDeficit: {
             mcq:        Math.max(0, targetMcqCount  - acceptedForSource.filter(q => !q.type || q.type === 'mcq').length),
             fill_blank: Math.max(0, targetFillCount - acceptedForSource.filter(q => q.type === 'fill_blank').length),
@@ -2088,15 +2015,8 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
       }
 
       // Absolute final guarantee for this source: force-fill any residual
-      // shortfall. Count must never come up short — but this used to accept
-      // the forced batch completely unchecked, which meant a DELETED
-      // question or one already in the bank could reappear verbatim at
-      // exactly the stage the platform is least likely to still be watching
-      // for it. Still dedup here; if that leaves a shortfall, ask
-      // buildFallbackQuestions for a differently-seeded batch (bounded
-      // rounds) before finally accepting whatever's left — this keeps the
-      // "always meets count" guarantee while eliminating the specific
-      // failure mode of an exact repeat.
+      // shortfall (count must never come up short), de-duplicated for the first
+      // rounds, then accepted regardless on the last.
       let forceRound = 0;
       while (acceptedForSource.length < count && forceRound < 4) {
         const stillNeeded = count - acceptedForSource.length;
@@ -2118,21 +2038,14 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
         if (addedThisRound === 0 && forceRound >= 3) break; // template pool exhausted, stop looping
       }
     }
+  }
 
-    // Report the real accepted-so-far total after this source's dedup/padding
-    // settles. Phase 1's per-source emitters track in-flight LLM progress;
-    // this reflects what actually made it into the bank.
-    perSourceDone[sourceIdx] = acceptedForSource.length;
-    if (typeof onProgress === 'function') {
-      try {
-        onProgress({ phase: 'generating', done: Math.min(overallTotal, allQuestions.length), total: overallTotal });
-      } catch { /* progress hook must never break generation */ }
-    }
+  if (typeof onProgress === 'function') {
+    try { onProgress({ phase: 'generating', done: Math.min(overallTotal, allQuestions.length), total: overallTotal }); } catch { /* progress hook must never break generation */ }
   }
 
   // Per-source combo high-water-marks — the next regenerate call reads this
-  // back and passes it as startingComboCountersBySource so each file's
-  // fallback padding continues from where it left off, not from index 0.
+  // back so each file's fallback padding continues where it left off.
   allQuestions.finalComboCounters = finalComboCountersBySource;
   return allQuestions;
 }

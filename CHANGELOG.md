@@ -4,6 +4,19 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-08 — Question generation is much faster, and no longer falls back to generic questions
+
+**Problem:** Generating a role's question bank took 30 to 60+ minutes. When Gemini's daily limit ran out, the old code still sized its requests for Gemini and sent those oversized requests to Groq, which rejected every one, then filled the gaps with generic template questions.
+**Fix (simulated test, not yet measured on a live run):** about 7 minutes with Gemini exhausted (was 191 minutes and 158 generic questions), 6 minutes on Groq alone (was 41), 1.4 minutes with Gemini working.
+- All uploaded files now generate at the same time, with requests sized to what each provider can really take, and smaller prompts.
+- A new local generator builds fact and rule questions straight from sentences in the document (fill in the blank, thresholds, step order, wrong-statement choices), each carrying its exact source quote. It replaces the generic template padding. These are recall questions; scenario questions still come from the AI.
+- An 8-minute time limit (`GEN_TIME_BUDGET_MS`): when it is reached, the bank is finished with what is ready.
+- Unchanged chunks are cached, so regenerating them is instant. The progress display no longer gets stuck on "paused".
+- Optional settings are listed in `.env.example`: `GEN_TIME_BUDGET_MS`, `GEN_CONCURRENCY`, `GEN_EXTRACTIVE_SHARE`, `GEN_LLM_PACE`, `GEN_MAX_ROUNDS`, `GEN_CACHE`.
+Files: `server/services/AssessmentGenerator.js`, `GeminiService.js`, `LLMQueue.js`, `ExtractiveQuestionGenerator.js`, `TextRanking.js`, `GenScheduler.js`, `QuestionChunkCache.js` and their tests.
+
+---
+
 ## 2026-10-07 — Company name and CRUD, correct dashboard numbers, grades, 60-minute tests, employee IDs, assign/reassign, quarterly New Generation
 
 **1. Company name at the top of every portal, and full company management for the super admin.**

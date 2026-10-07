@@ -52,6 +52,41 @@ function parseRetryMs(res, bodyText) {
   return 5000;
 }
 
+// Combines a per-call timeout with an optional caller-supplied AbortSignal (the
+// question-generation time budget aborts abandoned in-flight calls with it).
+function mkSignal(timeoutMs, signal) {
+  const t = AbortSignal.timeout(timeoutMs);
+  if (!signal) return t;
+  return typeof AbortSignal.any === 'function' ? AbortSignal.any([t, signal]) : t;
+}
+
+// Strict JSON.parse of a model reply, with optional salvage of a TRUNCATED
+// `{"questions":[ {...}, {...}, {"ty` reply: every COMPLETE question object is
+// recovered instead of discarding the whole batch. That is what lets callers
+// size max_tokens tightly (the Groq TPM budget is spent on max_tokens) without
+// losing a call to a cut-off tail.
+function parseLoose(text, { salvage = false } = {}) {
+  const clean = String(text || '').replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+  try { return JSON.parse(clean); } catch (err) { if (!salvage) throw err; }
+  const at = clean.indexOf('"questions"');
+  const open = at >= 0 ? clean.indexOf('[', at) : -1;
+  if (open < 0) throw new Error('unparseable JSON and no questions array to salvage');
+  const out = [];
+  let depth = 0, inStr = false, esc = false, start = -1;
+  for (let i = open + 1; i < clean.length; i++) {
+    const ch = clean[i];
+    if (inStr) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') inStr = false; continue; }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{') { if (depth === 0) start = i; depth++; }
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start >= 0) { try { out.push(JSON.parse(clean.slice(start, i + 1))); } catch { /* skip a malformed object */ } start = -1; }
+    } else if (ch === ']' && depth === 0) break;
+  }
+  if (out.length === 0) throw new Error('truncated JSON with no complete question object');
+  return { questions: out, _salvaged: true };
+}
+
 // Gemini model names Google has retired. A request to any of these fails with
 // HTTP 404 ("no longer available") — NOT with an auth or quota error, so it
 // looks like a broken key rather than a stale model name. The deployed
@@ -94,6 +129,50 @@ class GeminiService {
     this._cerebrasModelPromise = null;
     this._openRouterModelPromise = null;
     this.openRouterCallCount = 0;
+    // Provider routing state for bulk generation (generateQuestionsBatchEx):
+    //  - cooldowns: a provider that just rate-limited / rejected us is not
+    //    called again until its cooldown ends (previously every call re-tried
+    //    it, burning a request + a wait each time);
+    //  - inflight: lets concurrent calls spread across providers (one on
+    //    OpenRouter while others use Groq) instead of all queueing on one.
+    this._providerBlockedUntil = new Map();
+    this._inflight = { openrouter: 0, groq: 0 };
+    this._geminiInflight = new Map();
+    this.routeStats = { gemini: 0, openrouter: 0, groq: 0, failed: 0 };
+  }
+
+  // ── provider cooldowns ────────────────────────────────────────────────────
+  coolDown(provider, ms, reason = '') {
+    const until = Date.now() + Math.max(1000, ms);
+    const prev = this._providerBlockedUntil.get(provider) || 0;
+    if (until > prev) this._providerBlockedUntil.set(provider, until);
+    console.warn(`[LLM] ${provider} cooling down ${Math.round(ms / 1000)}s${reason ? ` (${reason})` : ''}`);
+  }
+  isCoolingDown(provider) {
+    const until = this._providerBlockedUntil.get(provider);
+    return !!until && Date.now() < until;
+  }
+
+  /**
+   * Snapshot of which generation providers can take a call RIGHT NOW. The
+   * question pipeline uses it to size chunks/batches for the provider that will
+   * really serve them (a configured-but-quota-exhausted Gemini key must not make
+   * the pipeline size requests for Gemini and then send them to Groq) and to
+   * pick a sensible default concurrency.
+   */
+  generationStatus() {
+    const geminiKeysUsable = this.geminiKeys.filter(k => { const u = this._geminiKeyBlockedUntil.get(k); return !u || Date.now() >= u; }).length;
+    const orOn = this.openRouterEnabled && !this.isCoolingDown('openrouter');
+    const groqOn = this.groqEnabled && !this.isCoolingDown('groq');
+    return {
+      geminiKeysUsable,
+      gemini: geminiKeysUsable > 0,
+      openrouter: orOn,
+      groq: groqOn,
+      cerebras: this.cerebrasEnabled && !this.isCoolingDown('cerebras'),
+      groqTpmLimit: LLMQueue.tpmLimit,
+      anyLLM: geminiKeysUsable > 0 || orOn || groqOn || (this.cerebrasEnabled && !this.isCoolingDown('cerebras')),
+    };
   }
 
   // ── Gemini credentials — multi-key rotation ──────────────────────────────
@@ -158,6 +237,14 @@ class GeminiService {
 
   isEnabled() {
     return this.geminiKeys.length > 0;
+  }
+
+  // True when embedTexts() could actually make a request (a key whose embedding
+  // quota is not in cooldown). Lets callers skip the semantic-dedup pass
+  // outright instead of paying for a call that returns null.
+  embedAvailable() {
+    const now = Date.now();
+    return this.geminiKeys.some(k => { const u = this._geminiEmbedKeyBlockedUntil.get(k); return !u || now >= u; });
   }
 
   // ── Groq credentials ──────────────────────────────────────────────────────
@@ -316,7 +403,7 @@ class GeminiService {
   // OpenRouter: generate JSON. Same OpenAI-compatible shape as Cerebras/Groq.
   // response_format is requested but not guaranteed honored by every free
   // model, so the markdown-fence strip below is defensive, same as Gemini.
-  async _openRouterJSON(prompt, system = '', { temperature = 0.7, maxTokens = 4096 } = {}) {
+  async _openRouterJSON(prompt, system = '', { temperature = 0.7, maxTokens = 4096, timeoutMs = 45000, signal = null, salvage = false } = {}) {
     if (!this.openRouterEnabled) return null;
     try {
       const model = await this._resolveOpenRouterModel();
@@ -341,12 +428,17 @@ class GeminiService {
           max_tokens: maxTokens,
           response_format: { type: 'json_object' },
         }),
-        signal: AbortSignal.timeout(45000),
+        signal: mkSignal(timeoutMs, signal),
       }));
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
         console.warn(`[OpenRouter] HTTP ${res.status} on ${model}: ${errText.slice(0, 200)}`);
+        // Known-bad states stop being retried on every call: per-minute limit
+        // -> short pause; per-day free-model cap / auth / credit -> long pause.
+        if (res.status === 429) this.coolDown('openrouter', /per-day|free-models-per-day|daily/i.test(errText) ? this._msUntilNextUtcMidnight() : 60 * 1000, 'HTTP 429');
+        else if ([401, 402, 403].includes(res.status)) this.coolDown('openrouter', 60 * 60 * 1000, `HTTP ${res.status}`);
+        else if (res.status >= 500) this.coolDown('openrouter', 20 * 1000, `HTTP ${res.status}`);
         return null;
       }
 
@@ -354,8 +446,7 @@ class GeminiService {
       const text = data.choices?.[0]?.message?.content;
       if (!text) { console.warn('[OpenRouter] empty response'); return null; }
 
-      const clean = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
-      const parsed = JSON.parse(clean);
+      const parsed = parseLoose(text, { salvage });
       this.openRouterCallCount++;
       console.log(`[OpenRouter] ✅ Success (${model}) — call #${this.openRouterCallCount}`);
       return parsed;
@@ -370,10 +461,11 @@ class GeminiService {
   // LLMQueue TPM budget (before the call) or on a 429/413 retry-after (after a
   // rejected attempt) — so callers can surface "pausing for rate limit" to the
   // user instead of the run appearing frozen.
-  async _groqJSON(prompt, system = '', { temperature = 0.7, maxTokens = 2048, timeoutMs = 30000, model = 'openai/gpt-oss-120b', onThrottle = null } = {}) {
+  async _groqJSON(prompt, system = '', { temperature = 0.7, maxTokens = 2048, timeoutMs = 30000, model = 'openai/gpt-oss-120b', onThrottle = null, onResume = null, signal = null, salvage = false, deadlineAt = null, info = null } = {}) {
     if (!this.groqEnabled) return null;
     const estTokens = estimateGroqTokens(prompt, system, maxTokens);
     const MAX_RATE_RETRIES = 2;
+    const fail = (kind) => { if (info) info.failKind = kind; };
 
     for (let attempt = 0; attempt <= MAX_RATE_RETRIES; attempt++) {
       try {
@@ -402,8 +494,8 @@ class GeminiService {
             // instructions, not multi-step chain-of-thought.
             reasoning_effort: 'low',
           }),
-          signal: AbortSignal.timeout(timeoutMs),
-        }), estTokens, onThrottle);
+          signal: mkSignal(timeoutMs, signal),
+        }), estTokens, onThrottle, { maxWaitMs: deadlineAt ? Math.max(0, deadlineAt - Date.now()) : undefined, onResume });
 
         if (!res.ok) {
           const errText = await res.text();
@@ -413,11 +505,15 @@ class GeminiService {
           // straight through to a generic template.
           if ((res.status === 429 || res.status === 413) && attempt < MAX_RATE_RETRIES) {
             const waitMs = parseRetryMs(res, errText);
+            // Never sleep past the caller's deadline.
+            if (deadlineAt && Date.now() + waitMs > deadlineAt) { fail('rate'); throw new Error(`Groq HTTP ${res.status}: retry-after ${Math.round(waitMs / 1000)}s exceeds the time budget`); }
             if (typeof onThrottle === 'function') { try { onThrottle(waitMs); } catch { /* never break generation */ } }
             console.warn(`[Groq] rate-limited (${res.status}) on ${model} — waiting ${Math.round(waitMs / 1000)}s then retrying (attempt ${attempt + 1}/${MAX_RATE_RETRIES})`);
             await sleep(waitMs);
+            if (typeof onResume === 'function') { try { onResume(); } catch { /* never break generation */ } }
             continue;
           }
+          if (res.status === 429 || res.status === 413) fail('rate');
           throw new Error(`Groq HTTP ${res.status}: ${errText.slice(0, 200)}`);
         }
 
@@ -425,11 +521,13 @@ class GeminiService {
         const text = data.choices?.[0]?.message?.content;
         if (!text) throw new Error('Empty response from Groq');
 
-        const parsed = JSON.parse(text);
+        const parsed = parseLoose(text, { salvage });
         this.groqCallCount++;
-        console.log(`[Groq] ✅ Success (${model}) — call #${this.groqCallCount}`);
+        console.log(`[Groq] ✅ Success (${model}) — call #${this.groqCallCount}${parsed?._salvaged ? ' (salvaged truncated JSON)' : ''}`);
         return parsed;
       } catch (err) {
+        if (err?.code === 'TPM_WAIT_EXCEEDED') fail('budget');
+        else if (err?.name === 'AbortError' || err?.name === 'TimeoutError') fail('timeout');
         console.error(`[Groq] ❌ Failed (${model}): ${err.message}`);
         return null;
       }
@@ -552,21 +650,29 @@ class GeminiService {
   // model (a measured 20-question call spent 2,161 tokens on reasoning and
   // took ~40s wall-clock). A 30s abort killed exactly the large, useful
   // batches this path exists to make.
-  async _geminiJSONOnce(prompt, system = '', { temperature = 0.85, maxTokens = 16384, timeoutMs = 120000 } = {}) {
-    const key = this._pickGeminiKey();
+  async _geminiJSONOnce(prompt, system = '', { temperature = 0.85, maxTokens = 16384, timeoutMs = 120000, signal = null, salvage = false } = {}) {
+    // Least-busy usable key (not simply the first): concurrent bulk-generation
+    // calls spread across every configured project's key.
+    const key = this._pickGeminiKeyBalanced();
     if (!key) return null;
+    this._geminiInflight.set(key, (this._geminiInflight.get(key) || 0) + 1);
     try {
       const body = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
       };
+      // Optional cap on the thinking model's reasoning tokens (unset = model
+      // default). Exposed as an env knob because reasoning tokens are a large
+      // share of Gemini latency for this schema-filling task.
+      const thinking = parseInt(process.env.GEMINI_THINKING_BUDGET || '', 10);
+      if (Number.isFinite(thinking) && thinking >= 0) body.generationConfig.thinkingConfig = { thinkingBudget: thinking };
       if (system) body.systemInstruction = { parts: [{ text: system }] };
 
       const res = await LLMQueue.run(() => fetch(`${this.endpoint}?key=${key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: mkSignal(timeoutMs, signal),
       }));
       // Surface WHY a call failed instead of returning a silent null — a 404
       // (retired model), a 429 (quota) and a truncated body are completely
@@ -608,14 +714,28 @@ class GeminiService {
         console.warn(`[Gemini] output hit maxOutputTokens (${maxTokens}) — JSON truncated, batch discarded. Lower questions-per-call or raise the cap.`);
       }
 
-      const clean = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
-      const parsed = JSON.parse(clean);
+      const parsed = parseLoose(text, { salvage });
       this.callCount++;
       return parsed;
     } catch (err) {
       console.warn(`[Gemini] single-attempt JSON failed: ${err.message}`);
       return null;
+    } finally {
+      this._geminiInflight.set(key, Math.max(0, (this._geminiInflight.get(key) || 1) - 1));
     }
+  }
+
+  // Usable (not quota-blocked) key with the fewest calls in flight.
+  _pickGeminiKeyBalanced() {
+    const now = Date.now();
+    let best = null, bestLoad = Infinity;
+    for (const key of this.geminiKeys) {
+      const blockedUntil = this._geminiKeyBlockedUntil.get(key);
+      if (blockedUntil && now < blockedUntil) continue;
+      const load = this._geminiInflight.get(key) || 0;
+      if (load < bestLoad) { best = key; bestLoad = load; }
+    }
+    return best;
   }
 
   // ── embedTexts: batch text embeddings for semantic similarity ────────────
@@ -676,61 +796,78 @@ class GeminiService {
     }
   }
 
-  // ── generateQuestionsBatch: Groq(70b) → Groq(8b-instant) → Gemini, single attempt each ──
-  // Purpose-built for AssessmentGenerator.js's bulk question generation, which
-  // runs its own outer retry loop across attempts (escalating buffers, fresh
-  // seeds) — this method makes exactly one attempt per provider/model tier,
-  // and unwraps the `{questions: [...]}` shape the question-generation
-  // prompts always request. Reuses the shared LLMQueue concurrency control
-  // and Groq/Gemini credentials instead of the raw fetch calls
-  // AssessmentGenerator used to make directly.
+  // ── generateQuestionsBatch: capacity-aware routing across providers ───────────
+  // Purpose-built for AssessmentGenerator.js's bulk question generation. One
+  // attempt per provider/model tier, `{questions: [...]}` unwrapped.
   //
-  // The middle tier (openai/gpt-oss-20b) matters specifically on Groq's
-  // free/on-demand tier: rate limits there are enforced PER MODEL, not per
-  // account, so a request that gets hard-rejected against the 70b model's
-  // tight TPM budget has a real chance of succeeding against 8b-instant's
-  // separate, much larger budget — a free way to salvage a request that
-  // would otherwise fall straight through to the deterministic template
-  // fallback. Quality is lower than 70b but still real LLM output grounded
-  // in the actual prompt, not a topic-word-substituted template.
-  async generateQuestionsBatch(prompt, system = '', { temperature = 0.85, maxTokens = 16000, timeoutMs = 120000, onThrottle = null } = {}) {
-    // GEMINI FIRST — this ordering matters enormously for wall-clock time.
-    // Groq's free/on-demand tier allows only ~8,000 tokens/MINUTE, so a
-    // multi-PDF bank needs dozens of paced calls and took 15-40+ minutes.
-    // Gemini's free tier has no comparable per-minute token squeeze here
-    // (measured: 20 questions returned in a single call, and 5 concurrent
-    // calls all succeeded), so routing question generation to Gemini first
-    // turns the same job into a couple of calls instead of dozens. Groq
-    // stays as the fallback for when Gemini is unavailable or errors.
-    if (this.isEnabled()) {
+  // ROUTING (this used to be a strictly sequential fall-through, which is why a
+  // bank took 30-60+ minutes once Gemini's 20-requests/day/key free quota was
+  // gone: EVERY call then walked past a dead Gemini, a dead Cerebras and a
+  // rate-limited OpenRouter before parking on Groq's ~7k tokens/MINUTE pipe,
+  // one call at a time):
+  //   1. Gemini — least-busy usable key; skipped entirely (no request, no
+  //      wait) while every key is in a quota cooldown.
+  //   2. Cerebras — only when configured and not cooling down.
+  //   3. OpenRouter free model — only when it is not cooling down AND has a free
+  //      slot (OPENROUTER_MAX_CONCURRENT, default 1): a concurrent call that
+  //      finds it busy goes straight to Groq instead of queueing, so the two
+  //      free pipes work IN PARALLEL rather than one after the other.
+  //   4. Groq gpt-oss-120b, then gpt-oss-20b (only when the 120b failure was
+  //      not a rate/size problem — the TPM bucket is shared, so a rate failure
+  //      would just burn the same budget twice).
+  // `deadlineAt` (epoch ms) bounds every wait: a call that cannot finish before
+  // it returns null immediately instead of parking on the TPM limiter.
+  // Returns the questions array, or null.
+  async generateQuestionsBatch(prompt, system = '', opts = {}) {
+    const r = await this.generateQuestionsBatchEx(prompt, system, opts);
+    return r ? r.questions : null;
+  }
+
+  /** Same as generateQuestionsBatch but returns { questions, provider, ms } so callers can account for cost/latency. */
+  async generateQuestionsBatchEx(prompt, system = '', { temperature = 0.85, maxTokens = 16000, timeoutMs = 120000, onThrottle = null, onResume = null, deadlineAt = null, signal = null, salvage = true } = {}) {
+    const t0 = Date.now();
+    const left = () => (deadlineAt ? deadlineAt - Date.now() : Infinity);
+    const done = (questions, provider) => { this.routeStats[provider.split(':')[0]] = (this.routeStats[provider.split(':')[0]] || 0) + 1; return { questions, provider, ms: Date.now() - t0 }; };
+    const callTimeout = () => Math.max(4000, Math.min(timeoutMs, left()));
+    const out = (parsed) => (Array.isArray(parsed?.questions) ? parsed.questions : null);
+
+    if (this.isEnabled() && !this.geminiQuotaBlocked()) {
       const geminiTokens = Math.max(maxTokens, 8192);
-      // Loop across every configured key, not just "retry once": a 429 on
-      // key A immediately frees up key B (different project, independent
-      // quota) on the very next iteration via _pickGeminiKey(). Bounded by
-      // the actual number of keys so this can't loop forever, and stops the
-      // moment every key is in cooldown (geminiQuotaBlocked()).
       const maxAttempts = Math.max(1, this.geminiKeys.length);
       for (let i = 0; i < maxAttempts; i++) {
-        if (i > 0 && this.geminiQuotaBlocked()) break;
-        const parsed = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: geminiTokens, timeoutMs });
-        if (Array.isArray(parsed?.questions)) return parsed.questions;
+        if ((i > 0 && this.geminiQuotaBlocked()) || left() < 4000 || signal?.aborted) break;
+        const q = out(await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: geminiTokens, timeoutMs: callTimeout(), signal, salvage }));
+        if (q) return done(q, 'gemini');
       }
     }
-    if (this.cerebrasEnabled) {
-      const parsed = await this._cerebrasJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192) });
-      if (Array.isArray(parsed?.questions)) return parsed.questions;
+    if (this.cerebrasEnabled && !this.isCoolingDown('cerebras') && left() >= 4000 && !signal?.aborted) {
+      const q = out(await this._cerebrasJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192) }));
+      if (q) return done(q, 'cerebras');
+      this.coolDown('cerebras', 5 * 60 * 1000, 'no usable response');
     }
-    if (this.openRouterEnabled) {
-      const parsed = await this._openRouterJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192) });
-      if (Array.isArray(parsed?.questions)) return parsed.questions;
+    if (this.openRouterEnabled && !this.isCoolingDown('openrouter') && this._inflight.openrouter < parseInt(process.env.OPENROUTER_MAX_CONCURRENT || '1', 10) && left() >= 6000 && !signal?.aborted) {
+      this._inflight.openrouter++;
+      try {
+        const q = out(await this._openRouterJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192), timeoutMs: Math.min(60000, callTimeout()), signal, salvage }));
+        if (q) return done(q, 'openrouter');
+      } finally { this._inflight.openrouter--; }
     }
-    if (this.groqEnabled) {
-      const parsed120b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'openai/gpt-oss-120b', onThrottle });
-      if (Array.isArray(parsed120b?.questions)) return parsed120b.questions;
-
-      const parsed20b = await this._groqJSON(prompt, system, { temperature, maxTokens, timeoutMs, model: 'openai/gpt-oss-20b', onThrottle });
-      if (Array.isArray(parsed20b?.questions)) return parsed20b.questions;
+    // A request whose own prompt + max_tokens exceeds the whole per-minute budget is rejected with HTTP 413
+    // no matter how long we wait — do not even send it.
+    const groqFits = estimateGroqTokens(prompt, system, maxTokens) <= (LLMQueue.tpmLimit || 7000);
+    if (this.groqEnabled && groqFits && !this.isCoolingDown('groq') && !signal?.aborted) {
+      const base = { temperature, maxTokens, timeoutMs: callTimeout(), onThrottle, onResume, signal, salvage, deadlineAt };
+      const info = {};
+      const q120 = out(await this._groqJSON(prompt, system, { ...base, model: 'openai/gpt-oss-120b', info }));
+      if (q120) return done(q120, 'groq:120b');
+      // The Groq TPM bucket is shared across models: retry on the 20b model only
+      // for failures that are not about rate/size/time.
+      if (!info.failKind && left() >= 6000 && !signal?.aborted) {
+        const q20 = out(await this._groqJSON(prompt, system, { ...base, timeoutMs: callTimeout(), model: 'openai/gpt-oss-20b' }));
+        if (q20) return done(q20, 'groq:20b');
+      }
     }
+    this.routeStats.failed++;
     return null;
   }
 

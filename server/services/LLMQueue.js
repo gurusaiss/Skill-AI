@@ -54,6 +54,7 @@ class LLMQueue {
     this._queue    = [];
     this._tpmWindow = [];      // [{ t: epochMs, tokens }] for calls in the last 60s
     this._tpmGate   = Promise.resolve(); // serializes token reservations
+    this._pendingTpm = 0;      // tokens reserved by callers still waiting at the gate
   }
 
   _pruneWindow() {
@@ -73,11 +74,15 @@ class LLMQueue {
   // chains every reservation onto _tpmGate, only ONE caller evaluates the
   // budget-and-record critical section at a time — so two concurrent callers
   // can't both see "budget available" and double-spend the window.
-  async _reserveTokens(estTokens, onThrottle) {
+  async _reserveTokens(estTokens, onThrottle, opts = {}) {
     const prev = this._tpmGate;
     let release;
     this._tpmGate = new Promise(r => { release = r; });
+    this._pendingTpm += Math.min(estTokens, this.tpmLimit);
+    const maxWaitMs = Number.isFinite(opts.maxWaitMs) ? opts.maxWaitMs : Infinity;
+    const startedAt = Date.now();
     await prev; // wait for the previous reservation to finish
+    this._pendingTpm = Math.max(0, this._pendingTpm - Math.min(estTokens, this.tpmLimit));
 
     try {
       // A single call larger than the whole window budget can never fit by
@@ -91,6 +96,13 @@ class LLMQueue {
         if (used + capped <= this.tpmLimit || this._tpmWindow.length === 0) break;
         const oldest = this._tpmWindow[0];
         const waitMs = Math.max(50, (oldest.t + TPM_WINDOW_MS) - Date.now());
+        // Time-budgeted callers (question generation) would rather skip this
+        // call than park past their deadline.
+        if ((Date.now() - startedAt) + waitMs > maxWaitMs) {
+          const err = new Error(`TPM budget wait (${Math.round(waitMs / 1000)}s) would exceed the caller's time budget`);
+          err.code = 'TPM_WAIT_EXCEEDED';
+          throw err;
+        }
         if (!notified && typeof onThrottle === 'function') {
           notified = true;
           try { onThrottle(waitMs); } catch { /* progress hook must never break generation */ }
@@ -99,9 +111,30 @@ class LLMQueue {
         await sleep(waitMs);
       }
       this._tpmWindow.push({ t: Date.now(), tokens: capped });
+      if (notified && typeof opts.onResume === 'function') { try { opts.onResume(); } catch { /* never break generation */ } }
     } finally {
       release();
     }
+  }
+
+  /**
+   * Approximate time (ms) a call costing `estTokens` would currently wait for
+   * token budget. 0 = it would go through immediately. Lets a router prefer a
+   * provider that can take the call now over parking on this one. Includes the
+   * reservations already queued ahead of the caller.
+   */
+  estimateWaitMs(estTokens) {
+    this._pruneWindow();
+    const capped = Math.min(estTokens, this.tpmLimit);
+    const need = this._windowTokens() + this._pendingTpm + capped - this.tpmLimit;
+    if (need <= 0 || this._tpmWindow.length === 0) return 0;
+    let freed = 0;
+    for (const e of this._tpmWindow) {
+      freed += e.tokens;
+      if (freed >= need) return Math.max(0, e.t + TPM_WINDOW_MS - Date.now());
+    }
+    const last = this._tpmWindow[this._tpmWindow.length - 1];
+    return Math.max(0, last.t + TPM_WINDOW_MS - Date.now()) + (this._pendingTpm > 0 ? TPM_WINDOW_MS : 0);
   }
 
   /**
@@ -110,8 +143,11 @@ class LLMQueue {
    *                              0 (default) skips the TPM gate entirely
    * @param {Function} onThrottle optional (delayMs)=>void, called once if this
    *                              call has to wait for token budget
+   * @param {object}   opts       { maxWaitMs } reject with code TPM_WAIT_EXCEEDED instead
+   *                              of waiting longer than this for token budget;
+   *                              { onResume } called when a throttled call is released
    */
-  run(fn, estTokens = 0, onThrottle = null) {
+  run(fn, estTokens = 0, onThrottle = null, opts = {}) {
     // Shed load when queue is full — callers must handle and use fallback.
     // Checked up front (synchronously) so behavior matches the old contract.
     if (this.queued >= this.maxQueue) {
@@ -121,7 +157,7 @@ class LLMQueue {
       return Promise.reject(err);
     }
 
-    const gate = estTokens > 0 ? this._reserveTokens(estTokens, onThrottle) : Promise.resolve();
+    const gate = estTokens > 0 ? this._reserveTokens(estTokens, onThrottle, opts) : Promise.resolve();
     return gate.then(() => this._runConcurrencyGated(fn));
   }
 
