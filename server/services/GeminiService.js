@@ -2,10 +2,10 @@
  * GeminiService.js — Gemini (multi-key rotation) → Cerebras → OpenRouter → Groq fallback chain
  *
  * Question-bank generation (generateQuestionsBatch) tries, in order:
- *   1. Gemini 3.6-flash, rotating across every GEMINI_API_KEY[_N] configured.
- *      Free tier caps each KEY at 20 requests/day per model — rotating across
- *      keys from separate Google AI Studio projects multiplies that ceiling
- *      for free (each project gets its own independent quota).
+ *   1. Gemini Flash-family models, rotating across every (GEMINI_API_KEY[_N],
+ *      model) pair. Free tier caps each KEY at ~20 requests/day PER MODEL — so
+ *      the unit of quota is the (key, model) "slot": more keys (separate Google
+ *      projects) AND more models both multiply the daily ceiling for free.
  *   2. Cerebras (OpenAI-compatible) — as of Aug 2026 this now requires a
  *      payment method to unlock even its free credits (a policy change made
  *      after this integration was first written), so in practice this step
@@ -107,6 +107,19 @@ const RETIRED_GEMINI_MODELS = new Set([
 // just to keep the env scan bounded — raise it if someone actually wires up
 // more than this many free-tier projects.
 const MAX_GEMINI_KEYS = 10;
+const MAX_GROQ_KEYS = 6;          // GROQ_API_KEY, GROQ_API_KEY_2..6
+const MAX_OPENROUTER_KEYS = 5;    // OPENROUTER_API_KEY, OPENROUTER_API_KEY_2..5
+const MAX_GEMINI_MODELS = 4;
+const MODEL_DISCOVERY_TTL_MS = 6 * 60 * 60 * 1000;
+// Model names that are not suitable for plain JSON text generation.
+const GEMINI_MODEL_EXCLUDE = /image|tts|audio|live|embed|thinking|exp\b|-exp|native|robotics|computer|vision|aqa|-latest$/i;
+
+// Reads KEY, KEY_2..KEY_max from env (valid = longer than 10 chars), de-duplicated.
+function envKeys(base, max) {
+  const keys = [process.env[base]];
+  for (let i = 2; i <= max; i++) keys.push(process.env[`${base}_${i}`]);
+  return [...new Set(keys.filter(k => k && k.length > 10))];
+}
 
 class GeminiService {
   constructor() {
@@ -119,7 +132,17 @@ class GeminiService {
     // Per-KEY quota cooldown (Map<key, blockedUntilMs>) — Gemini's free-tier
     // request cap is per API key (really per Google Cloud project), not
     // shared across keys, so key A being exhausted must not block key B.
-    this._geminiKeyBlockedUntil = new Map();
+    // Gemini quota unit is the (key, model) SLOT: slotId -> blockedUntilMs.
+    this._geminiKeyBlockedUntil = new Map();   // name kept for compatibility; holds SLOT cooldowns
+    this._geminiSlotLastUsed = new Map();
+    this._droppedModels = new Set();           // models that 404/400'd "not found/unsupported": dropped for the process lifetime
+    this._noThinkingModels = new Set();        // models that rejected thinkingConfig
+    this._modelDiscovery = null;               // { at, models, promise }
+    this._orKeyBlockedUntil = new Map();       // OpenRouter per-key cooldown
+    this._orKeyInflight = new Map();
+    this._groqKeyBlockedUntil = new Map();     // Groq per-key cooldown
+    // Counters used for the "where did the time go" line and the capacity report.
+    this.counters = { rl429: { gemini: 0, openrouter: 0, groq: 0 }, waitMs: 0, calls: { gemini: 0, openrouter: 0, groq: 0 } };
     // SEPARATE cooldown map for the embedding model — text-embedding-004 is a
     // different model than the generation model (resolvedModel), so its
     // quota is a distinct bucket even on the same key/project. Sharing
@@ -161,17 +184,103 @@ class GeminiService {
    * pick a sensible default concurrency.
    */
   generationStatus() {
-    const geminiKeysUsable = this.geminiKeys.filter(k => { const u = this._geminiKeyBlockedUntil.get(k); return !u || Date.now() >= u; }).length;
-    const orOn = this.openRouterEnabled && !this.isCoolingDown('openrouter');
-    const groqOn = this.groqEnabled && !this.isCoolingDown('groq');
+    const cap = this.slotCapacity();
+    const geminiKeysUsable = this._geminiKeysUsable();
+    const cerebrasOn = this.cerebrasEnabled && !this.isCoolingDown('cerebras');
     return {
       geminiKeysUsable,
-      gemini: geminiKeysUsable > 0,
-      openrouter: orOn,
-      groq: groqOn,
-      cerebras: this.cerebrasEnabled && !this.isCoolingDown('cerebras'),
+      geminiSlotsUsable: cap.geminiSlots,
+      openrouterKeysUsable: this._usableOpenRouterKeys().length,
+      groqKeysUsable: this._usableGroqKeys().length,
+      gemini: cap.geminiSlots > 0,
+      openrouter: cap.openrouter > 0,
+      groq: cap.groq > 0,
+      cerebras: cerebrasOn,
       groqTpmLimit: LLMQueue.tpmLimit,
-      anyLLM: geminiKeysUsable > 0 || orOn || groqOn || (this.cerebrasEnabled && !this.isCoolingDown('cerebras')),
+      anyLLM: cap.total > 0,
+      slots: cap,
+    };
+  }
+
+  /**
+   * How many calls each provider can take AT THE SAME TIME right now (the
+   * scheduler's concurrency is the sum, bounded by the caller):
+   *   gemini     = usable (key, model) slots x GEMINI_SLOT_CONCURRENT (default 1)
+   *   openrouter = usable keys x OPENROUTER_MAX_CONCURRENT (default 1 per key)
+   *   groq       = usable keys x 2 (a key's per-minute token window fits about
+   *                two requests; the limiter parks the rest without holding a slot)
+   *   cerebras   = 1 when configured
+   */
+  slotCapacity() {
+    const geminiSlots = this._geminiUsableSlots().length;
+    const gemini = geminiSlots * this._geminiSlotConcurrency();
+    const openrouter = this._usableOpenRouterKeys().length * this._openRouterPerKeyConcurrency();
+    const groq = this._usableGroqKeys().length * 2;
+    const cerebras = this.cerebrasEnabled && !this.isCoolingDown('cerebras') ? 1 : 0;
+    return { geminiSlots, gemini, openrouter, groq, cerebras, total: gemini + openrouter + groq + cerebras };
+  }
+
+  _geminiSlotConcurrency() { return Math.max(1, parseInt(process.env.GEMINI_SLOT_CONCURRENT || '1', 10) || 1); }
+  _openRouterPerKeyConcurrency() { return Math.max(1, parseInt(process.env.OPENROUTER_MAX_CONCURRENT || '1', 10) || 1); }
+
+  /**
+   * COUNTS-ONLY capacity report for /api/health (never contains key material)
+   * and the [GenCapacity] log line. estimatedQuestionsPerMinute is a rough
+   * burst estimate: sum over providers of (concurrent calls x questions per call
+   * x calls per minute per call-slot):
+   *   gemini     usable slots x 20 questions / ~45 s per call (thinking model)
+   *   openrouter usable keys x ~2 calls/min (20 req/min cap, ~30 s per call) x ~10 questions
+   *   groq       per usable key: tokensPerMinute / ~3500 tokens per call x ~8 questions
+   * Free daily quotas (Gemini ~20 requests/day/slot, OpenRouter ~50/day/key) cap
+   * how long a burst can last; it is an estimate, not a promise.
+   */
+  llmCapacity() {
+    this._maybeDiscoverModels();
+    const gKeys = this.geminiKeys.length;
+    const models = this._geminiModelList();
+    const total = gKeys * models.length;
+    const usable = this._geminiUsableSlots().length;
+    const orKeys = this._openRouterKeys.length;
+    const orUsable = this._usableOpenRouterKeys().length;
+    const gqKeys = this.groqKeys.length;
+    const gqUsable = this._usableGroqKeys().length;
+    const tpmTotal = gqUsable * (LLMQueue.tpmLimit || 0);
+    const est = Math.round(
+      usable * 20 * (60 / 45) +
+      orUsable * 2 * 10 +
+      gqUsable * ((LLMQueue.tpmLimit || 7000) / 3500) * 8
+    );
+    const rec = [];
+    if (gKeys === 0) rec.push('No Gemini key configured: add GEMINI_API_KEY (free from Google AI Studio), it is the fastest free provider');
+    else {
+      if (usable === 0) rec.push('All Gemini (key, model) slots are out of quota until about 00:05 UTC: add more GEMINI_API_KEY_n keys (each Google project adds its own daily quota)');
+      else if (usable < 6) rec.push('Add more GEMINI_API_KEY_n keys (each Google project adds its own daily quota)');
+      if (models.length < 2) rec.push("Set GEMINI_MODELS to several Flash-family models (Google quota is per model, so each extra model multiplies a key's daily capacity)");
+    }
+    if (gqKeys < 2) rec.push('Add GROQ_API_KEY_2..GROQ_API_KEY_6 from separate Groq accounts (each key has its own ~7k tokens/minute)');
+    if (orKeys < 2) rec.push('Add OPENROUTER_API_KEY_2..OPENROUTER_API_KEY_5 from separate OpenRouter accounts (each key has its own free-model quota)');
+    if (est < 40 && rec.length === 0) rec.push('Estimated throughput is low: add more provider keys');
+    return {
+      gemini: { keys: gKeys, models: models.length, usableSlots: usable, blockedSlots: Math.max(0, total - usable) },
+      openrouter: { keys: orKeys, usableKeys: orUsable },
+      groq: { keys: gqKeys, usableKeys: gqUsable, tokensPerMinuteTotal: tpmTotal },
+      estimatedQuestionsPerMinute: est,
+      recommendation: rec,
+    };
+  }
+
+  /** One-line capacity string for the start of a generation job. */
+  capacityLine() {
+    const c = this.llmCapacity();
+    return `[GenCapacity] gemini slots=${c.gemini.usableSlots}/${c.gemini.keys * c.gemini.models} (${c.gemini.keys} key x ${c.gemini.models} model) openrouter keys=${c.openrouter.usableKeys}/${c.openrouter.keys} groq keys=${c.groq.usableKeys}/${c.groq.keys} est ~${c.estimatedQuestionsPerMinute} questions/min`;
+  }
+
+  /** Snapshot of cumulative counters (callers diff two snapshots around a job). */
+  counterSnapshot() {
+    return {
+      rl429: { ...this.counters.rl429 },
+      calls: { ...this.counters.calls },
+      waitMs: this.counters.waitMs + LLMQueue.throttledMs,
     };
   }
 
@@ -182,23 +291,124 @@ class GeminiService {
   // project, so 3 keys from 3 projects genuinely triples the daily ceiling;
   // 3 keys from the same project would not.
   get geminiKeys() {
-    const keys = [process.env.GEMINI_API_KEY];
-    for (let i = 2; i <= MAX_GEMINI_KEYS; i++) keys.push(process.env[`GEMINI_API_KEY_${i}`]);
-    return keys.filter(k => k && k.length > 10);
+    return envKeys('GEMINI_API_KEY', MAX_GEMINI_KEYS);
   }
 
-  // First key not currently in a quota cooldown, or null if every configured
-  // key is blocked. Simple round-robin-by-availability: always starts from
-  // the front of the list, so a freshly-unblocked earlier key gets reused
-  // before falling further down the list — the ordering doesn't matter for
-  // correctness, only that a non-blocked key is found when one exists.
-  _pickGeminiKey() {
-    const now = Date.now();
-    for (const key of this.geminiKeys) {
-      const blockedUntil = this._geminiKeyBlockedUntil.get(key);
-      if (!blockedUntil || now >= blockedUntil) return key;
+  // ── Gemini (key, model) slots ──────────────────────────────────────────────
+  // Google's free-tier quota is per project AND per model, so the schedulable
+  // unit is the slot "<key>|<model>". A slot has its own cooldown, in-flight
+  // count and last-used time; key A exhausted on model X still serves model Y.
+  _slotId(key, model) { return `${key}|${model}`; }
+  _slotBlocked(key, model) {
+    const u = this._geminiKeyBlockedUntil.get(this._slotId(key, model));
+    return !!u && Date.now() < u;
+  }
+
+  /** Configured model list: GEMINI_MODELS, else resolvedModel + discovered siblings (cap 4), minus retired/dropped models. */
+  _geminiModelList() {
+    const clean = (arr) => [...new Set(arr.map(m => String(m || '').trim().replace(/^models\//, '')).filter(Boolean))]
+      .filter(m => !RETIRED_GEMINI_MODELS.has(m) && !this._droppedModels.has(m));
+    const env = (process.env.GEMINI_MODELS || '').split(',');
+    let list = clean(env);
+    if (list.length === 0) {
+      const base = this.resolvedModel;
+      list = clean([base, ...((this._modelDiscovery && this._modelDiscovery.models) || [])]);
+      // the primary model stays first unless it was dropped
     }
-    return null;
+    return list.slice(0, MAX_GEMINI_MODELS);
+  }
+
+  /** Every (key, model) pair not in cooldown, as [{ key, model, id }]. */
+  _geminiUsableSlots() {
+    const out = [];
+    const models = this._geminiModelList();
+    for (const key of this.geminiKeys) for (const model of models) {
+      if (!this._slotBlocked(key, model)) out.push({ key, model, id: this._slotId(key, model) });
+    }
+    return out;
+  }
+
+  _geminiKeysUsable() {
+    return new Set(this._geminiUsableSlots().map(s => s.key)).size;
+  }
+
+  /**
+   * Picks the slot to use: not cooling down, not in `exclude`, and (when
+   * requireFree) with fewer in-flight calls than GEMINI_SLOT_CONCURRENT. Among
+   * candidates: least busy first, then least recently used (round-robin).
+   */
+  _pickGeminiSlot({ requireFree = false, exclude = null } = {}) {
+    const cap = this._geminiSlotConcurrency();
+    let best = null, bestLoad = Infinity, bestUsed = Infinity;
+    for (const slot of this._geminiUsableSlots()) {
+      if (exclude && exclude.has(slot.id)) continue;
+      const load = this._geminiInflight.get(slot.id) || 0;
+      if (requireFree && load >= cap) continue;
+      const used = this._geminiSlotLastUsed.get(slot.id) || 0;
+      if (load < bestLoad || (load === bestLoad && used < bestUsed)) { best = slot; bestLoad = load; bestUsed = used; }
+    }
+    return best;
+  }
+
+  _pickGeminiKey() {
+    const slot = this._pickGeminiSlot();
+    return slot ? slot.key : null;
+  }
+
+  /**
+   * Safe model discovery: GET /v1beta/models, keep Flash-family models that list
+   * generateContent, drop image/tts/audio/live/embedding/thinking-only/experimental
+   * names, cap at 4. Cached 6 h per process; ANY failure falls open (the
+   * configured model alone). Disabled by GEMINI_MODEL_DISCOVERY=0 or when
+   * GEMINI_MODELS is set explicitly.
+   */
+  _maybeDiscoverModels() {
+    if (process.env.GEMINI_MODEL_DISCOVERY === '0' || (process.env.GEMINI_MODELS || '').trim()) return null;
+    const keys = this.geminiKeys;
+    if (keys.length === 0) return null;
+    const d = this._modelDiscovery;
+    if (d && d.promise) return d.promise;
+    if (d && Date.now() - d.at < MODEL_DISCOVERY_TTL_MS) return null;
+    const prev = d && d.models ? d.models : [];
+    const state = { at: Date.now(), models: prev, promise: null };
+    state.promise = (async () => {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${keys[0]}`, { signal: AbortSignal.timeout(10000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        state.models = this._filterDiscoveredModels(data.models || []);
+        console.log(`[Gemini] model discovery: ${state.models.length} usable Flash model(s): ${state.models.join(', ') || '(none)'}`);
+      } catch (err) {
+        console.warn(`[Gemini] model discovery failed (${err.message}) - using the configured model only`);
+      } finally {
+        state.promise = null;
+        state.at = Date.now();
+      }
+      return state.models;
+    })();
+    this._modelDiscovery = state;
+    return state.promise;
+  }
+
+  _filterDiscoveredModels(models) {
+    const names = [];
+    for (const m of models) {
+      const name = String(m?.name || '').replace(/^models\//, '');
+      if (!/flash/i.test(name)) continue;
+      if (GEMINI_MODEL_EXCLUDE.test(name)) continue;
+      const methods = m?.supportedGenerationMethods;
+      if (!Array.isArray(methods) || !methods.includes('generateContent')) continue;
+      if (RETIRED_GEMINI_MODELS.has(name)) continue;
+      names.push(name);
+    }
+    // stable releases before previews, then alphabetical-descending (newer first)
+    names.sort((a, b) => (/preview/i.test(a) - /preview/i.test(b)) || b.localeCompare(a));
+    return [...new Set(names)].slice(0, MAX_GEMINI_MODELS);
+  }
+
+  async _ensureGeminiModels() {
+    const p = this._maybeDiscoverModels();
+    if (p) { try { await p; } catch { /* fails open */ } }
   }
 
   // Google's free-tier daily quota resets at a fixed time, not "24h from the
@@ -225,14 +435,18 @@ class GeminiService {
   }
 
   get endpoint() {
-    return `https://generativelanguage.googleapis.com/v1beta/models/${this.resolvedModel}:generateContent`;
+    return this._endpointFor(this.resolvedModel);
+  }
+
+  _endpointFor(model) {
+    return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   }
 
   // True only when EVERY configured key is currently in a quota cooldown —
   // i.e. there is truly nothing left to try. Callers skip Gemini entirely in
   // that state rather than issuing calls that cannot succeed.
   geminiQuotaBlocked() {
-    return this.geminiKeys.length > 0 && this._pickGeminiKey() === null;
+    return this.geminiKeys.length > 0 && this._geminiUsableSlots().length === 0;
   }
 
   isEnabled() {
@@ -248,12 +462,47 @@ class GeminiService {
   }
 
   // ── Groq credentials ──────────────────────────────────────────────────────
+  // GROQ_API_KEY plus GROQ_API_KEY_2..6, each from a separate Groq account/org:
+  // every key has its OWN tokens-per-minute window (LLMQueue keyId "groq#<n>")
+  // and its own cooldown.
+  get groqKeys() {
+    return envKeys('GROQ_API_KEY', MAX_GROQ_KEYS);
+  }
+
+  /** First configured key (legacy single-key callers). */
   get groqApiKey() {
-    return process.env.GROQ_API_KEY || '';
+    return this.groqKeys[0] || '';
   }
 
   get groqEnabled() {
-    return !!(this.groqApiKey && this.groqApiKey.length > 10);
+    return this.groqKeys.length > 0;
+  }
+
+  _groqKeyId(key) { return `groq#${this.groqKeys.indexOf(key) + 1}`; }
+
+  _groqKeyCooling(key) {
+    const u = this._groqKeyBlockedUntil.get(key);
+    return !!u && Date.now() < u;
+  }
+
+  _usableGroqKeys() {
+    return this.groqKeys.filter(k => !this._groqKeyCooling(k));
+  }
+
+  /**
+   * Groq key with the most free token budget for a call of `estTokens` (never a
+   * cooling-down key). Least expected wait first, then most free tokens.
+   */
+  _pickGroqKey(estTokens, exclude = null) {
+    let best = null, bestWait = Infinity, bestFree = -1;
+    for (const key of this._usableGroqKeys()) {
+      if (exclude && exclude.has(key)) continue;
+      const id = this._groqKeyId(key);
+      const wait = LLMQueue.estimateWaitMs(estTokens, id);
+      const free = LLMQueue.freeTokens(id);
+      if (wait < bestWait || (wait === bestWait && free > bestFree)) { best = key; bestWait = wait; bestFree = free; }
+    }
+    return best;
   }
 
   // ── Cerebras credentials ──────────────────────────────────────────────────
@@ -354,12 +603,44 @@ class GeminiService {
   // on the account, when the daily cap rises to 1,000) — a genuinely
   // separate bucket from Gemini's and Groq's, so it adds real extra daily
   // headroom rather than just re-slicing an existing limit.
+  get _openRouterKeys() {
+    return envKeys('OPENROUTER_API_KEY', MAX_OPENROUTER_KEYS);
+  }
+
+  /** First configured key (legacy single-key callers). */
   get openRouterApiKey() {
-    return process.env.OPENROUTER_API_KEY || '';
+    return this._openRouterKeys[0] || '';
   }
 
   get openRouterEnabled() {
-    return !!(this.openRouterApiKey && this.openRouterApiKey.length > 10);
+    return this._openRouterKeys.length > 0;
+  }
+
+  _orKeyCooling(key) {
+    const u = this._orKeyBlockedUntil.get(key);
+    return !!u && Date.now() < u;
+  }
+
+  _coolOpenRouterKey(key, ms, reason) {
+    const until = Date.now() + Math.max(1000, ms);
+    if (until > (this._orKeyBlockedUntil.get(key) || 0)) this._orKeyBlockedUntil.set(key, until);
+    console.warn(`[OpenRouter] key #${this._openRouterKeys.indexOf(key) + 1} cooling down ${Math.round(ms / 1000)}s (${reason})`);
+  }
+
+  _usableOpenRouterKeys() {
+    return this._openRouterKeys.filter(k => !this._orKeyCooling(k));
+  }
+
+  /** Usable key with the fewest calls in flight; with requireFree, only a key under OPENROUTER_MAX_CONCURRENT. */
+  _pickOpenRouterKey({ requireFree = false } = {}) {
+    const cap = this._openRouterPerKeyConcurrency();
+    let best = null, bestLoad = Infinity;
+    for (const key of this._usableOpenRouterKeys()) {
+      const load = this._orKeyInflight.get(key) || 0;
+      if (requireFree && load >= cap) continue;
+      if (load < bestLoad) { best = key; bestLoad = load; }
+    }
+    return best;
   }
 
   // Discovers a currently-available FREE model from OpenRouter's own
@@ -403,8 +684,13 @@ class GeminiService {
   // OpenRouter: generate JSON. Same OpenAI-compatible shape as Cerebras/Groq.
   // response_format is requested but not guaranteed honored by every free
   // model, so the markdown-fence strip below is defensive, same as Gemini.
-  async _openRouterJSON(prompt, system = '', { temperature = 0.7, maxTokens = 4096, timeoutMs = 45000, signal = null, salvage = false } = {}) {
+  async _openRouterJSON(prompt, system = '', { temperature = 0.7, maxTokens = 4096, timeoutMs = 45000, signal = null, salvage = false, key = null } = {}) {
     if (!this.openRouterEnabled) return null;
+    // Per-key accounting: pick (or accept) a usable key and count the call
+    // in flight on it BEFORE the first await, so concurrent callers see it.
+    key = key || this._pickOpenRouterKey();
+    if (!key) return null;
+    this._orKeyInflight.set(key, (this._orKeyInflight.get(key) || 0) + 1);
     try {
       const model = await this._resolveOpenRouterModel();
       const messages = [];
@@ -415,7 +701,7 @@ class GeminiService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.openRouterApiKey}`,
+          'Authorization': `Bearer ${key}`,
           // Recommended (not required) by OpenRouter for attributing traffic —
           // harmless to omit but good practice for a free-tier consumer.
           'HTTP-Referer': 'https://skillforge.ai',
@@ -436,9 +722,9 @@ class GeminiService {
         console.warn(`[OpenRouter] HTTP ${res.status} on ${model}: ${errText.slice(0, 200)}`);
         // Known-bad states stop being retried on every call: per-minute limit
         // -> short pause; per-day free-model cap / auth / credit -> long pause.
-        if (res.status === 429) this.coolDown('openrouter', /per-day|free-models-per-day|daily/i.test(errText) ? this._msUntilNextUtcMidnight() : 60 * 1000, 'HTTP 429');
-        else if ([401, 402, 403].includes(res.status)) this.coolDown('openrouter', 60 * 60 * 1000, `HTTP ${res.status}`);
-        else if (res.status >= 500) this.coolDown('openrouter', 20 * 1000, `HTTP ${res.status}`);
+        if (res.status === 429) { this.counters.rl429.openrouter++; this._coolOpenRouterKey(key, /per-day|free-models-per-day|daily/i.test(errText) ? this._msUntilNextUtcMidnight() : 60 * 1000, 'HTTP 429'); }
+        else if ([401, 402, 403].includes(res.status)) this._coolOpenRouterKey(key, 60 * 60 * 1000, `HTTP ${res.status}`);
+        else if (res.status >= 500) this._coolOpenRouterKey(key, 20 * 1000, `HTTP ${res.status}`);
         return null;
       }
 
@@ -448,11 +734,14 @@ class GeminiService {
 
       const parsed = parseLoose(text, { salvage });
       this.openRouterCallCount++;
+      this.counters.calls.openrouter++;
       console.log(`[OpenRouter] ✅ Success (${model}) — call #${this.openRouterCallCount}`);
       return parsed;
     } catch (err) {
       console.warn(`[OpenRouter] failed: ${err.message}`);
       return null;
+    } finally {
+      this._orKeyInflight.set(key, Math.max(0, (this._orKeyInflight.get(key) || 1) - 1));
     }
   }
 
@@ -473,11 +762,17 @@ class GeminiService {
         if (system) messages.push({ role: 'system', content: system });
         messages.push({ role: 'user', content: prompt });
 
+        // Route to the key with the most free token budget; never to a cooling-down key.
+        const gKey = this._pickGroqKey(estTokens);
+        if (!gKey) { fail('rate'); throw new Error('every Groq key is cooling down'); }
+        const keyId = this._groqKeyId(gKey);
+        this.counters.calls.groq++;
+
         const res = await LLMQueue.run(() => fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.groqApiKey}`,
+            'Authorization': `Bearer ${gKey}`,
           },
           body: JSON.stringify({
             model,
@@ -495,16 +790,23 @@ class GeminiService {
             reasoning_effort: 'low',
           }),
           signal: mkSignal(timeoutMs, signal),
-        }), estTokens, onThrottle, { maxWaitMs: deadlineAt ? Math.max(0, deadlineAt - Date.now()) : undefined, onResume });
+        }), estTokens, onThrottle, { maxWaitMs: deadlineAt ? Math.max(0, deadlineAt - Date.now()) : undefined, onResume, keyId });
 
         if (!res.ok) {
           const errText = await res.text();
+          if (res.status === 429) { this.counters.rl429.groq++; this._groqKeyBlockedUntil.set(gKey, Date.now() + parseRetryMs(res, errText)); }
           // Rate limited despite pacing (estimate error, or a different model
           // tier with a lower TPM cap than the shared window assumes): honor
           // Groq's requested wait and retry the SAME call rather than falling
-          // straight through to a generic template.
+          // straight through to a generic template. This KEY cools down for that
+          // long; if another key is usable the retry goes there immediately.
           if ((res.status === 429 || res.status === 413) && attempt < MAX_RATE_RETRIES) {
             const waitMs = parseRetryMs(res, errText);
+            if (res.status === 429 && this._pickGroqKey(estTokens)) {
+              console.warn(`[Groq] ${keyId} rate-limited (${res.status}) on ${model} - retrying on another key`);
+              continue;
+            }
+            this.counters.waitMs += waitMs;
             // Never sleep past the caller's deadline.
             if (deadlineAt && Date.now() + waitMs > deadlineAt) { fail('rate'); throw new Error(`Groq HTTP ${res.status}: retry-after ${Math.round(waitMs / 1000)}s exceeds the time budget`); }
             if (typeof onThrottle === 'function') { try { onThrottle(waitMs); } catch { /* never break generation */ } }
@@ -650,12 +952,17 @@ class GeminiService {
   // model (a measured 20-question call spent 2,161 tokens on reasoning and
   // took ~40s wall-clock). A 30s abort killed exactly the large, useful
   // batches this path exists to make.
-  async _geminiJSONOnce(prompt, system = '', { temperature = 0.85, maxTokens = 16384, timeoutMs = 120000, signal = null, salvage = false } = {}) {
-    // Least-busy usable key (not simply the first): concurrent bulk-generation
-    // calls spread across every configured project's key.
-    const key = this._pickGeminiKeyBalanced();
-    if (!key) return null;
-    this._geminiInflight.set(key, (this._geminiInflight.get(key) || 0) + 1);
+  async _geminiJSONOnce(prompt, system = '', { temperature = 0.85, maxTokens = 16384, timeoutMs = 120000, signal = null, salvage = false, requireFree = false, exclude = null, info = null } = {}) {
+    // Least-busy, least-recently-used usable (key, model) slot. Concurrent
+    // bulk-generation calls spread across every key AND every model. The pick
+    // and the in-flight increment happen synchronously (no await in between).
+    const slot = this._pickGeminiSlot({ requireFree, exclude });
+    if (!slot) return null;
+    const { key, model } = slot;
+    if (info) { info.slot = slot.id; info.model = model; }
+    this._geminiInflight.set(slot.id, (this._geminiInflight.get(slot.id) || 0) + 1);
+    this._geminiSlotLastUsed.set(slot.id, Date.now());
+    const label = `key #${this.geminiKeys.indexOf(key) + 1}/${model}`;
     try {
       const body = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -663,41 +970,62 @@ class GeminiService {
       };
       // Optional cap on the thinking model's reasoning tokens (unset = model
       // default). Exposed as an env knob because reasoning tokens are a large
-      // share of Gemini latency for this schema-filling task.
+      // share of Gemini latency for this schema-filling task. Models that reject
+      // it (HTTP 400 mentioning "thinking") are retried once without it and
+      // remembered for the process lifetime.
       const thinking = parseInt(process.env.GEMINI_THINKING_BUDGET || '', 10);
-      if (Number.isFinite(thinking) && thinking >= 0) body.generationConfig.thinkingConfig = { thinkingBudget: thinking };
+      const wantThinking = Number.isFinite(thinking) && thinking >= 0 && !this._noThinkingModels.has(model);
+      if (wantThinking) body.generationConfig.thinkingConfig = { thinkingBudget: thinking };
       if (system) body.systemInstruction = { parts: [{ text: system }] };
 
-      const res = await LLMQueue.run(() => fetch(`${this.endpoint}?key=${key}`, {
+      const send = () => LLMQueue.run(() => fetch(`${this._endpointFor(model)}?key=${key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         signal: mkSignal(timeoutMs, signal),
       }));
+      this.counters.calls.gemini++;
+      let res = await send();
+      let errText = '';
+      if (!res.ok) {
+        errText = await res.text().catch(() => '');
+        if (res.status === 400 && body.generationConfig.thinkingConfig && /thinking/i.test(errText)) {
+          this._noThinkingModels.add(model);
+          console.warn(`[Gemini] ${model} rejected thinkingConfig - retrying without it (remembered for this process)`);
+          delete body.generationConfig.thinkingConfig;
+          this.counters.calls.gemini++;
+          res = await send();
+          errText = res.ok ? '' : await res.text().catch(() => '');
+        }
+      }
       // Surface WHY a call failed instead of returning a silent null — a 404
       // (retired model), a 429 (quota) and a truncated body are completely
       // different problems, and an opaque null previously made a retired
       // model name look like an exhausted quota for weeks.
       if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        // Gemini's FREE tier allows only 20 requests per DAY per model, PER
+        // Gemini's FREE tier allows only ~20 requests per DAY per model, PER
         // KEY (quotaId GenerateRequestsPerDayPerProjectPerModel-FreeTier).
-        // Block only THIS key — a sibling key from a different project is
-        // unaffected and generateQuestionsBatch's retry will pick it up.
+        // Block only THIS (key, model) slot: sibling keys and sibling models
+        // are separate quota buckets and keep serving.
         if (res.status === 429) {
+          this.counters.rl429.gemini++;
           const perDay = /GenerateRequestsPerDayPerProjectPerModel/.test(errText);
           const cooldownMs = perDay ? this._msUntilNextUtcMidnight() : 60 * 1000;
-          this._geminiKeyBlockedUntil.set(key, Date.now() + cooldownMs);
-          const now = Date.now();
-          const remaining = this.geminiKeys.filter(k => {
-            if (k === key) return false;
-            const until = this._geminiKeyBlockedUntil.get(k);
-            return !until || now >= until;
-          }).length;
-          console.warn(`[Gemini] key ...${key.slice(-4)} hit ${perDay ? 'its per-DAY free-tier quota' : 'a short-term rate limit'} — cooling down ${Math.round(cooldownMs / 60000)}min. ${remaining > 0 ? `${remaining} other key(s) still available.` : 'No other keys available — falling to Cerebras/Groq.'}`);
+          this._geminiKeyBlockedUntil.set(slot.id, Date.now() + cooldownMs);
+          const remaining = this._geminiUsableSlots().length;
+          console.warn(`[Gemini] ${label} hit ${perDay ? 'its per-DAY free-tier quota' : 'a short-term rate limit'} - slot cooling down ${Math.round(cooldownMs / 60000)}min. ${remaining > 0 ? `${remaining} other slot(s) still available.` : 'No other slots available - falling to OpenRouter/Groq.'}`);
           return null;
         }
-        console.warn(`[Gemini] HTTP ${res.status} on ${this.resolvedModel}: ${errText.slice(0, 200)}`);
+        // A model that does not exist / does not support generateContent will
+        // never work: drop it for the process lifetime (logged once).
+        if ((res.status === 404 || res.status === 400) && /not found|not supported|unsupported|no longer available|is not available/i.test(errText) && !/thinking/i.test(errText)) {
+          if (!this._droppedModels.has(model)) {
+            this._droppedModels.add(model);
+            console.warn(`[Gemini] model "${model}" is not usable (HTTP ${res.status}) - dropped for this process: ${errText.slice(0, 160)}`);
+          }
+          return null;
+        }
+        console.warn(`[Gemini] HTTP ${res.status} on ${label}: ${errText.slice(0, 200)}`);
         return null;
       }
 
@@ -721,21 +1049,8 @@ class GeminiService {
       console.warn(`[Gemini] single-attempt JSON failed: ${err.message}`);
       return null;
     } finally {
-      this._geminiInflight.set(key, Math.max(0, (this._geminiInflight.get(key) || 1) - 1));
+      this._geminiInflight.set(slot.id, Math.max(0, (this._geminiInflight.get(slot.id) || 1) - 1));
     }
-  }
-
-  // Usable (not quota-blocked) key with the fewest calls in flight.
-  _pickGeminiKeyBalanced() {
-    const now = Date.now();
-    let best = null, bestLoad = Infinity;
-    for (const key of this.geminiKeys) {
-      const blockedUntil = this._geminiKeyBlockedUntil.get(key);
-      if (blockedUntil && now < blockedUntil) continue;
-      const load = this._geminiInflight.get(key) || 0;
-      if (load < bestLoad) { best = key; bestLoad = load; }
-    }
-    return best;
   }
 
   // ── embedTexts: batch text embeddings for semantic similarity ────────────
@@ -831,13 +1146,20 @@ class GeminiService {
     const callTimeout = () => Math.max(4000, Math.min(timeoutMs, left()));
     const out = (parsed) => (Array.isArray(parsed?.questions) ? parsed.questions : null);
 
+    if (this.isEnabled()) await this._ensureGeminiModels();   // no-op once discovery is cached; fails open
     if (this.isEnabled() && !this.geminiQuotaBlocked()) {
       const geminiTokens = Math.max(maxTokens, 8192);
-      const maxAttempts = Math.max(1, this.geminiKeys.length);
+      // Try up to 4 DIFFERENT free (key, model) slots; a slot already busy with
+      // GEMINI_SLOT_CONCURRENT calls is skipped (the call goes on to the next provider).
+      const tried = new Set();
+      const maxAttempts = Math.max(1, Math.min(4, this._geminiUsableSlots().length));
       for (let i = 0; i < maxAttempts; i++) {
-        if ((i > 0 && this.geminiQuotaBlocked()) || left() < 4000 || signal?.aborted) break;
-        const q = out(await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: geminiTokens, timeoutMs: callTimeout(), signal, salvage }));
+        if (left() < 4000 || signal?.aborted) break;
+        const gi = {};
+        const q = out(await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: geminiTokens, timeoutMs: callTimeout(), signal, salvage, requireFree: true, exclude: tried, info: gi }));
         if (q) return done(q, 'gemini');
+        if (!gi.slot) break;          // no free usable slot right now
+        tried.add(gi.slot);
       }
     }
     if (this.cerebrasEnabled && !this.isCoolingDown('cerebras') && left() >= 4000 && !signal?.aborted) {
@@ -845,17 +1167,17 @@ class GeminiService {
       if (q) return done(q, 'cerebras');
       this.coolDown('cerebras', 5 * 60 * 1000, 'no usable response');
     }
-    if (this.openRouterEnabled && !this.isCoolingDown('openrouter') && this._inflight.openrouter < parseInt(process.env.OPENROUTER_MAX_CONCURRENT || '1', 10) && left() >= 6000 && !signal?.aborted) {
-      this._inflight.openrouter++;
-      try {
-        const q = out(await this._openRouterJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192), timeoutMs: Math.min(60000, callTimeout()), signal, salvage }));
-        if (q) return done(q, 'openrouter');
-      } finally { this._inflight.openrouter--; }
+    // OpenRouter: a usable key with a free slot (OPENROUTER_MAX_CONCURRENT per key);
+    // if every key is busy or cooling the call goes straight to Groq instead of queueing.
+    const orKey = this.openRouterEnabled && left() >= 6000 && !signal?.aborted ? this._pickOpenRouterKey({ requireFree: true }) : null;
+    if (orKey) {
+      const q = out(await this._openRouterJSON(prompt, system, { temperature, maxTokens: Math.min(maxTokens, 8192), timeoutMs: Math.min(60000, callTimeout()), signal, salvage, key: orKey }));
+      if (q) return done(q, 'openrouter');
     }
     // A request whose own prompt + max_tokens exceeds the whole per-minute budget is rejected with HTTP 413
     // no matter how long we wait — do not even send it.
     const groqFits = estimateGroqTokens(prompt, system, maxTokens) <= (LLMQueue.tpmLimit || 7000);
-    if (this.groqEnabled && groqFits && !this.isCoolingDown('groq') && !signal?.aborted) {
+    if (this.groqEnabled && groqFits && this._usableGroqKeys().length > 0 && !signal?.aborted) {
       const base = { temperature, maxTokens, timeoutMs: callTimeout(), onThrottle, onResume, signal, salvage, deadlineAt };
       const info = {};
       const q120 = out(await this._groqJSON(prompt, system, { ...base, model: 'openai/gpt-oss-120b', info }));
@@ -891,7 +1213,7 @@ class GeminiService {
   async generateDeepJSON(prompt, system = '', { temperature = 0.8, maxTokens = 8000, timeoutMs = 120000, onThrottle = null } = {}) {
     if (this.isEnabled()) {
       const geminiTokens = Math.max(maxTokens, 8192);
-      const maxAttempts = Math.max(1, this.geminiKeys.length);
+      const maxAttempts = Math.max(1, Math.min(4, this._geminiUsableSlots().length));
       for (let i = 0; i < maxAttempts; i++) {
         if (i > 0 && this.geminiQuotaBlocked()) break;
         const parsed = await this._geminiJSONOnce(prompt, system, { temperature, maxTokens: geminiTokens, timeoutMs });
@@ -965,7 +1287,7 @@ class GeminiService {
     // (always undefined) — every call failed auth silently and fell straight
     // to Groq. Now uses the real multi-key selector via _pickGeminiKey().
     if (this.isEnabled()) {
-      const key = this._pickGeminiKey();
+      const gSlot = this._pickGeminiSlot(); const key = gSlot ? gSlot.key : null;
       if (key) {
         try {
           const body = {
@@ -974,7 +1296,7 @@ class GeminiService {
           };
           if (system) body.systemInstruction = { parts: [{ text: system }] };
 
-          const res = await LLMQueue.run(() => fetch(`${this.endpoint}?key=${key}`, {
+          const res = await LLMQueue.run(() => fetch(`${this._endpointFor(gSlot.model)}?key=${key}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -989,7 +1311,7 @@ class GeminiService {
             const errText = await res.text().catch(() => '');
             const perDay = /GenerateRequestsPerDayPerProjectPerModel/.test(errText);
             const cooldownMs = perDay ? this._msUntilNextUtcMidnight() : 60 * 1000;
-            this._geminiKeyBlockedUntil.set(key, Date.now() + cooldownMs);
+            this._geminiKeyBlockedUntil.set(gSlot.id, Date.now() + cooldownMs);
             console.warn('[Gemini] ⚠️  Quota exceeded (429) on generateText — switching to Groq');
           }
         } catch {

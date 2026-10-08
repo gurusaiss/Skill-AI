@@ -89,14 +89,13 @@ export function generationConfig() {
   };
 }
 
-function autoConcurrency() {
-  const st = GeminiService.generationStatus();
-  let c = 0;
-  if (st.gemini) c += Math.min(4, st.geminiKeysUsable * 2);
-  if (st.openrouter) c += 1;
-  if (st.groq) c += 2;
-  if (st.cerebras) c += 1;
-  return Math.max(1, Math.min(c, Math.max(1, (LLMQueue.max || 5) - 1))); // always leave one LLMQueue slot for interactive calls
+// Auto concurrency = the SUM of what every provider can take at once (usable
+// Gemini (key, model) slots + OpenRouter keys x per-key limit + Groq keys x 2 +
+// Cerebras), bounded by GEN_MAX_CONCURRENCY (default 12) and by the LLMQueue
+// size minus one slot reserved for interactive calls. GEN_CONCURRENCY overrides.
+export function autoConcurrency(status = GeminiService.generationStatus(), { max = envInt('GEN_MAX_CONCURRENCY', 12), queueMax = LLMQueue.max || 5 } = {}) {
+  const c = status?.slots?.total ?? 0;
+  return Math.max(1, Math.min(c, Math.max(1, max), Math.max(1, queueMax - 1)));
 }
 
 // Progress for the whole run. `done` = questions accepted so far across every
@@ -1745,10 +1744,14 @@ async function runGeneration(specs, { onProgress = null, label = 'bank' } = {}) 
   };
   const t0 = Date.now();
   const concurrency = cfg.concurrency || autoConcurrency();
+  try { console.log(GeminiService.capacityLine()); } catch { /* informational only */ }
+  const counters0 = GeminiService.counterSnapshot();
   console.log(`[GenBudget] ${label}: ${specs.length} source(s), ${total} question(s); time budget ${Math.round(cfg.timeBudgetMs / 1000)}s, LLM concurrency ${concurrency}, extractive share ${cfg.extractiveShare}, providers gemini=${status.geminiKeysUsable} openrouter=${status.openrouter} groq=${status.groq}`);
   if (!status.anyLLM) console.warn('[GenBudget] no LLM provider is available right now — the bank is generated locally from the documents (extractive).');
 
+  const tExtract0 = Date.now();
   const states = specs.map(sp => prepareSource(sp, rt));
+  const extractiveMs = Date.now() - tExtract0;
   const updateProgress = () => emit.progress(states.reduce((s, S) => s + Math.min(S.count, S.accepted()), 0));
   updateProgress();
 
@@ -1804,6 +1807,13 @@ async function runGeneration(specs, { onProgress = null, label = 'bank' } = {}) 
   const exTotal = states.reduce((s, S) => s + S.extractive.length, 0);
   const cacheHits = states.reduce((s, S) => s + S.cacheHits, 0);
   console.log(`[GenBudget] ${label}: done in ${Math.round((Date.now() - t0) / 1000)}s — ${rt.stats.calls} LLM call(s) (${rt.stats.ok} ok, ${rt.stats.failed} failed, by provider ${JSON.stringify(rt.stats.byProvider)}), ${llmTotal} LLM question(s) (${cacheHits} from cache), ${exTotal} extractive up-front, template padding ${states.reduce((s, S) => s + (S.templateCount || 0), 0)}`);
+  try {
+    const c1 = GeminiService.counterSnapshot();
+    const d = (g) => Math.max(0, (c1.calls[g] || 0) - (counters0.calls[g] || 0));
+    const r = (g) => Math.max(0, (c1.rl429[g] || 0) - (counters0.rl429[g] || 0));
+    const waitS = Math.round(Math.max(0, c1.waitMs - counters0.waitMs) / 1000);
+    console.log(`[GenBudget] ${label}: time breakdown - extractive ${(extractiveMs / 1000).toFixed(1)}s, waiting for provider capacity ${waitS}s (summed over parallel calls), HTTP calls gemini=${d('gemini')} openrouter=${d('openrouter')} groq=${d('groq')}, 429s gemini=${r('gemini')} openrouter=${r('openrouter')} groq=${r('groq')}`);
+  } catch { /* informational only */ }
   updateProgress();
   return { batches: batches.map(b => (b && !b.error ? b : withFinalCombo([], { easy: 0, medium: 0, hard: 0 }))), states, rt };
 }

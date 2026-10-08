@@ -260,6 +260,9 @@ app.get('/api/health', (req, res) => {
       db: process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'placeholder' ? 'supabase' : 'file',
       performance: getPerformanceSummary(),
       llm: geminiService.getStats(),
+      // Counts only (no key material): usable slots/keys per provider, a rough
+      // questions-per-minute estimate and what to add when capacity is low.
+      llmCapacity: geminiService.llmCapacity(),
       integrations: {
         supabase: process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'placeholder',
         llm: geminiEnabled || groqEnabled,

@@ -4,6 +4,15 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-13 (b) — More free AI capacity for question generation, and a way to see how much you have
+
+**More capacity from the same free keys.** Google's free limit is per key AND per model, so each Gemini key now rotates across a few models automatically, multiplying what one key can do per day. Groq and OpenRouter now support several keys each (`GROQ_API_KEY_2` to `_6`, `OPENROUTER_API_KEY_2` to `_5`), each with its own independent limit, so adding keys gives real extra capacity instead of sharing one limit.
+**See your capacity.** `/api/health` now shows `llmCapacity`: how many usable slots you have right now, a rough questions-per-minute estimate, and plain suggestions like "Add more GEMINI_API_KEY_n keys" when capacity is low. The server log also prints a line at the start of each generation showing available capacity, and a line at the end showing where the time went (building questions locally vs. waiting for a free AI slot vs. actual AI calls), so a slow run can be explained.
+Not yet measured against the real Google/Groq/OpenRouter services — the gain is based on how their documented free limits work, not a live timing test.
+Files: `server/services/GeminiService.js`, `LLMQueue.js`, `AssessmentGenerator.js`, `server/index.js`, `.env.example`.
+
+---
+
 ## 2026-10-13 — Every page fills the screen, readable text, fewer crowded buttons, and a bug audit
 
 **Full width.** Pages no longer sit in a narrow centred column with empty bands on both sides. They use the whole width with a small gutter, and wide screens use side-by-side layouts (for example a main area plus a side panel, or two and three column card grids). Sign-in pages now use a two-panel layout (brand panel on one half, form on the other), and the landing page uses full-width sections.

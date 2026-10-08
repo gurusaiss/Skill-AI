@@ -20,11 +20,16 @@
  * pass estTokens=0 (the default) skip the TPM gate entirely and behave
  * exactly as before — only opted-in callers (Groq generation) are paced.
  *
+ * Each credential (e.g. every GROQ_API_KEY_n) can have its OWN TPM window: pass
+ * opts.keyId to run(); calls on key B are never delayed by key A's full window.
+ * (The semaphore default is 16 so a generation run can use the combined
+ * capacity of several providers/keys; one slot is always left for interactive calls.)
+ *
  * Override with env:
- *   LLM_MAX_CONCURRENT=5  LLM_MAX_QUEUE=200  GROQ_TPM_LIMIT=11000
+ *   LLM_MAX_CONCURRENT=16  LLM_MAX_QUEUE=200  GROQ_TPM_LIMIT=11000
  */
 
-const MAX_CONCURRENT  = parseInt(process.env.LLM_MAX_CONCURRENT || '5', 10);
+const MAX_CONCURRENT  = parseInt(process.env.LLM_MAX_CONCURRENT || '16', 10);
 const MAX_QUEUE_DEPTH = parseInt(process.env.LLM_MAX_QUEUE      || '200', 10);
 // Groq's REAL free/on-demand per-minute token budget, read from live
 // x-ratelimit-limit-tokens response headers: 8,000 TPM for both
@@ -40,64 +45,62 @@ const TPM_WINDOW_MS   = 60000;
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-class LLMQueue {
-  constructor(maxConcurrent = MAX_CONCURRENT, maxQueue = MAX_QUEUE_DEPTH, tpmLimit = GROQ_TPM_LIMIT) {
-    this.max       = maxConcurrent;
-    this.maxQueue  = maxQueue;
-    this.tpmLimit  = tpmLimit;
-    this.active    = 0;
-    this.queued    = 0;
-    this.completed = 0;
-    this.rejected  = 0;
-    this.throttledMs = 0;      // cumulative time spent waiting on the TPM gate
-    this.totalWaitMs = 0;
-    this._queue    = [];
-    this._tpmWindow = [];      // [{ t: epochMs, tokens }] for calls in the last 60s
-    this._tpmGate   = Promise.resolve(); // serializes token reservations
-    this._pendingTpm = 0;      // tokens reserved by callers still waiting at the gate
+/**
+ * One rolling-60s token window for ONE credential. Every Groq API key has its
+ * own per-minute budget, so each key gets its own TpmWindow (keyed by a
+ * non-secret label such as "groq#2"); the default window (no key) is the one
+ * the legacy single-key callers use.
+ */
+export class TpmWindow {
+  constructor(limit = GROQ_TPM_LIMIT) {
+    this.limit = limit;
+    this.window = [];            // [{ t: epochMs, tokens }]
+    this.gate = Promise.resolve();
+    this.pending = 0;            // tokens reserved by callers still waiting at the gate
+    this.throttledMs = 0;
   }
 
-  _pruneWindow() {
+  prune() {
     const cutoff = Date.now() - TPM_WINDOW_MS;
-    while (this._tpmWindow.length > 0 && this._tpmWindow[0].t <= cutoff) {
-      this._tpmWindow.shift();
-    }
+    while (this.window.length > 0 && this.window[0].t <= cutoff) this.window.shift();
   }
 
-  _windowTokens() {
+  tokens() {
     let sum = 0;
-    for (const e of this._tpmWindow) sum += e.tokens;
+    for (const e of this.window) sum += e.tokens;
     return sum;
   }
 
-  // Serialized token reservation. Because Node is single-threaded and this
-  // chains every reservation onto _tpmGate, only ONE caller evaluates the
-  // budget-and-record critical section at a time — so two concurrent callers
-  // can't both see "budget available" and double-spend the window.
-  async _reserveTokens(estTokens, onThrottle, opts = {}) {
-    const prev = this._tpmGate;
+  /** Tokens still free in the current window (ignoring queued reservations). */
+  freeTokens() {
+    this.prune();
+    return Math.max(0, this.limit - this.tokens() - this.pending);
+  }
+
+  // Serialized token reservation: chained on `gate`, so only ONE caller
+  // evaluates the budget-and-record section at a time (no double-spend).
+  async reserve(estTokens, onThrottle, opts = {}) {
+    const prev = this.gate;
     let release;
-    this._tpmGate = new Promise(r => { release = r; });
-    this._pendingTpm += Math.min(estTokens, this.tpmLimit);
+    this.gate = new Promise(r => { release = r; });
+    this.pending += Math.min(estTokens, this.limit);
     const maxWaitMs = Number.isFinite(opts.maxWaitMs) ? opts.maxWaitMs : Infinity;
     const startedAt = Date.now();
-    await prev; // wait for the previous reservation to finish
-    this._pendingTpm = Math.max(0, this._pendingTpm - Math.min(estTokens, this.tpmLimit));
+    await prev;
+    this.pending = Math.max(0, this.pending - Math.min(estTokens, this.limit));
 
     try {
       // A single call larger than the whole window budget can never fit by
-      // waiting — let it through once the window is otherwise empty rather
-      // than deadlock. (Shouldn't happen given per-call sizing, but safe.)
-      const capped = Math.min(estTokens, this.tpmLimit);
+      // waiting — let it through once the window is otherwise empty.
+      const capped = Math.min(estTokens, this.limit);
       let notified = false;
       for (;;) {
-        this._pruneWindow();
-        const used = this._windowTokens();
-        if (used + capped <= this.tpmLimit || this._tpmWindow.length === 0) break;
-        const oldest = this._tpmWindow[0];
+        this.prune();
+        const used = this.tokens();
+        if (used + capped <= this.limit || this.window.length === 0) break;
+        const oldest = this.window[0];
         const waitMs = Math.max(50, (oldest.t + TPM_WINDOW_MS) - Date.now());
-        // Time-budgeted callers (question generation) would rather skip this
-        // call than park past their deadline.
+        // Time-budgeted callers would rather skip this call than park past their deadline.
         if ((Date.now() - startedAt) + waitMs > maxWaitMs) {
           const err = new Error(`TPM budget wait (${Math.round(waitMs / 1000)}s) would exceed the caller's time budget`);
           err.code = 'TPM_WAIT_EXCEEDED';
@@ -110,32 +113,62 @@ class LLMQueue {
         this.throttledMs += waitMs;
         await sleep(waitMs);
       }
-      this._tpmWindow.push({ t: Date.now(), tokens: capped });
+      this.window.push({ t: Date.now(), tokens: capped });
       if (notified && typeof opts.onResume === 'function') { try { opts.onResume(); } catch { /* never break generation */ } }
+      return notified;
     } finally {
       release();
     }
   }
 
-  /**
-   * Approximate time (ms) a call costing `estTokens` would currently wait for
-   * token budget. 0 = it would go through immediately. Lets a router prefer a
-   * provider that can take the call now over parking on this one. Includes the
-   * reservations already queued ahead of the caller.
-   */
+  /** Approximate ms a call costing `estTokens` would wait for budget now (0 = immediately). */
   estimateWaitMs(estTokens) {
-    this._pruneWindow();
-    const capped = Math.min(estTokens, this.tpmLimit);
-    const need = this._windowTokens() + this._pendingTpm + capped - this.tpmLimit;
-    if (need <= 0 || this._tpmWindow.length === 0) return 0;
+    this.prune();
+    const capped = Math.min(estTokens, this.limit);
+    const need = this.tokens() + this.pending + capped - this.limit;
+    if (need <= 0 || this.window.length === 0) return 0;
     let freed = 0;
-    for (const e of this._tpmWindow) {
+    for (const e of this.window) {
       freed += e.tokens;
       if (freed >= need) return Math.max(0, e.t + TPM_WINDOW_MS - Date.now());
     }
-    const last = this._tpmWindow[this._tpmWindow.length - 1];
-    return Math.max(0, last.t + TPM_WINDOW_MS - Date.now()) + (this._pendingTpm > 0 ? TPM_WINDOW_MS : 0);
+    const last = this.window[this.window.length - 1];
+    return Math.max(0, last.t + TPM_WINDOW_MS - Date.now()) + (this.pending > 0 ? TPM_WINDOW_MS : 0);
   }
+}
+
+const DEFAULT_WINDOW = '__default__';
+
+class LLMQueue {
+  constructor(maxConcurrent = MAX_CONCURRENT, maxQueue = MAX_QUEUE_DEPTH, tpmLimit = GROQ_TPM_LIMIT) {
+    this.max       = maxConcurrent;
+    this.maxQueue  = maxQueue;
+    this.tpmLimit  = tpmLimit;
+    this.active    = 0;
+    this.queued    = 0;
+    this.completed = 0;
+    this.rejected  = 0;
+    this.totalWaitMs = 0;
+    this._queue    = [];
+    this._windows  = new Map();   // credential label -> TpmWindow (default window = legacy callers)
+    this._windows.set(DEFAULT_WINDOW, new TpmWindow(tpmLimit));
+  }
+
+  /** The token window for a credential label (created on first use). No label = the shared default window. */
+  window(keyId) {
+    const id = keyId || DEFAULT_WINDOW;
+    let w = this._windows.get(id);
+    if (!w) { w = new TpmWindow(this.tpmLimit); this._windows.set(id, w); }
+    return w;
+  }
+
+  get throttledMs() { let t = 0; for (const w of this._windows.values()) t += w.throttledMs; return t; }
+
+  /** Approximate wait (ms) for a call of `estTokens` on this credential's window. */
+  estimateWaitMs(estTokens, keyId) { return this.window(keyId).estimateWaitMs(estTokens); }
+
+  /** Free tokens left in this credential's current window. */
+  freeTokens(keyId) { return this.window(keyId).freeTokens(); }
 
   /**
    * @param {Function} fn         async thunk performing the actual HTTP call
@@ -145,7 +178,9 @@ class LLMQueue {
    *                              call has to wait for token budget
    * @param {object}   opts       { maxWaitMs } reject with code TPM_WAIT_EXCEEDED instead
    *                              of waiting longer than this for token budget;
-   *                              { onResume } called when a throttled call is released
+   *                              { onResume } called when a throttled call is released;
+   *                              { keyId } non-secret credential label whose own TPM window is charged
+   *                              (omit = the shared default window)
    */
   run(fn, estTokens = 0, onThrottle = null, opts = {}) {
     // Shed load when queue is full — callers must handle and use fallback.
@@ -157,7 +192,7 @@ class LLMQueue {
       return Promise.reject(err);
     }
 
-    const gate = estTokens > 0 ? this._reserveTokens(estTokens, onThrottle, opts) : Promise.resolve();
+    const gate = estTokens > 0 ? this.window(opts.keyId).reserve(estTokens, onThrottle, opts) : Promise.resolve();
     return gate.then(() => this._runConcurrencyGated(fn));
   }
 
@@ -195,7 +230,8 @@ class LLMQueue {
   }
 
   getStats() {
-    this._pruneWindow();
+    const d = this.window();
+    d.prune();
     return {
       active:       this.active,
       queued:       this.queued,
@@ -204,11 +240,14 @@ class LLMQueue {
       max:          this.max,
       maxQueue:     this.maxQueue,
       tpmLimit:     this.tpmLimit,
-      windowTokens: this._windowTokens(),
+      windowTokens: d.tokens(),
       throttledMs:  this.throttledMs,
+      tpmWindows:   this._windows.size,
       avgWaitMs:    this.completed > 0 ? Math.round(this.totalWaitMs / this.completed) : 0,
     };
   }
 }
 
 export default new LLMQueue();
+
+export { LLMQueue };
