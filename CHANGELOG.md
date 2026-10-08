@@ -4,6 +4,14 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-13 (c) — Small follow-up: the daily brief's button now goes somewhere
+
+The "Continue Learning" / "Take a Challenge" button on the Dashboard's daily brief card had no action. It now opens today's session.
+Checked and left as-is (harmless, not used anywhere): `KnowledgeQuiz.jsx`, `ModuleLearn.jsx` and `admin/Dashboard.jsx` are not connected to any route and call no live code path. Safe to delete later if you want; ask and I will.
+Files: `client/src/components/DailyBrief.jsx`.
+
+---
+
 ## 2026-10-13 (b) — More free AI capacity for question generation, and a way to see how much you have
 
 **More capacity from the same free keys.** Google's free limit is per key AND per model, so each Gemini key now rotates across a few models automatically, multiplying what one key can do per day. Groq and OpenRouter now support several keys each (`GROQ_API_KEY_2` to `_6`, `OPENROUTER_API_KEY_2` to `_5`), each with its own independent limit, so adding keys gives real extra capacity instead of sharing one limit.

@@ -3,6 +3,7 @@
  * Shown at the top of the Overview tab in Dashboard
  */
 import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -94,6 +95,7 @@ const actionConfig = {
 };
 
 export default function DailyBrief() {
+  const navigate = useNavigate();
   const [brief, setBrief]         = useState(null);
   const [loading, setLoading]     = useState(true);
   const [collapsed, setCollapsed] = useState(false);
@@ -237,6 +239,7 @@ export default function DailyBrief() {
                   <p className="text-sm text-slate-400 leading-relaxed">{brief.recommendation?.msg}</p>
                 </div>
                 <button
+                  onClick={() => navigate(brief.nextDay?.day != null ? `/session/${brief.nextDay.day}` : '/dashboard')}
                   className={`flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r ${action.color} text-white text-sm font-black hover:opacity-90 hover:shadow-lg transition-all active:scale-95`}
                 >
                   <span>{action.icon}</span>
