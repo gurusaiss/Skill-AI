@@ -5,6 +5,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
+import ActionMenu from '../../components/ActionMenu.jsx';
 
 const AGENT_STEPS = [
   { agent: 'GoalAgent', icon: '🎯', color: '#6366F1', text: 'Analyzing learning goal...' },
@@ -131,26 +135,26 @@ function SessionsEditor({ sessions = [], onChange }) {
   };
 
   const inputCls = "w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none";
-  const labelCls = "block text-xs text-slate-500 font-semibold mb-1";
+  const labelCls = "block text-sm text-slate-400 font-semibold mb-1";
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">Sessions & Quizzes ({sessions.length})</label>
+        <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest">Sessions & Quizzes ({sessions.length})</label>
         <button type="button" onClick={addSession}
-          className="text-xs text-emerald-400 hover:text-emerald-300 font-bold px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all">
+          className="text-sm text-emerald-400 hover:text-emerald-300 font-bold px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all">
           + Add Session
         </button>
       </div>
 
       {!sessions.length && (
         <div className="rounded-xl border border-slate-700/40 bg-slate-800/20 p-6 text-center">
-          <p className="text-xs text-slate-500">No sessions yet. Click "+ Add Session" to create one, or save with AI content to auto-generate.</p>
+          <p className="text-sm text-slate-400">No sessions yet. Click "+ Add Session" to create one, or save with AI content to auto-generate.</p>
         </div>
       )}
 
       {sessions.length > 0 && (
-        <p className="text-xs text-amber-400/80 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2">
+        <p className="text-sm text-amber-400/80 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2">
           ⚠️ Reordering or deleting a session changes its day position — employees already in progress on this module will see the updated order/content on their next visit. Existing session-completion records stay linked by day number.
         </p>
       )}
@@ -164,21 +168,21 @@ function SessionsEditor({ sessions = [], onChange }) {
             {/* Session header - click to expand */}
             <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700/20 transition-colors">
               <button type="button" onClick={() => setExpandedIdx(isOpen ? null : sIdx)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                <span className={`w-7 h-7 rounded-lg border flex items-center justify-center text-xs font-black flex-shrink-0 ${isCapstone ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-indigo-500/20 border-indigo-500/30 text-indigo-300'}`}>
+                <span className={`w-7 h-7 rounded-lg border flex items-center justify-center text-sm font-black flex-shrink-0 ${isCapstone ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-indigo-500/20 border-indigo-500/30 text-indigo-300'}`}>
                   {session.dayNumber || sIdx + 1}
                 </span>
                 <span className="text-sm font-semibold text-white truncate">{session.title || `Day ${sIdx + 1}`}</span>
-                {isCapstone && <span className="text-xs text-amber-400 flex-shrink-0">🏆 Capstone</span>}
-                <span className="text-xs text-slate-500 flex-shrink-0">{quizCount} question{quizCount !== 1 ? 's' : ''}</span>
+                {isCapstone && <span className="text-sm text-amber-400 flex-shrink-0">🏆 Capstone</span>}
+                <span className="text-sm text-slate-400 flex-shrink-0">{quizCount} question{quizCount !== 1 ? 's' : ''}</span>
               </button>
               <div className="flex items-center gap-1 flex-shrink-0">
                 <button type="button" onClick={() => moveSession(sIdx, -1)} disabled={sIdx === 0}
-                  className="w-6 h-6 rounded-md bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700 disabled:opacity-30 flex items-center justify-center text-xs">▲</button>
+                  className="w-6 h-6 rounded-md bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700 disabled:opacity-30 flex items-center justify-center text-sm">▲</button>
                 <button type="button" onClick={() => moveSession(sIdx, 1)} disabled={sIdx === sessions.length - 1}
-                  className="w-6 h-6 rounded-md bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700 disabled:opacity-30 flex items-center justify-center text-xs">▼</button>
+                  className="w-6 h-6 rounded-md bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700 disabled:opacity-30 flex items-center justify-center text-sm">▼</button>
                 <button type="button" onClick={() => removeSession(sIdx)}
-                  className="w-6 h-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 flex items-center justify-center text-xs">✕</button>
-                <button type="button" onClick={() => setExpandedIdx(isOpen ? null : sIdx)} className="text-slate-500 text-sm px-1">{isOpen ? '▲' : '▼'}</button>
+                  className="w-6 h-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 flex items-center justify-center text-sm">✕</button>
+                <button type="button" onClick={() => setExpandedIdx(isOpen ? null : sIdx)} className="text-slate-400 text-sm px-1">{isOpen ? '▲' : '▼'}</button>
               </div>
             </div>
 
@@ -230,7 +234,7 @@ function SessionsEditor({ sessions = [], onChange }) {
 
                 {/* Practical Exercise */}
                 <div className="rounded-lg border border-teal-500/20 bg-teal-500/5 p-3 space-y-2">
-                  <label className="text-xs font-bold text-teal-400 uppercase tracking-widest">Practical Exercise</label>
+                  <label className="text-sm font-bold text-teal-400 uppercase tracking-widest">Practical Exercise</label>
                   <input type="text" value={session.exercise?.title || ''} onChange={e => updateNested(sIdx, 'exercise', 'title', e.target.value)}
                     placeholder="Exercise title" className={inputCls} />
                   <textarea rows={2} value={session.exercise?.instructions || ''} onChange={e => updateNested(sIdx, 'exercise', 'instructions', e.target.value)}
@@ -242,8 +246,8 @@ function SessionsEditor({ sessions = [], onChange }) {
                 {/* Case Study */}
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-amber-400 uppercase tracking-widest">Case Study</label>
-                    <label className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <label className="text-sm font-bold text-amber-400 uppercase tracking-widest">Case Study</label>
+                    <label className="flex items-center gap-1.5 text-sm text-slate-400">
                       <input type="checkbox" checked={!!session.caseStudy} onChange={e => update(sIdx, 'caseStudy', e.target.checked ? { scenario: '', discussionPoints: [] } : null)} />
                       Include
                     </label>
@@ -262,12 +266,12 @@ function SessionsEditor({ sessions = [], onChange }) {
                 {/* Quiz questions — type-aware */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs text-slate-500 font-semibold">Quiz Questions</label>
+                    <label className="text-sm text-slate-400 font-semibold">Quiz Questions</label>
                     <div className="flex gap-1.5">
                       {Object.entries(Q_TYPE_META).map(([type, meta]) => (
                         <button key={type} type="button" onClick={() => addQuestion(sIdx, type)}
                           title={`Add ${meta.label}`}
-                          className="text-xs text-indigo-400 hover:text-indigo-300 font-bold px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all whitespace-nowrap">
+                          className="text-sm text-indigo-400 hover:text-indigo-300 font-bold px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all whitespace-nowrap">
                           {meta.icon} +
                         </button>
                       ))}
@@ -275,19 +279,19 @@ function SessionsEditor({ sessions = [], onChange }) {
                   </div>
 
                   {(session.quiz || []).length === 0 ? (
-                    <p className="text-xs text-slate-600 text-center py-2">No questions — use the buttons above to add MCQ / Fill Blank / Subjective</p>
+                    <p className="text-sm text-slate-400 text-center py-2">No questions — use the buttons above to add MCQ / Fill Blank / Subjective</p>
                   ) : (session.quiz || []).map((q, qIdx) => {
                     const qType = q.type || 'mcq';
                     return (
                       <div key={qIdx} className="rounded-lg border border-slate-700/50 bg-slate-900/60 p-3 space-y-3">
                         <div className="flex items-start justify-between gap-2">
-                          <span className="text-xs font-black text-slate-500 mt-1">Q{qIdx + 1} · {Q_TYPE_META[qType]?.icon} {Q_TYPE_META[qType]?.label}</span>
+                          <span className="text-sm font-black text-slate-400 mt-1">Q{qIdx + 1} · {Q_TYPE_META[qType]?.icon} {Q_TYPE_META[qType]?.label}</span>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <label className="text-[10px] text-slate-500">Marks</label>
+                            <label className="text-sm text-slate-400">Marks</label>
                             <input type="number" min={0} value={q.marks ?? 1} onChange={e => updateQuiz(sIdx, qIdx, 'marks', parseFloat(e.target.value) || 0)}
-                              className="w-12 px-1.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-white text-xs focus:border-indigo-500 focus:outline-none" />
+                              className="w-12 px-1.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
                             <button type="button" onClick={() => removeQuestion(sIdx, qIdx)}
-                              className="w-6 h-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 flex items-center justify-center text-xs">✕</button>
+                              className="w-6 h-6 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 flex items-center justify-center text-sm">✕</button>
                           </div>
                         </div>
                         <textarea rows={2} value={q.question || ''} onChange={e => updateQuiz(sIdx, qIdx, 'question', e.target.value)}
@@ -301,11 +305,11 @@ function SessionsEditor({ sessions = [], onChange }) {
                               return (
                                 <div key={oIdx} className="flex items-center gap-2">
                                   <button type="button" onClick={() => updateQuiz(sIdx, qIdx, 'answer', letter)} title="Mark as correct answer"
-                                    className={`w-5 h-5 rounded-full border flex-shrink-0 flex items-center justify-center text-xs font-black transition-all ${isCorrect ? 'bg-emerald-500/30 border-emerald-500/60 text-emerald-300' : 'border-slate-600 text-slate-500 hover:border-indigo-500/50'}`}>
+                                    className={`w-5 h-5 rounded-full border flex-shrink-0 flex items-center justify-center text-sm font-black transition-all ${isCorrect ? 'bg-emerald-500/30 border-emerald-500/60 text-emerald-300' : 'border-slate-600 text-slate-400 hover:border-indigo-500/50'}`}>
                                     {isCorrect ? '✓' : letter}
                                   </button>
                                   <input type="text" value={opt} onChange={e => updateQuizOption(sIdx, qIdx, oIdx, e.target.value)}
-                                    className="flex-1 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs focus:border-indigo-500 focus:outline-none" />
+                                    className="flex-1 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
                                 </div>
                               );
                             })}
@@ -313,15 +317,15 @@ function SessionsEditor({ sessions = [], onChange }) {
                         )}
                         {qType === 'fill_blank' && (
                           <input type="text" value={q.answer || ''} onChange={e => updateQuiz(sIdx, qIdx, 'answer', e.target.value)}
-                            placeholder="Expected answer (exact phrase)" className="w-full ml-2 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs focus:border-indigo-500 focus:outline-none" />
+                            placeholder="Expected answer (exact phrase)" className="w-full ml-2 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none" />
                         )}
                         {qType === 'subjective' && (
                           <textarea rows={2} value={q.answer || ''} onChange={e => updateQuiz(sIdx, qIdx, 'answer', e.target.value)}
-                            placeholder="Model answer" className="w-full ml-2 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs focus:border-indigo-500 focus:outline-none resize-none" />
+                            placeholder="Model answer" className="w-full ml-2 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none resize-none" />
                         )}
 
                         <input type="text" value={q.explanation || ''} onChange={e => updateQuiz(sIdx, qIdx, 'explanation', e.target.value)}
-                          placeholder="Explanation for correct answer..." className="w-full ml-2 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs focus:border-indigo-500 focus:outline-none" />
+                          placeholder="Explanation for correct answer..." className="w-full ml-2 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-sm focus:border-indigo-500 focus:outline-none" />
                       </div>
                     );
                   })}
@@ -388,8 +392,8 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
     return (
       <div className={`rounded-xl border p-4 ${colors[color]}`}>
         <p className="text-2xl font-black">{value}</p>
-        <p className="text-xs font-bold mt-0.5 opacity-80">{label}</p>
-        {sub && <p className="text-xs opacity-50 mt-0.5">{sub}</p>}
+        <p className="text-sm font-bold mt-0.5 opacity-80">{label}</p>
+        {sub && <p className="text-sm opacity-50 mt-0.5">{sub}</p>}
       </div>
     );
   };
@@ -400,34 +404,22 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
       <div className="flex-1 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
       {/* Panel */}
-      <div className="w-full max-w-2xl bg-[#0F172A] border-l border-slate-700/60 flex flex-col overflow-hidden shadow-2xl">
+      <div className="w-full max-w-3xl bg-[#0F172A] border-l border-slate-700/60 flex flex-col overflow-hidden shadow-2xl">
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-5 border-b border-slate-700/40">
           <div className="flex-1 min-w-0 pr-4">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <h2 className="text-lg font-black text-white truncate">{mod.title}</h2>
               {isAutoGenerated && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 font-bold flex-shrink-0">Mandatory</span>
+                <span className="text-sm px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 font-bold flex-shrink-0">Mandatory</span>
               )}
             </div>
-            <p className="text-xs text-slate-400 line-clamp-2">{mod.description}</p>
+            <p className="text-sm text-slate-400 line-clamp-2">{mod.description}</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() => onEdit(mod)}
-              className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-bold transition-all"
-            >
-              Edit
-            </button>
-            <button
-              onClick={() => { onDelete(mod.id); onClose(); }}
-              className="w-7 h-7 rounded-lg bg-slate-700/50 hover:bg-red-500/20 border border-transparent hover:border-red-500/30 text-slate-400 hover:text-red-300 flex items-center justify-center text-xs transition-all"
-            >
-              ✕
-            </button>
-            <button onClick={onClose} className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition-all ml-1">
-              ←
-            </button>
+            <Button size="sm" variant="secondary" onClick={() => onEdit(mod)}>Edit</Button>
+            <Button size="sm" variant="danger" onClick={() => { onDelete(mod.id); onClose(); }}>Delete</Button>
+            <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
           </div>
         </div>
 
@@ -444,29 +436,29 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
             <div className="space-y-5">
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-slate-800/40 border border-slate-700/40 p-3">
-                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Category</p>
+                  <p className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-1">Category</p>
                   <p className="text-sm font-bold text-white">{mod.category || '—'}</p>
                 </div>
                 <div className="rounded-xl bg-slate-800/40 border border-slate-700/40 p-3">
-                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Difficulty</p>
+                  <p className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-1">Difficulty</p>
                   <p className="text-sm font-bold text-white capitalize">{mod.difficulty || '—'}</p>
                 </div>
                 <div className="rounded-xl bg-slate-800/40 border border-slate-700/40 p-3">
-                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Duration</p>
+                  <p className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-1">Duration</p>
                   <p className="text-sm font-bold text-white">{mod.estimatedDuration || '—'}</p>
                 </div>
                 <div className="rounded-xl bg-slate-800/40 border border-slate-700/40 p-3">
-                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Type</p>
+                  <p className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-1">Type</p>
                   <p className="text-sm font-bold text-white">{isAutoGenerated ? 'Mandatory / Auto' : 'Manual'}</p>
                 </div>
               </div>
 
               {skills.length > 0 && (
                 <div>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-2">Skills</p>
+                  <p className="text-sm text-slate-400 font-bold uppercase tracking-wider mb-2">Skills</p>
                   <div className="flex flex-wrap gap-1.5">
                     {skills.map((s, i) => (
-                      <span key={i} className="px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold">{s}</span>
+                      <span key={i} className="px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-sm font-semibold">{s}</span>
                     ))}
                   </div>
                 </div>
@@ -474,10 +466,10 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
 
               {(mod.targetRoles || []).length > 0 && (
                 <div>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-2">Target Roles</p>
+                  <p className="text-sm text-slate-400 font-bold uppercase tracking-wider mb-2">Target Roles</p>
                   <div className="flex flex-wrap gap-1.5">
                     {(mod.targetRoles || []).map((r, i) => (
-                      <span key={i} className="px-2 py-0.5 rounded-md bg-slate-700/40 border border-slate-600/30 text-slate-300 text-xs font-semibold">{r}</span>
+                      <span key={i} className="px-2 py-0.5 rounded-md bg-slate-700/40 border border-slate-600/30 text-slate-300 text-sm font-semibold">{r}</span>
                     ))}
                   </div>
                 </div>
@@ -485,11 +477,11 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
 
               {resources.length > 0 && (
                 <div>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-2">External Resources</p>
+                  <p className="text-sm text-slate-400 font-bold uppercase tracking-wider mb-2">External Resources</p>
                   <div className="space-y-1.5">
                     {resources.map((r, i) => (
                       <a key={i} href={r.url} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 hover:bg-indigo-500/20 text-xs font-medium transition-colors">
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 hover:bg-indigo-500/20 text-sm font-medium transition-colors">
                         🔗 {r.title || r.url}
                       </a>
                     ))}
@@ -498,7 +490,7 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
               )}
 
               <div>
-                <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-2">Completion Criteria</p>
+                <p className="text-sm text-slate-400 font-bold uppercase tracking-wider mb-2">Completion Criteria</p>
                 <p className="text-sm text-slate-300">{mod.completionCriteria || 'Complete all tasks'}</p>
               </div>
             </div>
@@ -507,28 +499,28 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
           {/* SESSIONS TAB */}
           {detailTab === 'sessions' && (
             <div className="space-y-3">
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</p>
+              <p className="text-sm text-slate-400 font-bold uppercase tracking-wider">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</p>
               {sessions.length === 0 ? (
                 <div className="rounded-xl border border-slate-700/40 bg-slate-800/20 p-8 text-center">
-                  <p className="text-slate-500 text-sm">No sessions defined for this module.</p>
+                  <p className="text-slate-400 text-sm">No sessions defined for this module.</p>
                 </div>
               ) : sessions.map((s, i) => {
                 const quizCount = s.quiz?.length || 0;
                 return (
                   <div key={i} className="rounded-xl border border-slate-700/40 bg-slate-800/30 p-4">
                     <div className="flex items-center gap-3 mb-2">
-                      <span className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0">
+                      <span className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-sm font-black text-indigo-300 flex-shrink-0">
                         {s.dayNumber || i + 1}
                       </span>
                       <p className="text-sm font-bold text-white flex-1">{s.title || `Day ${i + 1}`}</p>
                       {quizCount > 0 && (
-                        <span className="text-xs text-slate-500">{quizCount} Q{quizCount !== 1 ? 's' : ''}</span>
+                        <span className="text-sm text-slate-400">{quizCount} Q{quizCount !== 1 ? 's' : ''}</span>
                       )}
                     </div>
                     {(s.topics || []).length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {s.topics.map((t, ti) => (
-                          <span key={ti} className="text-xs text-slate-400 bg-slate-700/30 px-1.5 py-0.5 rounded">{t}</span>
+                          <span key={ti} className="text-sm text-slate-400 bg-slate-700/30 px-1.5 py-0.5 rounded">{t}</span>
                         ))}
                       </div>
                     )}
@@ -541,7 +533,7 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
           {/* EMPLOYEES TAB */}
           {detailTab === 'employees' && (
             <div className="space-y-3">
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{assignedCount} employee{assignedCount !== 1 ? 's' : ''} assigned</p>
+              <p className="text-sm text-slate-400 font-bold uppercase tracking-wider">{assignedCount} employee{assignedCount !== 1 ? 's' : ''} assigned</p>
               {assignLoading ? (
                 <div className="space-y-2">
                   {[0,1,2].map(i => (
@@ -550,7 +542,7 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
                 </div>
               ) : assignments.length === 0 ? (
                 <div className="rounded-xl border border-slate-700/40 bg-slate-800/20 p-8 text-center">
-                  <p className="text-slate-500 text-sm">No employees assigned to this module yet.</p>
+                  <p className="text-slate-400 text-sm">No employees assigned to this module yet.</p>
                 </div>
               ) : assignments.map((a, i) => {
                 const d = a.data || a;
@@ -567,7 +559,7 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
                   <div key={a.id || i} className="rounded-xl border border-slate-700/40 bg-slate-800/30 px-4 py-3">
                     <div className="flex items-center justify-between mb-1.5">
                       <p className="text-sm font-semibold text-white">{name}</p>
-                      <span className={`text-xs font-bold capitalize ${statusColors[status] || 'text-slate-400'}`}>{status.replace('_', ' ')}</span>
+                      <span className={`text-sm font-bold capitalize ${statusColors[status] || 'text-slate-400'}`}>{status.replace('_', ' ')}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-1.5 rounded-full bg-slate-700">
@@ -576,7 +568,7 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
                           style={{ width: `${progress}%` }}
                         />
                       </div>
-                      <span className="text-xs text-slate-400 font-semibold w-8 text-right">{progress}%</span>
+                      <span className="text-sm text-slate-400 font-semibold w-8 text-right">{progress}%</span>
                     </div>
                   </div>
                 );
@@ -606,7 +598,7 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
                   {/* Progress distribution bar */}
                   {assignedCount > 0 && (
                     <div className="rounded-xl border border-slate-700/40 bg-slate-800/30 p-4">
-                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-3">Distribution</p>
+                      <p className="text-sm text-slate-400 font-bold uppercase tracking-wider mb-3">Distribution</p>
                       <div className="space-y-2.5">
                         {[
                           { label: 'Not Started', count: assignments.filter(a => { const d = a.data||a; return !d.progress && d.status !== 'completed'; }).length, color: 'bg-slate-600' },
@@ -615,8 +607,8 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
                         ].map(({ label, count, color }) => (
                           <div key={label}>
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs text-slate-400">{label}</span>
-                              <span className="text-xs text-slate-400 font-semibold">{count} ({assignedCount > 0 ? Math.round(count / assignedCount * 100) : 0}%)</span>
+                              <span className="text-sm text-slate-400">{label}</span>
+                              <span className="text-sm text-slate-400 font-semibold">{count} ({assignedCount > 0 ? Math.round(count / assignedCount * 100) : 0}%)</span>
                             </div>
                             <div className="h-2 rounded-full bg-slate-700">
                               <div
@@ -632,8 +624,8 @@ function ModuleDetailPanel({ mod, onClose, onEdit, onDelete }) {
 
                   {assignedCount === 0 && (
                     <div className="rounded-xl border border-slate-700/40 bg-slate-800/20 p-8 text-center">
-                      <p className="text-slate-500 text-sm">No assignments found for analytics.</p>
-                      <p className="text-xs text-slate-600 mt-1">Assign this module to employees to see analytics.</p>
+                      <p className="text-slate-400 text-sm">No assignments found for analytics.</p>
+                      <p className="text-sm text-slate-400 mt-1">Assign this module to employees to see analytics.</p>
                     </div>
                   )}
                 </>
@@ -670,6 +662,9 @@ export default function ModuleManagement() {
   const [pendingCount, setPendingCount] = useState(0);
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [busyId, setBusyId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   // Import modal state
   const [showImportModal, setShowImportModal] = useState(false);
@@ -728,6 +723,8 @@ export default function ModuleManagement() {
   };
 
   const handleApprove = async (id) => {
+    if (busyId) return;
+    setBusyId(id);
     try {
       await authFetch(`/api/modules/pending/${id}/approve`, { method: 'POST' });
       setToast({ message: '✅ Module approved successfully', type: 'success' });
@@ -736,6 +733,8 @@ export default function ModuleManagement() {
       setPendingCount(updated.length);
     } catch (e) {
       setToast({ message: e.message || 'Failed to approve', type: 'error' });
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -744,6 +743,8 @@ export default function ModuleManagement() {
       setToast({ message: 'Please enter a rejection reason', type: 'error' });
       return;
     }
+    if (busyId) return;
+    setBusyId(id);
     try {
       await authFetch(`/api/modules/pending/${id}/reject`, {
         method: 'POST',
@@ -757,15 +758,19 @@ export default function ModuleManagement() {
       setRejectReason('');
     } catch (e) {
       setToast({ message: e.message || 'Failed to reject', type: 'error' });
+    } finally {
+      setBusyId(null);
     }
   };
 
   const loadModules = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const res = await authFetch('/api/modules?limit=1000');
-      setModules(Array.isArray(res) ? res : (res.modules || []));
+      setModules(Array.isArray(res) ? res : (res?.modules || []));
     } catch (e) {
+      setLoadError(e.message || 'Failed to load modules');
       setToast({ message: e.message || 'Failed to load modules', type: 'error' });
     } finally {
       setLoading(false);
@@ -856,7 +861,7 @@ export default function ModuleManagement() {
   }, [modules, searchParams]);
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this module?')) return;
+    if (!window.confirm('Delete this module? This cannot be undone.')) return;
     try {
       await authFetch(`/api/modules/${id}`, { method: 'DELETE' });
       setToast({ message: 'Module deleted', type: 'success' });
@@ -871,6 +876,7 @@ export default function ModuleManagement() {
     const cleanTitle = (form.title || '').trim();
     const cleanDesc  = (form.description || '').trim();
     if (!cleanTitle) { setToast({ message: 'Module title is required', type: 'error' }); return; }
+    if (saving) return;
 
     // Strip empty strings from list fields before sending
     const cleanSkills    = (form.skills    || []).map(s => (typeof s === 'string' ? s.trim() : s?.name || '')).filter(Boolean);
@@ -903,6 +909,7 @@ export default function ModuleManagement() {
       },
     };
 
+    setSaving(true);
     try {
       if (editing) {
         await authFetch(`/api/modules/${editing.id}`, { method: 'PUT', body: JSON.stringify(modulePayload) });
@@ -915,7 +922,9 @@ export default function ModuleManagement() {
       loadModules();
     } catch (e) {
       console.error('[ModuleManagement] save error:', e);
-      setToast({ message: e.message || 'Failed to save module — check console', type: 'error' });
+      setToast({ message: e.message || 'Failed to save module. Please try again.', type: 'error' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -993,44 +1002,41 @@ export default function ModuleManagement() {
     <div className="min-h-screen bg-[#0F172A] text-white">
 
       {/* ── Module List ── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <button onClick={() => navigate(user?.role === 'manager' ? '/manager/dashboard' : '/admin/dashboard')} className="text-slate-400 hover:text-white text-sm mb-2 flex items-center gap-2">← Back to Dashboard</button>
-            <h1 className="text-3xl font-black text-white">
-              {user?.role === 'manager' ? 'Create Learning Module' : 'Module Management'}
-            </h1>
-            <p className="text-slate-400 text-sm">
-              {user?.role === 'manager'
-                ? 'Define a learning module for your team — skills, sessions, quizzes, milestones, and timeline.'
-                : 'Create and manage AI-generated learning modules for the entire organization.'}
-            </p>
+      <PageContainer>
+        <button onClick={() => navigate(user?.role === 'manager' ? '/manager/dashboard' : '/admin/dashboard')} className="text-slate-300 hover:text-white text-sm mb-2 flex items-center gap-2">← Back to Dashboard</button>
+        <PageHeader
+          icon="📚"
+          title={user?.role === 'manager' ? 'Create Learning Module' : 'Module Management'}
+          subtitle={user?.role === 'manager'
+            ? 'Define a learning module for your team: skills, sessions, quizzes, milestones, and timeline.'
+            : 'Create and manage AI-generated learning modules for the entire organization.'}
+          actions={(
+            <>
+              {['admin', 'manager', 'trainer'].includes(user?.role) && (
+                <Button variant="secondary" onClick={() => setShowImportModal(true)}>Import Module</Button>
+              )}
+              <Button
+                variant="primary"
+                onClick={() => { setShowCreate(true); setEditing(null); setShowReviewForm(false); setShowAgentUI(false); }}
+                disabled={!hasFeaturePermission('modules.create')}
+                title={!hasFeaturePermission('modules.create') ? "You don't have permission to create modules" : undefined}
+              >+ New Module</Button>
+            </>
+          )}
+        />
+
+        {loadError && (
+          <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            <span>{loadError}</span>
+            <Button size="sm" variant="danger" onClick={loadModules}>Retry</Button>
           </div>
-          <div className="flex gap-2">
-            {['admin','manager','trainer'].includes(user?.role) && (
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-sm font-bold transition-all"
-              >
-                ⬆ Import Module
-              </button>
-            )}
-            <button
-              onClick={() => { setShowCreate(true); setEditing(null); setShowReviewForm(false); setShowAgentUI(false); }}
-              disabled={!hasFeaturePermission('modules.create')}
-              title={!hasFeaturePermission('modules.create') ? "You don't have permission to create modules" : undefined}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold transition-all"
-            >
-              + New Module
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Filters */}
-        <div className="space-y-3 mb-6">
+        <div className="space-y-3 mb-4 rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5">
           {/* Row 1: Search */}
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
             <input type="text" placeholder="Search modules by title or description..." value={search} onChange={e => setSearch(e.target.value)}
               className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm" />
           </div>
@@ -1041,18 +1047,15 @@ export default function ModuleManagement() {
             <SearchableSelect value={filterAssignType} onChange={setFilterAssignType} allLabel="All Assignment Types"
               options={[{ value: 'auto', label: 'Auto Assigned' }, { value: 'manual', label: 'Manual Assigned' }]} />
             {(activeTab !== 'all' || filterJobRole !== 'all' || filterAssignType !== 'all') && (
-              <button onClick={() => { setActiveTab('all'); setFilterJobRole('all'); setFilterAssignType('all'); }}
-                className="px-3 py-2 rounded-xl bg-slate-700/50 border border-slate-600/40 text-xs text-slate-400 font-semibold hover:text-white transition-colors">
-                ✕ Clear
-              </button>
+              <Button variant="ghost" onClick={() => { setActiveTab('all'); setFilterJobRole('all'); setFilterAssignType('all'); }}>Clear filters</Button>
             )}
             <button
               onClick={() => setActiveTab('pending')}
-              className={`ml-auto flex items-center gap-2 px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-all ${activeTab === 'pending' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30' : 'bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white'}`}
+              className={`ml-auto flex items-center gap-2 h-10 px-4 text-sm rounded-lg font-semibold whitespace-nowrap transition-all ${activeTab === 'pending' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30' : 'bg-slate-800/50 border border-slate-700 text-slate-300 hover:text-white'}`}
             >
               ⏳ Pending Approvals
               {pendingCount > 0 && (
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white text-xs font-black">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white text-sm font-black">
                   {pendingCount > 9 ? '9+' : pendingCount}
                 </span>
               )}
@@ -1064,32 +1067,24 @@ export default function ModuleManagement() {
         {activeTab === 'pending' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p className="text-xs text-slate-500 font-semibold uppercase tracking-widest">
+              <p className="text-sm text-slate-400 font-semibold uppercase tracking-widest">
                 {pendingCount} module{pendingCount !== 1 ? 's' : ''} awaiting review
               </p>
-              <button
-                onClick={loadPendingModules}
-                disabled={pendingLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700 text-slate-400 hover:text-white hover:border-slate-600 text-xs font-bold transition-all disabled:opacity-50"
-              >
-                {pendingLoading ? (
-                  <span className="w-3 h-3 border-2 border-slate-500 border-t-white rounded-full animate-spin" />
-                ) : '↻'} Refresh
-              </button>
+              <Button size="sm" variant="secondary" onClick={loadPendingModules} loading={pendingLoading}>Refresh</Button>
             </div>
 
             {pendingLoading ? (
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 {[0, 1, 2].map(i => <SkeletonCard key={i} />)}
               </div>
             ) : pendingModules.length === 0 ? (
               <div className="rounded-2xl border border-slate-700/40 bg-[#111827] py-20 text-center">
                 <div className="text-5xl mb-4 opacity-20">✅</div>
                 <p className="text-lg font-bold text-slate-400 mb-1">No Pending Approvals</p>
-                <p className="text-sm text-slate-600">All auto-generated modules have been reviewed.</p>
+                <p className="text-sm text-slate-400">All auto-generated modules have been reviewed.</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 {pendingModules.map((mod) => {
                   const id = mod.id || mod._id;
                   const weakAreas = mod.weakAreas || mod.weak_areas || mod.skills || [];
@@ -1102,19 +1097,19 @@ export default function ModuleManagement() {
                     'bg-pink-500/15 text-pink-300 border-pink-500/30',
                   ];
                   return (
-                    <div key={id} className="rounded-2xl border border-amber-500/20 bg-[#111827] p-5 shadow-lg">
+                    <div key={id} className="rounded-2xl border border-amber-500/20 bg-[#111827] p-4 sm:p-5 shadow-lg min-w-0">
                       <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-4">
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2 mb-2">
-                            <p className="text-sm font-bold text-white">{mod.employeeName || mod.employee_name || 'Employee'}</p>
+                            <p className="text-base font-bold text-white">{mod.employeeName || mod.employee_name || 'Employee'}</p>
                             {(mod.jobRole || mod.job_role) && (
-                              <span className="px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-bold">
+                              <span className="px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-sm font-bold">
                                 {mod.jobRole || mod.job_role}
                               </span>
                             )}
                           </div>
                           {(mod.assessmentTitle || mod.assessment_title) && (
-                            <p className="text-xs text-slate-500 mb-3">
+                            <p className="text-sm text-slate-400 mb-3">
                               Triggered by: <span className="text-slate-300">{mod.assessmentTitle || mod.assessment_title}</span>
                             </p>
                           )}
@@ -1124,7 +1119,7 @@ export default function ModuleManagement() {
                               {weakAreas.map((area, ai) => (
                                 <span
                                   key={ai}
-                                  className={`px-2 py-0.5 rounded-md border text-xs font-semibold ${skillColors[ai % skillColors.length]}`}
+                                  className={`px-2 py-0.5 rounded-md border text-sm font-semibold ${skillColors[ai % skillColors.length]}`}
                                 >
                                   {typeof area === 'string' ? area : area.name || area.area || String(area)}
                                 </span>
@@ -1133,15 +1128,15 @@ export default function ModuleManagement() {
                           )}
 
                           <div className="flex flex-wrap items-center gap-2 mb-1">
-                            <h3 className="text-base font-black text-white">{mod.title}</h3>
+                            <h3 className="text-lg font-black text-white">{mod.title}</h3>
                             {mod.mandatory && (
-                              <span className="px-2 py-0.5 rounded-md bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-black uppercase">
+                              <span className="px-2 py-0.5 rounded-md bg-red-500/15 border border-red-500/30 text-red-300 text-sm font-black uppercase">
                                 Mandatory
                               </span>
                             )}
                           </div>
                           {mod.description && (
-                            <p className="text-xs text-slate-400 leading-relaxed">{mod.description}</p>
+                            <p className="text-sm text-slate-400 leading-relaxed">{mod.description}</p>
                           )}
                         </div>
                       </div>
@@ -1160,34 +1155,14 @@ export default function ModuleManagement() {
                       )}
 
                       <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-700/30">
-                        <button
-                          onClick={() => handleApprove(id)}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-bold transition-all"
-                        >
-                          ✓ Approve
-                        </button>
+                        <Button variant="success" onClick={() => handleApprove(id)} loading={busyId === id && !isRejecting} disabled={!!busyId}>Approve</Button>
                         {isRejecting ? (
                           <>
-                            <button
-                              onClick={() => handleReject(id)}
-                              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30 text-xs font-bold transition-all"
-                            >
-                              Confirm Reject
-                            </button>
-                            <button
-                              onClick={() => { setRejectingId(null); setRejectReason(''); }}
-                              className="px-4 py-2 rounded-lg bg-slate-700/50 border border-slate-700 text-slate-400 hover:text-white text-xs font-bold transition-all"
-                            >
-                              Cancel
-                            </button>
+                            <Button variant="danger" onClick={() => handleReject(id)} loading={busyId === id} disabled={!!busyId}>Confirm Reject</Button>
+                            <Button variant="secondary" onClick={() => { setRejectingId(null); setRejectReason(''); }} disabled={busyId === id}>Cancel</Button>
                           </>
                         ) : (
-                          <button
-                            onClick={() => setRejectingId(id)}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 text-xs font-bold transition-all"
-                          >
-                            ✕ Reject
-                          </button>
+                          <Button variant="danger" onClick={() => { setRejectingId(id); setRejectReason(''); }} disabled={!!busyId}>Reject</Button>
                         )}
                       </div>
                     </div>
@@ -1208,14 +1183,17 @@ export default function ModuleManagement() {
         ) : activeTab !== 'pending' && filtered.length === 0 ? (
           <div className="rounded-2xl border border-slate-700/40 bg-[#111827] py-20 text-center">
             <div className="text-6xl mb-4 opacity-20">📚</div>
-            <p className="text-lg font-bold text-slate-400 mb-1">No Modules Found</p>
-            <p className="text-sm text-slate-600">Create your first module to get started.</p>
+            <p className="text-lg font-bold text-slate-300 mb-1">No Modules Found</p>
+            <p className="text-sm text-slate-400">{modules.length > 0 ? 'No modules match your filters.' : 'Create your first module to get started.'}</p>
+            {modules.length > 0 && (
+              <Button className="mt-4" variant="secondary" onClick={() => { setSearch(''); setActiveTab('all'); setFilterJobRole('all'); setFilterAssignType('all'); }}>Clear filters</Button>
+            )}
           </div>
         ) : activeTab !== 'pending' ? (
           <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden shadow-xl">
             {/* Table header */}
-            <div className="hidden lg:grid px-6 py-3 border-b border-slate-700/40 bg-slate-800/30 text-xs font-bold text-slate-500 uppercase tracking-widest"
-              style={{ gridTemplateColumns: '2.5fr 1.5fr 1fr 1fr 1fr 120px' }}>
+            <div className="hidden lg:grid px-4 xl:px-6 py-3 border-b border-slate-700/40 bg-slate-800/30 text-sm font-bold text-slate-300 uppercase tracking-wider"
+              style={{ gridTemplateColumns: 'minmax(0,2.5fr) minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 140px' }}>
               <span>Module</span>
               <span>Target / Role</span>
               <span>Sessions</span>
@@ -1237,20 +1215,20 @@ export default function ModuleManagement() {
                   <div key={mod.id || idx}
                     onClick={() => setSelectedModule(isSelected ? null : mod)}
                     className={`group grid-stack-lg px-4 xl:px-6 py-4 hover:bg-slate-800/30 transition-all cursor-pointer ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : ''}`}
-                    style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 1fr 1fr 1fr 120px', alignItems: 'center', gap: '12px' }}>
+                    style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2.5fr) minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 140px', alignItems: 'center', gap: '12px' }}>
                     {/* Module info */}
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-white truncate leading-tight">{mod.title}</p>
+                        <p className="text-base font-bold text-white truncate leading-tight" title={mod.title}>{mod.title}</p>
                         {isAutoGenerated && (
-                          <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Auto</span>
+                          <span className="flex-shrink-0 text-sm px-1.5 py-0.5 rounded bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">Auto</span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5 truncate">{mod.description}</p>
+                      <p className="text-sm text-slate-400 mt-0.5 truncate" title={mod.description}>{mod.description}</p>
                       {skills.length > 0 && (
                         <div className="flex gap-1 mt-1 flex-wrap">
-                          {skills.slice(0, 2).map((s, si) => <span key={si} className="text-xs text-slate-600 bg-slate-700/30 px-1.5 rounded">{s}</span>)}
-                          {skills.length > 2 && <span className="text-xs text-slate-600">+{skills.length - 2}</span>}
+                          {skills.slice(0, 2).map((s, si) => <span key={si} className="text-sm text-slate-400 bg-slate-700/30 px-1.5 rounded">{s}</span>)}
+                          {skills.length > 2 && <span className="text-sm text-slate-400">+{skills.length - 2}</span>}
                         </div>
                       )}
                       {(mod.resources || []).filter(r => typeof r === 'object' && r !== null).length > 0 && (
@@ -1258,12 +1236,12 @@ export default function ModuleManagement() {
                           <div className="flex flex-wrap gap-1.5">
                             {(mod.resources || []).filter(r => typeof r === 'object' && r !== null).slice(0, 3).map((r, i) => (
                               <a key={i} href={r.url} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 transition-colors">
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-sm font-medium bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 transition-colors">
                                 🔗 {r.title || 'Resource ' + (i+1)}
                               </a>
                             ))}
                             {(mod.resources || []).filter(r => typeof r === 'object' && r !== null).length > 3 && (
-                              <span className="text-xs text-slate-500">+{(mod.resources || []).filter(r => typeof r === 'object' && r !== null).length - 3} more</span>
+                              <span className="text-sm text-slate-400">+{(mod.resources || []).filter(r => typeof r === 'object' && r !== null).length - 3} more</span>
                             )}
                           </div>
                         </div>
@@ -1271,21 +1249,21 @@ export default function ModuleManagement() {
                     </div>
                     {/* Target / Role */}
                     <div className="min-w-0">
-                      {targetEmployee && <p className="text-xs font-semibold text-slate-300 truncate">{targetEmployee}</p>}
-                      <p className="text-xs text-slate-500 truncate">{targetRole}</p>
+                      {targetEmployee && <p className="text-sm font-semibold text-slate-300 truncate">{targetEmployee}</p>}
+                      <p className="text-sm text-slate-400 truncate" title={targetRole}>{targetRole}</p>
                     </div>
                     {/* Sessions */}
                     <div>
                       <p className="text-sm font-bold text-white">{sessionCount || '—'}</p>
-                      {questionCount > 0 && <p className="text-xs text-slate-500">{questionCount} Qs</p>}
+                      {questionCount > 0 && <p className="text-sm text-slate-400">{questionCount} Qs</p>}
                     </div>
                     {/* Duration */}
                     <div>
-                      <span className="text-xs text-slate-400">{mod.estimatedDuration || '—'}</span>
+                      <span className="text-sm text-slate-300">{mod.estimatedDuration || '—'}</span>
                     </div>
                     {/* Type */}
                     <div>
-                      <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-bold border capitalize ${
+                      <span className={`inline-flex px-2 py-0.5 rounded-md text-sm font-bold border capitalize ${
                         isAutoGenerated
                           ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
                           : 'bg-slate-700/40 text-slate-400 border-slate-600/30'
@@ -1294,53 +1272,59 @@ export default function ModuleManagement() {
                       </span>
                     </div>
                     {/* Actions */}
-                    <div className="flex items-center gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={e => { e.stopPropagation(); openEdit(mod); }}
-                        disabled={!hasFeaturePermission('modules.edit')}
-                        title={!hasFeaturePermission('modules.edit') ? "You don't have permission to edit modules" : undefined}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all">
-                        Edit
-                      </button>
-                      <button onClick={e => { e.stopPropagation(); handleDelete(mod.id); }}
-                        disabled={!hasFeaturePermission('modules.delete')}
-                        title={!hasFeaturePermission('modules.delete') ? "You don't have permission to delete modules" : undefined}
-                        className="w-7 h-7 rounded-lg bg-slate-700/50 hover:bg-red-500/20 border border-transparent hover:border-red-500/30 text-slate-400 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-xs transition-all">
-                        ✕
-                      </button>
+                    <div className="flex items-center gap-2 lg:justify-end" onClick={e => e.stopPropagation()}>
+                      <ActionMenu
+                        label="Manage"
+                        size="sm"
+                        items={[
+                          { label: 'View details', onClick: () => setSelectedModule(mod) },
+                          { label: 'Edit module', onClick: () => openEdit(mod), disabled: !hasFeaturePermission('modules.edit') },
+                          { label: 'Delete module', onClick: () => handleDelete(mod.id), danger: true, divider: true, disabled: !hasFeaturePermission('modules.delete') },
+                        ]}
+                      />
                     </div>
                   </div>
                 );
               })}
             </div>
             {/* Footer */}
-            <div className="px-6 py-3 border-t border-slate-700/30 bg-slate-800/10 flex items-center justify-between">
-              <p className="text-xs text-slate-600">
+            <div className="px-4 xl:px-6 py-3 border-t border-slate-700/30 bg-slate-800/10 flex items-center justify-between">
+              <p className="text-sm text-slate-400">
                 Showing <span className="text-slate-400 font-semibold">{filtered.length}</span> of <span className="text-slate-400 font-semibold">{modules.length}</span> modules
               </p>
             </div>
           </div>
         ) : null}
-      </div>
+      </PageContainer>
+
+      {selectedModule && (
+        <ModuleDetailPanel
+          mod={selectedModule}
+          onClose={() => setSelectedModule(null)}
+          onEdit={(m) => { setSelectedModule(null); openEdit(m); }}
+          onDelete={handleDelete}
+        />
+      )}
 
       {/* ── Full-Page Creation Overlay ── */}
       {showCreate && !showAgentUI && !showReviewForm && (
         <div className="fixed inset-0 z-50 bg-[#0F172A] flex flex-col overflow-y-auto">
           {/* Header */}
-          <div className="flex items-center justify-between px-8 py-5 border-b border-slate-800">
+          <div className="flex items-center justify-between px-4 sm:px-8 py-5 border-b border-slate-800">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-sm">✦</div>
               <span className="text-lg font-black text-white">New Module</span>
             </div>
-            <button onClick={closeCreate} className="text-slate-500 hover:text-white text-2xl leading-none transition-colors">✕</button>
+            <Button variant="secondary" onClick={closeCreate}>Close</Button>
           </div>
 
           {/* Body */}
-          <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 max-w-2xl mx-auto w-full">
+          <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 max-w-4xl mx-auto w-full">
             <h2 className="text-3xl font-black text-white text-center mb-2">What do you want to learn?</h2>
             <p className="text-slate-400 text-center mb-10">Describe a skill, role, or job — or upload a document — and our AI agents will build a complete learning module.</p>
 
             {/* Mode Toggle */}
-            <div className="flex gap-1 p-1 bg-slate-800 rounded-xl mb-8 w-full max-w-xs">
+            <div className="flex gap-1 p-1 bg-slate-800 rounded-xl mb-8 w-full max-w-sm">
               <button
                 onClick={() => setInputMode('text')}
                 className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${inputMode === 'text' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
@@ -1358,7 +1342,7 @@ export default function ModuleManagement() {
             {/* Mode 1 – Text */}
             {inputMode === 'text' && (
               <div className="w-full">
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 text-center">Enter skill, role, or job description</label>
+                <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 text-center">Enter skill, role, or job description</label>
                 <textarea
                   value={generateInput}
                   onChange={e => setGenerateInput(e.target.value)}
@@ -1390,13 +1374,13 @@ export default function ModuleManagement() {
                     <>
                       <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-2xl mb-3">📄</div>
                       <p className="text-white font-bold text-sm mb-1">{selectedFileName}</p>
-                      <p className="text-slate-400 text-xs">Click to change file</p>
+                      <p className="text-slate-400 text-sm">Click to change file</p>
                     </>
                   ) : (
                     <>
                       <div className="w-14 h-14 rounded-2xl bg-slate-700 flex items-center justify-center text-2xl mb-3">📂</div>
                       <p className="text-white font-semibold mb-1">Drag & drop or click to upload</p>
-                      <p className="text-slate-500 text-xs">Any file type accepted</p>
+                      <p className="text-slate-400 text-sm">Any file type accepted</p>
                     </>
                   )}
                 </div>
@@ -1407,24 +1391,35 @@ export default function ModuleManagement() {
             {inputMode === 'text' && (
               <div className="flex items-center gap-4 my-6 w-full">
                 <div className="flex-1 h-px bg-slate-700" />
-                <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">OR</span>
+                <span className="text-slate-400 text-sm font-bold uppercase tracking-widest">OR</span>
                 <div className="flex-1 h-px bg-slate-700" />
               </div>
             )}
             {inputMode === 'text' && (
-              <p className="text-slate-500 text-xs text-center -mt-2 mb-4">Switch to "File Upload" tab to upload a document instead</p>
+              <p className="text-slate-400 text-sm text-center -mt-2 mb-4">Switch to "File Upload" tab to upload a document instead</p>
             )}
+
+            {/* Manual path: build a module without AI */}
+            <button
+              type="button"
+              onClick={() => { resetForm(); setExtResources([]); setShowReviewForm(true); }}
+              className="mt-4 text-sm font-semibold text-indigo-300 hover:text-indigo-200 underline"
+            >
+              Or fill in the module details manually
+            </button>
 
             {/* Generate Button */}
             {generateInput.trim() && (
-              <button
+              <Button
+                variant="primary"
+                className="mt-4 w-full !h-14 !text-lg"
                 onClick={runGeneration}
-                disabled={generating || !hasFeaturePermission('modules.generate')}
+                loading={generating}
+                disabled={!hasFeaturePermission('modules.generate')}
                 title={!hasFeaturePermission('modules.generate') ? "You don't have permission to auto-generate modules" : undefined}
-                className="mt-4 w-full py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black text-lg transition-all shadow-2xl shadow-indigo-500/30 disabled:opacity-60"
               >
                 Generate Module with AI →
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -1438,7 +1433,7 @@ export default function ModuleManagement() {
 
           <div className="relative z-10 w-full max-w-xl">
             <div className="text-center mb-10">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-bold uppercase tracking-widest mb-4">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-sm font-bold uppercase tracking-widest mb-4">
                 ✦ AI Agent Pipeline
               </div>
               <h2 className="text-2xl font-black text-white mb-2">Building your module</h2>
@@ -1473,12 +1468,12 @@ export default function ModuleManagement() {
                     {/* Text */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-bold ${isDone ? 'text-emerald-300' : isActive ? 'text-white' : 'text-slate-500'}`}>{step.agent}</span>
+                        <span className={`text-sm font-bold ${isDone ? 'text-emerald-300' : isActive ? 'text-white' : 'text-slate-400'}`}>{step.agent}</span>
                         {isActive && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">Running</span>
+                          <span className="text-sm px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">Running</span>
                         )}
                       </div>
-                      <p className={`text-xs truncate ${isDone ? 'text-emerald-400/70' : isActive ? 'text-slate-400' : 'text-slate-600'}`}>
+                      <p className={`text-sm truncate ${isDone ? 'text-emerald-400/70' : isActive ? 'text-slate-400' : 'text-slate-400'}`}>
                         {step.text}{isActive && <AnimatedDots />}
                       </p>
                     </div>
@@ -1486,7 +1481,7 @@ export default function ModuleManagement() {
                     {/* Status */}
                     <div className="flex-shrink-0">
                       {isDone && (
-                        <div className="w-6 h-6 rounded-full bg-emerald-500/30 border border-emerald-500/50 flex items-center justify-center text-emerald-400 text-xs">✓</div>
+                        <div className="w-6 h-6 rounded-full bg-emerald-500/30 border border-emerald-500/50 flex items-center justify-center text-emerald-400 text-sm">✓</div>
                       )}
                       {isActive && (
                         <div className="w-6 h-6 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
@@ -1507,7 +1502,7 @@ export default function ModuleManagement() {
                   style={{ width: `${(agentStep / AGENT_STEPS.length) * 100}%` }}
                 />
               </div>
-              <p className="text-center text-slate-500 text-xs mt-2">{agentStep} / {AGENT_STEPS.length} agents complete</p>
+              <p className="text-center text-slate-400 text-sm mt-2">{agentStep} / {AGENT_STEPS.length} agents complete</p>
             </div>
           </div>
         </div>
@@ -1517,23 +1512,23 @@ export default function ModuleManagement() {
       {showCreate && showReviewForm && (
         <div className="fixed inset-0 z-50 bg-[#0F172A] flex flex-col overflow-y-auto">
           {/* Header */}
-          <div className="flex items-center justify-between px-8 py-5 border-b border-slate-800 sticky top-0 bg-[#0F172A] z-10">
+          <div className="flex items-center justify-between px-4 sm:px-8 py-5 border-b border-slate-800 sticky top-0 bg-[#0F172A] z-10">
             <div>
               <div className="flex items-center gap-3 mb-0.5">
                 <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-sm">✓</div>
                 <span className="text-lg font-black text-white">{editing ? 'Edit Module' : 'Review Generated Module'}</span>
               </div>
-              {!editing && <p className="text-slate-500 text-xs ml-10">AI has pre-filled the fields — review and save</p>}
+              {!editing && <p className="text-slate-400 text-sm ml-10">AI has pre-filled the fields — review and save</p>}
             </div>
-            <button onClick={closeCreate} className="text-slate-500 hover:text-white text-2xl leading-none transition-colors">✕</button>
+            <Button variant="secondary" onClick={closeCreate} disabled={saving}>Close</Button>
           </div>
 
           {/* Form */}
-          <div className="flex-1 max-w-2xl mx-auto w-full px-6 py-8">
-            <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="flex-1 w-full px-4 sm:px-8 py-6">
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-2 gap-x-8 gap-y-6">
               {/* Title */}
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Title *</label>
+              <div className="xl:col-span-2">
+                <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Title *</label>
                 <input
                   type="text" value={form.title} onChange={e => updateField('title', e.target.value)}
                   placeholder="Module title"
@@ -1543,8 +1538,8 @@ export default function ModuleManagement() {
               </div>
 
               {/* Description */}
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Description *</label>
+              <div className="xl:col-span-2">
+                <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Description *</label>
                 <textarea
                   value={form.description} onChange={e => updateField('description', e.target.value)}
                   placeholder="What does this module cover?"
@@ -1554,15 +1549,15 @@ export default function ModuleManagement() {
               </div>
 
               {/* Category / Difficulty / Duration */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Category</label>
+                  <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Category</label>
                   <select value={form.category} onChange={e => updateField('category', e.target.value)} className="w-full px-3 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none">
                     {['Web Development', 'Data Science', 'Mobile Development', 'DevOps', 'Cloud Architecture', 'Machine Learning', 'Cybersecurity', 'UI/UX Design', 'Backend Development', 'Frontend Development', 'General'].map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Difficulty</label>
+                  <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Difficulty</label>
                   <select value={form.difficulty} onChange={e => updateField('difficulty', e.target.value)} className="w-full px-3 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none">
                     <option value="beginner">Beginner</option>
                     <option value="intermediate">Intermediate</option>
@@ -1570,7 +1565,7 @@ export default function ModuleManagement() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Duration</label>
+                  <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Duration</label>
                   <select value={form.estimatedDuration} onChange={e => updateField('estimatedDuration', e.target.value)} className="w-full px-3 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none">
                     {['3 days', '7 days', '14 days', '21 days', '30 days', '60 days'].map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
@@ -1580,7 +1575,7 @@ export default function ModuleManagement() {
               {/* Skills, Tasks, Resources */}
               {['skills', 'tasks', 'resources'].map(field => (
                 <div key={field} className="space-y-2">
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">{field.charAt(0).toUpperCase() + field.slice(1)}</label>
+                  <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest">{field.charAt(0).toUpperCase() + field.slice(1)}</label>
                   {(form[field] || ['']).map((item, idx) => (
                     <div key={idx} className="flex gap-2">
                       <input
@@ -1588,16 +1583,16 @@ export default function ModuleManagement() {
                         placeholder={`Enter ${field.slice(0, -1)}...`}
                         className="flex-1 px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:border-indigo-500 focus:outline-none"
                       />
-                      <button type="button" onClick={() => removeListItem(field, idx)} className="px-2.5 py-1 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 text-sm">✕</button>
+                      <button type="button" onClick={() => removeListItem(field, idx)} aria-label={`Remove ${field.slice(0, -1)}`} title={`Remove ${field.slice(0, -1)}`} className="px-3 py-1 rounded-xl bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30 text-sm">✕</button>
                     </div>
                   ))}
-                  <button type="button" onClick={() => addListItem(field)} className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold">+ Add {field.slice(0, -1)}</button>
+                  <button type="button" onClick={() => addListItem(field)} className="text-sm text-indigo-400 hover:text-indigo-300 font-semibold">+ Add {field.slice(0, -1)}</button>
                 </div>
               ))}
 
               {/* Completion Criteria */}
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Completion Criteria</label>
+                <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Completion Criteria</label>
                 <input
                   type="text" value={form.completionCriteria} onChange={e => updateField('completionCriteria', e.target.value)}
                   className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
@@ -1605,81 +1600,72 @@ export default function ModuleManagement() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Auto-Assign to Roles <span className="text-slate-600 normal-case font-normal">(comma-separated role names)</span></label>
+                <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Auto-Assign to Roles <span className="text-slate-400 normal-case font-normal">(comma-separated role names)</span></label>
                 <input
                   type="text" value={form.targetRoles} onChange={e => updateField('targetRoles', e.target.value)}
                   placeholder="e.g. Frontend Developer, Backend Developer"
                   className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
                 />
-                <p className="text-xs text-slate-500 mt-1">Employees assigned these roles will automatically receive this module.</p>
+                <p className="text-sm text-slate-400 mt-1">Employees assigned these roles will automatically receive this module.</p>
               </div>
 
               {/* External Resources */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    External Resources <span className="text-slate-600 font-normal normal-case">(optional)</span>
+                  <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider">
+                    External Resources <span className="text-slate-400 font-normal normal-case">(optional)</span>
                   </label>
                   <button type="button" onClick={() => setExtResources(p => [...p, { title: '', url: '', type: 'link' }])}
-                    className="text-xs px-2.5 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40">
+                    className="text-sm px-2.5 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40">
                     + Add Link
                   </button>
                 </div>
-                <p className="text-xs text-slate-500 mb-2">Add Google Drive, OneDrive, SharePoint, or any other external links</p>
+                <p className="text-sm text-slate-400 mb-2">Add Google Drive, OneDrive, SharePoint, or any other external links</p>
                 {extResources.map((r, i) => (
                   <div key={i} className="flex gap-2 mb-2">
                     <input value={r.title} onChange={e => { const n=[...extResources]; n[i]={...n[i],title:e.target.value}; setExtResources(n); }}
                       placeholder="Resource name (e.g. Training Slides)" className="flex-1 bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
                     <input value={r.url} onChange={e => { const n=[...extResources]; n[i]={...n[i],url:e.target.value}; setExtResources(n); }}
                       placeholder="https://drive.google.com/..." className="flex-[2] bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
-                    <button type="button" onClick={() => setExtResources(p => p.filter((_,j)=>j!==i))} className="text-red-400 hover:text-red-300 px-2">✕</button>
+                    <button type="button" onClick={() => setExtResources(p => p.filter((_,j)=>j!==i))} aria-label="Remove resource" title="Remove resource" className="text-red-300 hover:text-red-200 px-2">✕</button>
                   </div>
                 ))}
-                {extResources.length === 0 && <p className="text-xs text-slate-600 py-1">No external resources added.</p>}
+                {extResources.length === 0 && <p className="text-sm text-slate-400 py-1">No external resources added.</p>}
               </div>
 
               {/* Additional Info — free-form optional fields (e.g. Turnaround Time) */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Additional Info <span className="text-slate-600 font-normal normal-case">(optional)</span>
+                  <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider">
+                    Additional Info <span className="text-slate-400 font-normal normal-case">(optional)</span>
                   </label>
                   <button type="button" onClick={() => updateField('customFields', [...(form.customFields || []), { id: `cf_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, label: '', value: '' }])}
-                    className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40">
+                    className="text-sm px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40">
                     + Add Field
                   </button>
                 </div>
-                <p className="text-xs text-slate-500 mb-2">Add any other info this module needs — Turnaround Time, SLA, Prerequisites, or anything else. Never required.</p>
+                <p className="text-sm text-slate-400 mb-2">Add any other info this module needs — Turnaround Time, SLA, Prerequisites, or anything else. Never required.</p>
                 {(form.customFields || []).map((f, i) => (
                   <div key={f.id || i} className="flex gap-2 mb-2">
                     <input value={f.label} onChange={e => { const n = [...(form.customFields || [])]; n[i] = { ...n[i], label: e.target.value }; updateField('customFields', n); }}
                       placeholder="Label (e.g. Turnaround Time)" className="flex-1 bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
                     <input value={f.value} onChange={e => { const n = [...(form.customFields || [])]; n[i] = { ...n[i], value: e.target.value }; updateField('customFields', n); }}
                       placeholder="Value (e.g. 48 hours)" className="flex-[2] bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
-                    <button type="button" onClick={() => updateField('customFields', (form.customFields || []).filter((_, j) => j !== i))} className="text-red-400 hover:text-red-300 px-2">✕</button>
+                    <button type="button" onClick={() => updateField('customFields', (form.customFields || []).filter((_, j) => j !== i))} aria-label="Remove field" title="Remove field" className="text-red-300 hover:text-red-200 px-2">✕</button>
                   </div>
                 ))}
-                {(form.customFields || []).length === 0 && <p className="text-xs text-slate-600 py-1">No additional info added.</p>}
+                {(form.customFields || []).length === 0 && <p className="text-sm text-slate-400 py-1">No additional info added.</p>}
               </div>
 
               {/* Sessions + Quiz editor */}
-              <SessionsEditor sessions={form.sessions} onChange={s => updateField('sessions', s)} />
+              <div className="xl:col-span-2"><SessionsEditor sessions={form.sessions} onChange={s => updateField('sessions', s)} /></div>
 
               {/* Actions */}
-              <div className="flex gap-3 pt-2 pb-8">
-                <button
-                  type="submit"
-                  className="flex-1 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl font-black text-white transition-all shadow-lg shadow-indigo-500/20"
-                >
-                  {editing ? 'Update Module' : 'Save Module'}
-                </button>
-                <button
-                  type="button"
-                  onClick={closeCreate}
-                  className="py-4 px-6 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-slate-600 text-sm transition-all"
-                >
-                  Cancel
-                </button>
+              <div className="xl:col-span-2 flex gap-3 pt-2 pb-8">
+                <Button type="submit" variant="primary" className="flex-1 !h-12 !text-base" loading={saving}>
+                  {saving ? 'Saving…' : editing ? 'Update Module' : 'Save Module'}
+                </Button>
+                <Button variant="secondary" className="!h-12" onClick={closeCreate} disabled={saving}>Cancel</Button>
               </div>
             </form>
           </div>
@@ -1759,13 +1745,13 @@ function ImportModuleModal({ onClose, onSuccess, showToast }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl">
+      <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-xl shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60">
           <div>
             <h3 className="text-lg font-black text-white">Import Module</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Upload a file or add an external link</p>
+            <p className="text-sm text-slate-400 mt-0.5">Upload a file or add an external link</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">&times;</button>
+          <button onClick={onClose} aria-label="Close" title="Close" className="text-slate-400 hover:text-white text-2xl px-2">&times;</button>
         </div>
         <div className="px-6 py-5 space-y-4">
           {/* Tabs */}
@@ -1794,12 +1780,12 @@ function ImportModuleModal({ onClose, onSuccess, showToast }) {
                 ) : (
                   <>
                     <p className="text-sm font-semibold text-slate-300">Click or drag file here</p>
-                    <p className="text-xs text-slate-500 mt-1">PDF, PPT, PPTX, DOC, DOCX, XLSX, TXT, CSV, ZIP · Max 50 MB</p>
+                    <p className="text-sm text-slate-400 mt-1">PDF, PPT, PPTX, DOC, DOCX, XLSX, TXT, CSV, ZIP · Max 50 MB</p>
                   </>
                 )}
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Module Title (optional)</label>
+                <label className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1 block">Module Title (optional)</label>
                 <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Auto-detected from filename"
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-amber-500 focus:outline-none" />
               </div>
@@ -1807,7 +1793,7 @@ function ImportModuleModal({ onClose, onSuccess, showToast }) {
           ) : (
             <>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Link Type</label>
+                <label className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1 block">Link Type</label>
                 <select value={linkType} onChange={e => setLinkType(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-amber-500 focus:outline-none">
                   <option value="url">Public URL</option>
@@ -1818,26 +1804,23 @@ function ImportModuleModal({ onClose, onSuccess, showToast }) {
                 </select>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">URL</label>
+                <label className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1 block">URL</label>
                 <input value={externalUrl} onChange={e => setExternalUrl(e.target.value)} placeholder="https://..."
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-amber-500 focus:outline-none" />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Title</label>
+                <label className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1 block">Title</label>
                 <input value={linkTitle} onChange={e => setLinkTitle(e.target.value)} placeholder="Module title"
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-amber-500 focus:outline-none" />
               </div>
             </>
           )}
 
-          {status && <p className="text-xs text-amber-300 font-semibold">{status}</p>}
+          {status && <p className="text-sm text-amber-300 font-semibold">{status}</p>}
 
           <div className="flex gap-3 pt-1">
-            <button onClick={onClose} className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white">Cancel</button>
-            <button onClick={handleSubmit} disabled={importing}
-              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-sm font-bold text-white disabled:opacity-40 transition-all">
-              {importing ? 'Importing…' : '⬆ Import Module'}
-            </button>
+            <Button variant="secondary" onClick={onClose} disabled={importing}>Cancel</Button>
+            <Button variant="primary" className="flex-1" onClick={handleSubmit} loading={importing}>{importing ? 'Importing…' : 'Import Module'}</Button>
           </div>
         </div>
       </div>

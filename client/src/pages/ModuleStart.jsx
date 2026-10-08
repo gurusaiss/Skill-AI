@@ -122,8 +122,9 @@ function PhaseDetails({ module, onStart }) {
   const customFields = (module?.content?.customFields || []).filter(f => f.label?.trim());
 
   return (
-    <div className="min-h-screen bg-[#0F172A] py-10 px-4">
-      <div className="max-w-2xl mx-auto">
+    <div className="min-h-screen bg-[#0F172A] py-6 px-3 sm:px-5 lg:px-6 2xl:px-8">
+      <div className="w-full grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-8 gap-y-2 items-start">
+        <div className="min-w-0">
         {/* Icon + category */}
         <div className="flex items-center gap-3 mb-4">
           <span className="text-4xl">📚</span>
@@ -133,10 +134,10 @@ function PhaseDetails({ module, onStart }) {
         </div>
 
         {/* Title */}
-        <h1 className="text-3xl font-black text-white mb-3 leading-tight">{module.title}</h1>
+        <h1 className="text-3xl sm:text-4xl font-black text-white mb-3 leading-tight">{module.title}</h1>
 
         {/* Description */}
-        <p className="text-slate-400 text-sm leading-relaxed mb-6">{module.description || 'Build practical skills with a structured, AI-personalized learning plan.'}</p>
+        <p className="text-slate-300 text-base leading-relaxed mb-6">{module.description || 'Build practical skills with a structured, AI-personalized learning plan.'}</p>
 
         {/* Stat pills */}
         <div className="flex flex-wrap gap-3 mb-8">
@@ -158,13 +159,15 @@ function PhaseDetails({ module, onStart }) {
           </div>
         </div>
 
+        </div>
+        <div className="min-w-0 space-y-2">
         {/* What you'll learn */}
         {skills.length > 0 && (
           <div className="mb-6">
-            <h2 className="text-sm font-black text-slate-200 uppercase tracking-widest mb-3">What you'll learn</h2>
+            <h2 className="text-base font-black text-slate-200 uppercase tracking-widest mb-3">What you'll learn</h2>
             <div className="flex flex-wrap gap-2">
               {skills.map((s, i) => (
-                <span key={i} className="px-3 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/60 text-slate-300 text-xs font-medium">
+                <span key={i} className="px-3 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/60 text-slate-300 text-sm font-medium">
                   {typeof s === 'string' ? s : s.name || s}
                 </span>
               ))}
@@ -175,7 +178,7 @@ function PhaseDetails({ module, onStart }) {
         {/* What you'll accomplish */}
         {tasks.length > 0 && (
           <div className="mb-8 rounded-2xl bg-slate-800/30 border border-slate-700/60 p-5">
-            <h2 className="text-sm font-black text-slate-200 uppercase tracking-widest mb-3">What you'll accomplish</h2>
+            <h2 className="text-base font-black text-slate-200 uppercase tracking-widest mb-3">What you'll accomplish</h2>
             <ul className="space-y-2">
               {tasks.slice(0, 5).map((t, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
@@ -190,7 +193,7 @@ function PhaseDetails({ module, onStart }) {
         {/* Additional info (optional, admin-defined) */}
         {customFields.length > 0 && (
           <div className="mb-8 rounded-2xl bg-slate-800/30 border border-slate-700/60 p-5">
-            <h2 className="text-sm font-black text-slate-200 uppercase tracking-widest mb-3">Additional Info</h2>
+            <h2 className="text-base font-black text-slate-200 uppercase tracking-widest mb-3">Additional Info</h2>
             <dl className="space-y-2">
               {customFields.map((f, i) => (
                 <div key={f.id || i} className="flex justify-between gap-4 text-sm">
@@ -202,10 +205,11 @@ function PhaseDetails({ module, onStart }) {
           </div>
         )}
 
+        </div>
         {/* CTA */}
         <button
           onClick={onStart}
-          className="w-full py-4 rounded-2xl font-black text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all shadow-lg shadow-indigo-500/20"
+          className="xl:col-span-2 w-full py-4 rounded-2xl font-black text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all shadow-lg shadow-indigo-500/20"
         >
           Start Module →
         </button>
@@ -221,11 +225,11 @@ function StepHeader({ step, total, answered, label, title, subtitle }) {
   return (
     <div className="mb-6">
       <div className="text-center mb-4">
-        <p className="text-xs font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">{label}</p>
-        <h1 className="text-xl font-black text-white">{title}</h1>
-        <p className="text-xs text-slate-400 mt-1">{subtitle}</p>
+        <p className="text-sm font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">{label}</p>
+        <h1 className="text-2xl sm:text-3xl font-black text-white">{title}</h1>
+        <p className="text-sm text-slate-400 mt-1">{subtitle}</p>
       </div>
-      <div className="flex justify-between text-xs text-slate-500 mb-1.5 font-semibold">
+      <div className="flex justify-between text-sm text-slate-400 mb-1.5 font-semibold">
         <span>Question {step + 1} of {total}</span>
         <span>{answered}/{total} answered</span>
       </div>
@@ -289,8 +293,8 @@ function PhaseProfile({ module, onBack, onDone }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#0F172A] py-10 px-4">
-      <div className="max-w-xl mx-auto">
+    <div className="min-h-screen bg-[#0F172A] py-6 px-3 sm:px-5 lg:px-6 2xl:px-8">
+      <div className="w-full">
         <StepHeader
           step={step}
           total={PROFILE_QUESTIONS.length}
@@ -306,8 +310,8 @@ function PhaseProfile({ module, onBack, onDone }) {
             animating ? 'opacity-0 scale-[0.98]' : 'opacity-100 scale-100'
           }`}
         >
-          <h2 className="text-base font-black text-slate-100 leading-snug mb-5">{question.question}</h2>
-          <div className="space-y-2.5">
+          <h2 className="text-xl font-black text-slate-100 leading-snug mb-5">{question.question}</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {question.options.map((opt, idx) => {
               const isSelected = answers[question.id] === opt.value;
               return (
@@ -328,7 +332,7 @@ function PhaseProfile({ module, onBack, onDone }) {
                   }`}>
                     {String.fromCharCode(65 + idx)}
                   </span>
-                  <span className="text-sm leading-relaxed font-medium flex-1">{opt.label}</span>
+                  <span className="text-base leading-relaxed font-medium flex-1">{opt.label}</span>
                   {isSelected && <span className="text-indigo-300 text-sm ml-auto">✓</span>}
                 </button>
               );
@@ -431,8 +435,8 @@ function PhaseQuiz({ module, onBack, onDone }) {
   const opts = q.options || q.choices || [];
 
   return (
-    <div className="min-h-screen bg-[#0F172A] py-10 px-4">
-      <div className="max-w-2xl mx-auto">
+    <div className="min-h-screen bg-[#0F172A] py-6 px-3 sm:px-5 lg:px-6 2xl:px-8">
+      <div className="w-full">
         <StepHeader
           step={step}
           total={questions.length}
@@ -454,7 +458,7 @@ function PhaseQuiz({ module, onBack, onDone }) {
                 {concept}
               </span>
             </div>
-            <span className="text-xs font-black text-slate-500">Q{step + 1}/{questions.length}</span>
+            <span className="text-xs font-black text-slate-400">Q{step + 1}/{questions.length}</span>
           </div>
 
           {/* Tags */}
@@ -471,10 +475,10 @@ function PhaseQuiz({ module, onBack, onDone }) {
           </div>
 
           {/* Question text */}
-          <h2 className="text-lg font-black text-white mb-5 leading-snug">{q.question || q.text}</h2>
+          <h2 className="text-xl font-black text-white mb-5 leading-snug">{q.question || q.text}</h2>
 
           {/* Options */}
-          <div className="space-y-2.5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {opts.map((opt, idx) => {
               const optText = typeof opt === 'string' ? opt : opt.text || opt.label || String(opt);
               const isSelected = currentSelected === idx;
@@ -496,7 +500,7 @@ function PhaseQuiz({ module, onBack, onDone }) {
                   }`}>
                     {String.fromCharCode(65 + idx)}
                   </span>
-                  <span className="text-sm leading-relaxed font-medium flex-1">{optText}</span>
+                  <span className="text-base leading-relaxed font-medium flex-1">{optText}</span>
                   {isSelected && <span className="text-indigo-300 text-sm ml-auto">✓</span>}
                 </button>
               );
@@ -571,7 +575,7 @@ function PhaseAgents({ assignmentId, onDone }) {
 
   return (
     <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-4">
-      <div className="max-w-lg w-full">
+      <div className="max-w-4xl w-full">
         {allDone ? (
           // Success state
           <div className="text-center">
@@ -599,7 +603,7 @@ function PhaseAgents({ assignmentId, onDone }) {
               <p className="text-slate-400 text-sm mt-1">9 specialized agents are personalizing your roadmap</p>
             </div>
 
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {AGENT_STEPS.map((agent, idx) => {
                 const isActive = idx === agentStep;
                 const isComplete = idx < agentStep;
@@ -634,7 +638,7 @@ function PhaseAgents({ assignmentId, onDone }) {
                           {agent.agent}
                         </span>
                       </div>
-                      <p className={`text-xs mt-0.5 truncate ${isActive ? 'text-slate-300' : 'text-slate-600'}`}>
+                      <p className={`text-xs mt-0.5 truncate ${isActive ? 'text-slate-300' : 'text-slate-400'}`}>
                         {agent.text}
                       </p>
                     </div>
@@ -673,7 +677,7 @@ function PhaseAgents({ assignmentId, onDone }) {
                   }}
                 />
               </div>
-              <p className="text-center text-xs text-slate-500 mt-2 font-semibold">
+              <p className="text-center text-xs text-slate-400 mt-2 font-semibold">
                 {agentStep + 1} / {AGENT_STEPS.length} agents complete
               </p>
             </div>

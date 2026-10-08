@@ -39,7 +39,7 @@ export default function UserMenu({ user, roleLabel, switchRoles = [], roleLabels
         </span>
         <span title={user?.name} className="hidden max-w-[7rem] truncate text-sm font-medium text-slate-200 sm:inline xl:max-w-[10rem]">{first}</span>
         {roleLabel && (
-          <span className="hidden rounded-full border border-indigo-500/30 bg-indigo-500/15 px-2 py-0.5 text-[11px] font-semibold capitalize text-indigo-300 md:inline">{roleLabel}</span>
+          <span className="hidden rounded-full border border-indigo-500/30 bg-indigo-500/15 px-2 py-0.5 text-xs font-semibold capitalize text-indigo-300 md:inline">{roleLabel}</span>
         )}
         <NavIcon name="chevron" className="hidden h-[16px] w-[16px] text-slate-500 sm:block" />
       </button>
@@ -50,8 +50,8 @@ export default function UserMenu({ user, roleLabel, switchRoles = [], roleLabels
             <span className="flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white">{initials(user?.name)}</span>
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-white" title={user?.name}>{user?.name}</p>
-              <p className="truncate text-[11px] text-slate-400" title={user?.email}>{user?.email}</p>
-              {roleLabel && <span className="mt-0.5 inline-block rounded-full border border-indigo-500/30 bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold capitalize text-indigo-300">{roleLabel}</span>}
+              <p className="truncate text-xs text-slate-400" title={user?.email}>{user?.email}</p>
+              {roleLabel && <span className="mt-0.5 inline-block rounded-full border border-indigo-500/30 bg-indigo-500/20 px-2 py-0.5 text-xs font-bold capitalize text-indigo-300">{roleLabel}</span>}
             </div>
           </div>
           <div className="p-1.5">

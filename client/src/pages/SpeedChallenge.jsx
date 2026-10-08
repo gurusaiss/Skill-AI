@@ -119,7 +119,7 @@ function IntroScreen({ onStart }) {
       <p className="text-slate-400 text-lg mb-8">10 questions · 15 seconds each · Earn XP</p>
 
       {/* Rules */}
-      <div className="grid grid-cols-3 gap-4 mb-10 max-w-md w-full">
+      <div className="grid grid-cols-3 gap-4 mb-10 max-w-3xl w-full">
         {[
           { icon: '⏱', label: '15 sec / question' },
           { icon: '✅', label: '+25 XP per correct' },
@@ -131,7 +131,7 @@ function IntroScreen({ onStart }) {
             style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'rgba(255,255,255,0.08)' }}
           >
             <span className="text-2xl">{icon}</span>
-            <p className="text-xs text-slate-400 font-semibold text-center">{label}</p>
+            <p className="text-sm text-slate-300 font-semibold text-center">{label}</p>
           </div>
         ))}
       </div>
@@ -186,8 +186,8 @@ function ResultScreen({ correct, totalXP, questions, answers, onRetry, onCertifi
       </div>
 
       {/* Review answers */}
-      <div className="w-full max-w-lg mb-8 space-y-2 text-left">
-        <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Question Review</p>
+      <div className="w-full mb-8 grid grid-cols-1 xl:grid-cols-2 gap-2 text-left">
+        <p className="xl:col-span-2 text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Question Review</p>
         {questions.map((q, i) => {
           const wasCorrect = answers[i] === q.answer;
           const wasAnswered = answers[i] !== null && answers[i] !== undefined;
@@ -209,7 +209,7 @@ function ResultScreen({ correct, totalXP, questions, answers, onRetry, onCertifi
                   </p>
                 )}
                 {!wasAnswered && (
-                  <p className="text-xs text-slate-500 mt-1 italic">Time ran out</p>
+                  <p className="text-xs text-slate-400 mt-1 italic">Time ran out</p>
                 )}
               </div>
             </div>
@@ -343,7 +343,7 @@ export default function SpeedChallenge() {
 
   if (phase === 'intro') {
     return (
-      <div className="min-h-screen px-4 py-6 max-w-2xl mx-auto" style={{ background: 'inherit' }}>
+      <div className="px-3 sm:px-5 lg:px-6 2xl:px-8 py-6 w-full min-w-0" style={{ background: 'inherit' }}>
         <IntroScreen onStart={startGame} />
       </div>
     );
@@ -351,7 +351,7 @@ export default function SpeedChallenge() {
 
   if (phase === 'result') {
     return (
-      <div className="min-h-screen px-4 py-6 max-w-2xl mx-auto">
+      <div className="px-3 sm:px-5 lg:px-6 2xl:px-8 py-6 w-full min-w-0">
         <ResultScreen
           correct={correctCount}
           totalXP={totalXP}
@@ -379,13 +379,13 @@ export default function SpeedChallenge() {
     neutral: 'border-slate-700/60 bg-slate-800/50 text-slate-200 hover:border-indigo-500/60 hover:bg-indigo-600/10 hover:text-white cursor-pointer',
     correct: 'border-emerald-500 bg-emerald-500/20 text-emerald-200 shadow-lg shadow-emerald-500/20',
     wrong:   'border-red-500 bg-red-500/20 text-red-200',
-    dim:     'border-slate-700/30 bg-slate-800/20 text-slate-600',
+    dim:     'border-slate-700/30 bg-slate-800/20 text-slate-400',
   };
 
   const runningXP = xpBreakdown.reduce((s, x) => s + x, 0);
 
   return (
-    <div className="min-h-screen px-4 py-6 max-w-2xl mx-auto">
+    <div className="px-3 sm:px-5 lg:px-6 2xl:px-8 py-6 w-full min-w-0">
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6">
         {/* Header */}
@@ -400,7 +400,7 @@ export default function SpeedChallenge() {
           >
             SPEED CHALLENGE ⚡
           </h1>
-          <p className="text-slate-500 text-xs mt-0.5">
+          <p className="text-slate-400 text-sm mt-0.5">
             Question {qIndex + 1} of {NUM_QUESTIONS}
           </p>
         </div>
@@ -425,7 +425,7 @@ export default function SpeedChallenge() {
 
       {/* Question card */}
       <div
-        className="rounded-3xl border p-6 mb-6 transition-all duration-300"
+        className="rounded-3xl border p-5 sm:p-8 mb-6 transition-all duration-300"
         style={{
           background: 'rgba(15,23,42,0.8)',
           borderColor: 'rgba(255,255,255,0.07)',
@@ -435,13 +435,13 @@ export default function SpeedChallenge() {
         {/* Timer + question */}
         <div className="flex items-start gap-4 mb-6">
           <CountdownRing timeLeft={timeLeft} total={TIME_PER_Q} />
-          <p className="text-xl font-black text-white leading-snug flex-1 mt-2">
+          <p className="text-xl sm:text-2xl font-black text-white leading-snug flex-1 mt-2">
             {q.q}
           </p>
         </div>
 
         {/* Options */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
           {q.options.map((opt, idx) => {
             const state = optionState(idx);
             return (
@@ -449,7 +449,7 @@ export default function SpeedChallenge() {
                 key={idx}
                 onClick={() => handleSelect(idx)}
                 disabled={revealed}
-                className={`rounded-2xl border-2 px-5 py-4 text-sm font-bold text-left transition-all duration-200 leading-snug ${optionStyles[state]}`}
+                className={`rounded-2xl border-2 px-5 py-4 text-base font-bold text-left transition-all duration-200 leading-snug ${optionStyles[state]}`}
               >
                 <span
                   className="inline-flex items-center justify-center w-6 h-6 rounded-lg text-xs font-black mr-3 flex-shrink-0"
@@ -472,7 +472,7 @@ export default function SpeedChallenge() {
         {/* Feedback bar */}
         {revealed && (
           <div
-            className="mt-4 rounded-xl px-4 py-3 text-sm font-bold transition-all text-center"
+            className="mt-4 rounded-xl px-4 py-3 text-base font-bold transition-all text-center"
             style={{
               background: selected === q.answer
                 ? 'rgba(16,185,129,0.15)'

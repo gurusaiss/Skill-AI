@@ -3,6 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
+import StatCard from '../../components/StatCard.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
+import ActionMenu from '../../components/ActionMenu.jsx';
 
 function formatDate(d) {
   if (!d) return '—';
@@ -17,7 +22,7 @@ function PlanBadge({ plan }) {
     enterprise: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${styles[plan] || styles.trial}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-sm font-semibold border ${styles[plan] || styles.trial}`}>
       {plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : 'Trial'}
     </span>
   );
@@ -30,7 +35,7 @@ function StatusBadge({ status }) {
     inactive:  'bg-slate-500/20 text-slate-400 border-slate-500/30',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${styles[status] || styles.inactive}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-sm font-semibold border ${styles[status] || styles.inactive}`}>
       {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Active'}
     </span>
   );
@@ -48,8 +53,8 @@ function StatMini({ label, value, color = 'slate', description, tooltip }) {
   return (
     <div className="bg-slate-900/60 rounded-xl p-3 text-center border border-slate-700/40" title={tooltip || description}>
       <div className={`text-xl font-bold tabular-nums ${colors[color]}`}>{value ?? '—'}</div>
-      <div className="text-slate-500 text-xs mt-0.5">{label}</div>
-      {description ? <div className="text-slate-600 text-[10px] leading-snug mt-1">{description}</div> : null}
+      <div className="text-slate-400 text-sm mt-0.5">{label}</div>
+      {description ? <div className="text-slate-400 text-sm leading-snug mt-1">{description}</div> : null}
     </div>
   );
 }
@@ -79,7 +84,7 @@ function AdminDetailModal({ admin, onClose, setToast, onRefresh }) {
             </div>
             <div>
               <h2 className="text-lg font-bold text-white">{admin.name || '—'}</h2>
-              <p className="text-slate-400 text-xs">{admin.email}</p>
+              <p className="text-slate-400 text-sm">{admin.email}</p>
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors text-xl">✕</button>
@@ -105,27 +110,27 @@ function AdminDetailModal({ admin, onClose, setToast, onRefresh }) {
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-slate-500 text-xs">Company Name</span>
+                    <span className="text-slate-400 text-sm">Company Name</span>
                     <p className="text-white font-semibold mt-0.5">{details.company?.name || '—'}</p>
                   </div>
                   <div>
-                    <span className="text-slate-500 text-xs">Status</span>
+                    <span className="text-slate-400 text-sm">Status</span>
                     <div className="mt-0.5"><StatusBadge status={details.company?.status} /></div>
                   </div>
                   <div>
-                    <span className="text-slate-500 text-xs">Domain</span>
+                    <span className="text-slate-400 text-sm">Domain</span>
                     <p className="text-white mt-0.5">{details.company?.domain || '—'}</p>
                   </div>
                   <div>
-                    <span className="text-slate-500 text-xs">Admin Since</span>
+                    <span className="text-slate-400 text-sm">Admin Since</span>
                     <p className="text-white mt-0.5">{formatDate(details.admin?.createdAt)}</p>
                   </div>
                   <div>
-                    <span className="text-slate-500 text-xs">Last Login</span>
+                    <span className="text-slate-400 text-sm">Last Login</span>
                     <p className="text-white mt-0.5">{formatDate(details.admin?.lastLogin)}</p>
                   </div>
                   <div>
-                    <span className="text-slate-500 text-xs">Account Status</span>
+                    <span className="text-slate-400 text-sm">Account Status</span>
                     <div className="mt-0.5"><StatusBadge status={details.admin?.status} /></div>
                   </div>
                 </div>
@@ -224,7 +229,7 @@ function EditAdminModal({ admin, onClose, onSaved, setToast }) {
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+            <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">
               Full Name <span className="text-red-400">*</span>
             </label>
             <input
@@ -234,7 +239,7 @@ function EditAdminModal({ admin, onClose, onSaved, setToast }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+            <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">
               Email <span className="text-red-400">*</span>
             </label>
             <input
@@ -245,7 +250,7 @@ function EditAdminModal({ admin, onClose, onSaved, setToast }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Status</label>
+            <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Status</label>
             <select
               value={form.status}
               onChange={e => set('status', e.target.value)}
@@ -292,13 +297,15 @@ export default function AdminManagement() {
   const [filterPlan, setFilterPlan] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [viewAdmin, setViewAdmin] = useState(null);
+  const [loadError, setLoadError] = useState('');
   const [editAdmin, setEditAdmin] = useState(null);
 
   const fetchAdmins = useCallback(() => {
     setLoading(true);
+    setLoadError('');
     authFetch('/api/superadmin/admins')
       .then(data => setAdmins(Array.isArray(data) ? data : (data?.admins || [])))
-      .catch(err => setToast({ message: err.message, type: 'error' }))
+      .catch(err => { setLoadError(err.message || 'Could not load admins'); setToast({ message: err.message, type: 'error' }); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -357,69 +364,56 @@ export default function AdminManagement() {
         />
       )}
 
-      <div className="max-w-7xl mx-auto px-6 py-8 lg:px-8">
+      <PageContainer>
 
-        {/* Page Header */}
-        <div className="flex items-start justify-between mb-8">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600/20 border border-violet-500/20 text-xl">👑</div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">Admin Management</h1>
-                <p className="text-violet-400 text-sm font-semibold">SkillForge AI</p>
-              </div>
-            </div>
-            <p className="text-slate-400 text-sm mt-1 ml-[52px]">All admin accounts across all companies — click a row to view live stats</p>
+        <PageHeader
+          icon="👑"
+          title="Admin Management"
+          subtitle="All admin accounts across all companies. Click a row to view live stats."
+          actions={<>
+            <Button variant="secondary" onClick={fetchAdmins}>Refresh</Button>
+            <Button variant="primary" onClick={() => navigate('/superadmin/dashboard')}>Back to Platform</Button>
+          </>}
+        />
+
+        {loadError ? (
+          <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <span className="min-w-0 flex-1">{loadError}</span>
+            <Button variant="danger" size="sm" onClick={fetchAdmins}>Retry</Button>
           </div>
-          <button
-            onClick={() => navigate('/superadmin/dashboard')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-white font-bold text-sm transition-colors"
-          >
-            ← Platform
-          </button>
-        </div>
+        ) : null}
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl p-4 text-center">
-            <div className="text-2xl font-bold text-violet-300 tabular-nums">{admins.length}</div>
-            <div className="text-slate-400 text-xs mt-0.5">Total Admins</div>
-          </div>
-          <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl p-4 text-center">
-            <div className="text-2xl font-bold text-emerald-300 tabular-nums">
-              {admins.filter(a => a.companyStatus === 'active').length}
-            </div>
-            <div className="text-slate-400 text-xs mt-0.5">Active Companies</div>
-          </div>
-          <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl p-4 text-center">
-            <div className="text-2xl font-bold text-amber-300 tabular-nums">
-              {admins.filter(a => a.plan === 'trial').length}
-            </div>
-            <div className="text-slate-400 text-xs mt-0.5">Trial Plan</div>
-          </div>
-          <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl p-4 text-center">
-            <div className="text-2xl font-bold text-purple-300 tabular-nums">
-              {admins.filter(a => a.plan === 'enterprise').length}
-            </div>
-            <div className="text-slate-400 text-xs mt-0.5">Enterprise Plan</div>
-          </div>
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
+          <StatCard label="Total Admins" value={admins.length} description="Admin accounts on the platform"
+            tooltip="Every user account with the admin role, across all companies."
+            borderClass="border-violet-500/30" bgClass="bg-violet-600/10" textClass="text-violet-300" />
+          <StatCard label="Active Companies" value={admins.filter(a => a.companyStatus === 'active').length} description="Admins whose company is active"
+            tooltip="Admins whose company status is Active, so they can sign in."
+            borderClass="border-emerald-500/30" bgClass="bg-emerald-600/10" textClass="text-emerald-300" />
+          <StatCard label="Trial Plan" value={admins.filter(a => a.plan === 'trial').length} description="Admins on a trial company"
+            tooltip="Admins whose company plan is Trial."
+            borderClass="border-amber-500/30" bgClass="bg-amber-600/10" textClass="text-amber-300" />
+          <StatCard label="Enterprise Plan" value={admins.filter(a => a.plan === 'enterprise').length} description="Admins on an enterprise company"
+            tooltip="Admins whose company plan is Enterprise."
+            borderClass="border-purple-500/30" bgClass="bg-purple-600/10" textClass="text-purple-300" />
         </div>
 
         {/* Filter Bar */}
-        <div className="flex flex-wrap items-center gap-3 mb-5">
-          <div className="relative flex-1 min-w-[200px] max-w-xs">
+        <div className="flex flex-wrap items-center gap-3 mb-5 rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4">
+          <div className="relative flex-1 min-w-[200px] sm:max-w-md">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search name, email, or company..."
-              className="w-full bg-[#1E293B] border border-slate-700 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
+              className="w-full bg-slate-900/60 border border-slate-700 rounded-xl pl-9 pr-4 py-2.5 text-base text-white placeholder-slate-400 focus:outline-none focus:border-violet-500/60"
             />
           </div>
           <select
             value={filterPlan}
             onChange={e => setFilterPlan(e.target.value)}
-            className="bg-[#1E293B] border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
+            className="bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-base text-white focus:outline-none focus:border-violet-500/60"
           >
             <option value="all">All Plans</option>
             <option value="trial">Trial</option>
@@ -429,34 +423,35 @@ export default function AdminManagement() {
           <select
             value={filterStatus}
             onChange={e => setFilterStatus(e.target.value)}
-            className="bg-[#1E293B] border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
+            className="bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-base text-white focus:outline-none focus:border-violet-500/60"
           >
             <option value="all">All Status</option>
             <option value="active">Active</option>
             <option value="suspended">Suspended</option>
           </select>
-          <span className="text-slate-500 text-sm ml-auto">{filtered.length} of {admins.length}</span>
+          <span className="text-slate-300 text-sm ml-auto">{filtered.length} of {admins.length}</span>
+          {(search || filterPlan !== 'all' || filterStatus !== 'all') ? <Button size="sm" variant="ghost" onClick={() => { setSearch(''); setFilterPlan('all'); setFilterStatus('all'); }}>Clear Filters</Button> : null}
         </div>
 
         {/* Admins Table */}
-        <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl overflow-hidden">
+        <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl overflow-hidden">
           {filtered.length === 0 ? (
-            <div className="px-6 py-16 text-center text-slate-500">
+            <div className="px-6 py-16 text-center text-slate-400">
               <div className="text-4xl mb-3">👑</div>
-              <p className="text-sm">{search || filterPlan !== 'all' || filterStatus !== 'all' ? 'No admins match your filters.' : 'No admins found.'}</p>
+              <p className="text-base">{search || filterPlan !== 'all' || filterStatus !== 'all' ? 'No admins match your filters.' : 'No admins found.'}</p>
             </div>
           ) : (
             <div className="min-w-0">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-700/60 bg-slate-800/30">
-                    <th className="text-left px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Admin</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Company</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Email</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Plan</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Created</th>
-                    <th className="text-right px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                    <th className="text-left px-6 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Admin</th>
+                    <th className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Company</th>
+                    <th className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Email</th>
+                    <th className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                    <th className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Plan</th>
+                    <th className="hidden xl:table-cell text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Created</th>
+                    <th className="text-right px-6 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/30">
@@ -468,46 +463,37 @@ export default function AdminManagement() {
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600/20 border border-violet-500/20 text-violet-300 text-xs font-bold flex-shrink-0">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-600/20 border border-violet-500/20 text-violet-300 text-sm font-bold flex-shrink-0">
                             {(admin.name || '?').charAt(0).toUpperCase()}
                           </div>
-                          <span className="font-semibold text-white">{admin.name || '—'}</span>
+                          <span className="font-semibold text-white text-base truncate max-w-[18rem]" title={admin.name}>{admin.name || '—'}</span>
                         </div>
                       </td>
                       <td className="px-4 py-4">
                         <div>
-                          <p className="text-white font-medium">{admin.companyName || '—'}</p>
+                          <p className="text-white font-medium truncate max-w-[16rem]" title={admin.companyName}>{admin.companyName || '—'}</p>
                           <StatusBadge status={admin.companyStatus} />
                         </div>
                       </td>
-                      <td className="px-4 py-4 text-slate-400">{admin.email}</td>
+                      <td className="px-4 py-4 text-slate-300 truncate max-w-[18rem]" title={admin.email}>{admin.email}</td>
                       <td className="px-4 py-4">
                         <StatusBadge status={admin.status || 'active'} />
                       </td>
                       <td className="px-4 py-4">
                         <PlanBadge plan={admin.plan} />
                       </td>
-                      <td className="px-4 py-4 text-slate-400 text-xs">{formatDate(admin.createdAt)}</td>
+                      <td className="hidden xl:table-cell px-4 py-4 text-slate-300 text-sm">{formatDate(admin.createdAt)}</td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
-                          <button
-                            onClick={() => setViewAdmin(admin)}
-                            className="px-3 py-1.5 rounded-lg bg-violet-900/40 hover:bg-violet-900/60 text-violet-400 hover:text-violet-300 text-xs font-semibold transition-colors"
-                          >
-                            View
-                          </button>
-                          <button
-                            onClick={() => setEditAdmin(admin)}
-                            className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-xs font-semibold transition-colors"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(admin)}
-                            className="px-3 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 text-xs font-semibold transition-colors"
-                          >
-                            Delete
-                          </button>
+                          <Button size="sm" variant="secondary" onClick={() => setViewAdmin(admin)}>View</Button>
+                          <ActionMenu
+                            label="Manage"
+                            size="sm"
+                            items={[
+                              { label: 'Edit Admin', onClick: () => setEditAdmin(admin) },
+                              { label: 'Delete Admin', onClick: () => handleDelete(admin), danger: true, divider: true },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -518,14 +504,14 @@ export default function AdminManagement() {
           )}
         </div>
 
-        <div className="mt-4 text-center text-slate-600 text-xs">
+        <div className="mt-4 text-center text-slate-400 text-sm">
           Admins are created via the{' '}
           <button onClick={() => navigate('/superadmin/dashboard')} className="text-violet-400 hover:text-violet-300 underline">
             Company creation
           </button>{' '}
           flow on the Platform page.
         </div>
-      </div>
+      </PageContainer>
     </div>
   );
 }

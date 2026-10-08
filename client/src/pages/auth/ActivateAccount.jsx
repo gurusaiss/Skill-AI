@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import AuthShell from './AuthShell';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function ActivateAccount() {
@@ -60,64 +61,64 @@ export default function ActivateAccount() {
     }
   };
 
-  const inputCls = 'w-full bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-4 py-3 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500';
+  const inputCls = 'w-full bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-4 py-3 text-base placeholder:text-slate-500 focus:outline-none focus:border-indigo-500';
 
   if (status === 'loading') return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center">
+    <AuthShell>
       <p className="text-slate-400">Verifying your invitation link…</p>
-    </div>
+    </AuthShell>
   );
 
   if (status === 'invalid') return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-4">
-      <div className="bg-[#1E293B] border border-red-500/30 rounded-xl p-8 max-w-sm w-full text-center">
+    <AuthShell>
+      <div className="bg-[#1E293B] border border-red-500/30 rounded-xl p-8 w-full text-center">
         <div className="text-4xl mb-4">⚠️</div>
         <h2 className="text-lg font-bold text-white mb-2">Invalid or Expired Link</h2>
         <p className="text-sm text-slate-400 mb-6">This activation link is no longer valid. It may have already been used or expired after 72 hours. Ask your admin to resend the invitation.</p>
-        <button onClick={() => navigate('/auth/login')} className="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
+        <button onClick={() => navigate('/auth/login')} className="w-full py-3 rounded-lg bg-indigo-600 text-white text-base font-semibold hover:bg-indigo-500">
           Go to Login
         </button>
       </div>
-    </div>
+    </AuthShell>
   );
 
   if (status === 'done') return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-4">
-      <div className="bg-[#1E293B] border border-emerald-500/30 rounded-xl p-8 max-w-sm w-full text-center">
+    <AuthShell>
+      <div className="bg-[#1E293B] border border-emerald-500/30 rounded-xl p-8 w-full text-center">
         <div className="text-4xl mb-4">✅</div>
         <h2 className="text-lg font-bold text-white mb-2">Account Activated!</h2>
         <p className="text-sm text-slate-400 mb-6">Your password has been set and you're logged in. Redirecting to your dashboard…</p>
-        <button onClick={() => navigate('/')} className="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
+        <button onClick={() => navigate('/')} className="w-full py-3 rounded-lg bg-indigo-600 text-white text-base font-semibold hover:bg-indigo-500">
           Go to Dashboard
         </button>
       </div>
-    </div>
+    </AuthShell>
   );
 
   return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-4">
-      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-sm shadow-2xl">
+    <AuthShell>
+      <div className="bg-[#1E293B] border border-slate-700 rounded-2xl w-full shadow-2xl">
         <div className="p-6 border-b border-slate-700 text-center">
           <h1 className="text-xl font-bold text-white">Set Up Your Account</h1>
           {info?.name && <p className="text-sm text-slate-400 mt-1">Welcome, {info.name}</p>}
-          {info?.email && <p className="text-xs text-indigo-400 mt-0.5">{info.email}</p>}
+          {info?.email && <p className="text-sm text-indigo-300 mt-0.5">{info.email}</p>}
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <p className="text-xs text-slate-400">Choose a password to complete your account setup. You won't be able to reuse this link after activating.</p>
+          <p className="text-sm text-slate-400">Choose a password to complete your account setup. You won't be able to reuse this link after activating.</p>
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Password</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={inputCls} placeholder="Min. 6 characters" required autoFocus />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Confirm Password</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">Confirm Password</label>
             <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} className={inputCls} placeholder="Repeat password" required />
           </div>
-          {error && <p className="text-xs text-red-400 bg-red-500/10 rounded p-2">{error}</p>}
-          <button type="submit" disabled={saving} className="w-full py-3 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
+          {error && <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg p-3">{error}</p>}
+          <button type="submit" disabled={saving} className="w-full py-3 rounded-lg bg-indigo-600 text-white text-base font-semibold hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
             {saving ? 'Activating…' : 'Activate Account'}
           </button>
         </form>
       </div>
-    </div>
+    </AuthShell>
   );
 }

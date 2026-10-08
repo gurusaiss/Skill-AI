@@ -74,17 +74,17 @@ function StepCard({ step, index }) {
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1.5">
-          <span className={`text-xs font-bold uppercase tracking-wider ${config.labelClass}`}>
+          <span className={`text-sm font-bold uppercase tracking-wider ${config.labelClass}`}>
             {config.label}
           </span>
           {step.type === 'action' && step.tool && (
             <code
-              className={`text-xs px-2 py-0.5 rounded-md font-mono ${config.badgeClass} border border-indigo-700/40`}
+              className={`text-sm px-2 py-0.5 rounded-md font-mono ${config.badgeClass} border border-indigo-700/40`}
             >
               {step.tool}()
             </code>
           )}
-          <span className="ml-auto text-xs text-slate-600 font-mono">#{index + 1}</span>
+          <span className="ml-auto text-sm text-slate-400 font-mono">#{index + 1}</span>
         </div>
 
         <p className={`text-sm leading-relaxed break-words ${config.textClass}`}>
@@ -94,7 +94,7 @@ function StepCard({ step, index }) {
         {/* For action steps, show the raw call in a code block */}
         {step.type === 'action' && step.content && (
           <div className="mt-2 rounded-lg bg-slate-900/70 border border-indigo-800/30 px-3 py-2">
-            <code className="text-xs text-indigo-300 font-mono break-all">{step.content}</code>
+            <code className="text-sm text-indigo-300 font-mono break-all">{step.content}</code>
           </div>
         )}
       </div>
@@ -120,7 +120,7 @@ function ModelBadge({ model }) {
     : '⚙️ Rule-based';
 
   return (
-    <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${cls}`}>
+    <span className={`text-sm px-2.5 py-1 rounded-full border font-medium ${cls}`}>
       {label}
     </span>
   );
@@ -135,7 +135,7 @@ export default function ReactChainViewer({ chain }) {
   const actionCount = steps.filter(s => s.type === 'action').length;
 
   return (
-    <div className="w-full max-w-3xl mx-auto">
+    <div className="w-full">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -16 }}
@@ -153,18 +153,18 @@ export default function ReactChainViewer({ chain }) {
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <ModelBadge model={model} />
           {duration != null && (
-            <span className="text-xs px-2.5 py-1 rounded-full border bg-slate-800/60 text-slate-400 border-slate-600/40">
+            <span className="text-sm px-2.5 py-1 rounded-full border bg-slate-800/60 text-slate-400 border-slate-600/40">
               ⏱ {duration}ms
             </span>
           )}
-          <span className="text-xs px-2.5 py-1 rounded-full border bg-slate-800/60 text-slate-400 border-slate-600/40">
+          <span className="text-sm px-2.5 py-1 rounded-full border bg-slate-800/60 text-slate-400 border-slate-600/40">
             💭 {thoughtCount} thoughts · ⚡ {actionCount} tool calls
           </span>
         </div>
 
         {/* Goal chip */}
         <div className="flex items-start gap-2 rounded-xl bg-slate-800/50 border border-slate-700/50 px-4 py-3">
-          <span className="text-slate-500 text-sm font-medium mt-0.5 flex-shrink-0">Goal:</span>
+          <span className="text-slate-400 text-sm font-medium mt-0.5 flex-shrink-0">Goal:</span>
           <span className="text-slate-200 text-sm font-semibold">{goal}</span>
         </div>
       </motion.div>
@@ -182,7 +182,7 @@ export default function ReactChainViewer({ chain }) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: steps.length * 0.18 + 0.2 }}
-          className="mt-4 text-center text-xs text-slate-600"
+          className="mt-4 text-center text-sm text-slate-400"
         >
           {steps.length} reasoning steps completed
         </motion.div>

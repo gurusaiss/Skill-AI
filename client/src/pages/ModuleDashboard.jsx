@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import PageContainer from '../components/PageContainer.jsx';
 import TabBar from '../components/TabBar.jsx';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
@@ -21,7 +22,7 @@ const getDifficultyColor = (d) => {
 const SessionStatusIcon = ({ status }) => {
   if (status === 'completed') return <span className="text-emerald-400 text-lg">✓</span>;
   if (status === 'in_progress') return <span className="text-indigo-400 text-lg animate-pulse">▶</span>;
-  return <span className="text-slate-600 text-lg">○</span>;
+  return <span className="text-slate-400 text-lg">○</span>;
 };
 
 // ─── SubViews ─────────────────────────────────────────────────────────────────
@@ -89,7 +90,7 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
                 <span className="text-lg font-black text-white">{pct}%</span>
               </div>
             </div>
-            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Progress</p>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Progress</p>
           </div>
         </div>
       </div>
@@ -124,10 +125,10 @@ function OverviewTab({ module, assignment, sessionStatuses }) {
                 <React.Fragment key={i}>
                   {i > 0 && <div className={`flex-1 h-0.5 ${reached ? 'bg-emerald-500/60' : 'bg-slate-700'}`} />}
                   <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm border-2 ${reached ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300' : 'bg-slate-800 border-slate-600 text-slate-500'}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm border-2 ${reached ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300' : 'bg-slate-800 border-slate-600 text-slate-400'}`}>
                       {reached ? '✓' : m.at}
                     </div>
-                    <span className={`text-[10px] font-bold text-center max-w-[80px] leading-tight ${reached ? 'text-emerald-400' : 'text-slate-500'}`}>{m.label}</span>
+                    <span className={`text-xs font-bold text-center max-w-[96px] leading-tight ${reached ? 'text-emerald-400' : 'text-slate-400'}`}>{m.label}</span>
                   </div>
                 </React.Fragment>
               );
@@ -205,10 +206,10 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, assignme
         <div className="text-5xl mb-4 opacity-30">📚</div>
         <p className="text-lg font-bold text-slate-400 mb-2">No Sessions Yet</p>
         {isObserver ? (
-          <p className="text-sm text-slate-600 mb-6">This module has no learning content generated yet — generate it from Module Management.</p>
+          <p className="text-sm text-slate-400 mb-6">This module has no learning content generated yet — generate it from Module Management.</p>
         ) : (
           <>
-            <p className="text-sm text-slate-600 mb-6">Click below to generate AI-powered learning sessions for this module.</p>
+            <p className="text-sm text-slate-400 mb-6">Click below to generate AI-powered learning sessions for this module.</p>
             <button
               onClick={onRegenerate}
               className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-all shadow-lg shadow-indigo-500/25"
@@ -223,7 +224,7 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, assignme
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-4">
+      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-4">
         {sessions.length} Learning Sessions · Click to begin
       </p>
       {sessions.map((session, index) => {
@@ -268,7 +269,7 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, assignme
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 ${
                 isCompleted ? 'bg-emerald-500/20 text-emerald-400'
                 : isToday ? 'bg-indigo-500/20 text-indigo-400'
-                : !isUnlocked ? 'bg-slate-700/40 text-slate-600'
+                : !isUnlocked ? 'bg-slate-700/40 text-slate-400'
                 : 'bg-slate-700/30 text-slate-400'
               }`}>
                 {isCompleted ? '✓' : index + 1}
@@ -279,24 +280,24 @@ function SessionsTab({ module, moduleId, assignmentId, sessionStatuses, assignme
                     {session.title || session.topic || `Day ${index + 1}`}
                   </p>
                   {isToday && !isCompleted && (
-                    <span className="text-[10px] font-black bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 px-1.5 py-0.5 rounded-full whitespace-nowrap">TODAY</span>
+                    <span className="text-xs font-black bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 px-1.5 py-0.5 rounded-full whitespace-nowrap">TODAY</span>
                   )}
                   {isInProgress && (
                     <span className="text-xs font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 px-1.5 py-0.5 rounded-full">In Progress</span>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 truncate">
+                <p className="text-xs text-slate-400 truncate">
                   {session.description || session.objective || (session.topics ? `Topics: ${session.topics.join(', ')}` : 'Click to start learning')}
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {session.duration && (
-                  <span className="text-xs text-slate-600 hidden sm:block">⏱ {session.duration}</span>
+                  <span className="text-xs text-slate-400 hidden sm:block">⏱ {session.duration}</span>
                 )}
                 {!isUnlocked ? (
                   <div className="flex flex-col items-end gap-0.5">
-                    <span className="text-slate-600">🔒</span>
-                    {unlockDateLabel && <span className="text-[10px] text-slate-600 whitespace-nowrap">Unlocks {unlockDateLabel}</span>}
+                    <span className="text-slate-400">🔒</span>
+                    {unlockDateLabel && <span className="text-xs text-slate-400 whitespace-nowrap">Unlocks {unlockDateLabel}</span>}
                   </div>
                 ) : (
                   <span className={`text-lg group-hover:translate-x-1 transition-transform ${isCompleted ? 'text-emerald-400' : 'text-indigo-400'}`}>
@@ -367,7 +368,7 @@ function ProgressTab({ module, assignment, sessionStatuses }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-white truncate">{session.title || `Day ${index + 1}`}</p>
                     {report?.completedAt && (
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className="text-xs text-slate-400 mt-0.5">
                         Completed {new Date(report.completedAt).toLocaleDateString()}
                       </p>
                     )}
@@ -385,7 +386,7 @@ function ProgressTab({ module, assignment, sessionStatuses }) {
                     <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded-full border ${
                       status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                       : status === 'in_progress' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
-                      : 'bg-slate-700/40 text-slate-500 border-slate-700/40'
+                      : 'bg-slate-700/40 text-slate-400 border-slate-700/40'
                     }`}>
                       {status.replace(/_/g, ' ')}
                     </span>
@@ -430,10 +431,10 @@ function PlanTab({ module, isObserver, onRegenerate }) {
         <div className="text-5xl mb-4 opacity-30">🗺️</div>
         <p className="text-lg font-bold text-slate-400 mb-2">No Roadmap Available</p>
         {isObserver ? (
-          <p className="text-sm text-slate-600 mb-6">No roadmap has been generated for this module yet.</p>
+          <p className="text-sm text-slate-400 mb-6">No roadmap has been generated for this module yet.</p>
         ) : (
           <>
-            <p className="text-sm text-slate-600 mb-6">Generate AI learning content to create a personalized roadmap.</p>
+            <p className="text-sm text-slate-400 mb-6">Generate AI learning content to create a personalized roadmap.</p>
             <button
               onClick={onRegenerate}
               className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-all"
@@ -499,8 +500,8 @@ function PlanTab({ module, isObserver, onRegenerate }) {
                 </div>
                 <div className="pb-4 flex-1 min-w-0">
                   <p className="text-sm font-bold text-white">{typeof step === 'string' ? step : step.title || step.phase || step.step || JSON.stringify(step)}</p>
-                  {step.description && <p className="text-xs text-slate-500 mt-0.5">{step.description}</p>}
-                  {step.duration && <p className="text-xs text-slate-600 mt-0.5">⏱ {step.duration}</p>}
+                  {step.description && <p className="text-xs text-slate-400 mt-0.5">{step.description}</p>}
+                  {step.duration && <p className="text-xs text-slate-400 mt-0.5">⏱ {step.duration}</p>}
                 </div>
               </div>
             ))}
@@ -542,7 +543,7 @@ function ModuleNavbar({ moduleId, assignmentId, activeTab, onTabChange }) {
 
   return (
     <div className="sticky top-[57px] z-20 bg-[#0F172A]/95 backdrop-blur border-b border-slate-800/80">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+      <div className="w-full px-3 sm:px-5 lg:px-6 2xl:px-8">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2">
           <div className="flex-1 min-w-[14rem]">
             <TabBar size="sm" active={activeTab} onChange={onTabChange} tabs={tabs.map(t => ({ key: t.id, label: t.label, icon: t.icon }))} />
@@ -553,7 +554,7 @@ function ModuleNavbar({ moduleId, assignmentId, activeTab, onTabChange }) {
                 key={l.label}
                 onClick={() => navigate(l.path)}
                 title={l.label}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all whitespace-nowrap"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all whitespace-nowrap"
               >
                 <span>{l.icon}</span>
                 <span className="hidden sm:block">{l.label}</span>
@@ -561,7 +562,7 @@ function ModuleNavbar({ moduleId, assignmentId, activeTab, onTabChange }) {
             ))}
             <button
               onClick={() => navigate('/dashboard')}
-              className="ml-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-400 hover:bg-slate-800 transition-all whitespace-nowrap"
+              className="ml-1 px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-slate-400 hover:bg-slate-800 transition-all whitespace-nowrap"
             >
               ← Exit
             </button>
@@ -755,7 +756,7 @@ export default function ModuleDashboard() {
           {generating && (
             <div className="mt-4 space-y-1.5">
               {['Analyzing module skills', 'Building day sessions', 'Creating roadmap', 'Preparing quizzes'].map((step, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs text-slate-500">
+                <div key={i} className="flex items-center gap-2 text-xs text-slate-400">
                   <span className="w-4 h-4 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-xs">
                     {i + 1}
                   </span>
@@ -796,7 +797,7 @@ export default function ModuleDashboard() {
         onTabChange={setActiveTab}
       />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <PageContainer>
         {/* Regenerate button — shown when module has no sessions */}
         {isObserver && (
           <div className="mb-6 rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 flex items-center justify-between gap-4 flex-wrap">
@@ -819,7 +820,7 @@ export default function ModuleDashboard() {
           <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-bold text-amber-300">No learning content generated yet</p>
-              <p className="text-xs text-slate-500 mt-0.5">AI will generate sessions, roadmap, and projects tailored to this module's topics</p>
+              <p className="text-xs text-slate-400 mt-0.5">AI will generate sessions, roadmap, and projects tailored to this module's topics</p>
             </div>
             <button
               onClick={() => generateContent(module)}
@@ -850,7 +851,7 @@ export default function ModuleDashboard() {
         {activeTab === 'plan' && (
           <PlanTab module={module} isObserver={isObserver} onRegenerate={() => generateContent(module)} />
         )}
-      </div>
+      </PageContainer>
     </div>
   );
 }

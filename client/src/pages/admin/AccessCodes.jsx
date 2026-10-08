@@ -2,17 +2,22 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
+import ActionMenu from '../../components/ActionMenu.jsx';
 
 function CopyBtn({ text }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
-    navigator.clipboard.writeText(text || '');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 2000); };
+    try {
+      navigator.clipboard.writeText(text || '').then(done, () => {});
+    } catch { /* clipboard unavailable */ }
   };
   return (
     <button onClick={copy} title="Copy to clipboard"
-      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'}`}>
+      className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'}`}>
       {copied ? '✓ Copied' : '📋 Copy'}
     </button>
   );
@@ -28,6 +33,7 @@ export default function AccessCodes() {
   const companyId = user?.companyId || '';
   const [codes, setCodes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(null);
   const { notify } = useNotification();
   const setToast = useCallback(({ message, type = 'info' }) => notify(message, type), [notify]);
@@ -39,9 +45,10 @@ export default function AccessCodes() {
 
   const fetchCodes = () => {
     setLoading(true);
+    setLoadError('');
     authFetch('/api/admin/codes')
       .then(d => setCodes(Array.isArray(d) ? d : (d?.codes || [])))
-      .catch(err => setToast({ message: err.message, type: 'error' }))
+      .catch(err => setLoadError(err.message || 'Could not load access codes.'))
       .finally(() => setLoading(false));
   };
 
@@ -70,7 +77,7 @@ export default function AccessCodes() {
         body: JSON.stringify({
           role: newCodeRole,
           label: newCodeLabel.trim() || undefined,
-          maxUsage: newCodeMax ? parseInt(newCodeMax) : undefined,
+          maxUsage: newCodeMax ? parseInt(newCodeMax, 10) : undefined,
           expiresAt: newCodeExpiry || undefined,
         }),
       });
@@ -106,31 +113,23 @@ export default function AccessCodes() {
   const employees = codes.filter(c => c.role === 'employee');
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC] p-6 lg:p-8">
-
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-8">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-600/20 border border-amber-500/20 text-xl">🔑</div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">Access Codes</h1>
-                <p className="text-slate-400 text-sm">Manage onboarding codes for your company</p>
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowNewForm(v => !v)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-white font-bold text-sm transition-colors">
-            {showNewForm ? '✕ Cancel' : '+ New Code'}
-          </button>
-        </div>
+    <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
+      <PageContainer>
+        <PageHeader
+          icon="🔑"
+          title="Access Codes"
+          subtitle="Manage onboarding codes for your company"
+          actions={
+            <Button variant="primary" onClick={() => setShowNewForm(v => !v)}>
+              {showNewForm ? 'Cancel' : 'New Code'}
+            </Button>
+          }
+        />
 
         {/* Info banner */}
-        <div className="bg-slate-800/60 border border-slate-700/40 rounded-2xl p-4 mb-6 text-sm text-slate-400">
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5 mb-5 text-sm sm:text-base text-slate-300">
           <p>Share these codes with your team. When someone signs up using an access code:</p>
-          <ul className="mt-2 space-y-1 ml-4 list-disc text-slate-500">
+          <ul className="mt-2 space-y-1 ml-4 list-disc text-slate-400">
             <li>Their <span className="text-white">role is auto-assigned</span> (Manager or Employee) based on the code type</li>
             <li>They are <span className="text-white">automatically linked to your company</span></li>
             <li>Their <span className="text-white">JD is mapped</span> and a <span className="text-white">pre-assessment is generated</span> immediately</li>
@@ -139,11 +138,11 @@ export default function AccessCodes() {
 
         {/* New code form */}
         {showNewForm && (
-          <div className="bg-[#1E293B] border border-violet-500/30 rounded-2xl p-5 mb-6">
-            <h3 className="text-sm font-bold text-white mb-4">Create New Access Code</h3>
-            <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="bg-[#1E293B] border border-violet-500/30 rounded-2xl p-4 sm:p-5 mb-5">
+            <h3 className="text-base font-bold text-white mb-4">Create New Access Code</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Role Type</label>
+                <label className="block text-sm font-bold text-slate-300 uppercase tracking-wider mb-1.5">Role Type</label>
                 <select value={newCodeRole} onChange={e => setNewCodeRole(e.target.value)}
                   className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60">
                   <option value="employee">Employee</option>
@@ -151,48 +150,51 @@ export default function AccessCodes() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Label (optional)</label>
+                <label className="block text-sm font-bold text-slate-300 uppercase tracking-wider mb-1.5">Label (optional)</label>
                 <input value={newCodeLabel} onChange={e => setNewCodeLabel(e.target.value)}
                   placeholder="e.g. Engineering Team"
-                  className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/60" />
+                  className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-violet-500/60" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Max Uses (optional)</label>
+                <label className="block text-sm font-bold text-slate-300 uppercase tracking-wider mb-1.5">Max Uses (optional)</label>
                 <input type="number" min="1" value={newCodeMax} onChange={e => setNewCodeMax(e.target.value)}
                   placeholder="Unlimited"
-                  className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/60" />
+                  className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-violet-500/60" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Expiry Date (optional)</label>
+                <label className="block text-sm font-bold text-slate-300 uppercase tracking-wider mb-1.5">Expiry Date (optional)</label>
                 <input type="date" value={newCodeExpiry} onChange={e => setNewCodeExpiry(e.target.value)}
                   className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60" />
               </div>
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => setShowNewForm(false)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm transition-colors">
-                Cancel
-              </button>
-              <button onClick={createCode} disabled={busy === 'create'}
-                className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white font-bold text-sm transition-colors">
+            <div className="flex flex-wrap gap-3">
+              <Button variant="secondary" onClick={() => setShowNewForm(false)}>Cancel</Button>
+              <Button variant="primary" onClick={createCode} loading={busy === 'create'}>
                 {busy === 'create' ? 'Creating...' : 'Create Code'}
-              </button>
+              </Button>
             </div>
           </div>
         )}
 
+        {loadError && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <span>{loadError}</span>
+            <Button variant="danger" size="sm" onClick={fetchCodes}>Retry</Button>
+          </div>
+        )}
+
         {loading ? (
-          <div className="text-center py-16 text-slate-400">Loading codes...</div>
+          <div className="text-center py-16 text-slate-300">Loading codes...</div>
         ) : (
-          <div className="space-y-6">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 items-start">
             {/* Manager codes */}
             <section>
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">Manager Codes</span>
-                <span className="text-xs text-slate-500">({managers.length})</span>
+                <span className="text-sm font-bold text-amber-300 uppercase tracking-wider">Manager Codes</span>
+                <span className="text-sm text-slate-400">({managers.length})</span>
               </div>
               {managers.length === 0 ? (
-                <p className="text-slate-600 text-sm">No manager codes.</p>
+                <p className="rounded-xl border border-dashed border-slate-700 p-4 text-slate-400 text-sm">No manager codes.</p>
               ) : (
                 <div className="space-y-3">
                   {managers.map(code => <CodeCard key={code.id} code={code} companyId={companyId} busy={busy} doAction={doAction} deleteCode={deleteCode} />)}
@@ -203,11 +205,11 @@ export default function AccessCodes() {
             {/* Employee codes */}
             <section>
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider">Employee Codes</span>
-                <span className="text-xs text-slate-500">({employees.length})</span>
+                <span className="text-sm font-bold text-indigo-300 uppercase tracking-wider">Employee Codes</span>
+                <span className="text-sm text-slate-400">({employees.length})</span>
               </div>
               {employees.length === 0 ? (
-                <p className="text-slate-600 text-sm">No employee codes.</p>
+                <p className="rounded-xl border border-dashed border-slate-700 p-4 text-slate-400 text-sm">No employee codes.</p>
               ) : (
                 <div className="space-y-3">
                   {employees.map(code => <CodeCard key={code.id} code={code} companyId={companyId} busy={busy} doAction={doAction} deleteCode={deleteCode} />)}
@@ -216,7 +218,7 @@ export default function AccessCodes() {
             </section>
           </div>
         )}
-      </div>
+      </PageContainer>
     </div>
   );
 }
@@ -230,23 +232,23 @@ function CodeCard({ code, companyId, busy, doAction, deleteCode }) {
   const usagePct = code.maxUsage ? Math.min(100, ((code.usageCount || 0) / code.maxUsage) * 100) : 0;
 
   return (
-    <div className={`bg-[#1E293B] border rounded-2xl p-5 transition-opacity ${!code.isActive ? 'opacity-50' : ''} ${s.border}`}>
-      <div className="flex items-start justify-between gap-4">
+    <div className={`bg-[#1E293B] border rounded-2xl p-4 sm:p-5 transition-opacity ${!code.isActive ? 'opacity-50' : ''} ${s.border}`}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex-1 min-w-0">
           {/* Code string */}
           <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <span className={`font-mono text-lg font-bold tracking-widest ${s.code}`}>{code.code}</span>
+            <span className={`font-mono text-xl font-bold tracking-widest break-all ${s.code}`}>{code.code}</span>
             <CopyBtn text={code.code} />
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${s.badge}`}>{code.role}</span>
+            <span className={`text-sm font-semibold px-2 py-0.5 rounded-full border ${s.badge}`}>{code.role}</span>
             {!code.isActive && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/40 text-red-300">Disabled</span>
+              <span className="text-sm font-semibold px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/40 text-red-300">Disabled</span>
             )}
           </div>
 
           {/* Label + meta */}
-          {code.label && <p className="text-xs text-slate-400 mb-2">{code.label}</p>}
+          {code.label && <p className="text-sm text-slate-300 mb-2">{code.label}</p>}
 
-          <div className="flex items-center gap-6 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-slate-400">
             <div>
               <span>Signups: </span>
               <span className="text-slate-200 font-semibold">{code.usageCount ?? 0}</span>
@@ -276,23 +278,15 @@ function CodeCard({ code, companyId, busy, doAction, deleteCode }) {
         </div>
 
         {/* Actions */}
-        <div className="flex flex-col gap-2 flex-shrink-0">
-          <button onClick={() => doAction(code.id, { regenerate: true }, 'regenerated')}
-            disabled={!!busy}
-            className="px-3 py-1.5 rounded-lg bg-violet-900/40 hover:bg-violet-900/60 text-violet-300 text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap">
-            {busy === code.id + 'regenerated' ? '...' : '↻ Regenerate'}
-          </button>
-          <button onClick={() => doAction(code.id, { isActive: !code.isActive }, code.isActive ? 'disabled' : 'enabled')}
-            disabled={!!busy}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap ${
-              code.isActive ? 'bg-red-900/30 hover:bg-red-900/50 text-red-400' : 'bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400'
-            }`}>
-            {code.isActive ? 'Disable' : 'Enable'}
-          </button>
-          <button onClick={() => deleteCode(code.id)} disabled={!!busy}
-            className="px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-red-900/40 text-slate-400 hover:text-red-400 text-xs font-semibold transition-colors disabled:opacity-50">
-            Delete
-          </button>
+        <div className="flex-shrink-0">
+          <ActionMenu
+            label="Manage"
+            items={[
+              { label: busy === code.id + 'regenerated' ? 'Regenerating...' : 'Regenerate code', onClick: () => doAction(code.id, { regenerate: true }, 'regenerated'), disabled: !!busy },
+              { label: code.isActive ? 'Disable code' : 'Enable code', onClick: () => doAction(code.id, { isActive: !code.isActive }, code.isActive ? 'disabled' : 'enabled'), disabled: !!busy },
+              { label: 'Delete code', onClick: () => deleteCode(code.id), disabled: !!busy, danger: true, divider: true },
+            ]}
+          />
         </div>
       </div>
     </div>

@@ -56,10 +56,10 @@ export default function ServerStatusBanner() {
         borderRadius: '12px',
         padding: '10px 16px',
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-        fontSize: '13px',
+        fontSize: '15px',
         color: '#94a3b8',
         maxWidth: '90vw',
-        whiteSpace: 'nowrap',
+        whiteSpace: 'normal',
       }}
     >
       <span style={{ fontSize: '16px', flexShrink: 0 }}>⏳</span>
@@ -73,9 +73,9 @@ export default function ServerStatusBanner() {
           marginLeft: '8px',
           background: 'none',
           border: 'none',
-          color: '#64748b',
+          color: '#94a3b8',
           cursor: 'pointer',
-          fontSize: '16px',
+          fontSize: '18px',
           lineHeight: 1,
           padding: '0 2px',
           flexShrink: 0,

@@ -1,5 +1,7 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { authFetch } from '../utils/authFetch.js';
+import Button from './Button.jsx';
+import ActionMenu from './ActionMenu.jsx';
 import { ratingForReport, ratingStyle } from '../utils/assessmentRules.js';
 import { Shell, DateFields, validateWindow, fmt, toLocalInput, defaultEnd } from './AssignAssessmentModals.jsx';
 
@@ -12,65 +14,16 @@ import { Shell, DateFields, validateWindow, fmt, toLocalInput, defaultEnd } from
 
 // ---------------------------------------------------------------- Manage menu
 export function ManageMenu({ items, label = 'Manage' }) {
-  const btnRef = useRef(null);
-  const menuRef = useRef(null);
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-
-  const place = () => {
-    const r = btnRef.current?.getBoundingClientRect();
-    if (!r) return;
-    const menuH = (menuRef.current?.offsetHeight) || (items.length * 40 + 16);
-    const width = 240;
-    const top = r.bottom + 6 + menuH > window.innerHeight ? Math.max(8, r.top - menuH - 6) : r.bottom + 6;
-    const left = Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8));
-    setPos({ top, left });
-  };
-
-  useLayoutEffect(() => { if (open) place(); });
-  useEffect(() => {
-    if (!open) return undefined;
-    const close = () => setOpen(false);
-    const onDown = (e) => {
-      if (menuRef.current?.contains(e.target) || btnRef.current?.contains(e.target)) return;
-      close();
-    };
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
-    };
-  }, [open]);
-
-  return (
-    <>
-      <button ref={btnRef} type="button" onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-700 border border-slate-600/60 text-xs font-bold text-white transition-colors">
-        {label}
-        <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-      </button>
-      {open && (
-        <div ref={menuRef} role="menu" style={{ position: 'fixed', top: pos.top, left: pos.left, width: 240 }}
-          className="z-[300] rounded-xl border border-slate-600 bg-[#1E293B] shadow-2xl py-1.5">
-          {items.filter(Boolean).map((it, i) => it.divider ? (
-            <div key={`d${i}`} className="my-1 border-t border-slate-700" />
-          ) : (
-            <button key={it.label} role="menuitem" type="button" disabled={it.disabled} title={it.title}
-              onClick={() => { setOpen(false); it.onClick?.(); }}
-              className={`w-full text-left px-4 py-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${it.danger ? 'text-red-300 hover:bg-red-500/15' : 'text-slate-200 hover:bg-slate-700/70'}`}>
-              {it.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </>
-  );
+  // Items may contain a bare { divider: true } separator; ActionMenu draws the
+  // separator on the item that follows it.
+  const converted = [];
+  let sep = false;
+  for (const it of (items || []).filter(Boolean)) {
+    if (it.divider && !it.label) { sep = true; continue; }
+    converted.push({ ...it, divider: sep || it.divider });
+    sep = false;
+  }
+  return <ActionMenu label={label} size="sm" items={converted} />;
 }
 
 // ------------------------------------------------------------- Edit dates
@@ -84,6 +37,7 @@ export function EditDatesModal({ assessment, ea, employeeName, onClose, onDone, 
   const [error, setError] = useState('');
 
   const save = async () => {
+    if (saving) return;
     setError('');
     const win = validateWindow(start, end);
     if (win.error) { setError(win.error); return; }
@@ -105,24 +59,21 @@ export function EditDatesModal({ assessment, ea, employeeName, onClose, onDone, 
 
   return (
     <Shell title="Edit dates" subtitle={`${employeeName} · ${assessment.title}`} onClose={onClose}>
-      <div className="p-6 space-y-5">
+      <div className="p-5 sm:p-6 space-y-5">
         <p className="text-sm text-slate-300">
           Change when {employeeName} can start and when it closes. Their progress and answers are not reset.
           {ea?.dueAt ? <> Currently due {fmt(ea.dueAt)}.</> : null}
         </p>
         <DateFields start={start} end={end} onStart={setStart} onEnd={setEnd} />
         <label className="block">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Note (optional)</span>
+          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Note (optional)</span>
           <input value={notes} maxLength={500} onChange={e => setNotes(e.target.value)} placeholder="e.g. extended after leave"
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+            className="mt-1 w-full px-3 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
         </label>
-        {error ? <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
-        <div className="flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-semibold text-slate-300">Cancel</button>
-          <button onClick={save} disabled={saving}
-            className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-sm font-bold text-white">
-            {saving ? 'Saving...' : 'Save dates'}
-          </button>
+        {error ? <p role="alert" className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
+        <div className="flex flex-wrap justify-end gap-3">
+          <Button onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="primary" onClick={save} loading={saving}>{saving ? 'Saving...' : 'Save dates'}</Button>
         </div>
       </div>
     </Shell>
@@ -142,6 +93,7 @@ export function DeleteAssignmentModal({ assessment, targets, onClose, onDone, sh
   const typedOk = !needsTyping || expected.includes(typed.trim().toLowerCase());
 
   const run = async () => {
+    if (busy) return;
     setError('');
     setBusy(true);
     const failed = [];
@@ -167,7 +119,7 @@ export function DeleteAssignmentModal({ assessment, targets, onClose, onDone, sh
 
   return (
     <Shell title={single ? 'Delete this assignment?' : `Delete ${targets.length} assignments?`} subtitle={assessment.title} onClose={busy ? () => {} : onClose}>
-      <div className="p-6 space-y-4">
+      <div className="p-5 sm:p-6 space-y-4">
         <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-2 text-sm text-slate-200">
           <p className="font-bold text-red-300">This cannot be undone.</p>
           <p>
@@ -182,7 +134,7 @@ export function DeleteAssignmentModal({ assessment, targets, onClose, onDone, sh
                 : <>{completed.length} of them already submitted. Those <span className="font-semibold">results, reports and answers will be permanently deleted</span> and cannot be recovered.</>}
             </p>
           )}
-          <p className="text-xs text-slate-400">The system will not give it back automatically. You can assign it again later on purpose.</p>
+          <p className="text-sm text-slate-300">The system will not give it back automatically. You can assign it again later on purpose.</p>
         </div>
 
         {!single && (
@@ -190,7 +142,7 @@ export function DeleteAssignmentModal({ assessment, targets, onClose, onDone, sh
             {targets.map(t => (
               <li key={t.ea.userId} className="px-3 py-1.5 flex items-center justify-between gap-2">
                 <span className="truncate text-white" title={t.name}>{t.name}</span>
-                {t.ea.status === 'submitted' ? <span className="text-[10px] font-bold text-red-300 shrink-0">has a result</span> : <span className="text-[10px] text-slate-500 shrink-0">no result</span>}
+                {t.ea.status === 'submitted' ? <span className="text-xs font-bold text-red-300 shrink-0">has a result</span> : <span className="text-xs text-slate-400 shrink-0">no result</span>}
               </li>
             ))}
           </ul>
@@ -198,22 +150,19 @@ export function DeleteAssignmentModal({ assessment, targets, onClose, onDone, sh
 
         {needsTyping && (
           <label className="block">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
               {single ? `Type the employee's name${single.employeeId ? ' or ID' : ''} to confirm` : 'Type DELETE to confirm'}
             </span>
             <input value={typed} onChange={e => setTyped(e.target.value)} autoComplete="off"
               placeholder={single ? (single.employeeId ? `${single.name} or ${single.employeeId}` : single.name) : 'DELETE'}
-              className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-red-500" />
+              className="mt-1 w-full px-3 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-red-500" />
           </label>
         )}
 
-        {error ? <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
-        <div className="flex justify-end gap-3">
-          <button onClick={onClose} disabled={busy} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-semibold text-slate-300">Cancel</button>
-          <button onClick={run} disabled={busy || !typedOk}
-            className="px-5 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold text-white">
-            {busy ? 'Deleting...' : 'Delete permanently'}
-          </button>
+        {error ? <p role="alert" className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
+        <div className="flex flex-wrap justify-end gap-3">
+          <Button onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button variant="danger" onClick={run} loading={busy} disabled={!typedOk}>{busy ? 'Deleting...' : 'Delete permanently'}</Button>
         </div>
       </div>
     </Shell>
@@ -231,6 +180,7 @@ export function BulkReassignModal({ assessment, targets, onClose, onDone, showTo
   const [error, setError] = useState('');
 
   const run = async () => {
+    if (busy) return;
     setError('');
     const win = validateWindow(start, end);
     if (win.error) { setError(win.error); return; }
@@ -253,21 +203,18 @@ export function BulkReassignModal({ assessment, targets, onClose, onDone, showTo
 
   return (
     <Shell title={`Reassign ${eligible.length} employee${eligible.length === 1 ? '' : 's'}`} subtitle={assessment.title} onClose={busy ? () => {} : onClose}>
-      <div className="p-6 space-y-5">
+      <div className="p-5 sm:p-6 space-y-5">
         <p className="text-sm text-slate-300">They get the same questions again with the new dates. Their current attempt starts over.</p>
-        {skippedDone > 0 && <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">{skippedDone} selected employee{skippedDone === 1 ? ' has' : 's have'} already completed it and will be skipped. Use Reassign on a single row to give a completed employee a retake.</p>}
+        {skippedDone > 0 && <p className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">{skippedDone} selected employee{skippedDone === 1 ? ' has' : 's have'} already completed it and will be skipped. Use Reassign on a single row to give a completed employee a retake.</p>}
         <DateFields start={start} end={end} onStart={setStart} onEnd={setEnd} />
-        <label className="flex items-center gap-2 text-xs text-slate-300">
+        <label className="flex items-center gap-2 text-sm text-slate-200">
           <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} className="accent-indigo-500" />
           Email the employees about the new dates
         </label>
-        {error ? <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
-        <div className="flex justify-end gap-3">
-          <button onClick={onClose} disabled={busy} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-semibold text-slate-300">Cancel</button>
-          <button onClick={run} disabled={busy || eligible.length === 0}
-            className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-sm font-bold text-white">
-            {busy ? 'Reassigning...' : 'Reassign'}
-          </button>
+        {error ? <p role="alert" className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
+        <div className="flex flex-wrap justify-end gap-3">
+          <Button onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button variant="primary" onClick={run} loading={busy} disabled={eligible.length === 0}>{busy ? 'Reassigning...' : 'Reassign'}</Button>
         </div>
       </div>
     </Shell>
@@ -300,34 +247,34 @@ export function ResultModal({ assessment, ea, employeeName, onClose }) {
 
   return (
     <Shell title={`${employeeName} · result`} subtitle={assessment.title} onClose={onClose}>
-      <div className="p-6 space-y-4">
-        {state === 'loading' && <p className="text-sm text-slate-400">Loading result...</p>}
+      <div className="p-5 sm:p-6 space-y-4">
+        {state === 'loading' && <p className="text-sm text-slate-300">Loading result...</p>}
         {state === 'error' && <p className="text-sm text-amber-300">Could not load the full report. Showing what is on record.</p>}
         <div className="flex items-center gap-3 flex-wrap">
           {score != null && <span className="text-3xl font-black text-white">{Math.round(Number(score))}%</span>}
           <span className={`px-3 py-1 rounded-lg text-sm font-bold ${st.chip}`}>{rating}</span>
-          {src.correct != null && <span className="text-sm text-slate-400">{src.correct} of {src.total ?? '-'} correct</span>}
+          {src.correct != null && <span className="text-sm text-slate-300">{src.correct} of {src.total ?? '-'} correct</span>}
         </div>
-        <p className="text-xs text-slate-500">Submitted {ea.submittedAt ? new Date(ea.submittedAt).toLocaleString() : '-'}</p>
+        <p className="text-sm text-slate-400">Submitted {ea.submittedAt ? new Date(ea.submittedAt).toLocaleString() : '-'}</p>
         {skills.length > 0 && (
           <div className="space-y-1.5">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Skill scores</p>
+            <p className="text-sm font-bold text-slate-300 uppercase tracking-wider">Skill scores</p>
             {skills.map((sb, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className="text-xs text-slate-400 w-32 truncate shrink-0" title={sb.skill}>{sb.skill}</span>
+                <span className="text-sm text-slate-300 w-40 truncate shrink-0" title={sb.skill}>{sb.skill}</span>
                 <div className="flex-1 min-w-0 h-1.5 bg-slate-700 rounded-full overflow-hidden"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.min(100, sb.pct || 0)}%` }} /></div>
-                <span className="text-xs font-bold text-slate-300 w-10 text-right">{sb.pct}%</span>
+                <span className="text-sm font-bold text-slate-200 w-12 text-right">{sb.pct}%</span>
               </div>
             ))}
           </div>
         )}
         {(src.strengths?.length > 0 || src.weakAreas?.length > 0) && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {src.strengths?.length > 0 && <div><p className="text-xs font-bold text-emerald-400 mb-1">Strengths</p><div className="flex flex-wrap gap-1">{src.strengths.map((s, i) => <span key={i} className="text-xs px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">{s}</span>)}</div></div>}
-            {src.weakAreas?.length > 0 && <div><p className="text-xs font-bold text-amber-400 mb-1">Weak areas</p><div className="flex flex-wrap gap-1">{src.weakAreas.map((s, i) => <span key={i} className="text-xs px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300">{s}</span>)}</div></div>}
+            {src.strengths?.length > 0 && <div><p className="text-sm font-bold text-emerald-300 mb-1">Strengths</p><div className="flex flex-wrap gap-1.5">{src.strengths.map((s, i) => <span key={i} className="text-sm px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">{s}</span>)}</div></div>}
+            {src.weakAreas?.length > 0 && <div><p className="text-sm font-bold text-amber-300 mb-1">Weak areas</p><div className="flex flex-wrap gap-1.5">{src.weakAreas.map((s, i) => <span key={i} className="text-sm px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300">{s}</span>)}</div></div>}
           </div>
         )}
-        <div className="flex justify-end"><button onClick={onClose} className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white">Close</button></div>
+        <div className="flex justify-end"><Button variant="primary" onClick={onClose}>Close</Button></div>
       </div>
     </Shell>
   );
@@ -343,6 +290,7 @@ export function DeleteAssessmentModal({ assessment, onClose, onDone, showToast }
   const typedOk = completed === 0 || typed.trim().toLowerCase() === String(assessment.title || '').trim().toLowerCase();
 
   const run = async () => {
+    if (busy) return;
     setBusy(true);
     setError('');
     try {
@@ -359,7 +307,7 @@ export function DeleteAssessmentModal({ assessment, onClose, onDone, showToast }
 
   return (
     <Shell title="Delete this assessment?" subtitle={assessment.title} onClose={busy ? () => {} : onClose}>
-      <div className="p-6 space-y-4">
+      <div className="p-5 sm:p-6 space-y-4">
         <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-2 text-sm text-slate-200">
           <p className="font-bold text-red-300">This cannot be undone.</p>
           <p>The assessment and its {roster.length} assignment{roster.length === 1 ? '' : 's'} are removed from the database and from every employee's login, together with reminder history.</p>
@@ -367,18 +315,15 @@ export function DeleteAssessmentModal({ assessment, onClose, onDone, showToast }
         </div>
         {completed > 0 && (
           <label className="block">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Type the assessment title to confirm</span>
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Type the assessment title to confirm</span>
             <input value={typed} onChange={e => setTyped(e.target.value)} autoComplete="off" placeholder={assessment.title}
-              className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-red-500" />
+              className="mt-1 w-full px-3 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-red-500" />
           </label>
         )}
-        {error ? <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
-        <div className="flex justify-end gap-3">
-          <button onClick={onClose} disabled={busy} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-semibold text-slate-300">Cancel</button>
-          <button onClick={run} disabled={busy || !typedOk}
-            className="px-5 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold text-white">
-            {busy ? 'Deleting...' : 'Delete permanently'}
-          </button>
+        {error ? <p role="alert" className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
+        <div className="flex flex-wrap justify-end gap-3">
+          <Button onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button variant="danger" onClick={run} loading={busy} disabled={!typedOk}>{busy ? 'Deleting...' : 'Delete permanently'}</Button>
         </div>
       </div>
     </Shell>

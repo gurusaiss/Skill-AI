@@ -135,13 +135,13 @@ export default function GoalRefinement({ goal, skills = [], stats = {} }) {
         </div>
         <div>
           <h3 className="text-sm font-black text-white">AI Goal Refinement Engine</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Suggestions to sharpen your learning goal</p>
+          <p className="text-sm text-slate-400 mt-0.5">Suggestions to sharpen your learning goal</p>
         </div>
       </div>
 
       {/* Current Goal */}
       <div className="rounded-xl border border-slate-700/50 bg-slate-800/40 px-4 py-3 mb-4">
-        <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1.5">Current Goal</p>
+        <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-1.5">Current Goal</p>
         <p className="text-sm text-slate-200 leading-relaxed">{goal}</p>
       </div>
 
@@ -149,7 +149,7 @@ export default function GoalRefinement({ goal, skills = [], stats = {} }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
         {/* Strengths */}
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-          <p className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-2.5">Strengths</p>
+          <p className="text-sm font-black text-emerald-400 uppercase tracking-widest mb-2.5">Strengths</p>
           <ul className="space-y-1.5">
             {strengths.map((s, i) => (
               <motion.li
@@ -157,7 +157,7 @@ export default function GoalRefinement({ goal, skills = [], stats = {} }) {
                 initial={{ opacity: 0, x: -6 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.07 }}
-                className="flex items-start gap-2 text-xs text-emerald-200/80"
+                className="flex items-start gap-2 text-sm text-emerald-200/80"
               >
                 <span className="text-emerald-500 mt-0.5 flex-shrink-0">✓</span>
                 <span>{s}</span>
@@ -168,7 +168,7 @@ export default function GoalRefinement({ goal, skills = [], stats = {} }) {
 
         {/* Improvements */}
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
-          <p className="text-xs font-black text-amber-400 uppercase tracking-widest mb-2.5">Could be improved by</p>
+          <p className="text-sm font-black text-amber-400 uppercase tracking-widest mb-2.5">Could be improved by</p>
           <ul className="space-y-1.5">
             {improvements.map((s, i) => (
               <motion.li
@@ -176,7 +176,7 @@ export default function GoalRefinement({ goal, skills = [], stats = {} }) {
                 initial={{ opacity: 0, x: -6 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.07 }}
-                className="flex items-start gap-2 text-xs text-amber-200/80"
+                className="flex items-start gap-2 text-sm text-amber-200/80"
               >
                 <span className="text-amber-500 mt-0.5 flex-shrink-0">→</span>
                 <span>{s}</span>
@@ -187,7 +187,7 @@ export default function GoalRefinement({ goal, skills = [], stats = {} }) {
       </div>
 
       {/* Suggestion cards */}
-      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">AI-Suggested Refinements</p>
+      <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-3">AI-Suggested Refinements</p>
       <div className="space-y-3">
         {refinements.map((ref, i) => {
           const isSelected = selected === ref.id;
@@ -208,19 +208,19 @@ export default function GoalRefinement({ goal, skills = [], stats = {} }) {
                 {/* Top row */}
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-xs px-2.5 py-0.5 rounded-full border font-bold ${ref.tagColor}`}>
+                    <span className={`text-sm px-2.5 py-0.5 rounded-full border font-bold ${ref.tagColor}`}>
                       {ref.tag}
                     </span>
-                    <span className="text-xs font-bold text-slate-400">{ref.label}</span>
+                    <span className="text-sm font-bold text-slate-400">{ref.label}</span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-xs text-slate-500">{ref.confidence}% confidence</span>
+                    <span className="text-sm text-slate-400">{ref.confidence}% confidence</span>
                     <div
                       className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
                         isSelected ? 'border-indigo-500 bg-indigo-500' : 'border-slate-600'
                       }`}
                     >
-                      {isSelected && <span className="text-white text-[8px]">✓</span>}
+                      {isSelected && <span className="text-white text-sm">✓</span>}
                     </div>
                   </div>
                 </div>
@@ -236,7 +236,7 @@ export default function GoalRefinement({ goal, skills = [], stats = {} }) {
                       style={{ width: `${ref.confidence}%` }}
                     />
                   </div>
-                  <span className="text-xs text-slate-500 font-mono w-8 text-right">{ref.confidence}%</span>
+                  <span className="text-sm text-slate-400 font-mono w-8 text-right">{ref.confidence}%</span>
                 </div>
 
                 {/* Why this matters */}
@@ -246,11 +246,11 @@ export default function GoalRefinement({ goal, skills = [], stats = {} }) {
                     animate={{ opacity: 1, height: 'auto' }}
                     className="mt-3 pt-3 border-t border-slate-700/40"
                   >
-                    <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1.5">Why this matters</p>
-                    <p className="text-xs text-slate-400 leading-relaxed">{ref.rationale}</p>
+                    <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-1.5">Why this matters</p>
+                    <p className="text-sm text-slate-400 leading-relaxed">{ref.rationale}</p>
                     <button
                       onClick={e => { e.stopPropagation(); handleApply(ref); }}
-                      className="mt-3 flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-black hover:opacity-90 transition-all active:scale-95"
+                      className="mt-3 flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-black hover:opacity-90 transition-all active:scale-95"
                     >
                       {applied && selected === ref.id ? '✅ Applied!' : '🎯 Apply Refinement'}
                     </button>
@@ -266,7 +266,7 @@ export default function GoalRefinement({ goal, skills = [], stats = {} }) {
         <motion.p
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-xs text-emerald-400 text-center mt-3"
+          className="text-sm text-emerald-400 text-center mt-3"
         >
           Refinement saved — start a new goal to apply it fully.
         </motion.p>

@@ -67,7 +67,7 @@ export default function JobRoleCombobox({
               className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors flex items-center justify-between gap-3"
             >
               <span className="truncate">{o.name}</span>
-              {o.dept && <span className="text-xs text-slate-500 shrink-0">{o.dept}</span>}
+              {o.dept && <span className="text-sm text-slate-400 shrink-0">{o.dept}</span>}
             </button>
           ))}
         </div>

@@ -171,21 +171,21 @@ function LearnPhase({ challenge, planDay, onReady }) {
   const topic = planDay?.topic || planDay?.skillName || 'Today\'s Concept';
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8 space-y-5">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-8 space-y-5">
       <div className="text-center mb-2">
-        <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">
+        <p className="text-xs font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">
           📚 Learn First — Then Quiz
         </p>
         <h1 className="text-2xl font-black text-slate-100 mt-1 leading-tight">
           {cs?.title || topic}
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
+        <p className="text-xs text-slate-400 mt-1">
           Read through this — your 10-question quiz follows
         </p>
       </div>
 
       <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-500/10 to-purple-500/5 p-5">
-        <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+        <p className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
           <span>📖</span> Definition
         </p>
         <p className="text-sm text-slate-200 leading-relaxed font-medium">
@@ -194,7 +194,7 @@ function LearnPhase({ challenge, planDay, onReady }) {
       </div>
 
       <div className="rounded-2xl border border-slate-700/60 bg-slate-900/80 p-5">
-        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+        <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
           <span>🔑</span> Key Points
         </p>
         <ul className="space-y-2.5">
@@ -204,7 +204,7 @@ function LearnPhase({ challenge, planDay, onReady }) {
             'Practice with real-world scenarios to solidify your knowledge',
           ]).map((pt, i) => (
             <li key={i} className="flex items-start gap-2.5 text-sm text-slate-300">
-              <span className="w-5 h-5 rounded-md bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-[10px] font-black flex-shrink-0 mt-0.5 border border-indigo-500/30">
+              <span className="w-5 h-5 rounded-md bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-black flex-shrink-0 mt-0.5 border border-indigo-500/30">
                 {i + 1}
               </span>
               <span className="leading-relaxed">{pt}</span>
@@ -215,7 +215,7 @@ function LearnPhase({ challenge, planDay, onReady }) {
 
       {cs?.example && (
         <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4">
-          <p className="text-[9px] font-black text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+          <p className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
             <span>💡</span> Real-World Example
           </p>
           <p className="text-sm text-slate-300 leading-relaxed">{cs.example}</p>
@@ -224,14 +224,14 @@ function LearnPhase({ challenge, planDay, onReady }) {
 
       {cs?.proTip && (
         <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
-          <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+          <p className="text-xs font-black text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
             <span>⚡</span> Pro Tip
           </p>
           <p className="text-sm text-slate-300 leading-relaxed">{cs.proTip}</p>
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-[10px] text-slate-600 justify-center flex-wrap">
+      <div className="flex items-center gap-2 text-xs text-slate-400 justify-center flex-wrap">
         <span className="px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700">{planDay?.skillName}</span>
         <span>•</span>
         <span className="capitalize">{planDay?.sessionType} session</span>
@@ -270,8 +270,8 @@ function WarmupMCQ({ question, onDone }) {
       <div className="flex items-center gap-2">
         <span className="text-lg">🎯</span>
         <div>
-          <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Warm-Up Check</p>
-          <p className="text-[9px] text-slate-600">Quick baseline before the full quiz</p>
+          <p className="text-xs font-black text-indigo-400 uppercase tracking-widest">Warm-Up Check</p>
+          <p className="text-xs text-slate-400">Quick baseline before the full quiz</p>
         </div>
       </div>
 
@@ -294,10 +294,10 @@ function WarmupMCQ({ question, onDone }) {
               disabled={revealed}
               className={`w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${style} ${revealed ? 'cursor-default' : 'cursor-pointer'}`}
             >
-              <span className={`w-6 h-6 rounded-md flex-shrink-0 flex items-center justify-center text-[11px] font-black border
+              <span className={`w-6 h-6 rounded-md flex-shrink-0 flex items-center justify-center text-xs font-black border
                 ${revealed && isCorrect(opt) ? 'bg-emerald-500 text-white border-emerald-400'
                   : revealed && selected === opt && !isCorrect(opt) ? 'bg-red-500 text-white border-red-400'
-                  : 'border-slate-600 text-slate-500 bg-slate-800'}`}>
+                  : 'border-slate-600 text-slate-400 bg-slate-800'}`}>
                 {revealed && isCorrect(opt) ? '✓' : revealed && selected === opt && !isCorrect(opt) ? '✗' : label}
               </span>
               <span className="text-sm leading-relaxed">{getOptionText(opt)}</span>
@@ -324,7 +324,7 @@ function WarmupMCQ({ question, onDone }) {
       {!revealed && (
         <button
           onClick={onDone}
-          className="w-full py-2 rounded-xl text-xs text-slate-600 border border-slate-800 hover:text-slate-400 hover:border-slate-700 transition-all"
+          className="w-full py-2 rounded-xl text-xs text-slate-400 border border-slate-800 hover:text-slate-400 hover:border-slate-700 transition-all"
         >
           Skip warm-up →
         </button>
@@ -368,7 +368,7 @@ function QuizPhase({ questions, topic, skillName, onSubmit }) {
 
   if (questions.length === 0) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-14 text-center">
+      <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-14 text-center">
         <div className="text-4xl mb-4">⚠️</div>
         <p className="text-slate-400 text-sm">No questions available. Please go back and try again.</p>
       </div>
@@ -376,12 +376,12 @@ function QuizPhase({ questions, topic, skillName, onSubmit }) {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8 space-y-6">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-8 space-y-6">
       {/* Header */}
       <div className="text-center">
-        <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">📝 Session Quiz</p>
+        <p className="text-xs font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">📝 Session Quiz</p>
         <h1 className="text-xl font-black text-slate-100">{topic}</h1>
-        <p className="text-xs text-slate-500 mt-1">{skillName} · {questions.length} questions</p>
+        <p className="text-xs text-slate-400 mt-1">{skillName} · {questions.length} questions</p>
         <div className="flex items-center justify-center gap-3 mt-3">
           <div className="h-1.5 bg-slate-800 rounded-full flex-1 overflow-hidden">
             <div
@@ -389,7 +389,7 @@ function QuizPhase({ questions, topic, skillName, onSubmit }) {
               style={{ width: `${(answeredCount / questions.length) * 100}%` }}
             />
           </div>
-          <span className="text-xs text-slate-500 font-mono flex-shrink-0">{answeredCount}/{questions.length}</span>
+          <span className="text-xs text-slate-400 font-mono flex-shrink-0">{answeredCount}/{questions.length}</span>
         </div>
       </div>
 
@@ -422,7 +422,7 @@ function QuizPhase({ questions, topic, skillName, onSubmit }) {
                   </span>
                   <p className="text-sm font-semibold text-slate-100 leading-snug flex-1">{q.text}</p>
                 </div>
-                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold flex-shrink-0 uppercase tracking-wider ${
+                <span className={`text-xs px-2 py-0.5 rounded-full font-bold flex-shrink-0 uppercase tracking-wider ${
                   q.type === 'fill'
                     ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
                     : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
@@ -437,7 +437,7 @@ function QuizPhase({ questions, topic, skillName, onSubmit }) {
                 </div>
               )}
               {q.type === 'mcq' && q.options && q.options.length > 0 && (
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
                   {q.options.map((opt, oi) => {
                     const isSelected = answers[q.id] === opt;
                     return (
@@ -448,8 +448,8 @@ function QuizPhase({ questions, topic, skillName, onSubmit }) {
                           isSelected ? OPTION_COLORS.selected : OPTION_COLORS.default
                         }`}
                       >
-                        <span className={`w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center text-[10px] font-black border ${
-                          isSelected ? 'bg-indigo-600 text-white border-indigo-500' : 'border-slate-600 text-slate-500 bg-slate-800'
+                        <span className={`w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center text-xs font-black border ${
+                          isSelected ? 'bg-indigo-600 text-white border-indigo-500' : 'border-slate-600 text-slate-400 bg-slate-800'
                         }`}>
                           {OPTION_LABELS[oi]}
                         </span>
@@ -473,7 +473,7 @@ function QuizPhase({ questions, topic, skillName, onSubmit }) {
               <div>
                 <button
                   onClick={() => handleExplanation(q.id, explanations[q.id] === undefined ? '' : undefined)}
-                  className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
+                  className="text-xs text-slate-400 hover:text-slate-400 transition-colors"
                 >
                   {explanations[q.id] === undefined ? '+ Add reasoning (optional)' : '− Hide reasoning'}
                 </button>
@@ -494,7 +494,7 @@ function QuizPhase({ questions, topic, skillName, onSubmit }) {
       {/* Submit */}
       <div className="space-y-3">
         {answeredCount < questions.length && (
-          <p className="text-center text-xs text-slate-500">
+          <p className="text-center text-xs text-slate-400">
             {questions.length - answeredCount} question{questions.length - answeredCount !== 1 ? 's' : ''} remaining
             {canSubmit ? ' — you can submit now or answer all for full marks' : ''}
           </p>
@@ -531,7 +531,7 @@ function QuizResult({ quizData, planDay, onViewNotes, onJournal, onDashboard, on
     'Needs work — study the notes carefully before the next session';
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8 space-y-5">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-8 space-y-5">
       {/* Score hero */}
       <div className={`rounded-2xl border p-6 text-center ${gradeMeta.bg} ${gradeMeta.border}`}>
         <div className="text-4xl mb-2">{gradeMeta.emoji}</div>
@@ -569,7 +569,7 @@ function QuizResult({ quizData, planDay, onViewNotes, onJournal, onDashboard, on
                   onClick={() => setExpandedQ(isOpen && !showAll ? null : r.id)}
                   className="w-full flex items-start gap-3 text-left"
                 >
-                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 mt-0.5 ${
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 mt-0.5 ${
                     r.correct ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
                   }`}>
                     {r.correct ? '✓' : '✗'}
@@ -578,9 +578,9 @@ function QuizResult({ quizData, planDay, onViewNotes, onJournal, onDashboard, on
                     <p className="text-sm text-slate-300 leading-snug font-medium line-clamp-1">
                       Q{i + 1}: {r.text}
                     </p>
-                    {r.concept && <p className="text-[10px] text-slate-600 mt-0.5">{r.concept}</p>}
+                    {r.concept && <p className="text-xs text-slate-400 mt-0.5">{r.concept}</p>}
                   </div>
-                  <span className="text-[10px] text-slate-600 flex-shrink-0">{isOpen ? '▲' : '▼'}</span>
+                  <span className="text-xs text-slate-400 flex-shrink-0">{isOpen ? '▲' : '▼'}</span>
                 </button>
                 {isOpen && (
                   <div className="mt-3 space-y-2 pl-8">
@@ -589,7 +589,7 @@ function QuizResult({ quizData, planDay, onViewNotes, onJournal, onDashboard, on
                         {(r.options || []).map((opt, oi) => {
                           const isCorr = opt === r.correct;
                           const isUser = opt === r.userAnswer;
-                          let cls = 'border-slate-800 text-slate-600';
+                          let cls = 'border-slate-800 text-slate-400';
                           if (isCorr) cls = 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300';
                           else if (isUser && !isCorr) cls = 'border-red-500/50 bg-red-500/10 text-red-300';
                           return (
@@ -605,25 +605,25 @@ function QuizResult({ quizData, planDay, onViewNotes, onJournal, onDashboard, on
                     ) : (
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-1.5 text-xs">
-                          <span className="text-slate-500">Your answer:</span>
+                          <span className="text-slate-400">Your answer:</span>
                           <span className={r.correct ? 'text-emerald-300' : 'text-red-300'}>{r.userAnswer || '(blank)'}</span>
                         </div>
                         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs">
-                          <span className="text-slate-500">Expected:</span>
+                          <span className="text-slate-400">Expected:</span>
                           <span className="text-emerald-300">{r.answer}</span>
                         </div>
                       </div>
                     )}
                     {r.explanation && (
                       <div className="rounded-lg bg-indigo-500/8 border border-indigo-500/20 px-3 py-2">
-                        <p className="text-[10px] text-indigo-400 font-bold mb-0.5">Explanation</p>
+                        <p className="text-xs text-indigo-400 font-bold mb-0.5">Explanation</p>
                         <p className="text-xs text-slate-400 leading-relaxed">{r.explanation}</p>
                       </div>
                     )}
                     {r.userExplanation && (
                       <div className="rounded-lg bg-slate-800/30 border border-slate-700/40 px-3 py-2">
-                        <p className="text-[10px] text-slate-500 font-bold mb-0.5">Your reasoning</p>
-                        <p className="text-xs text-slate-500 italic">{r.userExplanation}</p>
+                        <p className="text-xs text-slate-400 font-bold mb-0.5">Your reasoning</p>
+                        <p className="text-xs text-slate-400 italic">{r.userExplanation}</p>
                       </div>
                     )}
                   </div>
@@ -654,17 +654,17 @@ function QuizResult({ quizData, planDay, onViewNotes, onJournal, onDashboard, on
         <div className="grid grid-cols-3 gap-3 mb-3">
           <div className="text-center">
             <div className="text-xl font-black text-emerald-400">{correct}</div>
-            <div className="text-[9px] text-slate-600 uppercase tracking-wide">Correct</div>
+            <div className="text-xs text-slate-400 uppercase tracking-wide">Correct</div>
           </div>
           <div className="text-center">
             <div className="text-xl font-black text-red-400">{wrong}</div>
-            <div className="text-[9px] text-slate-600 uppercase tracking-wide">Wrong</div>
+            <div className="text-xs text-slate-400 uppercase tracking-wide">Wrong</div>
           </div>
           <div className="text-center">
             <div className="text-xl font-black text-slate-400">
               {results.filter(r => !r.userAnswer || r.userAnswer.toString().trim() === '').length}
             </div>
-            <div className="text-[9px] text-slate-600 uppercase tracking-wide">Skipped</div>
+            <div className="text-xs text-slate-400 uppercase tracking-wide">Skipped</div>
           </div>
         </div>
         <div className="rounded-lg bg-slate-800/40 border border-slate-700/40 p-3">
@@ -705,7 +705,7 @@ function QuizResult({ quizData, planDay, onViewNotes, onJournal, onDashboard, on
       </div>
       <button
         onClick={onDashboard}
-        className="w-full py-3 rounded-xl text-xs text-slate-600 border border-slate-800 hover:text-slate-400 hover:border-slate-700 transition-all"
+        className="w-full py-3 rounded-xl text-xs text-slate-400 border border-slate-800 hover:text-slate-400 hover:border-slate-700 transition-all"
       >
         ← Dashboard
       </button>
@@ -737,11 +737,11 @@ function AutoNotes({ notes, topic, skillName, onJournal, onDashboard, onNextSess
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8 space-y-4">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-8 space-y-4">
       <div className="text-center mb-2">
-        <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">📓 Auto-Generated Study Notes</p>
+        <p className="text-xs font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">📓 Auto-Generated Study Notes</p>
         <h1 className="text-xl font-black text-slate-100">{topic}</h1>
-        <p className="text-xs text-slate-500 mt-1">{skillName} · Generated by AI based on your quiz performance</p>
+        <p className="text-xs text-slate-400 mt-1">{skillName} · Generated by AI based on your quiz performance</p>
       </div>
 
       {sections.map(({ key, icon, label, content, type }) => {
@@ -761,7 +761,7 @@ function AutoNotes({ notes, topic, skillName, onJournal, onDashboard, onNextSess
                 <span className="text-sm">{icon}</span>
                 <span className="text-xs font-black uppercase tracking-widest" style={{ color }}>{label}</span>
               </div>
-              <span className="text-slate-600 text-xs">{isOpen ? '▲' : '▼'}</span>
+              <span className="text-slate-400 text-xs">{isOpen ? '▲' : '▼'}</span>
             </button>
             {isOpen && (
               <div className="px-4 pb-4">
@@ -772,7 +772,7 @@ function AutoNotes({ notes, topic, skillName, onJournal, onDashboard, onNextSess
                     {(content || []).map((item, i) => (
                       <li key={i} className="flex items-start gap-2.5 text-sm text-slate-300">
                         <span
-                          className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black flex-shrink-0 mt-0.5"
+                          className="w-5 h-5 rounded-md flex items-center justify-center text-xs font-black flex-shrink-0 mt-0.5"
                           style={{ backgroundColor: `${color}20`, color, border: `1px solid ${color}30` }}
                         >
                           {i + 1}
@@ -790,7 +790,7 @@ function AutoNotes({ notes, topic, skillName, onJournal, onDashboard, onNextSess
 
       <div className="rounded-lg border border-slate-700/40 bg-slate-900/60 px-4 py-3 flex items-center gap-2">
         <span className="text-sm">💾</span>
-        <p className="text-xs text-slate-500">These notes are auto-generated from today's session. Journal your key takeaways below.</p>
+        <p className="text-xs text-slate-400">These notes are auto-generated from today's session. Journal your key takeaways below.</p>
       </div>
 
       <div className="space-y-3">
@@ -840,7 +840,7 @@ function ReflectionJournal({ skillName, score, onComplete }) {
       <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-6 text-center">
         <div className="text-3xl mb-2">📓</div>
         <p className="text-sm font-black text-emerald-400">Reflection saved!</p>
-        <p className="text-xs text-slate-500 mt-1">Added to your learning journal.</p>
+        <p className="text-xs text-slate-400 mt-1">Added to your learning journal.</p>
       </div>
     );
   }
@@ -851,7 +851,7 @@ function ReflectionJournal({ skillName, score, onComplete }) {
         <span className="text-xl">📓</span>
         <div>
           <h3 className="text-sm font-black text-slate-200 uppercase tracking-wide">Reflection Journal</h3>
-          <p className="text-xs text-slate-500">2 minutes to consolidate what you learned</p>
+          <p className="text-xs text-slate-400">2 minutes to consolidate what you learned</p>
         </div>
       </div>
       <div>
@@ -887,7 +887,7 @@ function ReflectionJournal({ skillName, score, onComplete }) {
         </button>
         <button
           onClick={onComplete}
-          className="px-4 py-2.5 rounded-xl text-sm text-slate-600 border border-slate-800 hover:text-slate-400 transition-all"
+          className="px-4 py-2.5 rounded-xl text-sm text-slate-400 border border-slate-800 hover:text-slate-400 transition-all"
         >
           Skip
         </button>
@@ -1005,13 +1005,13 @@ export default function Session() {
   // ── Phase renders ─────────────────────────────────────────────────────────
 
   if (phase === 'loading') return (
-    <div className="mx-auto max-w-4xl px-6 py-14">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-14">
       <AgentThinking isVisible messages={["Loading today's session…", "Preparing your challenge…", "Calibrating difficulty…"]} />
     </div>
   );
 
   if (phase === 'error') return (
-    <div className="mx-auto max-w-3xl px-6 py-14 text-center space-y-4">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-14 text-center space-y-4">
       <div className="text-4xl">⚠️</div>
       <p className="text-red-400 text-sm">{error || 'Session not found.'}</p>
       <button
@@ -1024,11 +1024,11 @@ export default function Session() {
   );
 
   if (phase === 'confidence') return (
-    <div className="mx-auto max-w-2xl px-6 py-10 space-y-5">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-10 space-y-5">
       <div className="text-center mb-2">
-        <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Session {day}</p>
+        <p className="text-xs text-slate-400 uppercase tracking-widest font-black">Session {day}</p>
         <h1 className="text-2xl font-black text-slate-100 mt-1">Before You Begin</h1>
-        <p className="text-sm text-slate-500 mt-1">The agent tracks your metacognitive accuracy</p>
+        <p className="text-sm text-slate-400 mt-1">The agent tracks your metacognitive accuracy</p>
       </div>
       <ConfidenceSelector
         onSelect={level => { setConfidenceLevel(level); setTimeout(() => setPhase('learn'), 400); }}
@@ -1036,7 +1036,7 @@ export default function Session() {
       />
       <button
         onClick={() => setPhase('learn')}
-        className="w-full py-3 rounded-xl text-xs text-slate-600 border border-slate-800 hover:text-slate-400 hover:border-slate-700 transition-all"
+        className="w-full py-3 rounded-xl text-xs text-slate-400 border border-slate-800 hover:text-slate-400 hover:border-slate-700 transition-all"
       >
         Skip confidence check →
       </button>
@@ -1055,17 +1055,17 @@ export default function Session() {
   );
 
   if (phase === 'warmup' && data) return (
-    <div className="mx-auto max-w-2xl px-6 py-8 space-y-4">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-8 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Session {day}</p>
+          <p className="text-xs text-slate-400 uppercase tracking-widest font-black">Session {day}</p>
           <p className="text-base font-black text-slate-100">
             {data.planDay?.skillName} — {data.planDay?.topic}
           </p>
         </div>
         <button
           onClick={() => navigate('/dashboard')}
-          className="text-xs text-slate-600 hover:text-slate-400 transition-colors"
+          className="text-xs text-slate-400 hover:text-slate-400 transition-colors"
         >
           ← Dashboard
         </button>
@@ -1078,7 +1078,7 @@ export default function Session() {
   );
 
   if (phase === 'quiz-loading') return (
-    <div className="mx-auto max-w-4xl px-6 py-14">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-14">
       <AgentThinking
         isVisible
         messages={[
@@ -1145,7 +1145,7 @@ export default function Session() {
   );
 
   if (phase === 'notes-loading') return (
-    <div className="mx-auto max-w-4xl px-6 py-14">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-14">
       <AgentThinking
         isVisible
         messages={[
@@ -1174,9 +1174,9 @@ export default function Session() {
   );
 
   if (phase === 'journal') return (
-    <div className="mx-auto max-w-2xl px-6 py-8 space-y-5">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-8 space-y-5">
       <div className="text-center">
-        <p className="text-xs text-slate-500 uppercase tracking-widest font-black">Session {day} Complete</p>
+        <p className="text-xs text-slate-400 uppercase tracking-widest font-black">Session {day} Complete</p>
         <h1 className="text-xl font-black text-slate-100 mt-1">Lock In Your Learning</h1>
       </div>
       {confidenceLevel && quizResult && (

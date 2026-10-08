@@ -5,13 +5,18 @@ import SearchableSelect from '../../components/SearchableSelect.jsx';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import QuestionCard from '../../components/QuestionCard.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
+import ActionMenu from '../../components/ActionMenu.jsx';
+import StatCard from '../../components/StatCard.jsx';
 
-const inputCls = 'w-full bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500';
-const labelCls = 'block text-xs font-medium text-slate-400 mb-1';
+const inputCls = 'w-full bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:border-indigo-500';
+const labelCls = 'block text-sm font-medium text-slate-400 mb-1';
 
 // ── TextPreview — renders a text snippet with optional search highlighting ─────
 function TextPreview({ text, searchTerm, maxChars = 500 }) {
-  if (!text) return <p className="text-xs text-slate-500 italic">No extracted text available.</p>;
+  if (!text) return <p className="text-sm text-slate-400 italic">No extracted text available.</p>;
 
   let display = text;
   let prefix = '';
@@ -24,8 +29,8 @@ function TextPreview({ text, searchTerm, maxChars = 500 }) {
     if (idx === -1) {
       return (
         <div>
-          <p className="text-xs text-amber-400 mb-1">"{searchTerm}" not found in this document.</p>
-          <pre className="text-xs text-slate-400 whitespace-pre-wrap leading-relaxed font-mono max-h-40 overflow-y-auto">
+          <p className="text-sm text-amber-400 mb-1">"{searchTerm}" not found in this document.</p>
+          <pre className="text-sm text-slate-400 whitespace-pre-wrap leading-relaxed font-mono max-h-40 overflow-y-auto">
             {text.slice(0, maxChars)}{text.length > maxChars ? '…' : ''}
           </pre>
         </div>
@@ -44,7 +49,7 @@ function TextPreview({ text, searchTerm, maxChars = 500 }) {
 
   if (!searchTerm) {
     return (
-      <pre className="text-xs text-slate-400 whitespace-pre-wrap leading-relaxed font-mono max-h-40 overflow-y-auto">
+      <pre className="text-sm text-slate-400 whitespace-pre-wrap leading-relaxed font-mono max-h-40 overflow-y-auto">
         {display}{suffix}
       </pre>
     );
@@ -53,7 +58,7 @@ function TextPreview({ text, searchTerm, maxChars = 500 }) {
   const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const parts = display.split(new RegExp(`(${escaped})`, 'gi'));
   return (
-    <pre className="text-xs text-slate-400 whitespace-pre-wrap leading-relaxed font-mono max-h-40 overflow-y-auto">
+    <pre className="text-sm text-slate-400 whitespace-pre-wrap leading-relaxed font-mono max-h-40 overflow-y-auto">
       {prefix}{parts.map((part, i) =>
         i % 2 === 1
           ? <mark key={i} className="bg-yellow-400/30 text-yellow-200 rounded px-0.5 not-italic">{part}</mark>
@@ -97,10 +102,10 @@ function FullTextModal({ title, text, accent = 'indigo', onClose }) {
         <div className="flex items-center gap-3 p-4 border-b border-slate-700 shrink-0">
           <div className="flex-1 min-w-0">
             <p className={`text-sm font-semibold ${accentText} truncate`}>📄 {title}</p>
-            <p className="text-xs text-slate-500">{text.length.toLocaleString()} characters</p>
+            <p className="text-sm text-slate-400">{text.length.toLocaleString()} characters</p>
           </div>
           <button type="button" onClick={() => navigator.clipboard.writeText(text)}
-            className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 shrink-0">
+            className="text-sm px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 shrink-0">
             📋 Copy All
           </button>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-white text-xl shrink-0">✕</button>
@@ -112,7 +117,7 @@ function FullTextModal({ title, text, accent = 'indigo', onClose }) {
             autoFocus
           />
           {search && (
-            <p className="text-xs mt-1">
+            <p className="text-sm mt-1">
               {matchCount > 0
                 ? <span className="text-emerald-400">{matchCount} match{matchCount !== 1 ? 'es' : ''}</span>
                 : <span className="text-amber-400">No matches</span>}
@@ -165,8 +170,8 @@ function FileRow({ file, idx, onCountChange, onCountBlur, onRemove, onTextEdit, 
     <div className={`bg-[#0F172A] rounded-lg border ${accentBdr} overflow-hidden`}>
       {/* Header row */}
       <div className="flex items-center gap-2 px-3 py-2">
-        <span className={`text-xs shrink-0 ${accentText}`}>📄</span>
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${accentBg} ${accentText} border ${accentBdr}`}>
+        <span className={`text-sm shrink-0 ${accentText}`}>📄</span>
+        <span className={`text-sm font-bold px-1.5 py-0.5 rounded shrink-0 ${accentBg} ${accentText} border ${accentBdr}`}>
           File {idx + 1}
         </span>
         {onLabelChange ? (
@@ -175,28 +180,28 @@ function FileRow({ file, idx, onCountChange, onCountBlur, onRemove, onTextEdit, 
             onChange={e => onLabelChange(idx, e.target.value)}
             placeholder="Name this file (optional)"
             title={`Original filename: ${file.name}`}
-            className="w-36 shrink-0 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-xs focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+            className="w-36 shrink-0 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-sm focus:outline-none focus:border-indigo-500 placeholder:text-slate-400"
           />
         ) : file.label ? (
-          <span className="text-xs text-slate-200 font-medium shrink-0">{file.label}</span>
+          <span className="text-sm text-slate-200 font-medium shrink-0">{file.label}</span>
         ) : null}
-        <span className="text-xs text-slate-400 flex-1 truncate min-w-0" title={file.name}>{file.name}</span>
-        <span className={`text-xs shrink-0 ${charCount > 0 && charCount < 400 ? 'text-amber-400' : 'text-slate-500'}`}
+        <span className="text-sm text-slate-400 flex-1 truncate min-w-0" title={file.name}>{file.name}</span>
+        <span className={`text-sm shrink-0 ${charCount > 0 && charCount < 400 ? 'text-amber-400' : 'text-slate-400'}`}
           title={charCount > 0 && charCount < 400 ? 'Very little text extracted — too thin to generate specific questions from' : undefined}>
           {charCount.toLocaleString()}c{charCount > 0 && charCount < 400 ? ' ⚠' : ''}
         </span>
-        <label className="text-xs text-slate-500 shrink-0">Q:</label>
+        <label className="text-sm text-slate-400 shrink-0">Q:</label>
         <input
           type="number" min="1" max="200" value={file.questionCount}
           onChange={e => onCountChange(idx, e.target.value)}
           onBlur={() => onCountBlur && onCountBlur(idx)}
-          className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-xs text-center focus:outline-none focus:border-indigo-500"
+          className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-sm text-center focus:outline-none focus:border-indigo-500"
         />
         {onStakeholderChange && (
           <button type="button"
             onClick={() => onStakeholderChange(idx, !file.stakeholder)}
             title={file.stakeholder ? 'Stakeholder questions enabled — click to disable' : 'Stakeholder questions disabled — click to enable'}
-            className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium transition-colors border ${
+            className={`text-sm px-2.5 py-1 rounded-md shrink-0 font-medium transition-colors border ${
               file.stakeholder
                 ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40'
                 : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'
@@ -208,7 +213,7 @@ function FileRow({ file, idx, onCountChange, onCountBlur, onRemove, onTextEdit, 
           <button type="button"
             onClick={() => onProcessDeliveryChange(idx, !file.processDelivery)}
             title={file.processDelivery ? 'Process Delivery questions enabled — click to disable' : 'Process Delivery questions disabled — click to enable'}
-            className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium transition-colors border ${
+            className={`text-sm px-2.5 py-1 rounded-md shrink-0 font-medium transition-colors border ${
               file.processDelivery
                 ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40'
                 : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'
@@ -218,10 +223,10 @@ function FileRow({ file, idx, onCountChange, onCountBlur, onRemove, onTextEdit, 
         )}
         <button type="button" onClick={() => setExpanded(v => !v)}
           title={expanded ? 'Collapse' : 'Preview extracted text'}
-          className={`text-xs px-1.5 py-0.5 rounded ${accentBg} ${accentText} shrink-0 transition-colors`}>
+          className={`text-sm px-1.5 py-0.5 rounded ${accentBg} ${accentText} shrink-0 transition-colors`}>
           {expanded ? '▲' : '▼'}
         </button>
-        <button type="button" onClick={() => onRemove(idx)} className="text-slate-500 hover:text-red-400 text-xs shrink-0">✕</button>
+        <button type="button" onClick={() => onRemove(idx)} className="text-slate-400 hover:text-red-400 text-sm shrink-0">✕</button>
       </div>
 
       {/* Expanded panel */}
@@ -230,15 +235,15 @@ function FileRow({ file, idx, onCountChange, onCountBlur, onRemove, onTextEdit, 
           <div className="flex items-center gap-2">
             <input type="text" placeholder="Search within text…"
               value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-              className="flex-1 bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 min-w-0"
+              className="flex-1 bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-indigo-500 min-w-0"
             />
             <button type="button" onClick={handleCopy} title="Copy full text"
-              className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 shrink-0 transition-colors">
+              className="text-sm px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 shrink-0 transition-colors">
               {copied ? '✓' : '📋'}
             </button>
             {(file.text?.length || 0) > 500 && !editing && (
               <button type="button" onClick={() => setShowFull(true)}
-                className={`text-xs px-2 py-1 rounded ${accentBg} ${accentText} shrink-0 transition-colors`}>
+                className={`text-sm px-2 py-1 rounded ${accentBg} ${accentText} shrink-0 transition-colors`}>
                 ↗ Full
               </button>
             )}
@@ -248,19 +253,19 @@ function FileRow({ file, idx, onCountChange, onCountBlur, onRemove, onTextEdit, 
             <div className="space-y-1.5">
               <textarea
                 value={editText} onChange={e => setEditText(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded px-2 py-2 text-xs leading-relaxed font-mono focus:outline-none focus:border-indigo-500 resize-y"
+                className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded px-2 py-2 text-sm leading-relaxed font-mono focus:outline-none focus:border-indigo-500 resize-y"
                 rows={10}
               />
               <div className="flex items-center gap-2">
                 <button type="button" onClick={handleSaveText}
-                  className="px-3 py-1 rounded bg-indigo-600 text-white text-xs hover:bg-indigo-700">
+                  className="px-3 py-1 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700">
                   Save Text
                 </button>
                 <button type="button" onClick={() => setEditing(false)}
-                  className="px-3 py-1 rounded bg-slate-700 text-slate-300 text-xs hover:bg-slate-600">
+                  className="px-3 py-1 rounded bg-slate-700 text-slate-300 text-sm hover:bg-slate-600">
                   Cancel
                 </button>
-                <span className="text-xs text-slate-500 ml-1">{editText.length.toLocaleString()} chars</span>
+                <span className="text-sm text-slate-400 ml-1">{editText.length.toLocaleString()} chars</span>
               </div>
             </div>
           ) : (
@@ -268,7 +273,7 @@ function FileRow({ file, idx, onCountChange, onCountBlur, onRemove, onTextEdit, 
               <TextPreview text={file.text || ''} searchTerm={searchTerm} maxChars={500} />
               {isEditMode && onTextEdit && (
                 <button type="button" onClick={startEdit}
-                  className="mt-1.5 text-xs text-amber-400 hover:text-amber-300 underline">
+                  className="mt-1.5 text-sm text-amber-400 hover:text-amber-300 underline">
                   ✏️ Edit text
                 </button>
               )}
@@ -469,7 +474,7 @@ function RoleModal({ role, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="flex items-center justify-between p-5 border-b border-slate-700">
           <h2 className="text-lg font-semibold text-white">{isEdit ? 'Edit Role' : 'Add New Role'}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
@@ -489,7 +494,7 @@ function RoleModal({ role, onClose, onSaved }) {
             <input className={inputCls} value={form.department} onChange={f('department')} placeholder="e.g. Engineering" />
           </div>
           <div>
-            <label className={labelCls}>Skills <span className="text-slate-500">(comma-separated)</span></label>
+            <label className={labelCls}>Skills <span className="text-slate-400">(comma-separated)</span></label>
             <input className={inputCls} value={form.skills} onChange={f('skills')} placeholder="React, JavaScript, REST APIs" />
           </div>
           <div>
@@ -509,7 +514,7 @@ function RoleModal({ role, onClose, onSaved }) {
               </label>
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={() => jdFileRef.current?.click()} disabled={jdUploading}
-                  className="text-xs px-2.5 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40 disabled:opacity-50 transition-colors">
+                  className="text-sm px-2.5 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40 disabled:opacity-50 transition-colors">
                   {jdUploading ? '⏳ Extracting…' : '📎 Upload JD File'}
                 </button>
                 <input ref={jdFileRef} type="file" accept={ACCEPT_ALL} className="hidden"
@@ -519,7 +524,7 @@ function RoleModal({ role, onClose, onSaved }) {
 
             {jdFiles.length === 0 ? (
               <>
-                <p className="text-xs text-slate-500 mb-1">Upload a JD file (PDF, DOCX, PPTX, TXT…) or paste text directly</p>
+                <p className="text-sm text-slate-400 mb-1">Upload a JD file (PDF, DOCX, PPTX, TXT…) or paste text directly</p>
                 <textarea className={inputCls} rows={6} value={form.jobDescription} onChange={f('jobDescription')}
                   placeholder="Paste the full job description here, or upload a file above…" />
               </>
@@ -529,7 +534,7 @@ function RoleModal({ role, onClose, onSaved }) {
                   <FileRow key={file.id} file={file} idx={i} onCountChange={updateJdCount} onCountBlur={updateJdCountBlur} onRemove={removeJdFile} onTextEdit={updateJdText} onLabelChange={updateJdLabel} onStakeholderChange={updateJdStakeholder} onProcessDeliveryChange={updateJdProcessDelivery} accent="indigo" isEditMode={isEdit} />
                 ))}
                 <button type="button" onClick={() => jdFileRef.current?.click()} disabled={jdUploading}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 underline ml-1">
+                  className="text-sm text-indigo-400 hover:text-indigo-300 underline ml-1">
                   + Add another JD file
                 </button>
               </div>
@@ -540,15 +545,15 @@ function RoleModal({ role, onClose, onSaved }) {
           <div className="border border-slate-700 rounded-lg p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-slate-300">
+                <p className="text-sm font-medium text-slate-300">
                   Supporting Documents
                   {supportingFiles.length > 0 && <span className="ml-1.5 text-emerald-400">({supportingFiles.length})</span>}
                 </p>
-                <p className="text-xs text-slate-500 mt-0.5">SOPs, process manuals, playbooks, policies, training materials</p>
+                <p className="text-sm text-slate-400 mt-0.5">SOPs, process manuals, playbooks, policies, training materials</p>
               </div>
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={() => supportingFileRef.current?.click()} disabled={supportingUploading}
-                  className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 disabled:opacity-50 whitespace-nowrap transition-colors">
+                  className="text-sm px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 disabled:opacity-50 whitespace-nowrap transition-colors">
                   {supportingUploading ? '⏳ Uploading…' : '📂 Upload File'}
                 </button>
                 <input ref={supportingFileRef} type="file" accept={ACCEPT_ALL} className="hidden"
@@ -557,7 +562,7 @@ function RoleModal({ role, onClose, onSaved }) {
             </div>
 
             {supportingFiles.length === 0 ? (
-              <p className="text-xs text-slate-600 py-1">No supporting documents yet.</p>
+              <p className="text-sm text-slate-400 py-1">No supporting documents yet.</p>
             ) : (
               <div className="space-y-1.5">
                 {supportingFiles.map((file, i) => (
@@ -571,8 +576,8 @@ function RoleModal({ role, onClose, onSaved }) {
           {totalQuestions > 0 && (
             <div className="flex items-center justify-between bg-indigo-900/20 border border-indigo-500/30 rounded-lg px-4 py-2.5">
               <div>
-                <p className="text-xs text-slate-400">Total questions to generate</p>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-sm text-slate-400">Total questions to generate</p>
+                <p className="text-sm text-slate-400 mt-0.5">
                   {jdFiles.length > 0 && `${jdFiles.length} JD file${jdFiles.length > 1 ? 's' : ''}`}
                   {jdFiles.length > 0 && supportingFiles.length > 0 && ' + '}
                   {supportingFiles.length > 0 && `${supportingFiles.length} supporting doc${supportingFiles.length > 1 ? 's' : ''}`}
@@ -585,24 +590,24 @@ function RoleModal({ role, onClose, onSaved }) {
 
           {tab === 'checklist' && (
             <div className="space-y-3">
-              <p className="text-xs text-slate-400">Define onboarding tasks for new employees assigned this role. When an employee is assigned this role, these tasks are automatically created for them.</p>
-              {checklist.length === 0 && <p className="text-xs text-slate-600 py-2">No checklist items yet.</p>}
+              <p className="text-sm text-slate-400">Define onboarding tasks for new employees assigned this role. When an employee is assigned this role, these tasks are automatically created for them.</p>
+              {checklist.length === 0 && <p className="text-sm text-slate-400 py-2">No checklist items yet.</p>}
               {checklist.map((item, i) => (
                 <div key={i} className="flex items-start gap-2 bg-[#0F172A] rounded-lg p-3 border border-slate-700">
                   <div className="flex-1">
                     <p className="text-sm text-white font-medium">{item.title}</p>
-                    {item.description && <p className="text-xs text-slate-400 mt-0.5">{item.description}</p>}
-                    {item.dueDay && <p className="text-xs text-indigo-400 mt-0.5">Due: Day {item.dueDay}</p>}
+                    {item.description && <p className="text-sm text-slate-400 mt-0.5">{item.description}</p>}
+                    {item.dueDay && <p className="text-sm text-indigo-400 mt-0.5">Due: Day {item.dueDay}</p>}
                   </div>
-                  <button type="button" onClick={() => setChecklist(p => p.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-300 text-xs mt-0.5">✕</button>
+                  <button type="button" onClick={() => setChecklist(p => p.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-300 text-sm mt-0.5">✕</button>
                 </div>
               ))}
               <div className="bg-[#0F172A] rounded-lg p-3 border border-slate-700 space-y-2">
-                <p className="text-xs text-slate-400 font-medium">Add Task</p>
+                <p className="text-sm text-slate-400 font-medium">Add Task</p>
                 <input className={inputCls} value={newItem.title} onChange={e => setNewItem(p => ({ ...p, title: e.target.value }))} placeholder="Task title (e.g. Complete security training)" />
                 <input className={inputCls} value={newItem.description} onChange={e => setNewItem(p => ({ ...p, description: e.target.value }))} placeholder="Description (optional)" />
                 <input className={`${inputCls} w-32`} type="number" min="1" value={newItem.dueDay} onChange={e => setNewItem(p => ({ ...p, dueDay: e.target.value }))} placeholder="Due day #" />
-                <button type="button" onClick={addChecklistItem} className="px-3 py-1.5 rounded bg-indigo-600/30 text-indigo-300 text-xs hover:bg-indigo-600/50">+ Add Item</button>
+                <button type="button" onClick={addChecklistItem} className="px-3 py-1.5 rounded bg-indigo-600/30 text-indigo-300 text-sm hover:bg-indigo-600/50">+ Add Item</button>
               </div>
             </div>
           )}
@@ -640,23 +645,23 @@ function ViewDocRow({ file, accent = 'indigo', onDelete }) {
   return (
     <div className={`bg-[#0F172A] rounded-lg border ${accentBdr} overflow-hidden`}>
       <div className="flex items-center gap-2 px-3 py-2">
-        <span className={`text-xs shrink-0 ${accentText}`}>📄</span>
-        <span className="text-xs text-slate-300 flex-1 truncate min-w-0" title={file.name}>{file.name}</span>
-        <span className="text-xs text-slate-500 shrink-0">{charCount.toLocaleString()} chars</span>
-        {file.questionCount && <span className={`text-xs font-semibold shrink-0 ${accentText}`}>{file.questionCount} Q</span>}
+        <span className={`text-sm shrink-0 ${accentText}`}>📄</span>
+        <span className="text-sm text-slate-300 flex-1 truncate min-w-0" title={file.name}>{file.name}</span>
+        <span className="text-sm text-slate-400 shrink-0">{charCount.toLocaleString()} chars</span>
+        {file.questionCount && <span className={`text-sm font-semibold shrink-0 ${accentText}`}>{file.questionCount} Q</span>}
         {file.stakeholder && (
-          <span className="text-xs px-2.5 py-1 rounded-md bg-amber-600/25 text-amber-300 border border-amber-500/50 font-medium shrink-0">Stakeholder: Yes</span>
+          <span className="text-sm px-2.5 py-1 rounded-md bg-amber-600/25 text-amber-300 border border-amber-500/50 font-medium shrink-0">Stakeholder: Yes</span>
         )}
         {file.text && (
           <button type="button" onClick={() => setExpanded(v => !v)}
-            className={`text-xs px-1.5 py-0.5 rounded ${accentBg} ${accentText} shrink-0`}>
+            className={`text-sm px-1.5 py-0.5 rounded ${accentBg} ${accentText} shrink-0`}>
             {expanded ? '▲' : '▼'}
           </button>
         )}
         {onDelete && (
           <button type="button" onClick={() => onDelete(file)}
             title="Delete this document"
-            className="text-slate-500 hover:text-red-400 text-xs shrink-0 transition-colors">✕</button>
+            className="text-slate-400 hover:text-red-400 text-sm shrink-0 transition-colors">✕</button>
         )}
       </div>
       {expanded && file.text && (
@@ -664,15 +669,15 @@ function ViewDocRow({ file, accent = 'indigo', onDelete }) {
           <div className="flex items-center gap-2">
             <input type="text" placeholder="Search within text…"
               value={search} onChange={e => setSearch(e.target.value)}
-              className="flex-1 bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 min-w-0"
+              className="flex-1 bg-slate-800 border border-slate-700 text-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-indigo-500 min-w-0"
             />
             <button type="button" onClick={handleCopy}
-              className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 shrink-0">
+              className="text-sm px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 shrink-0">
               {copied ? '✓' : '📋'}
             </button>
             {file.text.length > 500 && (
               <button type="button" onClick={() => setShowFull(true)}
-                className={`text-xs px-2 py-1 rounded ${accentBg} ${accentText} shrink-0`}>
+                className={`text-sm px-2 py-1 rounded ${accentBg} ${accentText} shrink-0`}>
                 ↗ Full
               </button>
             )}
@@ -727,7 +732,7 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="flex items-center justify-between p-5 border-b border-slate-700">
           <div>
             <h2 className="text-lg font-semibold text-white">{role.roleName}</h2>
@@ -738,21 +743,21 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
         <div className="p-5 space-y-4">
           {(role.skills || []).length > 0 && (
             <div>
-              <p className="text-xs font-medium text-slate-400 mb-2">SKILLS</p>
+              <p className="text-sm font-medium text-slate-400 mb-2">SKILLS</p>
               <div className="flex flex-wrap gap-2">
-                {role.skills.map(s => <span key={s} className="px-2 py-0.5 rounded-full text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">{s}</span>)}
+                {role.skills.map(s => <span key={s} className="px-2 py-0.5 rounded-full text-sm bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">{s}</span>)}
               </div>
             </div>
           )}
           {role.jobDescription && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-medium text-slate-400">ROLE OVERVIEW</p>
+                <p className="text-sm font-medium text-slate-400">ROLE OVERVIEW</p>
                 {role.structuredOverview && (
                   <button
                     onClick={() => generateOverview(true)}
                     disabled={overviewLoading}
-                    className="text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50"
+                    className="text-sm text-indigo-400 hover:text-indigo-300 disabled:opacity-50"
                   >
                     {overviewLoading ? 'Regenerating…' : '↻ Regenerate'}
                   </button>
@@ -763,7 +768,7 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
                   <p className="text-sm text-slate-200 leading-relaxed">{role.structuredOverview.summary}</p>
                   {role.structuredOverview.keyResponsibilities?.length > 0 && (
                     <div>
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Key Responsibilities</p>
+                      <p className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Key Responsibilities</p>
                       <ul className="space-y-1">
                         {role.structuredOverview.keyResponsibilities.map((r, i) => (
                           <li key={i} className="text-sm text-slate-300 flex gap-2"><span className="text-indigo-400 shrink-0">•</span><span>{r}</span></li>
@@ -773,29 +778,29 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
                   )}
                   {role.structuredOverview.requiredSkills?.length > 0 && (
                     <div>
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Required Skills</p>
+                      <p className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Required Skills</p>
                       <div className="flex flex-wrap gap-1.5">
-                        {role.structuredOverview.requiredSkills.map((s, i) => <span key={i} className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">{s}</span>)}
+                        {role.structuredOverview.requiredSkills.map((s, i) => <span key={i} className="px-2 py-0.5 rounded-full text-sm bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">{s}</span>)}
                       </div>
                     </div>
                   )}
                   {role.structuredOverview.niceToHaveSkills?.length > 0 && (
                     <div>
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nice to Have</p>
+                      <p className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nice to Have</p>
                       <div className="flex flex-wrap gap-1.5">
-                        {role.structuredOverview.niceToHaveSkills.map((s, i) => <span key={i} className="px-2 py-0.5 rounded-full text-xs bg-slate-700/50 text-slate-300 border border-slate-600/40">{s}</span>)}
+                        {role.structuredOverview.niceToHaveSkills.map((s, i) => <span key={i} className="px-2 py-0.5 rounded-full text-sm bg-slate-700/50 text-slate-300 border border-slate-600/40">{s}</span>)}
                       </div>
                     </div>
                   )}
                   {role.structuredOverview.dayInTheLife && (
                     <div>
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">A Day in This Role</p>
+                      <p className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">A Day in This Role</p>
                       <p className="text-sm text-slate-300 leading-relaxed">{role.structuredOverview.dayInTheLife}</p>
                     </div>
                   )}
                   {role.structuredOverview.careerGrowthPath?.length > 0 && (
                     <div>
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Career Growth Path</p>
+                      <p className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Career Growth Path</p>
                       <p className="text-sm text-slate-300">{role.structuredOverview.careerGrowthPath.join(' → ')}</p>
                     </div>
                   )}
@@ -813,14 +818,14 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
           )}
           {(role.jdFiles || []).length > 0 ? (
             <div>
-              <p className="text-xs font-medium text-slate-400 mb-2">JD FILES ({role.jdFiles.length})</p>
+              <p className="text-sm font-medium text-slate-400 mb-2">JD FILES ({role.jdFiles.length})</p>
               <div className="space-y-1.5">
                 {role.jdFiles.map((f, i) => <ViewDocRow key={f.id || i} file={f} accent="indigo" onDelete={handleDeleteDoc} />)}
               </div>
             </div>
           ) : role.jobDescription ? (
             <div>
-              <p className="text-xs font-medium text-slate-400 mb-2">JOB DESCRIPTION</p>
+              <p className="text-sm font-medium text-slate-400 mb-2">JOB DESCRIPTION</p>
               <pre className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed bg-[#0F172A] rounded-lg p-4 border border-slate-700">{role.jobDescription}</pre>
             </div>
           ) : null}
@@ -828,7 +833,7 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
             const docs = role.supportingFiles?.length > 0 ? role.supportingFiles : (role.supportingDocs || []);
             return (
               <div>
-                <p className="text-xs font-medium text-slate-400 mb-2">SUPPORTING DOCUMENTS ({docs.length})</p>
+                <p className="text-sm font-medium text-slate-400 mb-2">SUPPORTING DOCUMENTS ({docs.length})</p>
                 <div className="space-y-1.5">
                   {docs.map((doc, i) => <ViewDocRow key={doc.id || i} file={doc} accent="emerald" onDelete={handleDeleteDoc} />)}
                 </div>
@@ -836,8 +841,8 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
             );
           })()}
           <div className="flex gap-2 pt-2">
-            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${role.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-600'}`}>{role.status}</span>
-            {role.updatedAt && <span className="text-xs text-slate-500 my-auto">Updated {new Date(role.updatedAt).toLocaleDateString()}</span>}
+            <span className={`px-2 py-0.5 rounded-full text-sm font-semibold ${role.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-600'}`}>{role.status}</span>
+            {role.updatedAt && <span className="text-sm text-slate-400 my-auto">Updated {new Date(role.updatedAt).toLocaleDateString()}</span>}
           </div>
           <button onClick={onEdit} className="w-full px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">Edit Role</button>
         </div>
@@ -885,7 +890,7 @@ function ImportModal({ onClose, onImported }) {
         </div>
         <div className="p-5 space-y-4">
           <p className="text-sm text-slate-400">Upload a CSV, XLS, or XLSX file. Duplicate role names are skipped automatically.</p>
-          <button onClick={downloadTemplate} className="text-xs text-indigo-400 hover:text-indigo-300 underline">Download CSV template</button>
+          <button onClick={downloadTemplate} className="text-sm text-indigo-400 hover:text-indigo-300 underline">Download CSV template</button>
           <div
             onClick={() => fileRef.current?.click()}
             className="border-2 border-dashed border-slate-600 rounded-lg p-8 text-center cursor-pointer hover:border-indigo-500 transition-colors"
@@ -1178,7 +1183,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 Question Bank — {role.roleName}
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-sm text-slate-400 mt-0.5">
                 {questions.length} questions · Easy: {counts.easy} · Medium: {counts.medium} · Hard: {counts.hard}
                 {questions.some(q => q.locked) && <> · <span className="text-emerald-400 font-semibold">🔒 {questions.filter(q => q.locked).length} locked</span></>}
               </p>
@@ -1196,62 +1201,56 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                 const manualCount = questions.filter(q => q.isManual).length;
                 const remaining = Math.max(0, totalRequested - questions.length);
                 return (
-                  <div className="flex gap-3 text-xs mt-1 flex-wrap">
-                    <span className="text-slate-500">Requested: <span className="text-indigo-300 font-semibold">{totalRequested}</span></span>
-                    <span className="text-slate-500">Generated: <span className={questions.length >= totalRequested ? 'text-emerald-300 font-semibold' : 'text-amber-300 font-semibold'}>{questions.length}</span></span>
-                    {remaining > 0 && <span className="text-slate-500">Remaining: <span className="text-red-400 font-semibold">{remaining}</span></span>}
-                    {manualCount > 0 && <span className="text-slate-500">Manual: <span className="text-violet-300 font-semibold">{manualCount}</span></span>}
+                  <div className="flex gap-3 text-sm mt-1 flex-wrap">
+                    <span className="text-slate-400">Requested: <span className="text-indigo-300 font-semibold">{totalRequested}</span></span>
+                    <span className="text-slate-400">Generated: <span className={questions.length >= totalRequested ? 'text-emerald-300 font-semibold' : 'text-amber-300 font-semibold'}>{questions.length}</span></span>
+                    {remaining > 0 && <span className="text-slate-400">Remaining: <span className="text-red-400 font-semibold">{remaining}</span></span>}
+                    {manualCount > 0 && <span className="text-slate-400">Manual: <span className="text-violet-300 font-semibold">{manualCount}</span></span>}
                   </div>
                 );
               })()}
             </div>
-            <div className="flex gap-2 items-center">
-              <button
-                onClick={() => { setRegenMode('all'); setRegenConfirm(true); }}
-                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm || !hasFeaturePermission('questions.generate')}
-                title={!hasFeaturePermission('questions.generate') ? "You don't have permission to generate questions" : "Unlimited — locked questions are always preserved, only unlocked ones are replaced"}
-                className="text-xs px-3 py-1.5 rounded-lg bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/40 disabled:opacity-40 transition-colors"
-              >
-                {regen && regenMode === 'all' ? '⏳ Generating…' : '✨ Regen All'}
-              </button>
-              <button
-                onClick={() => { setRegenMode('ai-only'); setRegenConfirm(true); }}
-                disabled={regen || (!role.jobDescription && !hasFiles) || regenConfirm || !hasFeaturePermission('questions.generate')}
-                title={!hasFeaturePermission('questions.generate') ? "You don't have permission to generate questions" : "Regenerates only unlocked AI-generated questions; locked and manually-edited questions are preserved"}
-                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/40 disabled:opacity-40 transition-colors"
-              >
-                {regen && regenMode === 'ai-only' ? '⏳ Generating…' : '🔄 Regen AI Only'}
-              </button>
-              {hasFeaturePermission('questions.generate') && questions.length > 0 && (
-                <button
-                  onClick={() => setNewGenConfirm(true)}
-                  disabled={regen || generating || (!role.jobDescription && !hasFiles)}
-                  title="Quarterly refresh — saves the current questions as a quarter snapshot, then regenerates ALL questions (locked ones too)"
-                  className="text-xs px-3 py-1.5 rounded-lg bg-sky-600/20 text-sky-300 border border-sky-500/30 hover:bg-sky-600/40 disabled:opacity-40 transition-colors"
-                >
-                  🗓 New Generation
-                </button>
-              )}
+            <div className="flex flex-wrap gap-2 items-center">
               {onApprove && questions.length > 0 && (
-                <button
+                <Button
+                  variant="success"
                   onClick={() => onApprove(role)}
-                  title="Review stays right here — this only opens the small scheduling confirmation"
-                  className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 transition-colors"
-                >
-                  ✓ Approve
-                </button>
+                  title="Review stays right here. This only opens the small scheduling confirmation"
+                >Approve</Button>
               )}
-              <button onClick={onClose} className="text-slate-400 hover:text-white text-xl px-2">✕</button>
+              <ActionMenu
+                label="Regenerate"
+                items={[
+                  {
+                    label: regen && regenMode === 'all' ? 'Generating…' : 'Regenerate all questions',
+                    onClick: () => { setRegenMode('all'); setRegenConfirm(true); },
+                    disabled: regen || (!role.jobDescription && !hasFiles) || regenConfirm || !hasFeaturePermission('questions.generate'),
+                  },
+                  {
+                    label: regen && regenMode === 'ai-only' ? 'Generating…' : 'Regenerate AI questions only',
+                    onClick: () => { setRegenMode('ai-only'); setRegenConfirm(true); },
+                    disabled: regen || (!role.jobDescription && !hasFiles) || regenConfirm || !hasFeaturePermission('questions.generate'),
+                  },
+                  {
+                    label: 'Start new quarterly generation',
+                    onClick: () => setNewGenConfirm(true),
+                    hidden: !(hasFeaturePermission('questions.generate') && questions.length > 0),
+                    disabled: regen || generating || (!role.jobDescription && !hasFiles),
+                    divider: true,
+                  },
+                ]}
+              />
+              <Button variant="secondary" onClick={onClose} aria-label="Close question bank">Close</Button>
             </div>
           </div>
 
           {/* Quarters strip — archived quarterly snapshots (read-only) */}
           {archives.length > 0 && (
             <div className="px-5 py-2 border-b border-slate-700 flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-slate-500 mr-1">Quarters:</span>
+              <span className="text-sm text-slate-400 mr-1">Quarters:</span>
               <button
                 onClick={() => setViewArchive(null)}
-                className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${!viewArchive ? 'bg-indigo-600 text-white border-indigo-500' : 'text-slate-300 border-slate-600 hover:border-slate-400'}`}
+                className={`text-sm px-2.5 py-1 rounded-md border transition-colors ${!viewArchive ? 'bg-indigo-600 text-white border-indigo-500' : 'text-slate-300 border-slate-600 hover:border-slate-400'}`}
                 title="Show the current (live) questions"
               >Current</button>
               {archives.map(a => (
@@ -1260,7 +1259,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                   onClick={() => openArchive(a)}
                   disabled={archiveLoading}
                   title={`${a.label} — archived ${a.createdAt ? new Date(a.createdAt).toLocaleDateString() : ''} · ${a.questionCount} questions`}
-                  className={`text-xs px-2.5 py-1 rounded-md border transition-colors disabled:opacity-50 ${viewArchive?.id === a.id ? 'bg-sky-600 text-white border-sky-500' : 'text-sky-300 border-sky-700/60 hover:bg-sky-600/20'}`}
+                  className={`text-sm px-2.5 py-1 rounded-md border transition-colors disabled:opacity-50 ${viewArchive?.id === a.id ? 'bg-sky-600 text-white border-sky-500' : 'text-sky-300 border-sky-700/60 hover:bg-sky-600/20'}`}
                 >{a.label}</button>
               ))}
             </div>
@@ -1276,10 +1275,8 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                   The current approved questions will be saved as <strong className="text-sky-300">{nextLabel}</strong> and stay available to view.
                 </p>
                 <div className="flex gap-2 justify-end mt-5">
-                  <button onClick={() => setNewGenConfirm(false)} disabled={regen} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-slate-400">Cancel</button>
-                  <button onClick={() => handleRegen(true)} disabled={regen} className="px-4 py-1.5 rounded-lg bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700 disabled:opacity-50">
-                    {regen ? 'Starting…' : 'Start new generation'}
-                  </button>
+                  <Button variant="secondary" onClick={() => setNewGenConfirm(false)} disabled={regen}>Cancel</Button>
+                  <Button variant="primary" onClick={() => handleRegen(true)} loading={regen}>{regen ? 'Starting…' : 'Start new generation'}</Button>
                 </div>
               </div>
             </div>
@@ -1299,11 +1296,11 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                 <div className="flex gap-1 bg-[#0F172A] p-1 rounded-lg w-fit">
                   <button
                     onClick={() => setRegenMode('all')}
-                    className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${regenMode === 'all' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                    className={`px-3 py-1 rounded text-sm font-semibold transition-colors ${regenMode === 'all' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
                   >✨ Regenerate All</button>
                   <button
                     onClick={() => setRegenMode('ai-only')}
-                    className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${regenMode === 'ai-only' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                    className={`px-3 py-1 rounded text-sm font-semibold transition-colors ${regenMode === 'ai-only' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
                   >🔄 AI Questions Only</button>
                 </div>
 
@@ -1322,19 +1319,19 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                 {hasFiles ? (
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs text-slate-400">
+                      <p className="text-sm text-slate-400">
                         {regenMode === 'ai-only' ? 'Questions per file (AI-generated portion):' : 'Select which document(s) feed this generation:'}
                       </p>
                       <button type="button"
                         onClick={() => setSelectedFileIds(selectedFileIds.size === allFileIds.length ? new Set() : new Set(allFileIds))}
-                        className="text-xs text-indigo-400 hover:text-indigo-300 font-medium">
+                        className="text-sm text-indigo-400 hover:text-indigo-300 font-medium">
                         {selectedFileIds.size === allFileIds.length ? 'Select none' : 'Select all'}
                       </button>
                     </div>
                     {localJdFiles.map((f, i) => {
                       const selected = selectedFileIds.has(f.id);
                       return (
-                      <div key={f.id || i} className={`flex items-center gap-2 text-xs bg-[#0F172A] rounded px-3 py-1.5 border ${selected ? 'border-slate-700' : 'border-slate-800 opacity-50'}`}>
+                      <div key={f.id || i} className={`flex items-center gap-2 text-sm bg-[#0F172A] rounded px-3 py-1.5 border ${selected ? 'border-slate-700' : 'border-slate-800 opacity-50'}`}>
                         <input type="checkbox" checked={selected} onChange={() => toggleFileSelected(f.id)}
                           className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-800 accent-indigo-500 shrink-0" />
                         <span className="truncate flex-1 text-slate-300">{f.name}</span>
@@ -1343,17 +1340,17 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                           onChange={e => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: e.target.value } : x))}
                           onBlur={() => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(x.questionCount) || 1) } : x))}
                           className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500 disabled:opacity-50" />
-                        <span className="text-slate-500 shrink-0">Q</span>
+                        <span className="text-slate-400 shrink-0">Q</span>
                         <button type="button" disabled={!selected}
                           onClick={() => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, stakeholder: !x.stakeholder } : x))}
                           title={f.stakeholder ? 'Stakeholder questions ON — click to disable' : 'Stakeholder questions OFF — click to enable'}
-                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          className={`text-sm px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
                           Stakeholder: {f.stakeholder ? 'Yes' : 'No'}
                         </button>
                         <button type="button" disabled={!selected}
                           onClick={() => setLocalJdFiles(p => p.map((x, j) => j === i ? { ...x, processDelivery: !x.processDelivery } : x))}
                           title={f.processDelivery ? 'Process Delivery questions ON — click to disable' : 'Process Delivery questions OFF — click to enable'}
-                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.processDelivery ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          className={`text-sm px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.processDelivery ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
                           Process Delivery: {f.processDelivery ? 'Yes' : 'No'}
                         </button>
                       </div>
@@ -1361,7 +1358,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                     {localSupportingFiles.map((f, i) => {
                       const selected = selectedFileIds.has(f.id);
                       return (
-                      <div key={f.id || i} className={`flex items-center gap-2 text-xs bg-[#0F172A] rounded px-3 py-1.5 border ${selected ? 'border-slate-700' : 'border-slate-800 opacity-50'}`}>
+                      <div key={f.id || i} className={`flex items-center gap-2 text-sm bg-[#0F172A] rounded px-3 py-1.5 border ${selected ? 'border-slate-700' : 'border-slate-800 opacity-50'}`}>
                         <input type="checkbox" checked={selected} onChange={() => toggleFileSelected(f.id)}
                           className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-800 accent-indigo-500 shrink-0" />
                         <span className="truncate flex-1 text-slate-300">{f.name}</span>
@@ -1370,43 +1367,43 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                           onChange={e => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: e.target.value } : x))}
                           onBlur={() => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, questionCount: Math.max(1, parseInt(x.questionCount) || 1) } : x))}
                           className="w-14 bg-slate-800 border border-slate-600 text-slate-100 rounded px-2 py-0.5 text-center focus:outline-none focus:border-amber-500 disabled:opacity-50" />
-                        <span className="text-slate-500 shrink-0">Q</span>
+                        <span className="text-slate-400 shrink-0">Q</span>
                         <button type="button" disabled={!selected}
                           onClick={() => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, stakeholder: !x.stakeholder } : x))}
                           title={f.stakeholder ? 'Stakeholder questions ON — click to disable' : 'Stakeholder questions OFF — click to enable'}
-                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          className={`text-sm px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.stakeholder ? 'bg-amber-600/25 text-amber-300 border-amber-500/50 hover:bg-amber-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
                           Stakeholder: {f.stakeholder ? 'Yes' : 'No'}
                         </button>
                         <button type="button" disabled={!selected}
                           onClick={() => setLocalSupportingFiles(p => p.map((x, j) => j === i ? { ...x, processDelivery: !x.processDelivery } : x))}
                           title={f.processDelivery ? 'Process Delivery questions ON — click to disable' : 'Process Delivery questions OFF — click to enable'}
-                          className={`text-xs px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.processDelivery ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
+                          className={`text-sm px-2.5 py-1 rounded-md shrink-0 font-medium border transition-colors disabled:opacity-50 ${f.processDelivery ? 'bg-cyan-600/25 text-cyan-300 border-cyan-500/50 hover:bg-cyan-600/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:bg-slate-700/80 hover:text-slate-300'}`}>
                           Process Delivery: {f.processDelivery ? 'Yes' : 'No'}
                         </button>
                       </div>
                     );})}
-                    <p className="text-xs text-indigo-300 font-semibold pt-1">Total: {localTotal} questions {selectedFileIds.size === 0 && <span className="text-red-400">— select at least one document</span>}</p>
+                    <p className="text-sm text-indigo-300 font-semibold pt-1">Total: {localTotal} questions {selectedFileIds.size === 0 && <span className="text-red-400">— select at least one document</span>}</p>
                   </div>
                 ) : (
                   <div className="flex items-center gap-3">
-                    <label className="text-xs text-slate-400 whitespace-nowrap">Question count:</label>
+                    <label className="text-sm text-slate-400 whitespace-nowrap">Question count:</label>
                     <input
                       type="number" min={5} max={200} value={regenCount}
                       onChange={e => setRegenCount(Math.min(200, Math.max(5, parseInt(e.target.value) || 50)))}
                       className="w-24 bg-[#0F172A] border border-slate-600 text-slate-100 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500"
                     />
-                    <span className="text-xs text-slate-500">(5–200)</span>
+                    <span className="text-sm text-slate-400">(5–200)</span>
                   </div>
                 )}
 
                 <div className="flex gap-2">
-                  <button onClick={() => setRegenConfirm(false)} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs hover:border-slate-400 transition-colors">
+                  <button onClick={() => setRegenConfirm(false)} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-slate-400 transition-colors">
                     Cancel
                   </button>
                   <button
                     onClick={() => handleRegen(false)}
                     disabled={regen || (hasFiles && selectedFileIds.size === 0)}
-                    className={`px-4 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-50 transition-colors ${regenMode === 'ai-only' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-purple-600 hover:bg-purple-700'}`}
+                    className={`px-4 py-1.5 rounded-lg text-white text-sm font-semibold disabled:opacity-50 transition-colors ${regenMode === 'ai-only' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-purple-600 hover:bg-purple-700'}`}
                   >
                     {regen ? '⏳ Generating…' : regenMode === 'ai-only' ? 'Regenerate AI Questions' : 'Confirm Regenerate All'}
                   </button>
@@ -1420,7 +1417,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
         <div className="flex gap-2 px-5 py-3 border-b border-slate-700 flex-shrink-0">
           {['all', 'easy', 'medium', 'hard'].map(d => (
             <button key={d} onClick={() => setDiffFilter(d)}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-colors ${diffFilter === d ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+              className={`px-3 py-1 rounded-lg text-sm font-semibold capitalize transition-colors ${diffFilter === d ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
               {d === 'all' ? `All (${questions.length})` : `${d} (${counts[d] ?? 0})`}
             </button>
           ))}
@@ -1429,7 +1426,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
               onClick={() => { setQTypePicker(v => !v); setAddMode(false); }}
               disabled={!hasFeaturePermission('questions.edit')}
               title={!hasFeaturePermission('questions.edit') ? "You don't have permission to edit questions" : undefined}
-              className="text-xs px-3 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="text-sm px-3 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               + Add Question
             </button>
@@ -1451,7 +1448,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                       <span className="text-base">{qt.icon}</span>
                       <div>
                         <p className="text-sm text-white font-medium">{qt.label}</p>
-                        <p className="text-xs text-slate-400">{qt.desc}</p>
+                        <p className="text-sm text-slate-400">{qt.desc}</p>
                       </div>
                     </div>
                   </button>
@@ -1466,10 +1463,10 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
           {viewArchive ? (
             <>
               <div className="flex items-center justify-between gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-2.5">
-                <p className="text-xs text-sky-200">
+                <p className="text-sm text-sky-200">
                   <strong>{viewArchive.label}</strong> — read-only snapshot · archived {viewArchive.createdAt ? new Date(viewArchive.createdAt).toLocaleString() : ''} · {viewArchive.questionCount} questions
                 </p>
-                <button onClick={() => setViewArchive(null)} className="text-xs px-3 py-1 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 shrink-0">← Back to current questions</button>
+                <button onClick={() => setViewArchive(null)} className="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 shrink-0">← Back to current questions</button>
               </div>
               {(viewArchive.questions || []).map((q, i) => (
                 <QuestionCard key={q.id || i} q={q} index={i} readOnly />
@@ -1495,7 +1492,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                   />
                 </div>
               )}
-              <p className="text-slate-500 text-xs">
+              <p className="text-slate-400 text-sm">
                 {genProgress?.phase === 'throttled' && genProgress?.throttleMs > 0
                   ? `Paused ~${Math.round(genProgress.throttleMs / 1000)}s for the AI provider's rate limit — this is normal on the free tier.`
                   : 'This can take a few minutes on the free AI tier. This page updates automatically — you can leave it open.'}
@@ -1508,13 +1505,13 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
             <div className={`rounded-xl border p-3 ${genDiagnostics.templateFallback > 0 ? 'bg-amber-500/5 border-amber-500/30' : 'bg-emerald-500/5 border-emerald-500/25'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className={`text-xs font-bold ${genDiagnostics.templateFallback > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>
+                  <p className={`text-sm font-bold ${genDiagnostics.templateFallback > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>
                     {genDiagnostics.templateFallback > 0
                       ? `⚠ ${genDiagnostics.fromSource} of ${genDiagnostics.requested} questions came from your documents — ${genDiagnostics.templateFallback} are generic templates`
                       : `✓ All ${genDiagnostics.requested} questions were generated from your documents`}
                   </p>
                   {genDiagnostics.templateFallback > 0 && (
-                    <p className="text-xs text-slate-400 mt-1">
+                    <p className="text-sm text-slate-400 mt-1">
                       Generic templates appear when there isn't enough distinct source text to draw more specific questions from.
                       Regenerating won't fix this — add more detail to the documents below, then regenerate.
                     </p>
@@ -1522,14 +1519,14 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                   {Array.isArray(genDiagnostics.perFile) && genDiagnostics.perFile.length > 0 && (
                     <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
                       {genDiagnostics.perFile.map((f, i) => (
-                        <span key={i} className={`text-[11px] ${f.thin ? 'text-amber-400' : 'text-slate-500'}`}>
+                        <span key={i} className={`text-sm ${f.thin ? 'text-amber-400' : 'text-slate-400'}`}>
                           {f.name}: {f.chars.toLocaleString()} chars{f.thin ? ' ⚠ thin' : ''}
                         </span>
                       ))}
                     </div>
                   )}
                 </div>
-                <button onClick={() => setGenDiagnostics(null)} className="text-slate-500 hover:text-white text-sm px-1 shrink-0">✕</button>
+                <button onClick={() => setGenDiagnostics(null)} aria-label="Dismiss" title="Dismiss" className="text-slate-400 hover:text-white text-sm px-1 shrink-0">✕</button>
               </div>
             </div>
           )}
@@ -1545,7 +1542,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
             <div className="bg-[#0F172A] border border-indigo-500/40 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-base">{Q_TYPES.find(t => t.value === newQ.type)?.icon}</span>
-                <p className="text-xs font-semibold text-indigo-300">New {Q_TYPES.find(t => t.value === newQ.type)?.label} Question</p>
+                <p className="text-sm font-semibold text-indigo-300">New {Q_TYPES.find(t => t.value === newQ.type)?.label} Question</p>
               </div>
               <textarea rows={3} className={inputCls} value={newQ.question} onChange={e => setNewQ(p => ({ ...p, question: e.target.value }))} placeholder="Question text…" />
               <div className="grid grid-cols-2 gap-3">
@@ -1575,7 +1572,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
               )}
               {newQ.type === 'fill_blank' && (
                 <div>
-                  <label className={labelCls}>Expected Answer <span className="text-slate-500 font-normal">(exact phrase)</span></label>
+                  <label className={labelCls}>Expected Answer <span className="text-slate-400 font-normal">(exact phrase)</span></label>
                   <input className={inputCls} value={newQ.answer || ''} onChange={e => setNewQ(p => ({ ...p, answer: e.target.value }))} placeholder="e.g. agile methodology" />
                 </div>
               )}
@@ -1587,8 +1584,8 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
               )}
               <textarea rows={2} className={inputCls} value={newQ.explanation} onChange={e => setNewQ(p => ({ ...p, explanation: e.target.value }))} placeholder="Explanation (optional)" />
               <div className="flex gap-2">
-                <button onClick={() => { setAddMode(false); setNewQ({ ...EMPTY_Q }); }} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs">Cancel</button>
-                <button onClick={saveNewQ} disabled={saving} className="px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold disabled:opacity-50">Save</button>
+                <Button size="sm" variant="secondary" onClick={() => { setAddMode(false); setNewQ({ ...EMPTY_Q }); }}>Cancel</Button>
+                <Button size="sm" variant="success" onClick={saveNewQ} loading={saving}>Save question</Button>
               </div>
             </div>
           )}
@@ -1628,7 +1625,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                     )}
                     {editQ.type === 'fill_blank' && (
                       <div>
-                        <label className={labelCls}>Expected Answer <span className="text-slate-500 font-normal">(exact phrase)</span></label>
+                        <label className={labelCls}>Expected Answer <span className="text-slate-400 font-normal">(exact phrase)</span></label>
                         <input className={inputCls} value={editQ.answer || ''} onChange={e => setEditQ(p => ({ ...p, answer: e.target.value }))} placeholder="e.g. agile methodology" />
                       </div>
                     )}
@@ -1640,8 +1637,8 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                     )}
                     <textarea rows={2} className={inputCls} value={editQ.explanation || ''} onChange={e => setEditQ(p => ({ ...p, explanation: e.target.value }))} placeholder="Explanation" />
                     <div className="flex gap-2">
-                      <button onClick={cancelEdit} className="px-3 py-1.5 rounded border border-slate-600 text-slate-300 text-xs">Cancel</button>
-                      <button onClick={saveEdit} disabled={saving} className="px-4 py-1.5 rounded bg-indigo-600 text-white text-xs font-semibold disabled:opacity-50">Save</button>
+                      <Button size="sm" variant="secondary" onClick={cancelEdit}>Cancel</Button>
+                      <Button size="sm" variant="primary" onClick={saveEdit} loading={saving}>Save changes</Button>
                     </div>
                   </div>
                 ) : (
@@ -1704,16 +1701,16 @@ function HistoryModal({ role, onClose }) {
     const cls = status === 'approved' ? 'bg-emerald-900/40 text-emerald-400 border-emerald-700/50'
       : status === 'draft' ? 'bg-amber-900/40 text-amber-400 border-amber-700/50'
       : 'bg-slate-700/50 text-slate-400 border-slate-600';
-    return <span className={`px-2 py-0.5 rounded-full text-xs border capitalize ${cls}`}>{status}</span>;
+    return <span className={`px-2 py-0.5 rounded-full text-sm border capitalize ${cls}`}>{status}</span>;
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+      <div className="bg-[#1E293B] border border-slate-700 rounded-xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl">
         <div className="flex items-center justify-between p-5 border-b border-slate-700 flex-shrink-0">
           <div>
             <h2 className="text-lg font-semibold text-white">📜 History — {role.roleName}</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Version, regeneration, and assignment history</p>
+            <p className="text-sm text-slate-400 mt-0.5">Version, regeneration, and assignment history</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
         </div>
@@ -1727,13 +1724,13 @@ function HistoryModal({ role, onClose }) {
           {loading ? (
             <div className="text-center py-10 text-slate-400 text-sm">Loading…</div>
           ) : tab === 'versions' ? (
-            versions.length === 0 ? <p className="text-sm text-slate-500 text-center py-8">No versions yet.</p> : (
+            versions.length === 0 ? <p className="text-sm text-slate-400 text-center py-8">No versions yet.</p> : (
               <div className="space-y-2">
                 {versions.map(v => (
                   <div key={v.id} className="bg-[#0F172A] border border-slate-700 rounded-lg p-3 flex items-center justify-between gap-3">
                     <div>
                       <p className="text-sm text-white font-medium">Version {v.version} {statusBadge(v.status)}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className="text-sm text-slate-400 mt-0.5">
                         {v.question_count} questions · created {v.created_at ? new Date(v.created_at).toLocaleString() : '—'}
                         {v.approved_at && <> · approved {new Date(v.approved_at).toLocaleString()} by {v.approved_by || '—'}</>}
                         {v.unlocked_at && <> · unlocked {new Date(v.unlocked_at).toLocaleString()} by {v.unlocked_by || '—'}</>}
@@ -1744,12 +1741,12 @@ function HistoryModal({ role, onClose }) {
               </div>
             )
           ) : tab === 'audit' ? (
-            auditLog.length === 0 ? <p className="text-sm text-slate-500 text-center py-8">No recorded events yet.</p> : (
+            auditLog.length === 0 ? <p className="text-sm text-slate-400 text-center py-8">No recorded events yet.</p> : (
               <div className="space-y-2">
                 {auditLog.map(entry => (
                   <div key={entry.logId} className="bg-[#0F172A] border border-slate-700 rounded-lg p-3">
                     <p className="text-sm text-white font-medium">{AUDIT_EVENT_LABELS[entry.eventType] || entry.eventType}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-sm text-slate-400 mt-0.5">
                       {new Date(entry.timestamp).toLocaleString()}
                       {entry.metadata?.newVersion && <> · version {entry.metadata.newVersion}</>}
                       {entry.metadata?.lockedCount != null && <> · {entry.metadata.lockedCount} locked, {entry.metadata.freshCount} regenerated</>}
@@ -1760,12 +1757,12 @@ function HistoryModal({ role, onClose }) {
               </div>
             )
           ) : (
-            assignmentHistory.length === 0 ? <p className="text-sm text-slate-500 text-center py-8">No assignments yet.</p> : (
+            assignmentHistory.length === 0 ? <p className="text-sm text-slate-400 text-center py-8">No assignments yet.</p> : (
               <div className="space-y-2">
                 {assignmentHistory.map(a => (
                   <div key={a.assessmentId} className="bg-[#0F172A] border border-slate-700 rounded-lg p-3">
                     <p className="text-sm text-white font-medium">{a.questionCount} questions assigned to {a.employeeCount} employee{a.employeeCount !== 1 ? 's' : ''}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-sm text-slate-400 mt-0.5">
                       {a.createdAt ? new Date(a.createdAt).toLocaleString() : '—'} · {a.submittedCount}/{a.employeeCount} submitted
                     </p>
                   </div>
@@ -1832,19 +1829,19 @@ function ApproveModal({ role, onClose }) {
         </div>
         <div className="p-5 space-y-4">
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3">
-            <p className="text-xs text-emerald-300">
+            <p className="text-sm text-emerald-300">
               This publishes the current <strong>{maxQ}-question bank</strong> exactly as-is and assigns it to every employee with the role <strong>"{role.roleName}"</strong>. You can still lock individual questions and regenerate the rest at any time afterward — a future approval creates a new version without affecting employees already assigned to this one.
             </p>
           </div>
           <div>
-            <label className={labelCls}>Start Date &amp; Time <span className="text-slate-500">(optional)</span></label>
+            <label className={labelCls}>Start Date &amp; Time <span className="text-slate-400">(optional)</span></label>
             <input
               type="datetime-local"
               className={inputCls}
               value={assessmentDate}
               onChange={e => setAssessmentDate(e.target.value)}
             />
-            <p className="text-xs text-slate-500 mt-1">Employees won't see this assessment until this date/time. Leave blank to make it available immediately.</p>
+            <p className="text-sm text-slate-400 mt-1">Employees won't see this assessment until this date/time. Leave blank to make it available immediately.</p>
           </div>
           <div>
             <label className={labelCls}>Deadline</label>
@@ -1852,14 +1849,14 @@ function ApproveModal({ role, onClose }) {
               <button
                 type="button"
                 onClick={() => setSchedulingMode('fixed')}
-                className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${schedulingMode === 'fixed' ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-slate-600 text-slate-400'}`}
+                className={`flex-1 px-3 py-1.5 rounded-lg text-sm font-semibold border ${schedulingMode === 'fixed' ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-slate-600 text-slate-400'}`}
               >
                 Fixed date
               </button>
               <button
                 type="button"
                 onClick={() => setSchedulingMode('relative')}
-                className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${schedulingMode === 'relative' ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-slate-600 text-slate-400'}`}
+                className={`flex-1 px-3 py-1.5 rounded-lg text-sm font-semibold border ${schedulingMode === 'relative' ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-slate-600 text-slate-400'}`}
               >
                 Duration per employee
               </button>
@@ -1872,7 +1869,7 @@ function ApproveModal({ role, onClose }) {
                   value={deadline}
                   onChange={e => setDeadline(e.target.value)}
                 />
-                <p className="text-xs text-slate-500 mt-1">Same calendar deadline for every employee, including anyone who joins this role later. Leave blank for no deadline.</p>
+                <p className="text-sm text-slate-400 mt-1">Same calendar deadline for every employee, including anyone who joins this role later. Leave blank for no deadline.</p>
               </>
             ) : (
               <>
@@ -1883,7 +1880,7 @@ function ApproveModal({ role, onClose }) {
                   value={durationDays}
                   onChange={e => setDurationDays(e.target.value)}
                 />
-                <p className="text-xs text-slate-500 mt-1">Days each employee gets from THEIR OWN assignment date. A new employee joining this role next month still gets the full {durationDays || 5}-day window, starting from their join date — not the original group's deadline.</p>
+                <p className="text-sm text-slate-400 mt-1">Days each employee gets from THEIR OWN assignment date. A new employee joining this role next month still gets the full {durationDays || 5}-day window, starting from their join date — not the original group's deadline.</p>
               </>
             )}
           </div>
@@ -1914,6 +1911,8 @@ export default function RoleLibrary() {
   const [qBankRole, setQBankRole] = useState(null); // role to view question bank for
   const [approveRole, setApproveRole] = useState(null); // role to approve assessment for
   const [historyRole, setHistoryRole] = useState(null); // role to view version/audit/assignment history for
+  const [loadError, setLoadError] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   // Fired by QuestionBankModal the moment it learns generation produced
   // questions — updates the table row's count immediately (so the Approve
@@ -1925,22 +1924,25 @@ export default function RoleLibrary() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const res = await authFetch('/api/roles');
       setRoles(Array.isArray(res) ? res : res?.data ?? []);
-    } catch (e) { toast(e.message, 'error'); }
+    } catch (e) { setLoadError(e.message || 'Could not load roles.'); toast(e.message, 'error'); }
     finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   const handleDelete = async id => {
+    if (deleting) return;
+    setDeleting(true);
     try {
       await authFetch(`/api/roles/${id}`, { method: 'DELETE' });
       toast('Role deleted');
       setRoles(p => p.filter(r => r.id !== id));
     } catch (e) { toast(e.message, 'error'); }
-    finally { setDelId(null); }
+    finally { setDelId(null); setDeleting(false); }
   };
 
   const filtered = roles.filter(r => {
@@ -1951,38 +1953,54 @@ export default function RoleLibrary() {
 
   const departments = [...new Set(roles.map(r => r.department).filter(Boolean))].sort();
 
-  const thCls = 'px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider';
+  const hasFilters = !!(search || deptFilter);
+  const approvedCount = roles.filter(r => r.approved).length;
+  const gridCols = 'minmax(0,2.2fr) minmax(0,1.3fr) minmax(0,0.9fr) minmax(0,1.1fr) 230px';
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Role Library</h1>
-          <p className="text-sm text-slate-400 mt-0.5">Manage job roles, descriptions, and skills for your company</p>
+    <PageContainer>
+      <PageHeader
+        icon="🧩"
+        title="Role Library"
+        subtitle="Manage job roles, descriptions, and skills for your company"
+        actions={(
+          <>
+            <Button variant="secondary" onClick={() => setModal({ type: 'import' })}
+              disabled={!hasFeaturePermission('roles.import')}
+              title={!hasFeaturePermission('roles.import') ? "You don't have permission to import roles" : undefined}>
+              Import Roles
+            </Button>
+            <Button variant="primary" onClick={() => setModal({ type: 'add' })}
+              disabled={!hasFeaturePermission('roles.create')}
+              title={!hasFeaturePermission('roles.create') ? "You don't have permission to add roles" : undefined}>
+              + Add Role
+            </Button>
+          </>
+        )}
+      />
+
+      {loadError && (
+        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <span>{loadError}</span>
+          <Button size="sm" variant="danger" onClick={load}>Retry</Button>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setModal({ type: 'import' })}
-            disabled={!hasFeaturePermission('roles.import')}
-            title={!hasFeaturePermission('roles.import') ? "You don't have permission to import roles" : undefined}
-            className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-indigo-500 hover:text-indigo-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-            Import
-          </button>
-          <button onClick={() => setModal({ type: 'add' })}
-            disabled={!hasFeaturePermission('roles.create')}
-            title={!hasFeaturePermission('roles.create') ? "You don't have permission to add roles" : undefined}
-            className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed">
-            + Add Role
-          </button>
-        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+        <StatCard label="Total Roles" value={roles.length} icon="🧩" description="Every role in your company" tooltip="All job roles in the library, active or not." />
+        <StatCard label="Active" value={roles.filter(r => r.status === 'active').length} icon="✅" description="Roles currently in use" tooltip="Roles whose status is active. Inactive roles are kept but not offered when creating users." />
+        <StatCard label="Departments" value={departments.length} icon="🏢" description="Distinct departments" tooltip="Number of different departments across all roles." />
+        <StatCard label="Approved Assessments" value={approvedCount} icon="🔒" sub={`${roles.filter(r => r.jobDescription).length} roles have a JD`} description="Roles with a locked question bank" tooltip="Roles whose question bank has been approved and locked. 'With JD' counts roles that have a job description saved." />
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4 rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5">
         <input
           value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search roles…"
-          className="flex-1 bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+          placeholder="Search roles or departments…"
+          aria-label="Search roles"
+          className="flex-1 min-w-0 bg-[#1E293B] border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
         />
         <SearchableSelect
           value={deptFilter || 'all'}
@@ -1990,91 +2008,83 @@ export default function RoleLibrary() {
           allLabel="All Departments"
           options={departments}
         />
+        {hasFilters && <Button variant="ghost" onClick={() => { setSearch(''); setDeptFilter(''); }}>Clear filters</Button>}
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        {[
-          { label: 'Total Roles', value: roles.length, color: 'text-indigo-400' },
-          { label: 'Active', value: roles.filter(r => r.status === 'active').length, color: 'text-emerald-400' },
-          { label: 'Departments', value: departments.length, color: 'text-amber-400' },
-          { label: 'With JD', value: roles.filter(r => r.jobDescription).length, color: 'text-sky-400' },
-        ].map(s => (
-          <div key={s.label} className="bg-[#1E293B] border border-slate-700 rounded-lg p-4">
-            <p className="text-xs text-slate-400">{s.label}</p>
-            <p className={`text-2xl font-bold mt-1 ${s.color}`}>{s.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Table */}
-      <div className="bg-[#1E293B] border border-slate-700 rounded-xl overflow-hidden">
+      {/* Roles list */}
+      <div className="bg-[#1E293B] border border-slate-700 rounded-2xl overflow-hidden">
         {loading ? (
-          <div className="text-center py-16 text-slate-400">Loading roles…</div>
+          <div className="divide-y divide-slate-700/40" role="status" aria-label="Loading roles">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className="px-6 py-5 animate-pulse flex items-center gap-4">
+                <div className="h-4 w-1/4 rounded bg-slate-700/50" />
+                <div className="h-4 w-1/6 rounded bg-slate-700/40" />
+                <div className="h-4 w-16 rounded bg-slate-700/40" />
+              </div>
+            ))}
+          </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-slate-400">
-            {search || deptFilter ? 'No roles match your filters.' : 'No roles yet. Add your first role or import from CSV.'}
+          <div className="text-center py-16 px-4 text-slate-300">
+            <p className="text-lg font-semibold mb-1">{hasFilters ? 'No roles match your filters' : 'No roles yet'}</p>
+            <p className="text-sm text-slate-400 mb-4">{hasFilters ? 'Try a different search or department.' : 'Add your first role or import a list from CSV.'}</p>
+            {hasFilters && <Button variant="secondary" onClick={() => { setSearch(''); setDeptFilter(''); }}>Clear filters</Button>}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="border-b border-slate-700">
-              <tr>
-                <th className={thCls}>Role Name</th>
-                <th className={thCls}>Department</th>
-                <th className={thCls}>Status</th>
-                <th className={thCls}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((role, i) => (
-                <tr key={role.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${role.approved ? 'bg-emerald-900/15 border-l-4 border-l-emerald-500' : (i % 2 === 0 ? '' : 'bg-slate-800/20')}`} title={role.approved && role.approvedAt ? `Approved ${new Date(role.approvedAt).toLocaleString()}` : undefined}>
-                  <td className="px-4 py-3 font-medium text-white">
-                    <span className="flex items-center gap-2">
-                      {role.approved && <span className="text-emerald-400" title="Approved">✓</span>}
-                      {role.roleName}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-400">{role.department || '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold w-fit ${role.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-600'}`}>
-                      {role.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-1.5 flex-wrap">
-                      <button onClick={() => setModal({ type: 'view', role })} className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">View</button>
-                      <button onClick={() => setModal({ type: 'edit', role })}
-                        disabled={!hasFeaturePermission('roles.edit')}
-                        title={!hasFeaturePermission('roles.edit') ? "You don't have permission to edit roles" : undefined}
-                        className="text-xs px-2 py-1 rounded bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50 disabled:opacity-40 disabled:cursor-not-allowed">Edit</button>
-                      <button onClick={() => setQBankRole(role)} className="text-xs px-2 py-1 rounded bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 whitespace-nowrap">
-                        📚 Questions{role.questionBankCount ? ` (${role.questionBankCount})` : ''}
-                      </button>
-                      {role.questionBankCount > 0 && (
-                        role.approved ? (
-                          <button disabled title={role.approvedAt ? `Approved ${new Date(role.approvedAt).toLocaleString()} — questions are locked` : 'Approved — questions are locked'}
-                            className="text-xs px-2 py-1 rounded bg-emerald-900/30 text-emerald-500 whitespace-nowrap border border-emerald-800/40 cursor-default opacity-80">
-                            ✓ Approved
-                          </button>
-                        ) : (
-                          <button onClick={() => setApproveRole(role)} className="text-xs px-2 py-1 rounded bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 whitespace-nowrap border border-emerald-500/30">
-                            ✓ Approve
-                          </button>
-                        )
-                      )}
-                      <button onClick={() => setHistoryRole(role)} className="text-xs px-2 py-1 rounded bg-sky-600/20 text-sky-300 hover:bg-sky-600/40 whitespace-nowrap" title="Version, regeneration, and assignment history">
-                        📜 History
-                      </button>
-                      <button onClick={() => setDelId(role.id)}
-                        disabled={!hasFeaturePermission('roles.edit')}
-                        title={!hasFeaturePermission('roles.edit') ? "You don't have permission to delete roles" : undefined}
-                        className="text-xs px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/40 disabled:opacity-40 disabled:cursor-not-allowed">Delete</button>
+          <>
+            <div className="hidden lg:grid px-4 xl:px-6 py-3 border-b border-slate-700 bg-slate-800/40 text-sm font-semibold text-slate-300 uppercase tracking-wider"
+              style={{ gridTemplateColumns: gridCols, gap: '12px' }}>
+              <span>Role Name</span>
+              <span>Department</span>
+              <span>Status</span>
+              <span>Question Bank</span>
+              <span className="text-right">Actions</span>
+            </div>
+            <div className="divide-y divide-slate-700/50">
+              {filtered.map(role => {
+                const canEdit = hasFeaturePermission('roles.edit');
+                return (
+                  <div key={role.id}
+                    className={`grid-stack-lg px-4 xl:px-6 py-4 hover:bg-slate-700/20 transition-colors ${role.approved ? 'bg-emerald-900/15 border-l-4 border-l-emerald-500' : ''}`}
+                    style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '12px', alignItems: 'center' }}
+                    title={role.approved && role.approvedAt ? `Approved ${new Date(role.approvedAt).toLocaleString()}` : undefined}>
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-2 text-base font-semibold text-white min-w-0">
+                        {role.approved && <span className="text-emerald-400 shrink-0" title="Approved">✓</span>}
+                        <span className="truncate" title={role.roleName}>{role.roleName}</span>
+                      </p>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <div className="min-w-0 text-sm text-slate-300 truncate" title={role.department || ''}>{role.department || '—'}</div>
+                    <div>
+                      <span className={`px-2.5 py-0.5 rounded-full text-sm font-semibold w-fit capitalize ${role.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-300 border border-slate-600'}`}>
+                        {role.status || 'unknown'}
+                      </span>
+                    </div>
+                    <div className="text-sm text-slate-300">
+                      {role.questionBankCount ? `${role.questionBankCount} questions` : 'No questions yet'}
+                      {role.approved && <span className="ml-2 text-emerald-400 font-semibold">Approved</span>}
+                    </div>
+                    <div className="flex items-center gap-2 lg:justify-end flex-wrap">
+                      <Button size="sm" variant="secondary" onClick={() => setModal({ type: 'view', role })}>View</Button>
+                      <Button size="sm" variant="secondary" onClick={() => setQBankRole(role)}>Questions</Button>
+                      <ActionMenu
+                        label="More"
+                        size="sm"
+                        items={[
+                          { label: 'Edit role', onClick: () => setModal({ type: 'edit', role }), disabled: !canEdit },
+                          { label: 'Approve assessment', onClick: () => setApproveRole(role), hidden: !(role.questionBankCount > 0) || !!role.approved },
+                          { label: 'Version & assignment history', onClick: () => setHistoryRole(role) },
+                          { label: 'Delete role', onClick: () => setDelId(role.id), danger: true, divider: true, disabled: !canEdit },
+                        ]}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="px-4 xl:px-6 py-3 border-t border-slate-700/40 text-sm text-slate-400">
+              Showing <span className="text-slate-200 font-semibold">{filtered.length}</span> of <span className="text-slate-200 font-semibold">{roles.length}</span> roles
+            </div>
+          </>
         )}
       </div>
 
@@ -2134,16 +2144,16 @@ export default function RoleLibrary() {
       {/* Delete confirmation */}
       {delId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="bg-[#1E293B] border border-slate-700 rounded-xl p-6 max-w-sm w-full shadow-2xl">
+          <div className="bg-[#1E293B] border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl">
             <h3 className="text-lg font-semibold text-white mb-2">Delete Role?</h3>
-            <p className="text-sm text-slate-400 mb-5">This will permanently delete the role and its JD. Existing employees with this role will not be affected.</p>
+            <p className="text-sm text-slate-300 mb-5">This will permanently delete the role and its JD. Existing employees with this role will not be affected.</p>
             <div className="flex gap-3">
-              <button onClick={() => setDelId(null)} className="flex-1 px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm">Cancel</button>
-              <button onClick={() => handleDelete(delId)} className="flex-1 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700">Delete</button>
+              <Button variant="secondary" className="flex-1" onClick={() => setDelId(null)} disabled={deleting}>Cancel</Button>
+              <Button variant="danger" className="flex-1" onClick={() => handleDelete(delId)} loading={deleting}>Delete Role</Button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

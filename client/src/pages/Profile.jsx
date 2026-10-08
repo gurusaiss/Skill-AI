@@ -38,7 +38,7 @@ function Field({ label, hint, error, children }) {
     <div>
       <label className="block text-sm font-semibold text-slate-300 mb-2">{label}</label>
       {children}
-      {error ? <p className="text-xs text-red-400 mt-1">{error}</p> : hint ? <p className="text-xs text-slate-500 mt-1">{hint}</p> : null}
+      {error ? <p className="text-xs text-red-400 mt-1">{error}</p> : hint ? <p className="text-xs text-slate-400 mt-1">{hint}</p> : null}
     </div>
   );
 }
@@ -303,14 +303,14 @@ export default function Profile() {
       : 'bg-slate-500/20 text-slate-300 border-slate-500/30';
 
   return (
-    <div className="min-h-screen bg-[#060B14] py-8 px-4">
+    <div className="min-h-screen bg-[#060B14] py-6 px-3 sm:px-5 lg:px-6 2xl:px-8">
       {/* Background gradient */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] rounded-full bg-indigo-600/10 blur-[120px]" />
         <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-purple-600/8 blur-[100px]" />
       </div>
 
-      <div className="relative max-w-4xl mx-auto">
+      <div className="relative w-full">
         {/* Header */}
         <div className="mb-8">
           <button
@@ -327,8 +327,9 @@ export default function Profile() {
           <p className="text-slate-400">Manage your account information and preferences</p>
         </div>
 
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-6 items-start">
         {/* Personal & Work Details */}
-        <form onSubmit={handleSave} noValidate className="rounded-2xl border border-slate-700/60 bg-slate-900/70 backdrop-blur p-8 mb-6">
+        <form onSubmit={handleSave} noValidate className="rounded-2xl border border-slate-700/60 bg-slate-900/70 backdrop-blur p-5 sm:p-8 min-w-0">
           <h2 className="text-2xl font-bold text-white mb-6">Personal &amp; Work Details</h2>
 
           {saveError && (
@@ -389,19 +390,19 @@ export default function Profile() {
           {/* Read-only account facts */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
             <div className="p-3 bg-[#060B14] border border-slate-700 rounded-xl">
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Status</p>
+              <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Status</p>
               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border capitalize ${statusCls}`}>{status}</span>
             </div>
             <div className="p-3 bg-[#060B14] border border-slate-700 rounded-xl">
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Joined</p>
+              <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Joined</p>
               <p className="text-white font-semibold text-sm">{formatDateTime(p.createdAt, false)}</p>
             </div>
             <div className="p-3 bg-[#060B14] border border-slate-700 rounded-xl">
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Last Login</p>
+              <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Last Login</p>
               <p className="text-white font-semibold text-sm">{formatDateTime(p.lastLogin, true)}</p>
             </div>
             <div className="p-3 bg-[#060B14] border border-slate-700 rounded-xl">
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Onboarding</p>
+              <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Onboarding</p>
               <p className={`font-semibold text-sm ${p.onboardingComplete ? 'text-emerald-400' : 'text-amber-400'}`}>{p.onboardingComplete ? 'Complete' : 'Pending'}</p>
             </div>
           </div>
@@ -425,8 +426,9 @@ export default function Profile() {
           </div>
         </form>
 
+        <div className="space-y-6 min-w-0">
         {/* Reporting & Job Description */}
-        <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 backdrop-blur p-8 mb-6">
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 backdrop-blur p-5 sm:p-8 min-w-0">
           <h2 className="text-2xl font-bold text-white mb-6">Reporting &amp; Job Description</h2>
 
           {/* Reports to */}
@@ -436,7 +438,7 @@ export default function Profile() {
                 Reports To
               </label>
               {loadingRelations && displayedManagers.length === 0 ? (
-                <span className="text-slate-500">Loading...</span>
+                <span className="text-slate-400">Loading...</span>
               ) : displayedManagers.length > 0 ? (
                 <div className="space-y-2">
                   {displayedManagers.map((m, i) => (
@@ -452,7 +454,7 @@ export default function Profile() {
                   ))}
                 </div>
               ) : (
-                <span className="text-slate-500">No manager assigned</span>
+                <span className="text-slate-400">No manager assigned</span>
               )}
             </div>
           )}
@@ -464,7 +466,7 @@ export default function Profile() {
                 Assigned Employees
               </label>
               {loadingRelations && employeeCount === null ? (
-                <span className="text-slate-500">Loading...</span>
+                <span className="text-slate-400">Loading...</span>
               ) : (
                 <div className="flex items-center gap-3 p-4 bg-[#060B14] border border-slate-700 rounded-xl">
                   <span className="text-4xl font-black bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
@@ -485,7 +487,7 @@ export default function Profile() {
                   <span className="text-2xl">📎</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-sm font-medium truncate">{p.jobDescriptionFile.name}</p>
-                    <p className="text-slate-500 text-xs">
+                    <p className="text-slate-400 text-xs">
                       {p.jobDescriptionFile.size ? `${(p.jobDescriptionFile.size / 1024).toFixed(1)} KB · ` : ''}
                       Uploaded JD
                     </p>
@@ -499,7 +501,7 @@ export default function Profile() {
                     {p.jobDescription}
                   </p>
                   {p.jobDescription.length > 300 && (
-                    <button type="button" onClick={() => setShowFullJD(v => !v)} className="text-indigo-400 text-xs mt-2 hover:text-indigo-300 transition-colors">
+                    <button type="button" onClick={() => setShowFullJD(v => !v)} className="text-indigo-400 text-sm mt-2 hover:text-indigo-300 transition-colors">
                       {showFullJD ? '▲ Show less' : '▼ View full job description'}
                     </button>
                   )}
@@ -507,7 +509,7 @@ export default function Profile() {
               )}
             </div>
           ) : (
-            <p className="text-slate-500 text-sm">No job description on file.</p>
+            <p className="text-slate-400 text-sm">No job description on file.</p>
           )}
 
           {/* Change Password Button */}
@@ -527,7 +529,7 @@ export default function Profile() {
 
         {/* Change Password Form */}
         {editingPassword && (
-          <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 backdrop-blur p-8 mb-6">
+          <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 backdrop-blur p-5 sm:p-8 min-w-0">
             <h2 className="text-2xl font-bold text-white mb-6">Change Password</h2>
             {pwError && (
               <div role="alert" className="mb-4 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm">{pwError}</div>
@@ -593,7 +595,7 @@ export default function Profile() {
         )}
 
         {/* Logout Button */}
-        <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 backdrop-blur p-8">
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 backdrop-blur p-5 sm:p-8">
           <h2 className="text-2xl font-bold text-white mb-4">Account Actions</h2>
           <button
             onClick={logout}
@@ -601,6 +603,8 @@ export default function Profile() {
           >
             Logout
           </button>
+        </div>
+        </div>
         </div>
       </div>
     </div>

@@ -5,6 +5,9 @@ import { useNotification } from '../../contexts/NotificationContext.jsx';
 import { ratingForReport, ratingStyle, ratingDistribution } from '../../utils/assessmentRules.js';
 import StatCard from '../../components/StatCard.jsx';
 import TabBar from '../../components/TabBar.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
 
 const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
@@ -100,7 +103,7 @@ const StatusBadge = ({ status }) => {
   const classes = map[status] || map.pending;
   const label = status ? status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Unknown';
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider border ${classes}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-bold uppercase tracking-wider border ${classes}`}>
       {label}
     </span>
   );
@@ -110,7 +113,7 @@ const EmptyState = ({ icon, title, subtitle, action }) => (
   <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
     <div className="text-5xl mb-4 opacity-40">{icon}</div>
     <h3 className="text-lg font-bold text-slate-300 mb-1">{title}</h3>
-    <p className="text-sm text-slate-500 max-w-sm mb-4">{subtitle}</p>
+    <p className="text-sm text-slate-400 max-w-sm mb-4">{subtitle}</p>
     {action}
   </div>
 );
@@ -124,7 +127,7 @@ const Avatar = ({ name, size = 'md' }) => {
         .toUpperCase()
         .slice(0, 2)
     : '?';
-  const sizeMap = { sm: 'w-8 h-8 text-xs', md: 'w-10 h-10 text-sm', lg: 'w-14 h-14 text-lg' };
+  const sizeMap = { sm: 'w-8 h-8 text-sm', md: 'w-10 h-10 text-sm', lg: 'w-14 h-14 text-lg' };
   return (
     <div className={`${sizeMap[size]} rounded-full bg-gradient-to-br from-indigo-500/30 to-purple-500/30 border border-indigo-500/30 flex items-center justify-center font-bold text-indigo-300 shrink-0`}>
       {initials}
@@ -288,11 +291,16 @@ export default function ManagerDashboard() {
         payload.category = requestForm.category;
         payload.difficulty = requestForm.difficulty;
       }
-      await fetch(`${BASE_URL}/api/approvals`, {
+      const approvalRes = await fetch(`${BASE_URL}/api/approvals`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ actionType: requestForm.actionType, payload, notes: requestForm.notes }),
       });
+      if (!approvalRes.ok) {
+        let msg = `Request failed (${approvalRes.status})`;
+        try { const j = await approvalRes.json(); msg = j?.error?.message || (typeof j?.error === "string" ? j.error : msg); } catch { /* keep default */ }
+        throw new Error(msg);
+      }
       setShowRequestModal(false);
       setRequestForm({ actionType: 'assign_module', title: '', description: '', category: 'General', difficulty: 'beginner', targetId: '', targetTitle: '', employeeIds: [], priority: 'medium', dueDate: '', notes: '' });
       addToast('Request submitted. Admin will review and take action.', 'success');
@@ -380,7 +388,7 @@ export default function ManagerDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0F172A] px-6 py-8 max-w-7xl mx-auto">
+      <PageContainer className="min-h-screen bg-[#0F172A]">
         <div className="mb-8">
           <Skeleton className="h-10 w-72 mb-3" />
           <Skeleton className="h-4 w-48" />
@@ -390,13 +398,13 @@ export default function ManagerDashboard() {
             <Skeleton key={i} className="h-28 rounded-xl" />
           ))}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+          <div className="xl:col-span-2">
             <Skeleton className="h-80 rounded-xl" />
           </div>
           <Skeleton className="h-80 rounded-xl" />
         </div>
-      </div>
+      </PageContainer>
     );
   }
 
@@ -409,7 +417,7 @@ export default function ManagerDashboard() {
           <p className="text-sm text-red-300/70 mb-6">{error}</p>
           <button
             onClick={loadDashboard}
-            className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition-all"
+            className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-base transition-all"
           >
             Try Again
           </button>
@@ -419,7 +427,7 @@ export default function ManagerDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0F172A] px-4 sm:px-6 py-8 max-w-7xl mx-auto">
+    <PageContainer className="min-h-screen bg-[#0F172A]">
 
       {selectedEmployee && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4" onClick={closeEmployeeDetail}>
@@ -434,7 +442,7 @@ export default function ManagerDashboard() {
                 <div>
                   <h2 className="text-xl font-bold text-white">{selectedEmployee.name}</h2>
                   <p className="text-sm text-slate-400">{selectedEmployee.email}</p>
-                  <span className="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                  <span className="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-sm font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
                     {selectedEmployee.role || 'Employee'}
                   </span>
                 </div>
@@ -442,6 +450,8 @@ export default function ManagerDashboard() {
               <button
                 onClick={closeEmployeeDetail}
                 className="w-9 h-9 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-lg transition-all"
+                aria-label="Close employee details"
+                title="Close"
               >
                 &times;
               </button>
@@ -470,12 +480,12 @@ export default function ManagerDashboard() {
                 const empRating = reportRating(empReport);
                 return (
                   <div>
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Assessment Report</h3>
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Assessment Report</h3>
                     <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 flex items-center justify-between gap-4">
                       <div>
-                        <p className="text-2xl font-black text-white">{Math.round(reportScore(empReport))}%<span className={`ml-2 align-middle px-2.5 py-0.5 rounded-lg text-xs font-bold ${ratingStyle(empRating).chip}`}>{empRating}</span></p>
+                        <p className="text-2xl font-black text-white">{Math.round(reportScore(empReport))}%<span className={`ml-2 align-middle px-2.5 py-0.5 rounded-lg text-sm font-bold ${ratingStyle(empRating).chip}`}>{empRating}</span></p>
                         {empReport.weakAreas?.length > 0 && (
-                          <p className="text-xs text-amber-400 mt-1">⚠ Weak areas: {empReport.weakAreas.join(', ')}</p>
+                          <p className="text-sm text-amber-400 mt-1">⚠ Weak areas: {empReport.weakAreas.join(', ')}</p>
                         )}
                       </div>
                     </div>
@@ -484,7 +494,7 @@ export default function ManagerDashboard() {
               })()}
 
               <div>
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Assignments</h3>
+                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Assignments</h3>
                 {employeeDetailLoading ? (
                   <div className="space-y-3">
                     {[...Array(3)].map((_, i) => (
@@ -492,7 +502,7 @@ export default function ManagerDashboard() {
                     ))}
                   </div>
                 ) : employeeAssignments.length === 0 ? (
-                  <div className="text-center py-10 text-slate-500">
+                  <div className="text-center py-10 text-slate-400">
                     <div className="text-3xl mb-2 opacity-40">📋</div>
                     <p className="text-sm">No assignments found for this employee</p>
                   </div>
@@ -511,7 +521,7 @@ export default function ManagerDashboard() {
                           <div className="flex items-center gap-2 min-w-0">
                             <p className="text-sm font-semibold text-white truncate">{a.title || a.name || `Assignment #${idx + 1}`}</p>
                             {isOverdue(dueOf(a), a.status) && (
-                              <span className="shrink-0 text-xs font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2 py-0.5 rounded-full uppercase">
+                              <span className="shrink-0 text-sm font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2 py-0.5 rounded-full uppercase">
                                 Overdue
                               </span>
                             )}
@@ -532,10 +542,10 @@ export default function ManagerDashboard() {
                               size="sm"
                             />
                           </div>
-                          <span className="text-xs font-bold text-slate-400 shrink-0">{Math.round(assignmentProgress(a))}%</span>
+                          <span className="text-sm font-bold text-slate-400 shrink-0">{Math.round(assignmentProgress(a))}%</span>
                         </div>
                         {dueOf(a) && (
-                          <p className={`text-xs mt-1.5 ${isOverdue(dueOf(a), a.status) ? 'text-red-400' : 'text-slate-500'}`}>
+                          <p className={`text-sm mt-1.5 ${isOverdue(dueOf(a), a.status) ? 'text-red-400' : 'text-slate-400'}`}>
                             Due: {formatDate(dueOf(a))}
                           </p>
                         )}
@@ -549,37 +559,17 @@ export default function ManagerDashboard() {
         </div>
       )}
 
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/30 flex items-center justify-center text-lg">
-              👔
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-white">Manager Dashboard</h1>
-              <p className="text-sm text-slate-400">
-                Welcome back, {user.name}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadDashboard}
-            className="px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 text-sm font-medium transition-all"
-          >
-            ↻ Refresh
-          </button>
-          <button
-            onClick={() => setShowRequestModal(true)}
-            className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold transition-all flex items-center gap-2"
-          >
-            📋 Submit Request
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        icon="👔"
+        title="Manager Dashboard"
+        subtitle={`Welcome back, ${user.name}`}
+        actions={<>
+          <Button variant="secondary" onClick={loadDashboard}>Refresh</Button>
+          <Button variant="primary" onClick={() => setShowRequestModal(true)}>Submit Request</Button>
+        </>}
+      />
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
         <Card label="Total Employees" value={totalEmployees} icon="👥" accent="indigo"
           description="People on your team"
           tooltip="Number of employees who report to you." />
@@ -599,16 +589,16 @@ export default function ManagerDashboard() {
 
       {/* ── Assessment Reports Summary ─────────────────────────────── */}
       {teamReports.length > 0 && (
-        <div className="mb-6 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5">
+        <div className="mb-6 rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-4 sm:p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-2">
               <span>📝</span> Team Assessment Reports
             </h3>
-            <span className="text-xs text-slate-500">{teamReports.length} submission{teamReports.length !== 1 ? 's' : ''}</span>
+            <span className="text-sm text-slate-400">{teamReports.length} submission{teamReports.length !== 1 ? 's' : ''}</span>
           </div>
 
           {/* Summary stats */}
-          <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <StatCard
               label="Team Avg Score"
               value={avgAssessmentScore == null ? '—' : `${avgAssessmentScore}%`}
@@ -633,7 +623,7 @@ export default function ManagerDashboard() {
           {teamReports.length > 0 && (
             <div className="mb-4 space-y-1.5" aria-label="Rating distribution">
               {teamRatings.map((x) => (
-                <div key={x.label} className="flex items-center gap-2 text-xs" title={`${x.label}: score ${ratingStyle(x.label).range}`}>
+                <div key={x.label} className="flex items-center gap-2 text-sm" title={`${x.label}: score ${ratingStyle(x.label).range}`}>
                   <span className={`w-24 shrink-0 truncate font-bold ${ratingStyle(x.label).text}`}>{x.label}</span>
                   <div className="flex-1 min-w-0 h-2 rounded-full bg-slate-800 overflow-hidden">
                     <div className={`h-full ${ratingStyle(x.label).bar}`} style={{ width: `${x.percent}%` }} />
@@ -645,24 +635,24 @@ export default function ManagerDashboard() {
           )}
 
           {/* Per-employee report rows */}
-          <div className="space-y-2 max-h-56 overflow-y-auto">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-2 max-h-80 overflow-y-auto">
             {teamReports.slice().sort((a, b) => reportScore(a) - reportScore(b)).map((r) => {
               const rowRating = reportRating(r);
               return (
                 <div key={r.id} className="flex items-center gap-3 px-3 py-2.5 bg-slate-900/50 rounded-lg border border-slate-700/40">
-                  <div className="w-7 h-7 rounded-lg bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 shrink-0">
+                  <div className="w-9 h-9 rounded-lg bg-slate-700 flex items-center justify-center text-sm font-bold text-slate-300 shrink-0">
                     {(r.userName || '?')[0]?.toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-sm font-medium truncate">{r.userName || 'Employee'}</p>
-                    <p className="text-slate-500 text-xs truncate">{r.assessmentTitle || 'Assessment'} · {r.jobRole || ''}</p>
+                    <p className="text-slate-400 text-sm truncate">{r.assessmentTitle || 'Assessment'} · {r.jobRole || ''}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {r.weakAreas?.length > 0 && (
-                      <span className="text-xs text-amber-400 hidden sm:block">⚠ {r.weakAreas.slice(0,2).join(', ')}</span>
+                      <span className="text-sm text-amber-400 hidden sm:block">⚠ {r.weakAreas.slice(0,2).join(', ')}</span>
                     )}
-                    <span className="text-xs font-bold text-slate-300">{Math.round(reportScore(r))}%</span>
-                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${ratingStyle(rowRating).chip}`}>{rowRating}</span>
+                    <span className="text-sm font-bold text-slate-300">{Math.round(reportScore(r))}%</span>
+                    <span className={`px-2.5 py-1 rounded-lg text-sm font-bold ${ratingStyle(rowRating).chip}`}>{rowRating}</span>
                   </div>
                 </div>
               );
@@ -670,7 +660,7 @@ export default function ManagerDashboard() {
           </div>
 
           {noRatingReports.length > 0 && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+            <div className="mt-3 flex items-center gap-2 text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
               <span>⚠</span>
               <span><strong>{noRatingReports.length}</strong> employee{noRatingReports.length !== 1 ? 's' : ''} finished with No Rating (below 70%) — consider approving auto-generated training modules.</span>
             </div>
@@ -681,13 +671,13 @@ export default function ManagerDashboard() {
       <TabBar className="mb-6" active={activeView} onChange={setActiveView} tabs={[{ key: 'overview', label: 'Overview' }, { key: 'employees', label: 'Employees' }, { key: 'assignments', label: 'Assignments' }]} />
 
       {activeView === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+          <div className="xl:col-span-2 rounded-2xl border border-slate-700/60 bg-slate-800/40 overflow-hidden">
             <div className="flex items-center justify-between p-5 border-b border-slate-700/40">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Recent Assignments</h3>
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Recent Assignments</h3>
               <button
                 onClick={() => setActiveView('assignments')}
-                className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+                className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
               >
                 View All →
               </button>
@@ -718,10 +708,10 @@ export default function ManagerDashboard() {
                         {a.status === 'completed' ? '✓' : isOverdue(dueOf(a), a.status) ? '!' : '→'}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-white truncate">
+                        <p className="text-base font-semibold text-white truncate">
                           {a.title || a.name || `Assignment #${idx + 1}`}
                         </p>
-                        <p className="text-xs text-slate-500 truncate">
+                        <p className="text-sm text-slate-400 truncate">
                           {assigneeName(a)} • {a.type || 'Module'}
                         </p>
                       </div>
@@ -742,9 +732,9 @@ export default function ManagerDashboard() {
             )}
           </div>
 
-          <div className="space-y-6">
-            <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 p-5">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Quick Actions</h3>
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-5">
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Quick Actions</h3>
               <div className="space-y-2.5">
                 {[
                   { label: 'Create Module', icon: '📚', path: '/admin/modules', color: 'from-indigo-600/20 to-indigo-600/5 border-indigo-500/30 hover:border-indigo-500/50 text-indigo-300' },
@@ -763,13 +753,13 @@ export default function ManagerDashboard() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 p-5">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Team Summary</h3>
+            <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-5">
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Team Summary</h3>
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs text-slate-400 font-medium" title="Mean progress of non-cancelled team assignments (completed = 100%)">Overall Progress</span>
-                    <span className="text-xs font-bold text-indigo-400">{avgProgress}%</span>
+                    <span className="text-sm text-slate-400 font-medium" title="Mean progress of non-cancelled team assignments (completed = 100%)">Overall Progress</span>
+                    <span className="text-sm font-bold text-indigo-400">{avgProgress}%</span>
                   </div>
                   <ProgressBar value={avgProgress} color="indigo" size="md" />
                 </div>
@@ -780,8 +770,8 @@ export default function ManagerDashboard() {
                     description="Past due, unfinished" tooltip="Due date passed and not completed or cancelled." className="text-center" />
                 </div>
                 <div className="pt-3 border-t border-slate-700/40">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500" title="Completed / non-cancelled team assignments">Completion Rate</span>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-400" title="Completed / non-cancelled team assignments">Completion Rate</span>
                     <span className="font-bold text-white">{completionRate}%</span>
                   </div>
                 </div>
@@ -792,19 +782,19 @@ export default function ManagerDashboard() {
       )}
 
       {activeView === 'employees' && (
-        <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 overflow-hidden">
           <div className="p-5 border-b border-slate-700/40">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Team Members</h3>
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Team Members</h3>
               <div className="relative">
                 <input
                   type="text"
                   placeholder="Search employees..."
                   value={searchQuery}
                   onChange={(e) => { setSearchQuery(e.target.value); setEmployeePage(1); }}
-                  className="w-full sm:w-64 pl-9 pr-4 py-2 rounded-lg bg-slate-900/60 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/25 transition-all"
+                  className="w-full sm:w-80 pl-9 pr-4 py-2.5 rounded-lg bg-slate-900/60 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/25 transition-all"
                 />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
               </div>
             </div>
           </div>
@@ -845,30 +835,30 @@ export default function ManagerDashboard() {
                         <p className="text-sm font-semibold text-white group-hover:text-indigo-300 transition-colors truncate">
                           {emp.name || 'Unknown'}
                         </p>
-                        <p className="text-xs text-slate-500 truncate">{emp.email || '—'}</p>
+                        <p className="text-sm text-slate-400 truncate">{emp.email || '—'}</p>
                       </div>
                     </div>
-                    <div className="flex items-center-center gap-4 sm:gap-6 shrink-0 ml-3">
+                    <div className="flex items-center gap-4 sm:gap-6 shrink-0 ml-3">
                       <div className="hidden md:block text-center">
-                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Role</p>
-                        <p className="text-xs text-slate-300 font-medium mt-0.5">{emp.role || 'Employee'}</p>
+                        <p className="text-sm text-slate-400 font-bold uppercase tracking-wider">Role</p>
+                        <p className="text-sm text-slate-300 font-medium mt-0.5">{emp.role || 'Employee'}</p>
                       </div>
                       <div className="hidden sm:block text-center">
-                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Modules</p>
-                        <p className="text-xs text-slate-300 font-medium mt-0.5">{empStats.modules}</p>
+                        <p className="text-sm text-slate-400 font-bold uppercase tracking-wider">Modules</p>
+                        <p className="text-sm text-slate-300 font-medium mt-0.5">{empStats.modules}</p>
                       </div>
                       <div className="w-24 hidden sm:block">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">Progress</span>
-                          <span className="text-xs font-bold text-indigo-400">{empProgress}%</span>
+                          <span className="text-sm text-slate-400 font-bold uppercase tracking-wider">Progress</span>
+                          <span className="text-sm font-bold text-indigo-400">{empProgress}%</span>
                         </div>
                         <ProgressBar value={empProgress} color="indigo" size="sm" />
                       </div>
                       <div className="hidden md:block text-right">
-                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Last Active</p>
-                        <p className="text-xs text-slate-300 font-medium mt-0.5">{timeAgo(emp.lastActive || empStats.lastActive)}</p>
+                        <p className="text-sm text-slate-400 font-bold uppercase tracking-wider">Last Active</p>
+                        <p className="text-sm text-slate-300 font-medium mt-0.5">{timeAgo(emp.lastActive || empStats.lastActive)}</p>
                       </div>
-                      <div className="w-9 h-7 rounded-lg bg-indigo-600/15 border border-indigo-500/25 flex items-center justify-center text-indigo-400 text-xs font-bold opacity-0 group-hover:opacity-100 transition-all">
+                      <div className="w-10 h-8 rounded-lg bg-indigo-600/15 border border-indigo-500/25 flex items-center justify-center text-indigo-400 text-sm font-bold opacity-60 group-hover:opacity-100 transition-all">
                         →
                       </div>
                     </div>
@@ -879,7 +869,7 @@ export default function ManagerDashboard() {
           )}
           {filteredEmployees.length > EMPLOYEES_PER_PAGE && (
             <div className="flex items-center justify-between px-5 py-3 border-t border-slate-700/40">
-              <p className="text-xs text-slate-500">
+              <p className="text-sm text-slate-400">
                 Showing {(employeePage - 1) * EMPLOYEES_PER_PAGE + 1}
                 –{Math.min(employeePage * EMPLOYEES_PER_PAGE, filteredEmployees.length)} of {filteredEmployees.length}
               </p>
@@ -887,15 +877,15 @@ export default function ManagerDashboard() {
                 <button
                   onClick={() => setEmployeePage((p) => Math.max(1, p - 1))}
                   disabled={employeePage <= 1}
-                  className="px-3 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700/60 transition-all"
+                  className="px-4 py-2 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-200 text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700/60 transition-all"
                 >
                   ← Prev
                 </button>
-                <span className="text-xs text-slate-500">Page {employeePage} of {employeePageCount}</span>
+                <span className="text-sm text-slate-400">Page {employeePage} of {employeePageCount}</span>
                 <button
                   onClick={() => setEmployeePage((p) => Math.min(employeePageCount, p + 1))}
                   disabled={employeePage >= employeePageCount}
-                  className="px-3 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700/60 transition-all"
+                  className="px-4 py-2 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-200 text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700/60 transition-all"
                 >
                   Next →
                 </button>
@@ -911,11 +901,11 @@ export default function ManagerDashboard() {
           <div className="bg-[#1E293B] border border-slate-700/80 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 sticky top-0 bg-[#1E293B]">
               <h2 className="text-lg font-bold text-white">📋 Submit Approval Request</h2>
-              <button onClick={() => setShowRequestModal(false)} className="text-slate-400 hover:text-white text-xl">✕</button>
+              <button onClick={() => setShowRequestModal(false)} aria-label="Close request form" title="Close" className="text-slate-400 hover:text-white text-xl">✕</button>
             </div>
             <form onSubmit={handleSubmitRequest} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Request Type</label>
+                <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Request Type</label>
                 <select
                   value={requestForm.actionType}
                   onChange={e => setRequestForm(f => ({ ...f, actionType: e.target.value }))}
@@ -931,7 +921,7 @@ export default function ManagerDashboard() {
               {(requestForm.actionType === 'assign_module' || requestForm.actionType === 'assign_assessment') ? (
                 <>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                       {requestForm.actionType === 'assign_module' ? 'Module' : 'Assessment'} Title / ID
                     </label>
                     <input
@@ -942,12 +932,12 @@ export default function ManagerDashboard() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                      Employees <span className="text-slate-500 font-normal">(select one or more)</span>
+                    <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                      Employees <span className="text-slate-400 font-normal">(select one or more)</span>
                     </label>
                     <div className="max-h-36 overflow-y-auto bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2 space-y-1">
                       {employees.length === 0 ? (
-                        <p className="text-slate-500 text-xs py-1">No employees found</p>
+                        <p className="text-slate-400 text-sm py-1">No employees found</p>
                       ) : employees.map(emp => {
                         const id = emp.userId || emp.id;
                         const checked = requestForm.employeeIds.includes(id);
@@ -966,18 +956,18 @@ export default function ManagerDashboard() {
                             />
                             <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
                               {emp.name || emp.email}
-                              {emp.jobRole && <span className="text-slate-500 text-xs ml-1">· {emp.jobRole}</span>}
+                              {emp.jobRole && <span className="text-slate-400 text-sm ml-1">· {emp.jobRole}</span>}
                             </span>
                           </label>
                         );
                       })}
                     </div>
                     {requestForm.employeeIds.length > 0 && (
-                      <p className="text-xs text-violet-400 mt-1">{requestForm.employeeIds.length} employee{requestForm.employeeIds.length > 1 ? 's' : ''} selected</p>
+                      <p className="text-sm text-violet-400 mt-1">{requestForm.employeeIds.length} employee{requestForm.employeeIds.length > 1 ? 's' : ''} selected</p>
                     )}
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Priority</label>
+                    <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Priority</label>
                     <select
                       value={requestForm.priority}
                       onChange={e => setRequestForm(f => ({ ...f, priority: e.target.value }))}
@@ -989,7 +979,7 @@ export default function ManagerDashboard() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Due Date (optional)</label>
+                    <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Due Date (optional)</label>
                     <input
                       type="date"
                       value={requestForm.dueDate}
@@ -1001,7 +991,7 @@ export default function ManagerDashboard() {
               ) : (
                 <>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Title <span className="text-red-400">*</span></label>
+                    <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Title <span className="text-red-400">*</span></label>
                     <input
                       required
                       value={requestForm.title}
@@ -1011,7 +1001,7 @@ export default function ManagerDashboard() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Description</label>
+                    <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Description</label>
                     <textarea
                       value={requestForm.description}
                       onChange={e => setRequestForm(f => ({ ...f, description: e.target.value }))}
@@ -1022,7 +1012,7 @@ export default function ManagerDashboard() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Category</label>
+                      <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Category</label>
                       <input
                         value={requestForm.category}
                         onChange={e => setRequestForm(f => ({ ...f, category: e.target.value }))}
@@ -1030,7 +1020,7 @@ export default function ManagerDashboard() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Difficulty</label>
+                      <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Difficulty</label>
                       <select
                         value={requestForm.difficulty}
                         onChange={e => setRequestForm(f => ({ ...f, difficulty: e.target.value }))}
@@ -1046,7 +1036,7 @@ export default function ManagerDashboard() {
               )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Notes (optional)</label>
+                <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Notes (optional)</label>
                 <textarea
                   value={requestForm.notes}
                   onChange={e => setRequestForm(f => ({ ...f, notes: e.target.value }))}
@@ -1078,10 +1068,10 @@ export default function ManagerDashboard() {
       )}
 
       {activeView === 'assignments' && (
-        <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-slate-700/40">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">All Assignments</h3>
-            <span className="text-xs text-slate-500 font-medium">{teamAssignments.length} total</span>
+            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">All Assignments</h3>
+            <span className="text-sm text-slate-400 font-medium">{teamAssignments.length} total</span>
           </div>
           {teamAssignments.length === 0 ? (
             <EmptyState
@@ -1098,23 +1088,23 @@ export default function ManagerDashboard() {
               }
             />
           ) : (
-            <div className="divide-y divide-slate-700/30">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-px bg-slate-700/30">
               {teamAssignments.map((a, idx) => {
                 const overdue = isOverdue(dueOf(a), a.status);
                 return (
                   <div
                     key={a.id || idx}
-                    className={`p-4 hover:bg-slate-700/10 transition-colors ${
+                    className={`p-4 bg-[#111a2c] hover:bg-slate-700/10 transition-colors ${
                       overdue ? 'border-l-2 border-l-red-500' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <p className="text-sm font-semibold text-white truncate">
+                        <p className="text-base font-semibold text-white truncate">
                           {a.title || a.name || `Assignment #${idx + 1}`}
                         </p>
                         {overdue && (
-                          <span className="shrink-0 text-xs font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2 py-0.5 rounded-full uppercase">
+                          <span className="shrink-0 text-sm font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2 py-0.5 rounded-full uppercase">
                             Overdue
                           </span>
                         )}
@@ -1122,14 +1112,14 @@ export default function ManagerDashboard() {
                       <StatusBadge status={overdue ? 'overdue' : a.status} />
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2">
-                      <span className="text-xs text-slate-500">
+                      <span className="text-sm text-slate-400">
                         👤 {assigneeName(a)}
                       </span>
-                      <span className="text-xs text-slate-500">
+                      <span className="text-sm text-slate-400">
                         📁 {a.type || 'Module'}
                       </span>
                       {dueOf(a) && (
-                        <span className={`text-xs ${overdue ? 'text-red-400 font-semibold' : 'text-slate-500'}`}>
+                        <span className={`text-sm ${overdue ? 'text-red-400 font-semibold' : 'text-slate-400'}`}>
                           📅 Due: {formatDate(dueOf(a))}
                         </span>
                       )}
@@ -1142,7 +1132,7 @@ export default function ManagerDashboard() {
                           size="sm"
                         />
                       </div>
-                      <span className="text-xs font-bold text-slate-400 shrink-0 w-10 text-right">{Math.round(assignmentProgress(a))}%</span>
+                      <span className="text-sm font-bold text-slate-400 shrink-0 w-10 text-right">{Math.round(assignmentProgress(a))}%</span>
                     </div>
                   </div>
                 );
@@ -1151,6 +1141,6 @@ export default function ManagerDashboard() {
           )}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

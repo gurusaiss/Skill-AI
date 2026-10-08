@@ -29,12 +29,13 @@ Please provide a detailed implementation guide with code examples.`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
-      <div className="relative w-full max-w-2xl rounded-2xl border border-slate-700/50 bg-slate-900 shadow-2xl my-8">
+      <div className="relative w-full max-w-3xl rounded-2xl border border-slate-700/50 bg-slate-900 shadow-2xl my-8">
         {/* Header */}
         <div className="relative p-6 pb-4 bg-gradient-to-br from-emerald-600/20 to-teal-600/20 border-b border-slate-700/50">
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 text-slate-400 hover:text-white transition-all flex items-center justify-center"
+            aria-label="Close" title="Close"
+            className="absolute top-4 right-4 w-10 h-10 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 text-slate-400 hover:text-white transition-all flex items-center justify-center"
           >
             ✕
           </button>
@@ -53,7 +54,7 @@ Please provide a detailed implementation guide with code examples.`;
         <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
           {/* Overview */}
           <div>
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+            <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">
               Project Overview
             </h3>
             <p className="text-sm text-slate-300 leading-relaxed">
@@ -63,7 +64,7 @@ Please provide a detailed implementation guide with code examples.`;
 
           {/* Why Recommended */}
           <div>
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+            <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">
               Why Recommended
             </h3>
             <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/30 p-3">
@@ -75,7 +76,7 @@ Please provide a detailed implementation guide with code examples.`;
 
           {/* Learning Outcomes */}
           <div>
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+            <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">
               Learning Outcomes
             </h3>
             <ul className="space-y-2">
@@ -94,7 +95,7 @@ Please provide a detailed implementation guide with code examples.`;
 
           {/* Development Steps */}
           <div>
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+            <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">
               Development Steps
             </h3>
             <div className="space-y-2">
@@ -106,7 +107,7 @@ Please provide a detailed implementation guide with code examples.`;
                 'Deploy and document'
               ]).map((step, i) => (
                 <div key={i} className="flex items-start gap-3 rounded-lg bg-slate-800/40 border border-slate-700/50 p-3">
-                  <div className="w-6 h-6 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-bold text-indigo-300 flex-shrink-0">
+                  <div className="w-6 h-6 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-sm font-bold text-indigo-300 flex-shrink-0">
                     {i + 1}
                   </div>
                   <p className="text-sm text-slate-300 leading-relaxed">{step}</p>
@@ -118,14 +119,14 @@ Please provide a detailed implementation guide with code examples.`;
           {/* Tech Stack */}
           {project.techStack && project.techStack.length > 0 && (
             <div>
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">
                 Suggested Tech Stack
               </h3>
               <div className="flex flex-wrap gap-2">
                 {project.techStack.map((tech, i) => (
                   <span
                     key={i}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700/50 text-xs font-semibold text-slate-300"
+                    className="px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700/50 text-sm font-semibold text-slate-300"
                   >
                     {tech}
                   </span>
@@ -137,7 +138,7 @@ Please provide a detailed implementation guide with code examples.`;
           {/* Live References */}
           {project.references && project.references.length > 0 && (
             <div>
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">
                 Live Project References
               </h3>
               <div className="space-y-2">
@@ -154,9 +155,9 @@ Please provide a detailed implementation guide with code examples.`;
                       <p className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">
                         {ref.name}
                       </p>
-                      <p className="text-xs text-slate-500">{ref.type || 'Reference'}</p>
+                      <p className="text-sm text-slate-400">{ref.type || 'Reference'}</p>
                     </div>
-                    <span className="text-slate-600 group-hover:text-slate-400">↗</span>
+                    <span className="text-slate-400 group-hover:text-slate-400">↗</span>
                   </a>
                 ))}
               </div>
@@ -166,11 +167,11 @@ Please provide a detailed implementation guide with code examples.`;
           {/* AI Prompt Section */}
           {showPrompt && (
             <div>
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">
                 AI Development Prompt
               </h3>
               <div className="rounded-lg bg-slate-800/50 border border-slate-700/50 p-4">
-                <pre className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap font-mono">
+                <pre className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap font-mono">
                   {generateAIPrompt()}
                 </pre>
               </div>
@@ -179,9 +180,9 @@ Please provide a detailed implementation guide with code examples.`;
                   navigator.clipboard.writeText(generateAIPrompt()).then(() => {
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2000);
-                  });
+                  }).catch(() => window.alert("Could not copy to the clipboard. Select the text and copy it manually."));
                 }}
-                className="mt-2 w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all"
+                className="mt-2 w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold transition-all"
               >
                 {copied ? '✅ Copied!' : '📋 Copy to Clipboard'}
               </button>
@@ -193,13 +194,13 @@ Please provide a detailed implementation guide with code examples.`;
         <div className="p-4 bg-slate-800/30 border-t border-slate-700/50 flex gap-3">
           <button
             onClick={() => setShowPrompt(!showPrompt)}
-            className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm transition-all"
+            className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-base transition-all"
           >
             {showPrompt ? '📝 Hide Prompt' : '✨ Generate Build Prompt'}
           </button>
           <button
             onClick={onClose}
-            className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm transition-all hover:shadow-lg hover:shadow-emerald-500/20"
+            className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-base transition-all hover:shadow-lg hover:shadow-emerald-500/20"
           >
             Start Building
           </button>

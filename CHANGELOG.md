@@ -4,6 +4,18 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-13 — Every page fills the screen, readable text, fewer crowded buttons, and a bug audit
+
+**Full width.** Pages no longer sit in a narrow centred column with empty bands on both sides. They use the whole width with a small gutter, and wide screens use side-by-side layouts (for example a main area plus a side panel, or two and three column card grids). Sign-in pages now use a two-panel layout (brand panel on one half, form on the other), and the landing page uses full-width sections.
+**Readable text.** All tiny text sizes (9 to 12 px) were removed and low-contrast grey text was lifted.
+**Fewer, clearer buttons.** Rows of small icon buttons became one labelled "Manage", "More", "Download" or "Bulk actions" menu with full words. Actions that only appeared on hover (unreachable on touch screens) are now always visible.
+**Bugs found and fixed during the audit.** The module detail panel never opened when you clicked a row; reject and cancel actions had no confirmation; several pages showed an empty screen instead of an error when loading failed (now an error with Retry); the manager's "Submit Request" said it succeeded even when the server rejected it; a certificate button said "Download PNG" but only printed; two pages crashed on corrupt saved browser data; hidden tools (manager mapping, bulk update) are now reachable from the Users page; the Explainability filter hid agent types beyond the sixth; Content Review read some data the wrong way and used 30 minutes instead of 60; the Interview Simulator still showed letter grades (now the rating scale).
+**New shared pieces and rules.** `PageContainer`, `PageHeader`, `Button`, `ActionMenu`, and `npm run check:layout` (fails on page-width caps and tiny text) so new pages follow the same rules; the rules are in `CLAUDE.md`.
+Not changed: `KnowledgeQuiz`, `ModuleLearn` and `admin/Dashboard.jsx` are not connected to any route (dead code). The daily brief's call-to-action button still has no action.
+Files: almost every page under `client/src/pages/`, the shared widgets in `client/src/components/`, `client/scripts/check-layout.mjs`, `CLAUDE.md`.
+
+---
+
 ## 2026-10-12 (b) — New rating scale, module reports, and compact Excel reports
 
 **Rating scale replaces letter grades and Pass/Fail everywhere.** Score 90 and above is Expert, 80 to 89.99 is Intermediate, 70 to 79.99 is Basic, below 70 is No Rating, worked out on the exact (unrounded) score. Old results are rated the same way when shown. Dashboards that showed pass rate or "passed / needs attention" now show rating counts and shares; the employee result screen, manager and admin dashboards, reports, PDF, Word and Excel all use it. Readiness is derived from the rating so the two never disagree.

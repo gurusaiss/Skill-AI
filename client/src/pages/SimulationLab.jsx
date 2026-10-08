@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import TabBar from '../components/TabBar.jsx';
+import PageContainer from '../components/PageContainer.jsx';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
@@ -23,10 +24,10 @@ function MetricCard({ label, before, after, unit = '', color = '#6366F1', prefix
     : null;
   return (
     <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 flex flex-col gap-2">
-      <div className="text-slate-400 text-xs font-medium uppercase tracking-wider">{label}</div>
+      <div className="text-slate-400 text-sm font-medium uppercase tracking-wider">{label}</div>
       <div className="flex items-end gap-3">
-        <div className="text-slate-500 text-lg line-through">{prefix}{before?.toLocaleString()}{unit}</div>
-        <div className="text-2xl font-bold" style={{ color }}>{prefix}{after?.toLocaleString()}{unit}</div>
+        <div className="text-slate-400 text-lg line-through">{prefix}{before?.toLocaleString()}{unit}</div>
+        <div className="text-3xl font-bold" style={{ color }}>{prefix}{after?.toLocaleString()}{unit}</div>
       </div>
       {delta !== null && (
         <div className={`text-xs font-semibold ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -49,8 +50,8 @@ function TimelineBar({ items }) {
             {i < items.length - 1 && <div className="w-0.5 h-8 bg-indigo-500/30 mt-1" />}
           </div>
           <div className="pb-6">
-            <div className="font-semibold text-white text-sm">{item.milestone}</div>
-            <div className="text-emerald-400 text-xs mt-0.5">🔓 {item.unlock}</div>
+            <div className="font-semibold text-white text-base">{item.milestone}</div>
+            <div className="text-emerald-400 text-sm mt-0.5">🔓 {item.unlock}</div>
           </div>
         </div>
       ))}
@@ -90,7 +91,7 @@ export default function SimulationLab() {
       .then(json => {
         if (json.success && json.data) {
           const mod = json.data;
-          const skills = mod.skills || [];
+          const skills = (mod.skills || []).map(x => (typeof x === 'string' ? x : x?.name || '')).filter(Boolean);
           const firstSkill = skills[0] || mod.title || '';
           const secondSkill = skills[1] || '';
           setModuleBanner(`Simulating: ${mod.title}`);
@@ -175,7 +176,7 @@ export default function SimulationLab() {
 
   const runCompare = async () => {
     if (!compareA || !compareB) return;
-    setCompareLoading(true); setCompareResult(null);
+    setCompareLoading(true); setCompareResult(null); setError('');
     try {
       const uid = userId || 'demo';
       const res = await fetch('/api/simulation/compare', {
@@ -195,7 +196,7 @@ export default function SimulationLab() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
-      <div className="max-w-6xl mx-auto px-6 py-10">
+      <PageContainer>
 
         {/* Header */}
         <div className="mb-8">
@@ -217,7 +218,7 @@ export default function SimulationLab() {
               <p className="text-slate-400 text-sm">What-If Career Simulator — Powered by SimulationAgent</p>
             </div>
           </div>
-          <p className="text-slate-300 mt-2 max-w-2xl">
+          <p className="text-slate-300 mt-2 text-base">
             Ask <strong className="text-violet-400">"What if I learn X?"</strong> and get AI-projected salary impact, market demand shift,
             hiring timeline improvement, and full career trajectory — before you invest the time.
           </p>
@@ -226,12 +227,14 @@ export default function SimulationLab() {
         {/* Tabs */}
         <TabBar className="mb-6" active={tab} onChange={setTab} tabs={[['whatif', '🔮 What-If Analyzer'], ['compare', '⚖️ Path Comparison']].map(([key, label]) => ({ key, label }))} />
 
+        {error && tab === 'compare' && <div role="alert" className="bg-red-900/30 border border-red-500/30 rounded-xl p-4 text-red-300 mb-6">{error}</div>}
+
         {tab === 'whatif' && (
           <>
             {/* Input */}
-            <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 mb-6">
-              <div className="text-slate-300 font-semibold mb-3">Enter a skill to simulate:</div>
-              <div className="flex gap-3 mb-4">
+            <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-4 sm:p-5 mb-6">
+              <div className="text-slate-200 text-lg font-semibold mb-3">Enter a skill to simulate:</div>
+              <div className="flex flex-col sm:flex-row gap-3 mb-4">
                 <input
                   value={skill}
                   onChange={e => setSkill(e.target.value)}
@@ -249,29 +252,35 @@ export default function SimulationLab() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {goalSkills.length > 0 && (
-                  <span className="text-xs text-slate-600 self-center mr-1">Your skills:</span>
+                  <span className="text-sm text-slate-400 self-center mr-1">Your skills:</span>
                 )}
                 {getDynamicSkills(goalSkills).map(({ label, icon }) => (
-                  <button key={label} onClick={() => runSimulation(label)}
-                    className="px-3 py-1.5 bg-slate-700/50 hover:bg-violet-600/30 border border-slate-600 hover:border-violet-500 rounded-full text-sm text-slate-300 hover:text-white transition-all">
+                  <button key={label} onClick={() => { setSkill(label); runSimulation(label); }} disabled={loading}
+                    className="px-3 py-1.5 bg-slate-700/50 hover:bg-violet-600/30 border border-slate-600 hover:border-violet-500 rounded-full text-sm text-slate-300 hover:text-white disabled:opacity-50 transition-all">
                     {icon} {label}
                   </button>
                 ))}
               </div>
             </div>
 
-            {error && <div className="bg-red-900/30 border border-red-500/30 rounded-lg p-4 text-red-300 mb-6">{error}</div>}
+            {error && (
+              <div role="alert" className="bg-red-900/30 border border-red-500/30 rounded-xl p-4 text-red-300 mb-6 flex flex-wrap items-center justify-between gap-3">
+                <span>{error}</span>
+                {skill.trim() && <button onClick={() => runSimulation()} className="px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-200 text-sm font-semibold">Retry</button>}
+              </div>
+            )}
 
             {loading && (
               <div className="text-center py-16">
                 <div className="text-4xl mb-4 animate-pulse">🔮</div>
                 <div className="text-violet-400 font-semibold">SimulationAgent running projection...</div>
-                <div className="text-slate-500 text-sm mt-2">Analyzing salary impact, market demand, hiring timeline...</div>
+                <div className="text-slate-400 text-sm mt-2">Analyzing salary impact, market demand, hiring timeline...</div>
               </div>
             )}
 
             {result && (
-              <div className="space-y-6">
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+                <div className="xl:col-span-2 space-y-6 min-w-0">
                 {/* Agent Verdict Banner */}
                 {verdict && (
                   <div className="rounded-xl p-5 border" style={{ borderColor: verdictColor + '40', background: verdictColor + '10' }}>
@@ -285,7 +294,7 @@ export default function SimulationLab() {
                       </div>
                       <div className="ml-auto text-right">
                         <div className="text-2xl font-bold" style={{ color: verdictColor }}>{verdict.confidenceScore}%</div>
-                        <div className="text-slate-500 text-xs">confidence</div>
+                        <div className="text-slate-400 text-xs">confidence</div>
                       </div>
                     </div>
                     <div className="text-slate-300 text-sm">{verdict.reasoning}</div>
@@ -294,8 +303,8 @@ export default function SimulationLab() {
 
                 {/* Outcome Metrics */}
                 <div>
-                  <h3 className="text-slate-300 font-semibold mb-3">📊 Projected Impact</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <h3 className="text-slate-200 text-lg font-semibold mb-3">📊 Projected Impact</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-4">
                     {result.outcomes?.salaryImpact && (
                       <MetricCard label="Annual Salary" prefix="$" before={result.outcomes.salaryImpact.before} after={result.outcomes.salaryImpact.after} color="#10B981" />
                     )}
@@ -306,37 +315,29 @@ export default function SimulationLab() {
                       <MetricCard label="Job Openings" before={result.outcomes.jobOpenings.before} after={result.outcomes.jobOpenings.after} color="#F59E0B" />
                     )}
                     <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
-                      <div className="text-slate-400 text-xs font-medium uppercase tracking-wider mb-2">Hiring Time</div>
-                      <div className="text-slate-500 text-lg line-through">{result.outcomes?.hiringTime?.before}</div>
+                      <div className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-2">Hiring Time</div>
+                      <div className="text-slate-400 text-lg line-through">{result.outcomes?.hiringTime?.before}</div>
                       <div className="text-xl font-bold text-emerald-400">{result.outcomes?.hiringTime?.after}</div>
                       <div className="text-emerald-400 text-xs font-semibold mt-1">↑ {result.outcomes?.hiringTime?.improvement}</div>
                     </div>
                   </div>
                 </div>
 
-                {/* Timeline */}
-                {result.timeline?.length > 0 && (
-                  <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-6">
-                    <h3 className="text-slate-300 font-semibold mb-4">📅 Learning Milestone Timeline</h3>
-                    <TimelineBar items={result.timeline} />
-                  </div>
-                )}
-
                 {/* Alternatives + Risk */}
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid lg:grid-cols-2 gap-4">
                   {result.alternativePaths?.length > 0 && (
                     <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-5">
-                      <h3 className="text-slate-300 font-semibold mb-3">⚖️ Alternative Skills</h3>
+                      <h3 className="text-slate-200 text-lg font-semibold mb-3">⚖️ Alternative Skills</h3>
                       <div className="space-y-2">
                         {result.alternativePaths.map((p, i) => (
                           <div key={i} className="flex items-center justify-between py-2 border-b border-slate-700/50 last:border-0">
                             <div>
                               <div className="text-white text-sm font-medium">{p.skill}</div>
-                              <div className="text-slate-500 text-xs">{p.difficulty} · {p.verdict}</div>
+                              <div className="text-slate-400 text-xs">{p.difficulty} · {p.verdict}</div>
                             </div>
                             <div className="text-right">
                               <div className="text-emerald-400 text-sm font-bold">+${(p.salaryDelta / 1000).toFixed(0)}k</div>
-                              <div className="text-slate-500 text-xs">{p.demandScore}/100 demand</div>
+                              <div className="text-slate-400 text-xs">{p.demandScore}/100 demand</div>
                             </div>
                           </div>
                         ))}
@@ -345,7 +346,7 @@ export default function SimulationLab() {
                   )}
                   {result.riskFactors?.length > 0 && (
                     <div className="bg-slate-800/40 border border-amber-700/30 rounded-xl p-5">
-                      <h3 className="text-amber-400 font-semibold mb-3">⚠️ Risk Factors</h3>
+                      <h3 className="text-amber-400 text-lg font-semibold mb-3">⚠️ Risk Factors</h3>
                       <div className="space-y-2">
                         {result.riskFactors.map((r, i) => (
                           <div key={i} className="flex gap-2 text-sm text-slate-300">
@@ -358,10 +359,19 @@ export default function SimulationLab() {
                   )}
                 </div>
 
-                <div className="text-slate-500 text-xs text-center">
+                <div className="text-slate-400 text-xs text-center">
                   Powered by SimulationAgent · Source: {result._source === 'llm' ? '🤖 AI Analysis' : '📊 Market Model'}
                   · Projections are estimates based on current market data
                 </div>
+                </div>
+                {/* Timeline */}
+                {result.timeline?.length > 0 && (
+                  <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-5 xl:sticky xl:top-4">
+                    <h3 className="text-slate-200 text-lg font-semibold mb-4">📅 Learning Milestone Timeline</h3>
+                    <TimelineBar items={result.timeline} />
+                  </div>
+                )}
+
               </div>
             )}
           </>
@@ -369,22 +379,22 @@ export default function SimulationLab() {
 
         {tab === 'compare' && (
           <div className="space-y-6">
-            <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6">
-              <div className="text-slate-300 font-semibold mb-4">Compare two career paths head-to-head:</div>
-              <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-4 sm:p-5">
+              <div className="text-slate-200 text-lg font-semibold mb-4">Compare two career paths head-to-head:</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="text-slate-500 text-xs mb-1 block">Path A</label>
+                  <label className="text-slate-300 text-sm mb-1 block">Path A</label>
                   <input value={compareA} onChange={e => setCompareA(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-violet-500" />
                 </div>
                 <div>
-                  <label className="text-slate-500 text-xs mb-1 block">Path B</label>
+                  <label className="text-slate-300 text-sm mb-1 block">Path B</label>
                   <input value={compareB} onChange={e => setCompareB(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-violet-500" />
                 </div>
               </div>
-              <button onClick={runCompare} disabled={compareLoading}
-                className="w-full py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 rounded-lg font-semibold transition-all">
+              <button onClick={runCompare} disabled={compareLoading || !compareA.trim() || !compareB.trim()}
+                className="w-full sm:w-auto sm:px-10 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 rounded-lg font-semibold transition-all">
                 {compareLoading ? '⟳ Comparing...' : '⚖️ Run Comparison'}
               </button>
             </div>
@@ -398,36 +408,36 @@ export default function SimulationLab() {
                 {[['pathA', compareResult.pathA], ['pathB', compareResult.pathB]].map(([key, path]) => (
                   <div key={key} className={`bg-slate-800/40 rounded-xl p-5 border ${key === 'pathA' ? 'border-indigo-500/40' : 'border-violet-500/40'}`}>
                     <div className={`text-lg font-bold mb-4 ${key === 'pathA' ? 'text-indigo-400' : 'text-violet-400'}`}>
-                      {path.name}
+                      {path?.name}
                     </div>
                     <div className="space-y-3">
-                      <div className="flex justify-between text-sm">
+                      <div className="flex justify-between text-base">
                         <span className="text-slate-400">Salary Impact</span>
-                        <span className="text-emerald-400 font-bold">+{path.outcomes?.salaryImpact?.deltaPercent}%</span>
+                        <span className="text-emerald-400 font-bold">+{path?.outcomes?.salaryImpact?.deltaPercent}%</span>
                       </div>
-                      <div className="flex justify-between text-sm">
+                      <div className="flex justify-between text-base">
                         <span className="text-slate-400">Market Demand</span>
-                        <span className="text-white font-bold">{path.outcomes?.marketDemand?.after}/100</span>
+                        <span className="text-white font-bold">{path?.outcomes?.marketDemand?.after}/100</span>
                       </div>
-                      <div className="flex justify-between text-sm">
+                      <div className="flex justify-between text-base">
                         <span className="text-slate-400">Job Openings</span>
-                        <span className="text-white font-bold">{path.outcomes?.jobOpenings?.growth}</span>
+                        <span className="text-white font-bold">{path?.outcomes?.jobOpenings?.growth}</span>
                       </div>
-                      <div className="flex justify-between text-sm">
+                      <div className="flex justify-between text-base">
                         <span className="text-slate-400">Agent Verdict</span>
-                        <span className="text-amber-400 font-bold text-xs">{path.agentVerdict?.recommendation}</span>
+                        <span className="text-amber-400 font-bold text-sm">{path?.agentVerdict?.recommendation}</span>
                       </div>
                     </div>
                   </div>
                 ))}
                 <div className="md:col-span-2 bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-4 text-center">
-                  <div className="text-emerald-400 font-semibold">🏆 {compareResult.verdict}</div>
+                  <div className="text-emerald-400 font-semibold text-lg">🏆 {compareResult.verdict}</div>
                 </div>
               </div>
             )}
           </div>
         )}
-      </div>
+      </PageContainer>
     </div>
   );
 }

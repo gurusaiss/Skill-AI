@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import AuthShell from './AuthShell';
 import { useAuth } from '../../contexts/AuthContext';
 
 /**
@@ -83,20 +84,14 @@ export default function OAuthCallback() {
   }, [searchParams, navigate, setAuthFromToken]);
 
   return (
-    <div className="min-h-screen bg-[#060B14] flex items-center justify-center px-4">
-      {/* Background gradient */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] rounded-full bg-indigo-600/10 blur-[120px]" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-purple-600/8 blur-[100px]" />
-      </div>
-
+    <AuthShell>
       <div className="relative text-center">
         {error ? (
           <>
             <div className="text-red-400 text-4xl mb-4">✕</div>
             <h2 className="text-2xl font-bold text-white mb-2">Authentication Failed</h2>
             <p className="text-slate-400 mb-4">{error}</p>
-            <p className="text-sm text-slate-500">Redirecting to login...</p>
+            <p className="text-sm text-slate-400">Redirecting to login...</p>
           </>
         ) : (
           <>
@@ -106,6 +101,6 @@ export default function OAuthCallback() {
           </>
         )}
       </div>
-    </div>
+    </AuthShell>
   );
 }

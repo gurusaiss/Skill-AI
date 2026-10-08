@@ -66,9 +66,9 @@ export default function PredictiveMasteryForecast({ sessions = [], skills = [] }
       <div className="rounded-xl border border-slate-700/50 bg-slate-900/60 p-4">
         <div className="flex items-center gap-2 mb-3">
           <span>🔮</span>
-          <h3 className="text-xs font-black text-slate-300 uppercase tracking-wider">Mastery Forecast</h3>
+          <h3 className="text-sm font-black text-slate-300 uppercase tracking-wider">Mastery Forecast</h3>
         </div>
-        <p className="text-xs text-slate-600 text-center py-6">
+        <p className="text-sm text-slate-400 text-center py-6">
           Complete 2+ sessions to unlock AI-powered mastery predictions
         </p>
       </div>
@@ -82,12 +82,12 @@ export default function PredictiveMasteryForecast({ sessions = [], skills = [] }
         <div className="flex items-center gap-2">
           <span>🔮</span>
           <div>
-            <h3 className="text-xs font-black text-slate-300 uppercase tracking-wider">Predictive Mastery Forecast</h3>
-            <p className="text-xs text-slate-600">AI-powered 14-day trajectory model</p>
+            <h3 className="text-sm font-black text-slate-300 uppercase tracking-wider">Predictive Mastery Forecast</h3>
+            <p className="text-sm text-slate-400">AI-powered 14-day trajectory model</p>
           </div>
         </div>
         <div
-          className="text-xs px-2 py-1 rounded-full font-bold"
+          className="text-sm px-2 py-1 rounded-full font-bold"
           style={{
             backgroundColor: `${forecastSummary?.color}15`,
             color: forecastSummary?.color,
@@ -103,7 +103,7 @@ export default function PredictiveMasteryForecast({ sessions = [], skills = [] }
         <div className="grid grid-cols-3 gap-2">
           <div className="rounded-lg bg-slate-800/60 border border-slate-700/40 p-2 text-center">
             <div className="text-xl font-black text-emerald-400">{forecastSummary.currentScore}%</div>
-            <div className="text-xs text-slate-500 uppercase tracking-wide">Current</div>
+            <div className="text-sm text-slate-400 uppercase tracking-wide">Current</div>
           </div>
           <div className="rounded-lg bg-slate-800/60 border border-slate-700/40 p-2 text-center">
             <div
@@ -112,7 +112,7 @@ export default function PredictiveMasteryForecast({ sessions = [], skills = [] }
             >
               {forecastSummary.day14Score}%
             </div>
-            <div className="text-xs text-slate-500 uppercase tracking-wide">Predicted D+14</div>
+            <div className="text-sm text-slate-400 uppercase tracking-wide">Predicted D+14</div>
           </div>
           <div className="rounded-lg bg-slate-800/60 border border-slate-700/40 p-2 text-center">
             <div className="text-xl font-black text-indigo-400">
@@ -121,7 +121,7 @@ export default function PredictiveMasteryForecast({ sessions = [], skills = [] }
                 : forecastSummary.currentScore >= 75 ? '✓' : '—'
               }
             </div>
-            <div className="text-xs text-slate-500 uppercase tracking-wide">To Mastery</div>
+            <div className="text-sm text-slate-400 uppercase tracking-wide">To Mastery</div>
           </div>
         </div>
       )}
@@ -129,7 +129,7 @@ export default function PredictiveMasteryForecast({ sessions = [], skills = [] }
       {/* Insight */}
       {forecastSummary && (
         <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-2.5">
-          <p className="text-xs text-slate-400 leading-relaxed">
+          <p className="text-sm text-slate-400 leading-relaxed">
             <span className="text-indigo-400 font-bold">🤖 Agent Insight: </span>
             Based on your learning velocity of{' '}
             <span className="text-indigo-300 font-semibold">

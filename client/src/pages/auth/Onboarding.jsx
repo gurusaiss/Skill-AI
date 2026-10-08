@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
+import AuthShell from './AuthShell';
 import { authFetch } from '../../utils/authFetch.js';
 import { SYSTEM_ROLE_JOB_TITLES } from '../../constants/roles.js';
 import JobRoleCombobox from '../../components/JobRoleCombobox.jsx';
@@ -85,16 +86,9 @@ export default function Onboarding() {
   if (!userId) return null;
 
   return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-4 py-12">
-      {/* Background gradient */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] rounded-full bg-indigo-600/10 blur-[120px]" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-purple-600/8 blur-[100px]" />
-      </div>
-
-      <div className="relative w-full max-w-lg">
+    <AuthShell width="lg">
         {/* Logo/Brand */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 lg:hidden">
           <Link to="/" className="inline-block">
             <h1 className="text-4xl font-black tracking-tight">
               <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
@@ -157,7 +151,7 @@ export default function Onboarding() {
                 onChange={handleChange}
                 placeholder="John Doe"
                 disabled={loading}
-                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#0F172A] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
+                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#0F172A] text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
               />
             </div>
 
@@ -177,7 +171,7 @@ export default function Onboarding() {
                 options={roleOptions}
                 placeholder="e.g. Frontend Developer, Data Analyst…"
                 disabled={loading}
-                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#0F172A] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
+                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#0F172A] text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
               />
             </div>
 
@@ -196,7 +190,7 @@ export default function Onboarding() {
                 placeholder="e.g. Engineering, Marketing, Sales…"
                 disabled={loading}
                 autoComplete="off"
-                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#0F172A] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
+                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#0F172A] text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
               />
               <datalist id="onboard-dept-options">
                 {[...new Set(roleOptions.map(r => r.dept).filter(Boolean))].sort().map(d => <option key={d} value={d} />)}
@@ -206,7 +200,7 @@ export default function Onboarding() {
             {/* Company Name (optional) */}
             <div>
               <label htmlFor="companyName" className="block text-sm font-semibold text-slate-300 mb-1.5">
-                Company Name <span className="text-slate-500 font-normal text-xs">(optional)</span>
+                Company Name <span className="text-slate-400 font-normal text-xs">(optional)</span>
               </label>
               <input
                 id="companyName"
@@ -216,7 +210,7 @@ export default function Onboarding() {
                 onChange={handleChange}
                 placeholder="e.g. Acme Corp"
                 disabled={loading}
-                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#0F172A] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
+                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#0F172A] text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none transition-colors disabled:opacity-50"
               />
             </div>
 
@@ -237,7 +231,6 @@ export default function Onboarding() {
             </button>
           </form>
         </div>
-      </div>
-    </div>
+      </AuthShell>
   );
 }

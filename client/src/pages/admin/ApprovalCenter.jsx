@@ -8,6 +8,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
 
 function TypeBadge({ type }) {
   const styles = {
@@ -25,7 +28,7 @@ function TypeBadge({ type }) {
     module_assignment: 'Module Assignment',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${styles[type] || 'bg-slate-500/20 text-slate-300 border-slate-500/30'}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-sm font-bold border ${styles[type] || 'bg-slate-500/20 text-slate-300 border-slate-500/30'}`}>
       {labels[type] || type}
     </span>
   );
@@ -38,7 +41,7 @@ function StatusBadge({ status }) {
     rejected: 'bg-red-500/20 text-red-400 border-red-500/30',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${styles[status] || styles.pending}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-sm font-bold border ${styles[status] || styles.pending}`}>
       {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Pending'}
     </span>
   );
@@ -57,7 +60,7 @@ function RequestDetails({ request, users, modules }) {
     const employee = users.find(u => (u.userId || u.id) === request.employee_id);
     const module = modules.find(m => m.id === request.module_id);
     return (
-      <div className="text-xs text-slate-400 mt-1 space-y-0.5">
+      <div className="text-sm text-slate-400 mt-1 space-y-0.5">
         <p>📚 <span className="text-slate-300">{module?.title || request.module_id || '—'}</span></p>
         <p>👤 Employee: <span className="text-slate-300">{employee?.name || '—'}</span></p>
         <p>👔 Manager: <span className="text-slate-300">{manager?.name || '—'}</span></p>
@@ -67,13 +70,13 @@ function RequestDetails({ request, users, modules }) {
   }
   // New approval request
   return (
-    <div className="text-xs text-slate-400 mt-1 space-y-0.5">
+    <div className="text-sm text-slate-400 mt-1 space-y-0.5">
       {p.title && <p>📋 <span className="text-slate-300">{p.title}</span></p>}
       {p.targetTitle && <p>🎯 Target: <span className="text-slate-300">{p.targetTitle}</span></p>}
       {p.employeeIds?.length > 0 && <p>👥 Employees: <span className="text-slate-300">{p.employeeIds.length} selected</span></p>}
       {p.category && <p>🏷️ Category: <span className="text-slate-300">{p.category}</span></p>}
       {p.difficulty && <p>⚡ Difficulty: <span className="text-slate-300 capitalize">{p.difficulty}</span></p>}
-      {request.notes && <p className="italic text-slate-500">"{request.notes}"</p>}
+      {request.notes && <p className="italic text-slate-400">"{request.notes}"</p>}
     </div>
   );
 }
@@ -95,9 +98,11 @@ export default function ApprovalCenter() {
   const [processingId, setProcessingId] = useState(null);
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const [assignReqs, approvals, usersData, modulesData] = await Promise.allSettled([
         authFetch('/api/assignments/requests'),
@@ -106,6 +111,9 @@ export default function ApprovalCenter() {
         authFetch('/api/modules?limit=1000'),
       ]);
 
+      if (assignReqs.status === 'rejected' && approvals.status === 'rejected') {
+        setLoadError(assignReqs.reason?.message || 'Could not load approval requests.');
+      }
       setAssignmentRequests(
         assignReqs.status === 'fulfilled'
           ? (assignReqs.value?.requests || assignReqs.value || [])
@@ -127,7 +135,7 @@ export default function ApprovalCenter() {
           : []
       );
     } catch (err) {
-      setToast({ message: err.message, type: 'error' });
+      setLoadError(err.message || 'Could not load approval requests.');
     } finally {
       setLoading(false);
     }
@@ -209,7 +217,7 @@ export default function ApprovalCenter() {
 
       {/* Reject modal */}
       {rejectModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4" role="dialog" aria-modal="true" aria-label="Reject request">
           <div className="bg-[#1E293B] border border-slate-700/80 rounded-2xl w-full max-w-md shadow-2xl p-6">
             <h3 className="text-lg font-bold text-white mb-1">Reject Request</h3>
             <p className="text-slate-400 text-sm mb-4">Optionally provide a reason for rejection.</p>
@@ -218,59 +226,43 @@ export default function ApprovalCenter() {
               onChange={e => setRejectReason(e.target.value)}
               placeholder="Reason for rejection (optional)..."
               rows={3}
-              className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-red-500/60 resize-none mb-4"
+              className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-red-500/60 resize-none mb-4"
             />
             <div className="flex gap-3">
-              <button
-                onClick={() => { setRejectModal(null); setRejectReason(''); }}
-                className="flex-1 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm transition-colors"
-              >
+              <Button variant="secondary" className="flex-1" disabled={!!processingId} onClick={() => { setRejectModal(null); setRejectReason(''); }}>
                 Cancel
-              </button>
-              <button
-                onClick={handleReject}
-                disabled={!!processingId}
-                className="flex-1 py-2.5 rounded-xl bg-red-600/20 border border-red-500/30 text-red-300 hover:bg-red-600/30 font-bold text-sm transition-colors disabled:opacity-50"
-              >
-                {processingId ? 'Rejecting...' : '✕ Reject'}
-              </button>
+              </Button>
+              <Button variant="danger" className="flex-1" loading={!!processingId} onClick={handleReject}>
+                {processingId ? 'Rejecting...' : 'Reject Request'}
+              </Button>
             </div>
           </div>
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto px-6 py-8 lg:px-8">
+      <PageContainer>
 
-        {/* Header */}
-        <div className="flex items-start justify-between mb-8">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-600/20 border border-amber-500/20 text-xl">⏳</div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">Approval Center</h1>
-                <p className="text-amber-400 text-sm font-semibold">Admin Panel</p>
-              </div>
-            </div>
-            <p className="text-slate-400 text-sm mt-1 ml-[52px]">Review and action all pending requests from your team</p>
+        <PageHeader
+          icon="⏳"
+          title="Approval Center"
+          subtitle="Review and action all pending requests from your team"
+          actions={
+            <>
+              <Button variant="secondary" onClick={fetchAll} loading={loading}>Refresh</Button>
+              <Button variant="secondary" onClick={() => navigate('/admin/dashboard')}>Back to Dashboard</Button>
+            </>
+          }
+        />
+
+        {loadError && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <span>{loadError}</span>
+            <Button variant="danger" size="sm" onClick={fetchAll}>Retry</Button>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={fetchAll}
-              className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-white font-bold text-sm transition-colors"
-            >
-              ↻ Refresh
-            </button>
-            <button
-              onClick={() => navigate('/admin/dashboard')}
-              className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-white font-bold text-sm transition-colors"
-            >
-              ← Dashboard
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
           {[
             { label: 'Pending', value: pendingCount, color: 'border-amber-500/30 bg-amber-500/5 text-amber-400', onClick: () => setFilterStatus('pending') },
             { label: 'Approved', value: approvedCount, color: 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400', onClick: () => setFilterStatus('approved') },
@@ -279,47 +271,46 @@ export default function ApprovalCenter() {
             <button
               key={s.label}
               onClick={s.onClick}
-              className={`rounded-xl border p-4 text-center transition-all hover:scale-[1.02] ${s.color} ${filterStatus === s.label.toLowerCase() ? 'ring-1 ring-current' : ''}`}
+              title={`Show ${s.label.toLowerCase()} requests`}
+              className={`rounded-2xl border p-5 text-center transition-all hover:scale-[1.01] ${s.color} ${filterStatus === s.label.toLowerCase() ? 'ring-2 ring-current' : ''}`}
             >
-              <p className="text-2xl font-bold tabular-nums">{s.value}</p>
-              <p className="text-xs font-bold uppercase tracking-wider mt-0.5 opacity-70">{s.label}</p>
+              <p className="text-3xl font-bold tabular-nums">{s.value}</p>
+              <p className="text-sm font-bold uppercase tracking-wider mt-1 opacity-80">{s.label}</p>
             </button>
           ))}
         </div>
 
         {/* Filters */}
-        <div className="space-y-3 mb-5">
-          {/* Search */}
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search by requester name or module…"
-              className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 transition-colors" />
-          </div>
-          {/* Status + Type + Count */}
-          <div className="flex flex-wrap items-center gap-2">
-            {['pending', 'approved', 'rejected', 'all'].map(s => (
-              <button key={s} onClick={() => setFilterStatus(s)}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all capitalize ${filterStatus === s ? 'bg-indigo-600 text-white' : 'bg-slate-800/50 border border-slate-700 text-slate-400 hover:text-white'}`}>
-                {s}
-              </button>
-            ))}
-            <SearchableSelect
-              value={filterType}
-              onChange={setFilterType}
-              allLabel="All Types"
-              options={[
-                { value: 'assignment_request', label: 'Module Assignment' },
-                { value: 'approval_request', label: 'Approval Request' },
-              ]}
-            />
-            {(search || filterType !== 'all') && (
-              <button onClick={() => { setSearch(''); setFilterType('all'); }}
-                className="px-3 py-2 rounded-lg bg-slate-700/50 border border-slate-600/40 text-xs text-slate-400 font-semibold hover:text-white transition-colors">
-                ✕ Clear
-              </button>
-            )}
-            <span className="ml-auto text-slate-500 text-sm self-center">{filtered.length} requests</span>
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5 mb-5">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="relative min-w-0">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                aria-label="Search requests"
+                placeholder="Search by requester name or module…"
+                className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-900/50 border border-slate-700 text-white placeholder-slate-400 text-sm focus:outline-none focus:border-indigo-500 transition-colors" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {['pending', 'approved', 'rejected', 'all'].map(s => (
+                <button key={s} onClick={() => setFilterStatus(s)}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all capitalize ${filterStatus === s ? 'bg-indigo-600 text-white' : 'bg-slate-800/50 border border-slate-700 text-slate-300 hover:text-white'}`}>
+                  {s}
+                </button>
+              ))}
+              <SearchableSelect
+                value={filterType}
+                onChange={setFilterType}
+                allLabel="All Types"
+                options={[
+                  { value: 'assignment_request', label: 'Module Assignment' },
+                  { value: 'approval_request', label: 'Approval Request' },
+                ]}
+              />
+              {(search || filterType !== 'all') && (
+                <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setFilterType('all'); }}>Clear filters</Button>
+              )}
+              <span className="text-slate-300 text-sm font-semibold">{filtered.length} {filtered.length === 1 ? 'request' : 'requests'}</span>
+            </div>
           </div>
         </div>
 
@@ -327,72 +318,69 @@ export default function ApprovalCenter() {
         {loading ? (
           <div className="text-center py-16">
             <div className="animate-spin text-amber-400 text-4xl mb-4">⟳</div>
-            <div className="text-slate-400 text-sm">Loading requests...</div>
+            <div className="text-slate-300 text-sm">Loading requests...</div>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-slate-500">
+          <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 text-center py-16 text-slate-300">
             <div className="text-4xl mb-3">✅</div>
-            <p className="text-sm font-semibold">
+            <p className="text-base font-semibold">
               {search || filterType !== 'all'
                 ? 'No requests match your filters.'
                 : filterStatus === 'pending' ? 'No pending requests.' : `No ${filterStatus} requests.`}
             </p>
+            {(search || filterType !== 'all' || filterStatus !== 'all') && (
+              <Button variant="secondary" className="mt-4" onClick={() => { setSearch(''); setFilterType('all'); setFilterStatus('all'); }}>
+                Clear filters and show all
+              </Button>
+            )}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {filtered.map(request => {
               const isAssignReq = request._type === 'assignment_request';
               const requesterName = isAssignReq
                 ? (users.find(u => (u.userId || u.id) === request.manager_id)?.name || '—')
                 : request.requestedByName || '—';
               const dateStr = formatDate(request._sortDate);
+              const busy = processingId === request.id;
 
               return (
                 <div
-                  key={request.id}
-                  className="bg-[#1E293B] border border-slate-700/60 rounded-xl p-5"
+                  key={`${request._type}-${request.id}`}
+                  className="min-w-0 rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5"
                 >
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <TypeBadge type={request._displayType} />
                         <StatusBadge status={request.status} />
                         {request.priority && (
-                          <span className="text-xs text-slate-500 capitalize">Priority: {request.priority}</span>
+                          <span className="text-sm text-slate-400 capitalize">Priority: {request.priority}</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-semibold text-white">Requested by: {requesterName}</span>
-                        <span className="text-xs text-slate-500">·</span>
-                        <span className="text-xs text-slate-500">{dateStr}</span>
+                      <div className="flex flex-wrap items-center gap-x-2 mb-1">
+                        <span className="text-base font-semibold text-white">Requested by: {requesterName}</span>
+                        <span className="text-sm text-slate-400">{dateStr}</span>
                       </div>
                       <RequestDetails request={request} users={users} modules={modules} />
                       {request.rejectionReason && (
-                        <p className="text-xs text-red-400 mt-1">Rejection reason: {request.rejectionReason}</p>
+                        <p className="text-sm text-red-400 mt-1">Rejection reason: {request.rejectionReason}</p>
                       )}
                       {request.decidedAt && (
-                        <p className="text-xs text-slate-600 mt-1">
+                        <p className="text-sm text-slate-400 mt-1">
                           {request.status === 'approved' ? 'Approved' : 'Rejected'} on {formatDate(request.decidedAt)}
                         </p>
                       )}
                     </div>
 
                     {request.status === 'pending' && (
-                      <div className="flex gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => handleApprove(request)}
-                          disabled={processingId === request.id}
-                          className="px-4 py-2 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30 text-xs font-bold transition-all disabled:opacity-50"
-                        >
-                          {processingId === request.id ? '...' : '✓ Approve'}
-                        </button>
-                        <button
-                          onClick={() => setRejectModal(request)}
-                          disabled={processingId === request.id}
-                          className="px-4 py-2 rounded-lg bg-red-600/20 border border-red-500/30 text-red-300 hover:bg-red-600/30 text-xs font-bold transition-all disabled:opacity-50"
-                        >
-                          ✕ Reject
-                        </button>
+                      <div className="flex flex-wrap gap-2 sm:flex-shrink-0">
+                        <Button variant="success" loading={busy} onClick={() => handleApprove(request)} disabled={!!processingId}>
+                          Approve
+                        </Button>
+                        <Button variant="danger" onClick={() => { setRejectReason(''); setRejectModal(request); }} disabled={!!processingId}>
+                          Reject
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -402,10 +390,10 @@ export default function ApprovalCenter() {
           </div>
         )}
 
-        <div className="mt-4 text-center text-slate-600 text-xs">
+        <div className="mt-4 text-center text-slate-400 text-sm">
           Showing both module assignment requests and all approval requests for your company.
         </div>
-      </div>
+      </PageContainer>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import PageContainer from '../components/PageContainer.jsx';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
@@ -202,9 +203,11 @@ export default function Employee() {
     }
   }, [loading, assessmentsLoading, myAssessments, assignments, selectedJobRole, userId]);
 
+  const [loadError, setLoadError] = useState('');
   const loadData = async () => {
     if (!userId) return;
     setLoading(true);
+    setLoadError('');
     try {
       const [assignmentsData, mgrData] = await Promise.allSettled([
         authFetch(`/api/assignments?userId=${userId}`),
@@ -225,6 +228,7 @@ export default function Employee() {
       } else {
         console.warn('[Employee] assignments failed to load:', assignmentsData.reason?.message);
         setAssignments([]);
+        setLoadError(assignmentsData.reason?.message || 'Could not load your modules.');
       }
 
       if (mgrData.status === 'fulfilled') {
@@ -430,7 +434,7 @@ export default function Employee() {
         loading={updatingStatus}
       />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <PageContainer>
         <div className="mb-8">
           <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
             <div className="flex items-center gap-4">
@@ -444,7 +448,7 @@ export default function Employee() {
             </div>
             <button
               onClick={() => window.print()}
-              className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 text-xs font-bold transition-all"
+              className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 text-sm font-bold transition-all"
             >
               🖨️ Export PDF
             </button>
@@ -452,11 +456,11 @@ export default function Employee() {
           {/* Job Role Selector — shown when user has multiple roles */}
           {availableJobRoles.length > 1 && (
             <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Job Role</span>
+              <span className="text-sm font-bold text-slate-400 uppercase tracking-wider">Job Role</span>
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => setSelectedJobRole('all')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${selectedJobRole === 'all' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white hover:border-slate-600'}`}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all border ${selectedJobRole === 'all' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white hover:border-slate-600'}`}
                 >
                   All Roles
                 </button>
@@ -464,7 +468,7 @@ export default function Employee() {
                   <button
                     key={r.value}
                     onClick={() => setSelectedJobRole(r.value)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${selectedJobRole === r.value ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white hover:border-slate-600'}`}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all border flex items-center gap-1.5 ${selectedJobRole === r.value ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-800/60 text-slate-400 border-slate-700 hover:text-white hover:border-slate-600'}`}
                   >
                     {r.isPrimary && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />}
                     {r.label}
@@ -535,9 +539,9 @@ export default function Employee() {
         {/* ── My Assessments ── */}
         <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 backdrop-blur-sm overflow-hidden mb-6 card-enter" style={{ animationDelay: '150ms' }}>
           <div className="border-b border-slate-700/40 px-5 py-4 flex items-center justify-between">
-            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">📝 My Assessments</h3>
+            <h3 className="text-sm font-black text-slate-300 uppercase tracking-widest">📝 My Assessments</h3>
             {filteredAssessments.length > 0 && (
-              <span className="text-xs text-slate-500">{filteredAssessments.length} assigned</span>
+              <span className="text-xs text-slate-400">{filteredAssessments.length} assigned</span>
             )}
           </div>
           <div className="p-4">
@@ -549,10 +553,10 @@ export default function Employee() {
               </div>
             ) : filteredAssessments.length === 0 ? (
               <div className="py-6 text-center">
-                <p className="text-sm text-slate-500">{selectedJobRole !== 'all' ? `No assessments for ${selectedJobRole}` : 'No assessments yet'}</p>
+                <p className="text-sm text-slate-400">{selectedJobRole !== 'all' ? `No assessments for ${selectedJobRole}` : 'No assessments yet'}</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2 2xl:grid-cols-3">
                 {filteredAssessments.map((a) => {
                   const id = a.id || a._id;
                   const isSubmitted = a.status === 'submitted' || a.status === 'completed';
@@ -569,7 +573,7 @@ export default function Employee() {
                     : isExpired
                       ? 'bg-red-500/10 border-red-500/20 text-red-400'
                       : isNotYet
-                        ? 'bg-slate-700/40 border-slate-600/30 text-slate-500'
+                        ? 'bg-slate-700/40 border-slate-600/30 text-slate-400'
                         : 'bg-blue-500/10 border-blue-500/20 text-blue-400';
                   const statusLabel = isSubmitted ? 'Submitted' : isExpired ? 'Expired' : isNotYet ? 'Scheduled' : 'Available';
                   return (
@@ -578,23 +582,23 @@ export default function Employee() {
                         <p className="text-sm font-semibold text-white truncate">{a.title}</p>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           {a.assessmentDate && (
-                            <span className="text-xs text-slate-500">
+                            <span className="text-xs text-slate-400">
                               📅 {new Date(a.assessmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                             </span>
                           )}
                           {a.deadline && !isSubmitted && (
-                            <span className={`text-xs ${isExpired ? 'text-red-400' : 'text-slate-500'}`}>
+                            <span className={`text-xs ${isExpired ? 'text-red-400' : 'text-slate-400'}`}>
                               ⏰ {new Date(a.deadline).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                           <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${statusBadge}`}>{statusLabel}</span>
                           {pctScore !== null && <span className={`text-xs font-black ${scoreBg}`}>{pctScore}%</span>}
-                          {rating && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${ratingStyle(rating).chip}`} title={`Rating: ${rating}`}>{rating}</span>}
+                          {rating && <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${ratingStyle(rating).chip}`} title={`Rating: ${rating}`}>{rating}</span>}
                         </div>
                       </div>
                       {!isSubmitted && !isExpired && !isNotYet && (
                         <button onClick={() => navigate(`/assessment/${id}`)}
-                          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-bold transition-all whitespace-nowrap">
+                          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-sm font-bold transition-all whitespace-nowrap">
                           Start →
                         </button>
                       )}
@@ -605,12 +609,12 @@ export default function Employee() {
                         // had no way to get there. Previously a submitted
                         // assessment was a dead end with no route back to it.
                         <button onClick={() => navigate(`/assessment/${id}`)}
-                          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700/60 hover:text-white text-xs font-bold transition-all whitespace-nowrap">
+                          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700/60 hover:text-white text-sm font-bold transition-all whitespace-nowrap">
                           View Report →
                         </button>
                       )}
                       {isNotYet && a.assessmentDate && (
-                        <span className="text-xs text-slate-600 shrink-0">
+                        <span className="text-xs text-slate-400 shrink-0">
                           Opens {new Date(a.assessmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </span>
                       )}
@@ -630,7 +634,7 @@ export default function Employee() {
                 <span className="text-base">✨</span>
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Recommended for You</h3>
               </div>
-              <span className="text-xs text-slate-600">AI-powered · updated 6h</span>
+              <span className="text-xs text-slate-400">AI-powered · updated 6h</span>
             </div>
             <div className="p-4">
               {recsLoading ? (
@@ -654,7 +658,7 @@ export default function Employee() {
                         <button
                           onClick={(e) => { e.stopPropagation(); handleExcludeSkill(rec.skill_id); }}
                           disabled={excludingSkill === rec.skill_id}
-                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-slate-700/70 border border-slate-600/50 text-slate-500 hover:text-red-400 hover:border-red-500/40 flex items-center justify-center text-xs font-bold leading-none"
+                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 rounded-full bg-slate-700/70 border border-slate-600/50 text-slate-400 hover:text-red-400 hover:border-red-500/40 flex items-center justify-center text-xs font-bold leading-none"
                           title="Not Interested"
                         >
                           {excludingSkill === rec.skill_id ? (
@@ -666,7 +670,7 @@ export default function Employee() {
                           <span className="text-lg mt-0.5">🎯</span>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold text-white truncate">{rec.name || rec.skill_id}</p>
-                            <p className="text-xs text-slate-500 capitalize">{rec.domain || 'skill'}</p>
+                            <p className="text-xs text-slate-400 capitalize">{rec.domain || 'skill'}</p>
                           </div>
                         </div>
 
@@ -703,11 +707,18 @@ export default function Employee() {
           </div>
         )}
 
+        {loadError && !loading && (
+          <div role="alert" className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 px-5 py-4">
+            <p className="text-sm text-red-200">Could not load your modules: {loadError}</p>
+            <button type="button" onClick={loadData} className="px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/40 text-red-100 hover:bg-red-500/30 text-sm font-bold">Retry</button>
+          </div>
+        )}
+
         <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 backdrop-blur-sm overflow-hidden mb-6">
           <div className="border-b border-slate-700/40 px-5 py-4">
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="relative flex-1 min-w-0">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
                 <input
                   type="text"
                   placeholder="Search modules..."
@@ -720,7 +731,7 @@ export default function Employee() {
                 <select
                   value={filterStatus}
                   onChange={e => setFilterStatus(e.target.value)}
-                  className="px-3 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50 text-xs text-slate-300 font-semibold focus:outline-none focus:border-indigo-500/50 transition-all cursor-pointer"
+                  className="px-3 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50 text-sm text-slate-300 font-semibold focus:outline-none focus:border-indigo-500/50 transition-all cursor-pointer"
                 >
                   <option value="all">All Status</option>
                   <option value="assigned">Assigned</option>
@@ -731,7 +742,7 @@ export default function Employee() {
                 <select
                   value={filterType}
                   onChange={e => setFilterType(e.target.value)}
-                  className="px-3 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50 text-xs text-slate-300 font-semibold focus:outline-none focus:border-indigo-500/50 transition-all cursor-pointer"
+                  className="px-3 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50 text-sm text-slate-300 font-semibold focus:outline-none focus:border-indigo-500/50 transition-all cursor-pointer"
                 >
                   <option value="all">All Types</option>
                   <option value="module">Module</option>
@@ -754,14 +765,14 @@ export default function Employee() {
                 <p className="text-lg font-bold text-slate-400 mb-2">
                   {assignments.length === 0 ? 'No Modules Assigned Yet' : 'No Matching Modules'}
                 </p>
-                <p className="text-sm text-slate-600 max-w-md mx-auto">
+                <p className="text-sm text-slate-400 max-w-md mx-auto">
                   {assignments.length === 0
                     ? 'Your manager hasn\'t assigned any learning modules yet. Check back soon!'
                     : 'Try adjusting your search or filters to find what you\'re looking for.'}
                 </p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
                 {filteredAssignments.map((a, idx) => {
                   const title = a.module_name || a.name || a.title || a.assignable_type || 'Untitled';
                   const type = a.type || 'module';
@@ -778,7 +789,7 @@ export default function Employee() {
                   return (
                     <div
                       key={a.id}
-                      className="card-enter rounded-2xl border border-slate-700/40 bg-slate-800/30 hover:bg-slate-800/50 hover:border-slate-600/50 transition-all duration-300 group"
+                      className="card-enter rounded-2xl border border-slate-700/40 bg-slate-800/30 hover:bg-slate-800/50 hover:border-slate-600/50 transition-all duration-300 group min-w-0"
                       style={{ animationDelay: `${idx * 60}ms` }}
                     >
                       <div className="p-5">
@@ -795,14 +806,14 @@ export default function Employee() {
                             </div>
                             <div className="flex flex-wrap items-center gap-2 mb-3">
                               <PriorityBadge priority={priority} />
-                              <span className="text-xs text-slate-500 font-medium px-2 py-0.5 rounded-md bg-slate-800/60 border border-slate-700/30">
+                              <span className="text-xs text-slate-400 font-medium px-2 py-0.5 rounded-md bg-slate-800/60 border border-slate-700/30">
                                 {typeConfig[type]?.label || type}
                               </span>
-                              <span className="text-xs text-slate-500 font-medium">
+                              <span className="text-xs text-slate-400 font-medium">
                                 📅 {formatDate(dueDate)}
                               </span>
                               {(a.moduleRef?.estimatedDuration || a.estimatedDuration) && (
-                                <span className="text-xs text-slate-500 font-medium">
+                                <span className="text-xs text-slate-400 font-medium">
                                   ⏱ {a.moduleRef?.estimatedDuration || a.estimatedDuration}
                                 </span>
                               )}
@@ -830,7 +841,7 @@ export default function Employee() {
                                  navigate(`/module/${moduleId}/learn?assignmentId=${a.id}`);
                                }
                              }}
-                             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600/15 border border-indigo-500/25 text-indigo-300 hover:bg-indigo-600/25 hover:border-indigo-500/40 text-xs font-bold transition-all duration-200 hover:shadow-lg hover:shadow-indigo-500/10"
+                             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600/15 border border-indigo-500/25 text-indigo-300 hover:bg-indigo-600/25 hover:border-indigo-500/40 text-sm font-bold transition-all duration-200 hover:shadow-lg hover:shadow-indigo-500/10"
                            >
                              <span>{status === 'in_progress' ? '▶' : status === 'completed' ? '🔁' : '🚀'}</span>
                              {status === 'in_progress' ? 'Continue' : status === 'completed' ? 'Review' : 'Start Module'}
@@ -845,7 +856,7 @@ export default function Employee() {
           </div>
         </div>
 
-      </div>
+      </PageContainer>
     </div>
   );
 }

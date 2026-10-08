@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import AuthShell from './AuthShell';
 import { useAuth } from '../../contexts/AuthContext';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -180,14 +181,8 @@ export default function Register() {
   const matchedRole = companyLookup ? fuzzyMatch(formData.jobRole, allRoles) : null;
 
   return (
-    <div className="min-h-screen bg-[#060B14] flex items-center justify-center px-4 py-12">
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] rounded-full bg-indigo-600/10 blur-[120px]" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-purple-600/8 blur-[100px]" />
-      </div>
-
-      <div className="relative w-full max-w-md">
-        <div className="text-center mb-8">
+    <AuthShell>
+        <div className="text-center mb-8 lg:hidden">
           <Link to="/" className="inline-block">
             <h1 className="text-4xl font-black tracking-tight">
               <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
@@ -211,7 +206,7 @@ export default function Register() {
             <div>
               <label htmlFor="companyCode" className="block text-sm font-semibold text-slate-300 mb-2">
                 Access Code <span className="text-red-400">*</span>
-                <span className="ml-2 text-xs font-normal text-slate-500">provided by your company admin</span>
+                <span className="ml-2 text-xs font-normal text-slate-400">provided by your company admin</span>
               </label>
               <div className="relative">
                 <input
@@ -277,7 +272,7 @@ export default function Register() {
                       className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors flex items-center justify-between"
                     >
                       <span>{r.roleName}</span>
-                      {r.department && <span className="text-xs text-slate-500">{r.department}</span>}
+                      {r.department && <span className="text-xs text-slate-400">{r.department}</span>}
                     </button>
                   ))}
                 </div>
@@ -285,7 +280,7 @@ export default function Register() {
 
               {/* JD match indicator */}
               {formData.jobRole.trim() && companyLookup && (
-                <p className={`mt-1.5 text-xs font-medium ${matchedRole ? 'text-emerald-400' : 'text-slate-500'}`}>
+                <p className={`mt-1.5 text-xs font-medium ${matchedRole ? 'text-emerald-400' : 'text-slate-400'}`}>
                   {matchedRole
                     ? `✓ Matched "${matchedRole.roleName}" — JD & assessment will be auto-assigned`
                     : 'Role will be registered as entered (no JD match yet)'}
@@ -293,7 +288,7 @@ export default function Register() {
               )}
 
               {!companyLookup && (
-                <p className="mt-1.5 text-xs text-slate-600">Enter your access code first to see role suggestions</p>
+                <p className="mt-1.5 text-xs text-slate-400">Enter your access code first to see role suggestions</p>
               )}
             </div>
 
@@ -334,7 +329,7 @@ export default function Register() {
                     </div>
                     <span className="text-xs font-semibold text-slate-400">{passwordStrength.label}</span>
                   </div>
-                  <p className="text-xs text-slate-500">8+ chars with uppercase, lowercase, and numbers</p>
+                  <p className="text-xs text-slate-400">8+ chars with uppercase, lowercase, and numbers</p>
                 </div>
               )}
             </div>
@@ -370,7 +365,7 @@ export default function Register() {
             </div>
 
             <button type="submit" disabled={loading || companyLookupLoading}
-              className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]">
+              className="w-full py-3.5 rounded-xl font-bold text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]">
               {loading ? '⏳ Creating account...' : 'Create Account'}
             </button>
           </form>
@@ -384,11 +379,10 @@ export default function Register() {
         </div>
 
         <div className="mt-6 text-center">
-          <Link to="/" className="text-sm text-slate-500 hover:text-slate-400 transition-colors">
+          <Link to="/" className="text-sm text-slate-400 hover:text-slate-400 transition-colors">
             ← Back to home
           </Link>
         </div>
-      </div>
-    </div>
+      </AuthShell>
   );
 }

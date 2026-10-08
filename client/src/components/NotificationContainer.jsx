@@ -70,19 +70,19 @@ function NotificationItem({ notification, onDismiss }) {
 
   return (
     <div
-      className={`relative overflow-hidden rounded-xl border shadow-2xl backdrop-blur-xl transition-all ease-out max-w-sm w-full
+      className={`relative overflow-hidden rounded-xl border shadow-2xl backdrop-blur-xl transition-all ease-out max-w-md w-full
         bg-slate-900/95 ${cfg.border}
         ${visible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
       style={{ transitionDuration: '220ms' }}
     >
       <div className="flex items-start gap-3 px-4 py-3.5">
         <div className={`shrink-0 w-7 h-7 rounded-lg ${cfg.iconBg} flex items-center justify-center mt-0.5`}>
-          <span className={`text-xs font-bold leading-none ${cfg.iconColor}`}>{cfg.icon}</span>
+          <span className={`text-sm font-bold leading-none ${cfg.iconColor}`}>{cfg.icon}</span>
         </div>
-        <p className={`flex-1 text-sm font-medium leading-snug ${cfg.text} py-0.5`}>{message}</p>
+        <p className={`flex-1 text-base font-medium leading-snug ${cfg.text} py-0.5`}>{message}</p>
         <button
           onClick={handleDismiss}
-          className="shrink-0 text-slate-500 hover:text-slate-300 transition-colors text-base leading-none mt-0.5 ml-1"
+          className="shrink-0 text-slate-400 hover:text-slate-200 transition-colors text-base leading-none mt-0.5 ml-1"
           aria-label="Dismiss"
         >
           ✕
@@ -107,7 +107,7 @@ export default function NotificationContainer() {
   return (
     <div
       className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 items-center pointer-events-none"
-      style={{ width: 'min(100vw - 2rem, 420px)' }}
+      style={{ width: 'min(100vw - 2rem, 480px)' }}
       role="region"
       aria-label="Notifications"
       aria-live="polite"

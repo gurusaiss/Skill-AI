@@ -10,6 +10,10 @@ import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import StatCard from '../../components/StatCard.jsx';
 import TabBar from '../../components/TabBar.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
+import ActionMenu from '../../components/ActionMenu.jsx';
 import { ratingForReport, ratingStyle, ratingDistribution } from '../../utils/assessmentRules.js';
 
 // ── Utility UI ─────────────────────────────────────────────────────────────────
@@ -38,8 +42,8 @@ function CopyBtn({ text }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
-      onClick={() => { navigator.clipboard.writeText(text || ''); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'}`}
+      onClick={() => { try { navigator.clipboard.writeText(text || '').then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }, () => {}); } catch { /* clipboard unavailable */ } }}
+      className={`px-2.5 py-1 rounded-lg text-sm font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white'}`}
     >
       {copied ? '✓ Copied' : '📋 Copy'}
     </button>
@@ -52,11 +56,11 @@ function ShareBtn({ code }) {
     if (navigator.share) {
       navigator.share({ title: 'Access Code', text: msg }).catch(() => {});
     } else {
-      navigator.clipboard.writeText(msg);
+      try { navigator.clipboard.writeText(msg).catch(() => {}); } catch { /* clipboard unavailable */ }
     }
   };
   return (
-    <button onClick={share} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors">
+    <button onClick={share} className="px-2.5 py-1 rounded-lg text-sm font-semibold bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors">
       📤 Share
     </button>
   );
@@ -73,18 +77,18 @@ function CodeCard({ code, busy, doAction, deleteCode }) {
 
   return (
     <div className={`bg-slate-800/60 border rounded-xl p-4 transition-opacity ${!code.isActive ? 'opacity-50' : ''} ${s.border}`}>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-            <span className={`font-mono text-base font-bold tracking-widest ${s.mono}`}>{code.code}</span>
+            <span className={`font-mono text-lg font-bold tracking-widest break-all ${s.mono}`}>{code.code}</span>
             <CopyBtn text={code.code} />
             <ShareBtn code={code.code} />
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${s.badge}`}>{code.role}</span>
-            {!code.isActive && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/40 text-red-300">Disabled</span>}
-            {expired && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/40 text-orange-300">Expired</span>}
+            <span className={`text-sm font-semibold px-2 py-0.5 rounded-full border ${s.badge}`}>{code.role}</span>
+            {!code.isActive && <span className="text-sm font-semibold px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/40 text-red-300">Disabled</span>}
+            {expired && <span className="text-sm font-semibold px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/40 text-orange-300">Expired</span>}
           </div>
-          {code.label && <p className="text-xs text-slate-400 mb-1">{code.label}</p>}
-          <div className="flex items-center gap-4 text-xs text-slate-500">
+          {code.label && <p className="text-sm text-slate-400 mb-1">{code.label}</p>}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-400">
             <span>Signups: <span className="text-slate-200 font-semibold">{code.usageCount ?? 0}{code.maxUsage != null ? ` / ${code.maxUsage}` : ''}</span></span>
             {code.expiresAt && (
               <span>Expires: <span className={`font-semibold ${expired ? 'text-red-400' : 'text-slate-200'}`}>{new Date(code.expiresAt).toLocaleDateString()}</span></span>
@@ -96,19 +100,15 @@ function CodeCard({ code, busy, doAction, deleteCode }) {
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-1.5 flex-shrink-0">
-          <button onClick={() => doAction(code.id, { regenerate: true }, 'regenerated')} disabled={!!busy}
-            className="px-3 py-1.5 rounded-lg bg-violet-900/40 hover:bg-violet-900/60 text-violet-300 text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap">
-            {busy === code.id + 'regenerated' ? '...' : '↻ Regen'}
-          </button>
-          <button onClick={() => doAction(code.id, { isActive: !code.isActive }, code.isActive ? 'disabled' : 'enabled')} disabled={!!busy}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap ${code.isActive ? 'bg-red-900/30 hover:bg-red-900/50 text-red-400' : 'bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400'}`}>
-            {code.isActive ? 'Disable' : 'Enable'}
-          </button>
-          <button onClick={() => deleteCode(code.id)} disabled={!!busy}
-            className="px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-red-900/40 text-slate-400 hover:text-red-400 text-xs font-semibold transition-colors disabled:opacity-50">
-            Delete
-          </button>
+        <div className="flex-shrink-0">
+          <ActionMenu
+            label="Manage"
+            items={[
+              { label: busy === code.id + 'regenerated' ? 'Regenerating...' : 'Regenerate code', onClick: () => doAction(code.id, { regenerate: true }, 'regenerated'), disabled: !!busy },
+              { label: code.isActive ? 'Disable code' : 'Enable code', onClick: () => doAction(code.id, { isActive: !code.isActive }, code.isActive ? 'disabled' : 'enabled'), disabled: !!busy },
+              { label: 'Delete code', onClick: () => deleteCode(code.id), disabled: !!busy, danger: true, divider: true },
+            ]}
+          />
         </div>
       </div>
     </div>
@@ -223,15 +223,15 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
             <div className="w-11 h-11 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xl">👤</div>
             <div>
               <h2 className="text-base font-black text-white">{emp.name || '—'}</h2>
-              <p className="text-xs text-slate-400">{emp.email} &nbsp;·&nbsp; {emp.jobRole || 'No role'}</p>
+              <p className="text-sm text-slate-400">{emp.email} &nbsp;·&nbsp; {emp.jobRole || 'No role'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => exportEmployeePDF(emp, empReports, empAssignments, modMap)}
-              className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-xs font-bold transition-all flex items-center gap-1">
-              ⬇ PDF
+              className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-sm font-bold transition-all flex items-center gap-1">
+              Download PDF
             </button>
-            <button onClick={onClose} className="w-8 h-8 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all">&times;</button>
+            <button onClick={onClose} aria-label="Close" title="Close" className="w-8 h-8 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all">&times;</button>
           </div>
         </div>
 
@@ -239,13 +239,13 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
         <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-slate-700/50 border-b border-slate-700/50">
           {[
             { label: 'Assessments', value: distinctAssessments, color: 'text-indigo-400' },
-            { label: 'Latest Score', value: latestReport && latestReport.score != null ? `${latestReport.score}%` : '—', color: latestReport?.score != null ? ratingStyle(ratingForReport(latestReport)).text : 'text-slate-500' },
+            { label: 'Latest Score', value: latestReport && latestReport.score != null ? `${latestReport.score}%` : '—', color: latestReport?.score != null ? ratingStyle(ratingForReport(latestReport)).text : 'text-slate-400' },
             { label: 'Avg Progress', value: empLiveAssignments.length > 0 ? `${Math.round(empLiveAssignments.reduce((s,a) => s + assignmentProgress(a), 0) / empLiveAssignments.length)}%` : '—', color: 'text-emerald-400' },
-            { label: 'Rating', value: latestReport ? ratingForReport(latestReport) : '—', color: latestReport ? ratingStyle(ratingForReport(latestReport)).text : 'text-slate-500' },
+            { label: 'Rating', value: latestReport ? ratingForReport(latestReport) : '—', color: latestReport ? ratingStyle(ratingForReport(latestReport)).text : 'text-slate-400' },
           ].map((s, i) => (
             <div key={i} className="py-3 px-4 text-center">
               <p className={`text-sm font-black ${s.color}`}>{s.value}</p>
-              <p className="text-xs text-slate-600 font-semibold">{s.label}</p>
+              <p className="text-sm text-slate-400 font-semibold">{s.label}</p>
             </div>
           ))}
         </div>
@@ -273,15 +273,15 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
                   { label: 'Status', value: emp.status || 'Active' },
                 ].map(item => (
                   <div key={item.label} className="rounded-xl bg-slate-800/60 border border-slate-700/40 p-3">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-0.5">{item.label}</p>
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-0.5">{item.label}</p>
                     <p className="text-sm font-semibold text-white truncate" title={item.value}>{item.value}</p>
                   </div>
                 ))}
               </div>
               {(emp.jobDescription || emp.jobDescriptionPreview) && (
                 <div className="rounded-xl bg-slate-800/60 border border-slate-700/40 p-3">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Job Description</p>
-                  <p className="text-xs text-slate-400 leading-relaxed line-clamp-4">{emp.jobDescription || emp.jobDescriptionPreview}</p>
+                  <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Job Description</p>
+                  <p className="text-sm text-slate-400 leading-relaxed line-clamp-4">{emp.jobDescription || emp.jobDescriptionPreview}</p>
                 </div>
               )}
             </div>
@@ -293,14 +293,14 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
               {empReports.length === 0 ? (
                 <div className="text-center py-10">
                   <div className="text-4xl mb-2 opacity-20">📝</div>
-                  <p className="text-sm text-slate-500">No assessments completed yet</p>
+                  <p className="text-sm text-slate-400">No assessments completed yet</p>
                 </div>
               ) : empReports.map(r => (
                 <div key={r.id} className="rounded-xl bg-slate-800/60 border border-slate-700/40 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-white truncate">{r.assessmentTitle || 'Assessment'}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{reportDate(r) ? new Date(reportDate(r)).toLocaleDateString() : '—'}</p>
+                      <p className="text-sm text-slate-400 mt-0.5">{reportDate(r) ? new Date(reportDate(r)).toLocaleDateString() : '—'}</p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {r.score != null && (
@@ -308,25 +308,25 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
                       )}
                     </div>
                   </div>
-                  <span className={`mt-2 inline-block text-xs font-bold px-2.5 py-0.5 rounded-full ${ratingTag(r)}`}>
+                  <span className={`mt-2 inline-block text-sm font-bold px-2.5 py-0.5 rounded-full ${ratingTag(r)}`}>
                     {ratingForReport(r)}
                   </span>
                   {r.weakAreas?.length > 0 && (
                     <div className="mt-2">
-                      <p className="text-xs font-semibold text-slate-500 mb-1">Skill gaps:</p>
+                      <p className="text-sm font-semibold text-slate-400 mb-1">Skill gaps:</p>
                       <div className="flex flex-wrap gap-1">
                         {r.weakAreas.slice(0, 5).map((w, i) => (
-                          <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-300 border border-red-500/20">{w}</span>
+                          <span key={i} className="text-sm px-2 py-0.5 rounded-full bg-red-500/10 text-red-300 border border-red-500/20">{w}</span>
                         ))}
                       </div>
                     </div>
                   )}
                   {r.strongAreas?.length > 0 && (
                     <div className="mt-2">
-                      <p className="text-xs font-semibold text-slate-500 mb-1">Strengths:</p>
+                      <p className="text-sm font-semibold text-slate-400 mb-1">Strengths:</p>
                       <div className="flex flex-wrap gap-1">
                         {r.strongAreas.slice(0, 5).map((s, i) => (
-                          <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{s}</span>
+                          <span key={i} className="text-sm px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{s}</span>
                         ))}
                       </div>
                     </div>
@@ -342,7 +342,7 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
               {empAssignments.length === 0 ? (
                 <div className="text-center py-10">
                   <div className="text-4xl mb-2 opacity-20">📚</div>
-                  <p className="text-sm text-slate-500">No modules assigned yet</p>
+                  <p className="text-sm text-slate-400">No modules assigned yet</p>
                 </div>
               ) : empAssignments.map(a => {
                 const mod = modMap[a.assignable_id];
@@ -351,21 +351,21 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-white truncate">{mod?.title || a.title || a.assignable_id || 'Module'}</p>
-                        {mod?.description && <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{mod.description}</p>}
+                        {mod?.description && <p className="text-sm text-slate-400 mt-0.5 line-clamp-1">{mod.description}</p>}
                       </div>
-                      <span className={`flex-shrink-0 text-xs font-bold px-2.5 py-0.5 rounded-full border capitalize ${
+                      <span className={`flex-shrink-0 text-sm font-bold px-2.5 py-0.5 rounded-full border capitalize ${
                         a.status === 'completed' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' :
                         a.status === 'in_progress' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' :
                         'bg-slate-700/40 text-slate-400 border-slate-600/40'
                       }`}>{a.status || 'assigned'}</span>
                     </div>
-                    <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
+                    <div className="mt-2 flex items-center gap-4 text-sm text-slate-400">
                       {a.created_at && <span>Assigned: {new Date(a.created_at).toLocaleDateString()}</span>}
                       {a.status === 'in_progress' && a.updated_at && <span>Last activity: {new Date(a.updated_at).toLocaleDateString()}</span>}
                       {a.status === 'completed' && a.updated_at && <span>Completed: {new Date(a.updated_at).toLocaleDateString()}</span>}
                       {a.status !== 'cancelled' && <span>Progress: {Math.round(assignmentProgress(a))}%</span>}
                     </div>
-                    {mod?.estimatedDuration && <p className="mt-1 text-xs text-slate-600">Duration: {mod.estimatedDuration}</p>}
+                    {mod?.estimatedDuration && <p className="mt-1 text-sm text-slate-400">Duration: {mod.estimatedDuration}</p>}
                   </div>
                 );
               })}
@@ -378,7 +378,7 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
               {timeline.length === 0 ? (
                 <div className="text-center py-10">
                   <div className="text-4xl mb-2 opacity-20">🕐</div>
-                  <p className="text-sm text-slate-500">No activity yet</p>
+                  <p className="text-sm text-slate-400">No activity yet</p>
                 </div>
               ) : (
                 <div className="relative">
@@ -386,11 +386,11 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
                   <div className="space-y-4 pl-10">
                     {timeline.map((ev, i) => (
                       <div key={i} className="relative">
-                        <div className="absolute -left-[26px] top-1 w-5 h-5 rounded-full bg-slate-800 border-2 border-slate-600 flex items-center justify-center text-[10px]">{ev.icon}</div>
+                        <div className="absolute -left-[26px] top-1 w-5 h-5 rounded-full bg-slate-800 border-2 border-slate-600 flex items-center justify-center text-xs">{ev.icon}</div>
                         <div className="rounded-xl bg-slate-800/60 border border-slate-700/40 p-3">
                           <p className={`text-sm font-semibold ${ev.color}`}>{ev.label}</p>
-                          {ev.sub && <p className="text-xs text-slate-500 mt-0.5">{ev.sub}</p>}
-                          <p className="text-xs text-slate-600 mt-0.5">{ev.date.toLocaleDateString()} {ev.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                          {ev.sub && <p className="text-sm text-slate-400 mt-0.5">{ev.sub}</p>}
+                          <p className="text-sm text-slate-400 mt-0.5">{ev.date.toLocaleDateString()} {ev.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                         </div>
                       </div>
                     ))}
@@ -414,6 +414,7 @@ export default function AdminDashboard() {
 
   // Core
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [, setCompany] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [stats, setStats] = useState(null);
@@ -454,6 +455,7 @@ export default function AdminDashboard() {
 
   const loadAll = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       // Server-side figures (company-scoped); used for pending approvals which
       // include ApprovalRequests that the client cannot see.
@@ -469,6 +471,9 @@ export default function AdminDashboard() {
         authFetch('/api/assessments/reports/all').catch(() => []),
       ]);
 
+      if (usersRes.status === 'rejected' && assignmentsRes.status === 'rejected') {
+        setLoadError(usersRes.reason?.message || 'Could not load dashboard data.');
+      }
       const uArr = asArray(usersRes.status === 'fulfilled' ? usersRes.value : [], 'users');
       const mArr = asArray(modulesRes.status === 'fulfilled' ? modulesRes.value : [], 'modules');
       const aAll = asArray(assignmentsRes.status === 'fulfilled' ? assignmentsRes.value : [], 'assignments');
@@ -536,7 +541,7 @@ export default function AdminDashboard() {
         ratings: ratingDistribution(submissions.map(ratingForReport)),
       });
     } catch (err) {
-      showToast(err.message || 'Failed to load dashboard', 'error');
+      setLoadError(err.message || 'Failed to load dashboard');
     } finally {
       setLoading(false);
     }
@@ -546,7 +551,7 @@ export default function AdminDashboard() {
     setCodesLoading(true);
     authFetch('/api/admin/codes')
       .then(d => setCodes(Array.isArray(d) ? d : (d?.codes || [])))
-      .catch(() => {})
+      .catch(err => showToast(err.message || 'Could not load access codes', 'error'))
       .finally(() => setCodesLoading(false));
   };
 
@@ -559,11 +564,13 @@ export default function AdminDashboard() {
       setPendingRequests(prev => prev.filter(r => r.id !== id));
       setAllRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r));
       setStats(prev => prev ? { ...prev, pendingRequests: Math.max(0, prev.pendingRequests - 1) } : prev);
-    } catch (err) { showToast(err.message || 'Failed to approve', 'error'); }
+      return true;
+    } catch (err) { showToast(err.message || 'Failed to approve', 'error'); return false; }
     finally { setApprovingId(null); }
   };
 
   const rejectRequest = async (id) => {
+    if (!window.confirm('Reject this assignment request?')) return false;
     setApprovingId(id);
     try {
       await authFetch(`/api/assignments/requests/${id}/reject`, { method: 'POST' });
@@ -571,7 +578,8 @@ export default function AdminDashboard() {
       setPendingRequests(prev => prev.filter(r => r.id !== id));
       setAllRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected' } : r));
       setStats(prev => prev ? { ...prev, pendingRequests: Math.max(0, prev.pendingRequests - 1) } : prev);
-    } catch (err) { showToast(err.message || 'Failed to reject', 'error'); }
+      return true;
+    } catch (err) { showToast(err.message || 'Failed to reject', 'error'); return false; }
     finally { setApprovingId(null); }
   };
 
@@ -594,7 +602,7 @@ export default function AdminDashboard() {
         body: JSON.stringify({
           role: newCodeRole,
           label: newCodeLabel.trim() || undefined,
-          maxUsage: newCodeMax ? parseInt(newCodeMax) : undefined,
+          maxUsage: newCodeMax ? parseInt(newCodeMax, 10) : undefined,
           expiresAt: newCodeExpiry || undefined,
         }),
       });
@@ -688,7 +696,8 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0F172A] px-4 sm:px-6 py-8 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-[#0F172A]">
+      <PageContainer>
       {/* Employee detail popup */}
       {selectedEmployee && (
         <EmployeeDetailPopup
@@ -712,8 +721,8 @@ export default function AdminDashboard() {
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <div className="relative w-full max-w-lg rounded-2xl border border-slate-700/60 bg-[#131C2E] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between p-5 border-b border-slate-700/50">
-                <div><h2 className="text-base font-black text-white">Assignment Request</h2><p className="text-xs text-slate-400 mt-0.5">Review and take action</p></div>
-                <button onClick={() => setSelectedRequest(null)} className="w-8 h-8 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all">&times;</button>
+                <div><h2 className="text-lg font-black text-white">Assignment Request</h2><p className="text-sm text-slate-400 mt-0.5">Review and take action</p></div>
+                <button onClick={() => setSelectedRequest(null)} aria-label="Close" title="Close" className="w-8 h-8 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all">&times;</button>
               </div>
               <div className="p-5 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
@@ -726,7 +735,7 @@ export default function AdminDashboard() {
                     { label: 'Priority', value: req.priority || 'medium', icon: '🎯', cls: 'capitalize' },
                   ].map(item => (
                     <div key={item.label} className="rounded-lg bg-slate-800/50 border border-slate-700/40 p-3">
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-0.5">{item.icon} {item.label}</p>
+                      <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-0.5">{item.icon} {item.label}</p>
                       <p className={`text-sm font-semibold text-white ${item.cls || ''}`}>{item.value}</p>
                     </div>
                   ))}
@@ -734,14 +743,10 @@ export default function AdminDashboard() {
               </div>
               {req.status === 'pending' && (
                 <div className="flex gap-3 p-5 border-t border-slate-700/50">
-                  <button onClick={() => { approveRequest(req.id); setSelectedRequest(null); }} disabled={approvingId === req.id}
-                    className="flex-1 py-2.5 rounded-xl bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30 text-sm font-bold transition-all disabled:opacity-50">
-                    ✓ Approve
-                  </button>
-                  <button onClick={() => { rejectRequest(req.id); setSelectedRequest(null); }} disabled={approvingId === req.id}
-                    className="flex-1 py-2.5 rounded-xl bg-red-600/20 border border-red-500/30 text-red-300 hover:bg-red-600/30 text-sm font-bold transition-all disabled:opacity-50">
-                    ✕ Reject
-                  </button>
+                  <Button variant="success" className="flex-1" loading={approvingId === req.id} disabled={!!approvingId}
+                    onClick={async () => { if (await approveRequest(req.id)) setSelectedRequest(null); }}>Approve</Button>
+                  <Button variant="danger" className="flex-1" disabled={!!approvingId}
+                    onClick={async () => { if (await rejectRequest(req.id)) setSelectedRequest(null); }}>Reject</Button>
                 </div>
               )}
             </div>
@@ -749,51 +754,51 @@ export default function AdminDashboard() {
         );
       })()}
 
-      {stats?.pendingRequests > 0 && (
-        <div className="mb-5 flex justify-end">
-          <button onClick={() => setActiveTab('approvals')} className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30 transition-all">
-            ⚠️ {stats.pendingRequests} Pending
-          </button>
+      <PageHeader
+        icon="👑"
+        title="Admin Dashboard"
+        subtitle="Platform-wide analytics & enterprise control"
+        actions={
+          <>
+            {stats?.pendingRequests > 0 && (
+              <Button variant="danger" onClick={() => setActiveTab('approvals')}>
+                {stats.pendingRequests} pending {stats.pendingRequests === 1 ? 'approval' : 'approvals'}
+              </Button>
+            )}
+            <Button variant="secondary" loading={loading} onClick={() => { loadAll(); loadCodes(); }}>Refresh</Button>
+          </>
+        }
+      />
+
+      {loadError && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <span>{loadError}</span>
+          <Button variant="danger" size="sm" onClick={() => { loadAll(); loadCodes(); }}>Retry</Button>
         </div>
       )}
 
-      {/* Page header */}
-      <div className="mb-8 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-2xl">👑</div>
-          <div>
-            <h1 className="text-3xl font-black text-white">Admin Dashboard</h1>
-            <p className="text-slate-400 text-sm">Platform-wide analytics &amp; enterprise control</p>
-          </div>
-        </div>
-        <button onClick={() => { loadAll(); loadCodes(); }}
-          className="px-4 py-2 rounded-xl bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white text-sm font-semibold transition-all flex items-center gap-2">
-          <span className="text-base">↻</span> Refresh
-        </button>
-      </div>
-
       {/* Stats */}
       {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4 mb-8">{[...Array(12)].map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">{[...Array(12)].map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}</div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">
           {statCards.map((s, i) => <StatCard key={i} {...s} />)}
         </div>
       )}
 
       {/* Rating distribution of the latest submissions */}
       {!loading && hasSubmissions && stats?.ratings && (
-        <div className="rounded-xl border border-slate-700/40 bg-slate-800/30 p-4 mb-8">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Rating distribution</h3>
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5 mb-6">
+          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">Rating distribution</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             {stats.ratings.map((x) => (
               <div key={x.label} className="min-w-0" title={`${x.label}: score ${ratingStyle(x.label).range}`}>
                 <div className="flex items-baseline justify-between gap-2 mb-1">
                   <span className={`text-sm font-bold truncate ${ratingStyle(x.label).text}`}>{x.label}</span>
-                  <span className="text-xs text-slate-400 shrink-0">{x.count} ({Math.round(x.percent)}%)</span>
+                  <span className="text-sm text-slate-400 shrink-0">{x.count} ({Math.round(x.percent)}%)</span>
                 </div>
                 <div className="h-2 rounded-full bg-slate-800 overflow-hidden"><div className={`h-full ${ratingStyle(x.label).bar}`} style={{ width: `${x.percent}%` }} /></div>
-                <p className="text-[11px] text-slate-500 mt-1">{ratingStyle(x.label).range}</p>
+                <p className="text-xs text-slate-400 mt-1">{ratingStyle(x.label).range}</p>
               </div>
             ))}
           </div>
@@ -808,9 +813,9 @@ export default function AdminDashboard() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {/* User Breakdown */}
-            <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+            <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5">
               <div className="flex items-center justify-between mb-5">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">User Breakdown</h3>
+                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">User Breakdown</h3>
                 <span className="text-2xl">👥</span>
               </div>
               <div className="space-y-3">
@@ -830,13 +835,13 @@ export default function AdminDashboard() {
                   </div>
                 ))}
               </div>
-              <button onClick={() => navigate('/admin/users')} className="mt-5 w-full py-2 rounded-xl bg-slate-700/40 hover:bg-slate-700/70 text-xs font-bold text-slate-300 transition-all">Manage Users →</button>
+              <Button variant="secondary" className="mt-5 w-full" onClick={() => navigate('/admin/users')}>Manage Users</Button>
             </div>
 
             {/* Learning Activity */}
-            <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+            <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5">
               <div className="flex items-center justify-between mb-5">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Learning Activity</h3>
+                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Learning Activity</h3>
                 <span className="text-2xl">📚</span>
               </div>
               <div className="space-y-4">
@@ -850,22 +855,22 @@ export default function AdminDashboard() {
                   <div key={i} className="flex items-center gap-3">
                     <span className="text-xl w-8 flex-shrink-0">{item.icon}</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-slate-500">{item.label}</p>
-                      <p className="text-base font-black text-white leading-tight">{item.value} <span className="text-xs font-normal text-slate-500">{item.sub}</span></p>
+                      <p className="text-sm text-slate-400">{item.label}</p>
+                      <p className="text-base font-black text-white leading-tight">{item.value} <span className="text-sm font-normal text-slate-400">{item.sub}</span></p>
                     </div>
                   </div>
                 ))}
               </div>
-              <button onClick={() => navigate('/admin/modules')} className="mt-5 w-full py-2 rounded-xl bg-slate-700/40 hover:bg-slate-700/70 text-xs font-bold text-slate-300 transition-all">Manage Modules →</button>
+              <Button variant="secondary" className="mt-5 w-full" onClick={() => navigate('/admin/modules')}>Manage Modules</Button>
             </div>
 
             {/* Assignment Pipeline */}
-            <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-6">
+            <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5">
               <div className="flex items-center justify-between mb-5">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Assignment Pipeline</h3>
+                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Assignment Pipeline</h3>
                 <span className="text-2xl">📋</span>
               </div>
-              <p className="text-[11px] text-slate-500 -mt-3 mb-4">Module assignments by status. Total = Not Started + In Progress + Completed + Cancelled.</p>
+              <p className="text-xs text-slate-400 -mt-3 mb-4">Module assignments by status. Total = Not Started + In Progress + Completed + Cancelled.</p>
               <div className="grid grid-cols-2 gap-3 mb-4">
                 {[
                   { label: 'Total', value: stats?.totalAssignments || 0, description: 'All module assignments', tooltip: 'Every module assignment given to users in your company, including cancelled ones. Equals the four tiles below added together.', border: 'border-indigo-500/30', bg: 'bg-indigo-500/5', text: 'text-indigo-400' },
@@ -881,40 +886,40 @@ export default function AdminDashboard() {
               {stats?.pendingRequests > 0 && (
                 <div className="rounded-xl bg-rose-500/10 border border-rose-500/20 p-3 mb-3 flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-bold text-rose-300">{stats.pendingRequests} Pending Approval{stats.pendingRequests > 1 ? 's' : ''}</p>
-                    <p className="text-xs text-rose-400/60">Requires your review</p>
+                    <p className="text-sm font-bold text-rose-300">{stats.pendingRequests} Pending Approval{stats.pendingRequests > 1 ? 's' : ''}</p>
+                    <p className="text-sm text-rose-400/60">Requires your review</p>
                   </div>
-                  <button onClick={() => setActiveTab('approvals')} className="text-xs font-bold text-rose-300 hover:text-rose-200">Review →</button>
+                  <Button variant="danger" size="sm" onClick={() => setActiveTab('approvals')}>Review</Button>
                 </div>
               )}
-              <button onClick={() => navigate('/admin/assignments')} className="w-full py-2 rounded-xl bg-slate-700/40 hover:bg-slate-700/70 text-xs font-bold text-slate-300 transition-all">Manage Assignments →</button>
+              <Button variant="secondary" className="w-full" onClick={() => navigate('/admin/assignments')}>Manage Assignments</Button>
             </div>
           </div>
 
           {/* Quick access codes preview on overview */}
-          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
-            <div className="flex items-center justify-between mb-4">
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2">
                 <span className="text-xl">🔑</span>
                 <div>
                   <h3 className="text-sm font-black text-amber-300">Company Access Codes</h3>
-                  <p className="text-xs text-slate-500">Share these codes to onboard your team</p>
+                  <p className="text-sm text-slate-400">Share these codes to onboard your team</p>
                 </div>
               </div>
-              <button onClick={() => setActiveTab('codes')} className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-bold hover:bg-amber-500/30 transition-all">Manage All →</button>
+              <Button variant="secondary" size="sm" onClick={() => setActiveTab('codes')}>Manage all codes</Button>
             </div>
             {codesLoading ? (
-              <div className="text-xs text-slate-500">Loading codes...</div>
+              <div className="text-sm text-slate-400">Loading codes...</div>
             ) : codes.length === 0 ? (
-              <p className="text-xs text-slate-500">No access codes yet. Go to Access Codes tab to create one.</p>
+              <p className="text-sm text-slate-300">No access codes yet. Open the Access Codes tab to create one.</p>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                 {[...managerCodes.slice(0, 1), ...employeeCodes.slice(0, 1)].map(code => (
                   <div key={code.id} className={`flex items-center justify-between rounded-xl border px-4 py-3 ${code.role === 'manager' ? 'border-amber-500/30 bg-amber-500/5' : 'border-indigo-500/30 bg-indigo-500/5'}`}>
                     <div>
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-0.5">{code.role} code</p>
+                      <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-0.5">{code.role} code</p>
                       <p className={`font-mono font-bold tracking-widest ${code.role === 'manager' ? 'text-amber-300' : 'text-indigo-300'}`}>{code.code}</p>
-                      <p className="text-xs text-slate-600 mt-0.5">{code.usageCount || 0} signups{code.maxUsage ? ` / ${code.maxUsage}` : ''}</p>
+                      <p className="text-sm text-slate-400 mt-0.5">{code.usageCount || 0} signups{code.maxUsage ? ` / ${code.maxUsage}` : ''}</p>
                     </div>
                     <div className="flex gap-1.5">
                       <CopyBtn text={code.code} />
@@ -940,12 +945,12 @@ export default function AdminDashboard() {
             const activeEmp = empCodes.filter(c => c.isActive).length;
             const activeMgr = mgrCodes.filter(c => c.isActive).length;
             return (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
                 {[
                   { label: 'Employee Signups', value: totalEmpSignups, icon: '👤', color: 'indigo', description: 'Sign-ups via employee codes', tooltip: 'Sum of the usage counts of all employee access codes (each successful sign-up with a code adds one).' },
                   { label: 'Manager Signups', value: totalMgrSignups, icon: '👔', color: 'amber', description: 'Sign-ups via manager codes', tooltip: 'Sum of the usage counts of all manager access codes.' },
-                  { label: 'Active Emp Codes', value: activeEmp, icon: '🔑', color: 'emerald', description: 'Employee codes switched on', tooltip: 'Employee access codes that are enabled (not disabled). Expired codes are still counted until disabled.' },
-                  { label: 'Active Mgr Codes', value: activeMgr, icon: '🗝️', color: 'purple', description: 'Manager codes switched on', tooltip: 'Manager access codes that are enabled (not disabled). Expired codes are still counted until disabled.' },
+                  { label: 'Active Employee Codes', value: activeEmp, icon: '🔑', color: 'emerald', description: 'Employee codes switched on', tooltip: 'Employee access codes that are enabled (not disabled). Expired codes are still counted until disabled.' },
+                  { label: 'Active Manager Codes', value: activeMgr, icon: '🗝️', color: 'purple', description: 'Manager codes switched on', tooltip: 'Manager access codes that are enabled (not disabled). Expired codes are still counted until disabled.' },
                 ].map(s => {
                   const cls = { indigo: 'border-indigo-500/20 bg-indigo-500/5 text-indigo-400', amber: 'border-amber-500/20 bg-amber-500/5 text-amber-400', emerald: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400', purple: 'border-purple-500/20 bg-purple-500/5 text-purple-400' }[s.color];
                   const [bc, bg, tc] = cls.split(' ');
@@ -965,20 +970,17 @@ export default function AdminDashboard() {
           </div>
 
           {/* Create new code */}
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-white">All Access Codes ({codes.length})</h3>
-            <button onClick={() => setShowNewForm(v => !v)}
-              className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 rounded-xl text-white font-bold text-sm transition-colors">
-              {showNewForm ? '✕ Cancel' : '+ New Code'}
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-base font-black text-white">All Access Codes ({codes.length})</h3>
+            <Button variant="primary" onClick={() => setShowNewForm(v => !v)}>{showNewForm ? 'Cancel' : 'New Code'}</Button>
           </div>
 
           {showNewForm && (
-            <div className="bg-slate-800/60 border border-violet-500/30 rounded-2xl p-5">
-              <h3 className="text-sm font-bold text-white mb-4">Create New Access Code</h3>
-              <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="bg-slate-800/60 border border-violet-500/30 rounded-2xl p-4 sm:p-5">
+              <h3 className="text-base font-bold text-white mb-4">Create New Access Code</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Role Type</label>
+                  <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Role Type</label>
                   <select value={newCodeRole} onChange={e => setNewCodeRole(e.target.value)}
                     className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60">
                     <option value="employee">Employee</option>
@@ -986,26 +988,24 @@ export default function AdminDashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Label (optional)</label>
+                  <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Label (optional)</label>
                   <input value={newCodeLabel} onChange={e => setNewCodeLabel(e.target.value)} placeholder="e.g. Engineering Team"
                     className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/60" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Max Uses (optional)</label>
+                  <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Max Uses (optional)</label>
                   <input type="number" min="1" value={newCodeMax} onChange={e => setNewCodeMax(e.target.value)} placeholder="Unlimited"
                     className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/60" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Expiry Date (optional)</label>
+                  <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Expiry Date (optional)</label>
                   <input type="date" value={newCodeExpiry} onChange={e => setNewCodeExpiry(e.target.value)}
                     className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60" />
                 </div>
               </div>
-              <div className="flex gap-3">
-                <button onClick={() => setShowNewForm(false)} className="flex-1 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm transition-colors">Cancel</button>
-                <button onClick={createCode} disabled={codeBusy === 'create'} className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white font-bold text-sm transition-colors">
-                  {codeBusy === 'create' ? 'Creating...' : 'Create Code'}
-                </button>
+              <div className="flex flex-wrap gap-3">
+                <Button variant="secondary" onClick={() => setShowNewForm(false)}>Cancel</Button>
+                <Button variant="primary" loading={codeBusy === 'create'} onClick={createCode}>{codeBusy === 'create' ? 'Creating...' : 'Create Code'}</Button>
               </div>
             </div>
           )}
@@ -1016,18 +1016,18 @@ export default function AdminDashboard() {
             <div className="text-center py-12 rounded-2xl border border-slate-700/40 bg-slate-800/20">
               <div className="text-4xl mb-3 opacity-20">🔑</div>
               <p className="text-slate-400 font-semibold">No access codes yet</p>
-              <p className="text-slate-600 text-sm mt-1">Create your first code to start onboarding employees</p>
+              <p className="text-slate-400 text-sm mt-1">Create your first code to start onboarding employees</p>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 items-start">
               {/* Manager codes */}
               <div>
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">Manager Codes</span>
-                  <span className="text-xs text-slate-500">({managerCodes.length})</span>
+                  <span className="text-sm font-bold text-amber-300 uppercase tracking-wider">Manager Codes</span>
+                  <span className="text-sm text-slate-400">({managerCodes.length})</span>
                 </div>
                 {managerCodes.length === 0 ? (
-                  <p className="text-slate-600 text-sm">No manager codes. Create one above.</p>
+                  <p className="rounded-xl border border-dashed border-slate-700 p-4 text-slate-300 text-sm">No manager codes. Create one above.</p>
                 ) : (
                   <div className="space-y-3">
                     {managerCodes.map(code => <CodeCard key={code.id} code={code} busy={codeBusy} doAction={doCodeAction} deleteCode={deleteCode} />)}
@@ -1038,11 +1038,11 @@ export default function AdminDashboard() {
               {/* Employee codes */}
               <div>
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider">Employee Codes</span>
-                  <span className="text-xs text-slate-500">({employeeCodes.length})</span>
+                  <span className="text-sm font-bold text-indigo-300 uppercase tracking-wider">Employee Codes</span>
+                  <span className="text-sm text-slate-400">({employeeCodes.length})</span>
                 </div>
                 {employeeCodes.length === 0 ? (
-                  <p className="text-slate-600 text-sm">No employee codes. Create one above.</p>
+                  <p className="rounded-xl border border-dashed border-slate-700 p-4 text-slate-300 text-sm">No employee codes. Create one above.</p>
                 ) : (
                   <div className="space-y-3">
                     {employeeCodes.map(code => <CodeCard key={code.id} code={code} busy={codeBusy} doAction={doCodeAction} deleteCode={deleteCode} />)}
@@ -1058,24 +1058,18 @@ export default function AdminDashboard() {
       {activeTab === 'approvals' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
-              <p className="text-2xl font-black text-amber-400">{pendingRequests.length}</p>
-              <p className="text-xs font-bold text-amber-400/70 uppercase tracking-widest mt-0.5">Pending</p>
-            </div>
-            <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4 text-center">
-              <p className="text-2xl font-black text-indigo-400">{allRequests.length}</p>
-              <p className="text-xs font-bold text-indigo-400/70 uppercase tracking-widest mt-0.5">Total Requests</p>
-            </div>
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-center">
-              <p className="text-2xl font-black text-emerald-400">{allRequests.length - pendingRequests.length}</p>
-              <p className="text-xs font-bold text-emerald-400/70 uppercase tracking-widest mt-0.5">Reviewed</p>
-            </div>
+            <StatCard label="Pending" value={pendingRequests.length} icon="⏳" description="Waiting for your decision" tooltip="Manager assignment requests that still need an approve or reject decision."
+              borderClass="border-amber-500/20" bgClass="bg-amber-500/5" textClass="text-amber-400" />
+            <StatCard label="Total Requests" value={allRequests.length} icon="📋" description="All assignment requests" tooltip="Every assignment request raised by managers in your company, whatever its status."
+              borderClass="border-indigo-500/20" bgClass="bg-indigo-500/5" textClass="text-indigo-400" />
+            <StatCard label="Reviewed" value={allRequests.length - pendingRequests.length} icon="✅" description="Approved or rejected" tooltip="Requests that already have a decision (total minus pending)."
+              borderClass="border-emerald-500/20" bgClass="bg-emerald-500/5" textClass="text-emerald-400" />
           </div>
 
           <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden shadow-xl">
-            <div className="hidden md:grid border-b border-slate-700/40 bg-slate-800/30 px-5 py-3" style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr 160px' }}>
+            <div className="hidden md:grid border-b border-slate-700/40 bg-slate-800/30 px-5 py-3" style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr 230px' }}>
               {['Module', 'Employee', 'Manager', 'Date', 'Actions'].map(h => (
-                <div key={h} className="text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</div>
+                <div key={h} className="text-sm font-bold text-slate-400 uppercase tracking-widest">{h}</div>
               ))}
             </div>
 
@@ -1095,7 +1089,7 @@ export default function AdminDashboard() {
               <div className="text-center py-16">
                 <div className="text-5xl mb-3 opacity-20">✅</div>
                 <p className="text-base font-bold text-slate-400">No Pending Requests</p>
-                <p className="text-xs text-slate-600 mt-1">All assignment requests have been reviewed.</p>
+                <p className="text-sm text-slate-300 mt-1">All assignment requests have been reviewed.</p>
               </div>
             ) : (
               <div className="divide-y divide-slate-700/20">
@@ -1106,26 +1100,20 @@ export default function AdminDashboard() {
                   return (
                     <div key={req.id} onClick={() => setSelectedRequest(req)}
                       className="group grid grid-stack-md items-center px-5 py-4 hover:bg-slate-800/30 cursor-pointer transition-all"
-                      style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr 160px' }}>
+                      style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr 230px' }}>
                       <div className="min-w-0 pr-3">
                         <p className="text-sm font-semibold text-white truncate">{mod?.title || 'Unknown Module'}</p>
-                        <p className="text-xs text-slate-600 truncate">{mod?.difficulty || 'Module Assignment'}</p>
+                        <p className="text-sm text-slate-400 truncate">{mod?.difficulty || 'Module Assignment'}</p>
                       </div>
                       <div className="min-w-0 pr-3">
                         <p className="text-sm text-slate-300 truncate">{employee?.name || '—'}</p>
-                        <p className="text-xs text-slate-600 truncate">{employee?.email || req.employee_id || '—'}</p>
+                        <p className="text-sm text-slate-400 truncate">{employee?.email || req.employee_id || '—'}</p>
                       </div>
                       <div className="min-w-0 pr-3"><p className="text-sm text-slate-300 truncate">{manager?.name || '—'}</p></div>
-                      <div className="text-xs text-slate-500 pr-3 whitespace-nowrap">{new Date(req.requested_at || req.created_at || Date.now()).toLocaleDateString()}</div>
-                      <div className="flex gap-1.5">
-                        <button onClick={e => { e.stopPropagation(); approveRequest(req.id); }} disabled={approvingId === req.id}
-                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30 text-xs font-bold transition-all disabled:opacity-50">
-                          {approvingId === req.id ? '…' : '✓'}
-                        </button>
-                        <button onClick={e => { e.stopPropagation(); rejectRequest(req.id); }} disabled={approvingId === req.id}
-                          className="px-2.5 py-1.5 rounded-lg bg-red-600/20 border border-red-500/30 text-red-300 hover:bg-red-600/30 text-xs font-bold transition-all disabled:opacity-50">
-                          ✕
-                        </button>
+                      <div className="text-sm text-slate-400 pr-3 whitespace-nowrap">{new Date(req.requested_at || req.created_at || Date.now()).toLocaleDateString()}</div>
+                      <div className="flex flex-wrap gap-2" onClick={e => e.stopPropagation()}>
+                        <Button variant="success" size="sm" loading={approvingId === req.id} disabled={!!approvingId} onClick={() => approveRequest(req.id)}>Approve</Button>
+                        <Button variant="danger" size="sm" disabled={!!approvingId} onClick={() => rejectRequest(req.id)}>Reject</Button>
                       </div>
                     </div>
                   );
@@ -1145,10 +1133,10 @@ export default function AdminDashboard() {
               value={reportSearch}
               onChange={e => setReportSearch(e.target.value)}
               placeholder="Search by name, email, or role..."
-              className="flex-1 min-w-48 px-4 py-2.5 rounded-xl border border-slate-700/60 bg-slate-800/60 text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none text-sm"
+              className="flex-1 min-w-48 px-4 py-2.5 rounded-xl border border-slate-700/60 bg-slate-800/60 text-slate-100 placeholder-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none text-base"
             />
-            <span className="text-xs text-slate-500 whitespace-nowrap">{filteredEmployees.length} employee{filteredEmployees.length !== 1 ? 's' : ''}</span>
-            <button onClick={loadAll} className="px-3 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700 text-slate-400 hover:text-white text-xs font-semibold transition-all">↻ Refresh</button>
+            <span className="text-sm text-slate-400 whitespace-nowrap">{filteredEmployees.length} employee{filteredEmployees.length !== 1 ? 's' : ''}</span>
+            <Button variant="secondary" loading={loading} onClick={loadAll}>Refresh</Button>
           </div>
 
           {/* Table */}
@@ -1167,7 +1155,7 @@ export default function AdminDashboard() {
                 ].map(col => (
                   <button key={col.label}
                     onClick={() => col.field && toggleSort(col.field)}
-                    className={`text-left text-[10px] xl:text-xs font-bold uppercase tracking-wider xl:tracking-widest flex items-center gap-1 min-w-0 truncate ${col.field ? 'text-slate-400 hover:text-slate-200 cursor-pointer' : 'text-slate-500 cursor-default'}`}>
+                    className={`text-left text-xs xl:text-sm font-bold uppercase tracking-wider xl:tracking-widest flex items-center gap-1 min-w-0 truncate ${col.field ? 'text-slate-400 hover:text-slate-200 cursor-pointer' : 'text-slate-400 cursor-default'}`}>
                     {col.label}
                     {col.field && reportSort.field === col.field && <span className="text-indigo-400">{reportSort.dir === 'asc' ? '↑' : '↓'}</span>}
                   </button>
@@ -1182,7 +1170,8 @@ export default function AdminDashboard() {
               ) : filteredEmployees.length === 0 ? (
                 <div className="text-center py-16">
                   <div className="text-5xl mb-3 opacity-20">👥</div>
-                  <p className="text-base font-bold text-slate-400">{reportSearch ? 'No employees match your search' : 'No employees found'}</p>
+                  <p className="text-base font-bold text-slate-300">{reportSearch ? 'No employees match your search' : 'No employees found'}</p>
+                  {reportSearch && <Button variant="secondary" className="mt-4" onClick={() => setReportSearch('')}>Clear search</Button>}
                 </div>
               ) : (
                 <div className="divide-y divide-slate-700/20">
@@ -1205,20 +1194,20 @@ export default function AdminDashboard() {
                         {/* Employee */}
                         <div className="min-w-0 col-span-2 sm:col-span-3 lg:col-span-1 pr-1">
                           <p className="text-sm font-semibold text-white truncate">{emp.name || '—'}</p>
-                          <p className="text-xs text-slate-500 truncate">{emp.email}</p>
+                          <p className="text-sm text-slate-400 truncate">{emp.email}</p>
                         </div>
 
                         {/* Job Role */}
                         <div className="min-w-0 pr-1">
-                          <p className="text-xs text-slate-300 truncate" title={emp.jobRole || undefined}>{emp.jobRole || '—'}</p>
+                          <p className="text-sm text-slate-300 truncate" title={emp.jobRole || undefined}>{emp.jobRole || '—'}</p>
                         </div>
 
                         {/* Assessment Status */}
                         <div className="min-w-0">
-                          <span className={`inline-block max-w-full truncate align-middle text-[11px] xl:text-xs font-bold px-2 py-0.5 rounded-full border ${
+                          <span className={`inline-block max-w-full truncate align-middle text-xs xl:text-sm font-bold px-2 py-0.5 rounded-full border ${
                             assessmentStatus === 'Completed' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' :
                             assessmentStatus === 'In Progress' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
-                            'bg-slate-700/40 text-slate-500 border-slate-600/40'
+                            'bg-slate-700/40 text-slate-400 border-slate-600/40'
                           }`}>{assessmentStatus}</span>
                         </div>
 
@@ -1228,16 +1217,16 @@ export default function AdminDashboard() {
                             <span className={`text-sm font-black ${ratingStyle(ratingForReport(latestReport)).text}`}>
                               {latestReport.score}%
                             </span>
-                          ) : <span className="text-slate-600 text-sm">—</span>}
+                          ) : <span className="text-slate-400 text-sm">—</span>}
                         </div>
 
                         {/* Rating */}
                         <div className="min-w-0">
                           {latestReport ? (
-                            <span title={`Rating: ${ratingForReport(latestReport)}`} className={`inline-block max-w-full truncate align-middle text-[11px] xl:text-xs font-semibold px-2 py-0.5 rounded-full ${ratingTag(latestReport)}`}>
+                            <span title={`Rating: ${ratingForReport(latestReport)}`} className={`inline-block max-w-full truncate align-middle text-xs xl:text-sm font-semibold px-2 py-0.5 rounded-full ${ratingTag(latestReport)}`}>
                               {ratingForReport(latestReport)}
                             </span>
-                          ) : <span className="text-slate-600 text-xs">—</span>}
+                          ) : <span className="text-slate-400 text-sm">—</span>}
                         </div>
 
                         {/* Module Progress */}
@@ -1253,13 +1242,13 @@ export default function AdminDashboard() {
                                 </div>
                               </>
                             );
-                          })() : <span className="text-slate-600 text-xs">—</span>}
+                          })() : <span className="text-slate-400 text-sm">—</span>}
                         </div>
 
                         {/* Last Activity */}
                         <div className="min-w-0">
-                          <p className="text-xs text-slate-400">
-                            {lastActivity ? lastActivity.toLocaleDateString() : <span className="text-slate-600">No activity</span>}
+                          <p className="text-sm text-slate-400">
+                            {lastActivity ? lastActivity.toLocaleDateString() : <span className="text-slate-400">No activity</span>}
                           </p>
                         </div>
                       </div>
@@ -1270,14 +1259,14 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <p className="text-xs text-slate-600">Click any row to view full employee report • PDF download available in detail view</p>
+          <p className="text-sm text-slate-400">Click any row to view full employee report • PDF download available in detail view</p>
         </div>
       )}
 
       {/* ═══════════════════ ASSIGNMENTS ═══════════════════ */}
       {activeTab === 'assignments' && (
-        <div className="rounded-2xl border border-slate-700/40 bg-[#111827] p-6 shadow-xl">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-5">Assignment Summary</h3>
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5 shadow-xl">
+          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-5">Assignment Summary</h3>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
             {[
               { label: 'Total', value: stats?.totalAssignments || 0, description: 'All module assignments', tooltip: 'Every module assignment in your company including cancelled. Total = Not Started + In Progress + Completed + Cancelled.', borderCls: 'border-indigo-500/25', bgCls: 'bg-indigo-500/5', textCls: 'text-indigo-400' },
@@ -1290,11 +1279,10 @@ export default function AdminDashboard() {
                 borderClass={s.borderCls} bgClass={s.bgCls} textClass={s.textCls} className="text-center" />
             ))}
           </div>
-          <button onClick={() => navigate('/admin/assignments')} className="w-full py-3 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 transition-all text-sm font-bold">
-            Manage All Assignments →
-          </button>
+          <Button variant="primary" className="w-full" onClick={() => navigate('/admin/assignments')}>Manage All Assignments</Button>
         </div>
       )}
+      </PageContainer>
     </div>
   );
 }

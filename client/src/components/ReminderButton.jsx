@@ -26,7 +26,7 @@ export default function ReminderButton({ assessmentId, userId, status, lastSentA
 
   if (onCooldown) {
     return (
-      <span className="text-xs text-slate-500 italic whitespace-nowrap">
+      <span className="text-sm text-slate-400 italic whitespace-nowrap">
         Sent {hoursAgo(lastSentAt)}h ago
       </span>
     );
@@ -44,7 +44,7 @@ export default function ReminderButton({ assessmentId, userId, status, lastSentA
         }
       }}
       disabled={sending}
-      className="text-xs px-2.5 py-1 rounded-lg bg-amber-600/20 text-amber-300 border border-amber-500/30 hover:bg-amber-600/40 disabled:opacity-50 transition-colors whitespace-nowrap"
+      className="text-sm font-medium px-3 py-1.5 rounded-lg bg-amber-600/20 text-amber-300 border border-amber-500/30 hover:bg-amber-600/40 disabled:opacity-50 transition-colors whitespace-nowrap"
     >
       {sending ? '⏳ Sending…' : '🔔 Send Reminder'}
     </button>

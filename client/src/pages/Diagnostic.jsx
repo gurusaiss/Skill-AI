@@ -105,7 +105,7 @@ export default function Diagnostic() {
 
   // Derive data from location/localStorage (not hooks, so safe)
   const stored = localStorage.getItem('skillforge:goalResponse');
-  const initialData = location.state || (stored ? JSON.parse(stored) : null);
+  const initialData = location.state || (() => { try { return stored ? JSON.parse(stored) : null; } catch { return null; } })();
 
   // Exactly 5 questions
   const allQuestions = (initialData?.diagnosticQuestions || []).slice(0, 5);
@@ -117,10 +117,10 @@ export default function Diagnostic() {
   // ── Guard (after all hooks) ───────────────────────────────────────────────
   if (!initialData || !userId) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+      <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-16 text-center">
         <div className="text-5xl mb-4">🎯</div>
         <p className="text-slate-200 text-xl font-black">No diagnostic loaded</p>
-        <p className="text-slate-500 text-sm mt-2 mb-6">Enter your learning goal on the home page first.</p>
+        <p className="text-slate-400 text-sm mt-2 mb-6">Enter your learning goal on the home page first.</p>
         <button onClick={() => navigate('/')} className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all">
           ← Go Home
         </button>
@@ -130,7 +130,7 @@ export default function Diagnostic() {
 
   if (questions.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+      <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-16 text-center">
         <p className="text-slate-400 text-lg">No questions generated. Redirecting to dashboard…</p>
         {setTimeout(() => navigate('/dashboard'), 1500) && null}
       </div>
@@ -193,24 +193,24 @@ export default function Diagnostic() {
   const getOptionText = (option) => option.replace(/^[A-D]\)\s*/, '').trim();
 
   return (
-    <div className="mx-auto max-w-2xl px-5 py-8">
+    <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-8">
 
       {/* Header */}
       <div className="text-center mb-6">
         <p className="text-xs font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">
           Step 2 of 2 — Knowledge Quiz
         </p>
-        <h1 className="text-xl font-black text-slate-100">
+        <h1 className="text-2xl font-black text-slate-100">
           How well do you know this already?
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
+        <p className="text-sm text-slate-400 mt-1">
           5 questions · Your answers shape your personalized plan
         </p>
       </div>
 
       {/* Progress bar */}
       <div className="mb-5">
-        <div className="flex justify-between text-xs text-slate-600 mb-1.5 font-semibold">
+        <div className="flex justify-between text-sm text-slate-400 mb-1.5 font-semibold">
           <span>Question {currentIndex + 1} of {questions.length}</span>
           <span>{answeredCount}/{questions.length} answered</span>
         </div>
@@ -233,7 +233,7 @@ export default function Diagnostic() {
                   ? 'w-2 h-2 bg-emerald-500/70'
                   : 'w-2 h-2 bg-slate-700'
               }`}
-              title={`Q${i + 1}`}
+              title={`Question ${i + 1}`} aria-label={`Go to question ${i + 1}`}
             />
           ))}
         </div>
@@ -245,7 +245,7 @@ export default function Diagnostic() {
         {/* Concept banner — shown at top of every question */}
         {currentQuestion.concept && (
           <div className="px-5 pt-4 pb-0 flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-black text-slate-500 uppercase tracking-widest">Concept Tested</span>
+            <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Concept Tested</span>
             <span className="text-xs px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-300 border border-indigo-500/25 font-bold">
               💡 {currentQuestion.concept}
             </span>
@@ -273,23 +273,23 @@ export default function Diagnostic() {
                 ✅ Verified
               </span>
             )}
-            <span className="ml-auto text-xs text-slate-600 font-mono">Q{currentIndex + 1}/{questions.length}</span>
+            <span className="ml-auto text-xs text-slate-400 font-mono">Q{currentIndex + 1}/{questions.length}</span>
           </div>
 
           {/* Question text */}
-          <h2 className="text-base font-black text-slate-100 leading-snug mb-5">
+          <h2 className="text-lg sm:text-xl font-black text-slate-100 leading-snug mb-5">
             {currentQuestion.question}
           </h2>
 
           {/* MCQ Options */}
-          <div className="space-y-2.5">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
             {(currentQuestion.options || []).map((option, idx) => {
               const label = OPTION_LABELS[idx] || String.fromCharCode(65 + idx);
               const isSelected = currentAnswer === option;
               const selectedStyle = isSelected ? OPTION_COLORS.selected[label] : '';
               const labelStyle = isSelected
                 ? OPTION_COLORS.labelSelected[label]
-                : 'border-slate-700 text-slate-500 bg-slate-800/80';
+                : 'border-slate-700 text-slate-300 bg-slate-800/80';
 
               return (
                 <button
@@ -305,7 +305,7 @@ export default function Diagnostic() {
                   <span className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-black border transition-all ${labelStyle}`}>
                     {label}
                   </span>
-                  <span className="text-sm leading-relaxed font-medium">{getOptionText(option)}</span>
+                  <span className="text-base leading-relaxed font-medium">{getOptionText(option)}</span>
                   {isSelected && <span className="ml-auto text-sm opacity-80">✓</span>}
                 </button>
               );
@@ -326,7 +326,7 @@ export default function Diagnostic() {
         <button
           onClick={() => { if (currentIndex > 0 && !animating) setCurrentIndex(i => i - 1); }}
           disabled={currentIndex === 0}
-          className="px-4 py-3 rounded-xl text-sm font-semibold border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
+          className="px-5 py-3.5 rounded-xl text-base font-semibold border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
         >
           ← Back
         </button>
@@ -335,7 +335,7 @@ export default function Diagnostic() {
           <button
             onClick={handleSubmit}
             disabled={!allAnswered}
-            className="flex-1 py-3 rounded-xl font-black text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20"
+            className="flex-1 py-3.5 rounded-xl font-black text-base bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20"
           >
             {allAnswered
               ? '✓ Submit & Build My Learning Plan →'
@@ -345,7 +345,7 @@ export default function Diagnostic() {
           <button
             onClick={() => currentAnswer && !animating && selectOption(currentAnswer)}
             disabled={!currentAnswer}
-            className="flex-1 py-3 rounded-xl font-black text-sm bg-indigo-600 hover:bg-indigo-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex-1 py-3.5 rounded-xl font-black text-base bg-indigo-600 hover:bg-indigo-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Next Question →
           </button>
@@ -355,7 +355,7 @@ export default function Diagnostic() {
       {/* All answered banner */}
       {allAnswered && (
         <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-center">
-          <p className="text-xs text-emerald-400 font-bold">
+          <p className="text-sm text-emerald-400 font-bold">
             ✅ All {questions.length} questions answered — ready to generate your personalized plan!
           </p>
         </div>

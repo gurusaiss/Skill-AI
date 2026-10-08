@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import PageContainer from '../components/PageContainer.jsx';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -9,8 +10,8 @@ const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'h
 
 function RadarChart({ skills }) {
   if (!skills?.length) return null;
-  const size = 220;
-  const cx = size / 2, cy = size / 2, radius = 80;
+  const size = 320;
+  const cx = size / 2, cy = size / 2, radius = 110;
   const count = skills.length;
   const maxVal = 100;
 
@@ -43,7 +44,7 @@ function RadarChart({ skills }) {
   });
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+    <svg width="100%" style={{ maxWidth: 360 }} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Competency radar chart">
       {/* Grid */}
       {rings.map((d, i) => <path key={i} d={d} fill="none" stroke="rgba(99,102,241,0.15)" strokeWidth="1" />)}
       {points.map((p, i) => <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="rgba(99,102,241,0.2)" strokeWidth="1" />)}
@@ -55,11 +56,11 @@ function RadarChart({ skills }) {
       {dataPoints.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="4" fill="#10B981" />)}
       {/* Labels */}
       {points.map((p, i) => {
-        const lx = cx + (radius + 22) * Math.cos(p.angle);
-        const ly = cy + (radius + 22) * Math.sin(p.angle);
+        const lx = cx + (radius + 30) * Math.cos(p.angle);
+        const ly = cy + (radius + 30) * Math.sin(p.angle);
         return (
           <text key={i} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
-            fill="#94A3B8" fontSize="8" fontWeight="500">
+            fill="#94A3B8" fontSize="13" fontWeight="500">
             {skills[i].skill?.split(' ')[0]}
           </text>
         );
@@ -71,7 +72,7 @@ function RadarChart({ skills }) {
 function ProgressBar({ value, max = 100, color = '#6366F1', label, sub }) {
   return (
     <div>
-      <div className="flex justify-between text-xs mb-1">
+      <div className="flex justify-between text-sm mb-1">
         <span className="text-slate-300 font-medium">{label}</span>
         <span className="font-bold" style={{ color }}>{value}%</span>
       </div>
@@ -79,7 +80,7 @@ function ProgressBar({ value, max = 100, color = '#6366F1', label, sub }) {
         <div className="h-full rounded-full transition-all duration-700"
           style={{ width: `${Math.min(100, value)}%`, background: color }} />
       </div>
-      {sub && <div className="text-slate-500 text-xs mt-0.5">{sub}</div>}
+      {sub && <div className="text-slate-400 text-xs mt-0.5">{sub}</div>}
     </div>
   );
 }
@@ -127,12 +128,12 @@ function ModuleCareerTwin({ module, assignment, navigate, moduleId, assignmentId
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
-      <div className="max-w-5xl mx-auto px-6 py-10">
+      <PageContainer>
         {/* Header */}
         <div className="mb-8">
           <button
             onClick={() => navigate(`/module/${moduleId}/learn${assignmentId ? `?assignmentId=${assignmentId}` : ''}`)}
-            className="text-slate-400 hover:text-white text-sm mb-4 flex items-center gap-1"
+            className="text-slate-300 hover:text-white text-sm mb-4 flex items-center gap-1"
           >
             ← Back to Module
           </button>
@@ -148,36 +149,36 @@ function ModuleCareerTwin({ module, assignment, navigate, moduleId, assignmentId
         </div>
 
         {/* Career Coach Insight */}
-        <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 to-transparent p-5 mb-8">
-          <h3 className="text-slate-300 font-semibold mb-2 flex items-center gap-2">🎙️ Career Coach Insight</h3>
+        <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 to-transparent p-4 sm:p-5 mb-6">
+          <h3 className="text-slate-200 text-lg font-semibold mb-2 flex items-center gap-2">🎙️ Career Coach Insight</h3>
           {insightLoading ? (
             <div className="h-4 w-3/4 bg-slate-700/40 rounded animate-pulse" />
           ) : (
-            <p className="text-sm text-slate-300 leading-relaxed">{insight}</p>
+            <p className="text-base text-slate-300 leading-relaxed">{insight || 'No insight available yet for this module.'}</p>
           )}
         </div>
 
         {/* Stat Cards */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-5 text-center">
-            <div className="text-3xl font-black text-indigo-400">{sessionsCompleted}/{totalSessions || '—'}</div>
-            <div className="text-xs text-slate-500 uppercase tracking-widest mt-1">Sessions Completed</div>
+            <div className="text-4xl font-black text-indigo-400">{sessionsCompleted}/{totalSessions || '—'}</div>
+            <div className="text-xs text-slate-400 uppercase tracking-widest mt-1">Sessions Completed</div>
           </div>
           <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5 text-center">
-            <div className="text-3xl font-black text-emerald-400">{progress}%</div>
-            <div className="text-xs text-slate-500 uppercase tracking-widest mt-1">Overall Progress</div>
+            <div className="text-4xl font-black text-emerald-400">{progress}%</div>
+            <div className="text-xs text-slate-400 uppercase tracking-widest mt-1">Overall Progress</div>
           </div>
           <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-5 text-center">
-            <div className="text-3xl font-black text-violet-400">{skills.length}</div>
-            <div className="text-xs text-slate-500 uppercase tracking-widest mt-1">Skills Tracked</div>
+            <div className="text-4xl font-black text-violet-400">{skills.length}</div>
+            <div className="text-xs text-slate-400 uppercase tracking-widest mt-1">Skills Tracked</div>
           </div>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid lg:grid-cols-2 gap-6">
           {/* Radar Chart */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-5">
             <h3 className="text-slate-300 font-semibold mb-1">🎯 Competency Radar</h3>
-            <p className="text-xs text-slate-500 mb-3">Estimated from overall module progress, not a per-skill assessment</p>
+            <p className="text-xs text-slate-400 mb-3">Estimated from overall module progress, not a per-skill assessment</p>
             <div className="flex justify-center">
               <RadarChart skills={skills} />
             </div>
@@ -190,13 +191,13 @@ function ModuleCareerTwin({ module, assignment, navigate, moduleId, assignmentId
           {/* Skill Breakdown */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-5">
             <h3 className="text-slate-300 font-semibold mb-1">📊 Skill Progress</h3>
-            <p className="text-xs text-slate-500 mb-3">Estimated — not a measured per-skill score</p>
+            <p className="text-xs text-slate-400 mb-3">Estimated — not a measured per-skill score</p>
             <div className="space-y-4">
               {skills.map((s, i) => {
                 const color = s.current >= 75 ? '#10B981' : s.current >= 50 ? '#F59E0B' : '#EF4444';
                 return (
                   <div key={i}>
-                    <div className="flex justify-between text-xs mb-1">
+                    <div className="flex justify-between text-sm mb-1">
                       <span className="text-slate-300 font-medium">{s.skill}</span>
                       <span className="font-bold" style={{ color }}>{s.current}% / {s.target}%</span>
                     </div>
@@ -206,7 +207,7 @@ function ModuleCareerTwin({ module, assignment, navigate, moduleId, assignmentId
                         style={{ width: `${Math.min(100, s.current)}%`, background: color }}
                       />
                     </div>
-                    <div className="text-slate-500 text-xs mt-0.5">Gap: {s.gap}% to target</div>
+                    <div className="text-slate-400 text-xs mt-0.5">Gap: {s.gap}% to target</div>
                   </div>
                 );
               })}
@@ -223,7 +224,7 @@ function ModuleCareerTwin({ module, assignment, navigate, moduleId, assignmentId
             ← Back to Module
           </button>
         </div>
-      </div>
+      </PageContainer>
     </div>
   );
 }
@@ -237,7 +238,7 @@ function AnimatedTraitBar({ label, value, color }) {
   }, [value]);
   return (
     <div>
-      <div className="flex justify-between text-xs mb-1">
+      <div className="flex justify-between text-sm mb-1">
         <span className="text-slate-300 font-medium">{label}</span>
         <span className="font-bold" style={{ color }}>{value}%</span>
       </div>
@@ -295,7 +296,7 @@ function LearningDNASection({ sessions }) {
           <div className="flex-1 min-w-[200px] space-y-4">
             <p className="text-slate-300 text-sm">{dnaType.desc}</p>
             <div>
-              <span className="text-xs font-semibold uppercase tracking-widest text-slate-500 mr-2">Your Superpower:</span>
+              <span className="text-xs font-semibold uppercase tracking-widest text-slate-400 mr-2">Your Superpower:</span>
               <span
                 className="text-xs font-bold px-3 py-1 rounded-full"
                 style={{ background: dnaType.color + '30', color: dnaType.color, border: `1px solid ${dnaType.color}50` }}
@@ -327,7 +328,7 @@ function LearningVelocitySection({ sessions }) {
       <div className="flex items-center justify-between mb-1">
         <h3 className="text-slate-200 font-semibold text-lg">📈 Learning Velocity</h3>
       </div>
-      <p className="text-slate-500 text-xs mb-4">Score per session — last 10 sessions</p>
+      <p className="text-slate-400 text-xs mb-4">Score per session — last 10 sessions</p>
       {sessions.length < 2 ? (
         <p className="text-slate-400 text-sm">Complete more sessions to see your velocity chart</p>
       ) : (
@@ -457,7 +458,7 @@ export default function CareerTwin() {
         <div className="text-center">
           <div className="text-5xl mb-4 animate-pulse">🧬</div>
           <div className="text-indigo-400 font-semibold">Building Module Career Twin...</div>
-          <div className="text-slate-500 text-sm mt-2">Loading module data...</div>
+          <div className="text-slate-400 text-sm mt-2">Loading module data...</div>
         </div>
       </div>
     );
@@ -480,7 +481,7 @@ export default function CareerTwin() {
       <div className="text-center">
         <div className="text-5xl mb-4 animate-pulse">🧬</div>
         <div className="text-indigo-400 font-semibold">Building your Career Digital Twin...</div>
-        <div className="text-slate-500 text-sm mt-2">Synthesizing skills, market data, and trajectory models</div>
+        <div className="text-slate-400 text-sm mt-2">Synthesizing skills, market data, and trajectory models</div>
       </div>
     </div>
   );
@@ -490,7 +491,7 @@ export default function CareerTwin() {
       <div className="text-center">
         <div className="text-4xl mb-4">🧬</div>
         <div className="text-red-400 mb-2">{error || 'No session found'}</div>
-        <button onClick={() => navigate('/')} className="px-4 py-2 bg-indigo-600 rounded-lg text-sm">Start Learning Journey</button>
+        <div className="flex gap-3 justify-center"><button onClick={() => window.location.reload()} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">Retry</button><button onClick={() => navigate('/')} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm">Start Learning Journey</button></div>
       </div>
     </div>
   );
@@ -525,7 +526,7 @@ export default function CareerTwin() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
-      <div className="max-w-6xl mx-auto px-6 py-10">
+      <PageContainer>
 
         {/* Header */}
         <div className="mb-8">
@@ -576,7 +577,7 @@ export default function CareerTwin() {
               ].map(({ label, value, color }) => (
                 <div key={label} className="text-center">
                   <div className="text-2xl font-bold" style={{ color }}>{value}</div>
-                  <div className="text-slate-500 text-xs">{label}</div>
+                  <div className="text-slate-400 text-xs">{label}</div>
                 </div>
               ))}
             </div>
@@ -586,17 +587,18 @@ export default function CareerTwin() {
         {/* Employee-only: Learning DNA + Velocity */}
         {user?.role === 'employee' && (() => {
           const userId = localStorage.getItem('skillforge:userId');
-          const stored = userId ? JSON.parse(localStorage.getItem(`sf_data_${userId}`) || '{}') : {};
-          const localSessions = stored.sessions || [];
+          let stored = {};
+          try { stored = userId ? JSON.parse(localStorage.getItem(`sf_data_${userId}`) || '{}') || {} : {}; } catch { stored = {}; }
+          const localSessions = Array.isArray(stored.sessions) ? stored.sessions : [];
           return (
-            <>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6 [&>*]:mb-0">
               <LearningDNASection sessions={localSessions} />
               <LearningVelocitySection sessions={localSessions} />
-            </>
+            </div>
           );
         })()}
 
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid lg:grid-cols-3 gap-6">
 
           {/* Skill Radar */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-5">
@@ -633,7 +635,7 @@ export default function CareerTwin() {
               <div className="space-y-3">
                 {forecast.trajectory.map((t, i) => (
                   <div key={i} className="flex items-center gap-3">
-                    <div className="w-16 text-slate-500 text-xs font-medium">{t.label}</div>
+                    <div className="w-20 text-slate-300 text-sm font-medium">{t.label}</div>
                     <div className="flex-1">
                       <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
                         <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all"
@@ -646,13 +648,13 @@ export default function CareerTwin() {
                 <div className="mt-4 pt-4 border-t border-slate-700">
                   <div className="text-slate-400 text-xs">Projected Salary at Readiness</div>
                   <div className="text-2xl font-bold text-emerald-400">
-                    ${(forecast.currentState.projectedSalary / 1000).toFixed(0)}k
+                    ${((forecast.currentState?.projectedSalary || 0) / 1000).toFixed(0)}k
                   </div>
-                  <div className="text-slate-500 text-xs">Based on {goal?.domainLabel} market rates</div>
+                  <div className="text-slate-400 text-xs">Based on {goal?.domainLabel} market rates</div>
                 </div>
               </div>
             ) : (
-              <div className="text-slate-500 text-sm">Complete sessions to unlock trajectory forecast</div>
+              <div className="text-slate-400 text-sm">Complete sessions to unlock trajectory forecast</div>
             )}
           </div>
         </div>
@@ -667,7 +669,7 @@ export default function CareerTwin() {
                 <span className="text-emerald-400 text-xs">Market Active</span>
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               {[
                 { label: 'Demand Score', value: `${market.demandScore}/100`, color: '#6366F1' },
                 { label: 'Open Positions', value: market.openJobs, color: '#10B981' },
@@ -675,8 +677,8 @@ export default function CareerTwin() {
                 { label: 'YoY Growth', value: market.trend, color: '#06B6D4' },
               ].map(({ label, value, color }) => (
                 <div key={label} className="bg-slate-900/50 rounded-lg p-3 text-center">
-                  <div className="text-xs text-slate-500 mb-1">{label}</div>
-                  <div className="font-bold text-sm" style={{ color }}>{value}</div>
+                  <div className="text-sm text-slate-400 mb-1">{label}</div>
+                  <div className="font-bold text-lg" style={{ color }}>{value}</div>
                 </div>
               ))}
             </div>
@@ -696,7 +698,7 @@ export default function CareerTwin() {
         {/* Opportunity Radar */}
         <div className="mt-6 bg-slate-800/40 border border-slate-700 rounded-xl p-6">
           <h3 className="text-slate-300 font-semibold mb-4">🎯 Opportunity Radar — Skill Gap vs Market Demand</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
             {radarData.map((s, i) => {
               const gapSize = s.gap;
               const urgency = gapSize > 50 ? 'Critical' : gapSize > 25 ? 'High' : gapSize > 10 ? 'Medium' : 'Low';
@@ -711,11 +713,11 @@ export default function CareerTwin() {
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <div className="flex justify-between text-xs text-slate-500">
+                    <div className="flex justify-between text-xs text-slate-400">
                       <span>Current</span><span>{s.current}%</span>
                     </div>
                     <div className="h-1 bg-slate-700 rounded-full"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${s.current}%` }} /></div>
-                    <div className="flex justify-between text-xs text-slate-500">
+                    <div className="flex justify-between text-xs text-slate-400">
                       <span>Market Req</span><span>{s.marketDemand}%</span>
                     </div>
                     <div className="h-1 bg-slate-700 rounded-full"><div className="h-full rounded-full" style={{ width: `${s.marketDemand}%`, background: urgencyColor }} /></div>
@@ -727,13 +729,13 @@ export default function CareerTwin() {
         </div>
 
         {/* Navigation Links */}
-        <div className="mt-6 grid grid-cols-2 gap-4">
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button onClick={() => navigate('/simulation')}
             className="flex items-center gap-3 p-4 bg-violet-600/20 border border-violet-500/40 rounded-xl hover:bg-violet-600/30 transition-all">
             <span className="text-2xl">🔮</span>
             <div className="text-left">
               <div className="text-violet-300 font-semibold">Simulation Lab</div>
-              <div className="text-slate-500 text-xs">What-if career scenarios</div>
+              <div className="text-slate-400 text-xs">What-if career scenarios</div>
             </div>
           </button>
           <button onClick={() => navigate('/explain')}
@@ -741,11 +743,11 @@ export default function CareerTwin() {
             <span className="text-2xl">🧠</span>
             <div className="text-left">
               <div className="text-amber-300 font-semibold">Explainability Console</div>
-              <div className="text-slate-500 text-xs">Full agent reasoning chain</div>
+              <div className="text-slate-400 text-xs">Full agent reasoning chain</div>
             </div>
           </button>
         </div>
-      </div>
+      </PageContainer>
     </div>
   );
 }

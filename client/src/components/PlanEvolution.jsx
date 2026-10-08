@@ -58,12 +58,12 @@ function AdaptationCard({ decision, index }) {
         <div className="flex-1 min-w-0">
           {/* Header row */}
           <div className="flex items-center gap-2 flex-wrap mb-1.5">
-            <span className={`text-xs px-2.5 py-0.5 rounded-full border font-bold ${cfg.badge}`}>
+            <span className={`text-sm px-2.5 py-0.5 rounded-full border font-bold ${cfg.badge}`}>
               {cfg.label}
             </span>
-            <span className="text-xs text-slate-500">{formatTimestamp(decision.timestamp || decision.createdAt)}</span>
+            <span className="text-sm text-slate-400">{formatTimestamp(decision.timestamp || decision.createdAt)}</span>
             {decision.agent && (
-              <span className="text-xs text-indigo-400/70">by {decision.agent}</span>
+              <span className="text-sm text-indigo-400/70">by {decision.agent}</span>
             )}
           </div>
 
@@ -74,15 +74,15 @@ function AdaptationCard({ decision, index }) {
           {(daysBefore !== null || daysAfter !== null) && (
             <div className="flex items-center gap-3 mt-2">
               {daysBefore !== null && (
-                <span className="text-xs font-mono bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-slate-400">
+                <span className="text-sm font-mono bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-slate-400">
                   Before: {daysBefore} days
                 </span>
               )}
               {daysBefore !== null && daysAfter !== null && (
-                <span className="text-slate-600 text-xs">→</span>
+                <span className="text-slate-400 text-sm">→</span>
               )}
               {daysAfter !== null && (
-                <span className="text-xs font-mono bg-slate-800 border border-emerald-500/30 px-2 py-0.5 rounded text-emerald-400">
+                <span className="text-sm font-mono bg-slate-800 border border-emerald-500/30 px-2 py-0.5 rounded text-emerald-400">
                   After: {daysAfter} days
                 </span>
               )}
@@ -92,7 +92,7 @@ function AdaptationCard({ decision, index }) {
 
         {/* Expand toggle */}
         {reasoning && (
-          <span className={`text-slate-600 text-xs flex-shrink-0 transition-transform duration-200 mt-1 ${expanded ? 'rotate-180' : ''}`}>▼</span>
+          <span className={`text-slate-400 text-sm flex-shrink-0 transition-transform duration-200 mt-1 ${expanded ? 'rotate-180' : ''}`}>▼</span>
         )}
       </button>
 
@@ -105,8 +105,8 @@ function AdaptationCard({ decision, index }) {
           className="overflow-hidden"
         >
           <div className="px-4 pb-4 pt-0 border-t border-slate-700/30">
-            <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2 pt-3">AI Reasoning</p>
-            <p className="text-xs text-slate-400 leading-relaxed">{reasoning}</p>
+            <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2 pt-3">AI Reasoning</p>
+            <p className="text-sm text-slate-400 leading-relaxed">{reasoning}</p>
           </div>
         </motion.div>
       )}
@@ -130,10 +130,10 @@ export default function PlanEvolution({ learningPlan = [], agentDecisions = [] }
       <div className="flex items-center justify-between mb-5">
         <div>
           <h3 className="text-base font-black text-white">Plan Evolution</h3>
-          <p className="text-xs text-slate-500 mt-0.5">How AI adapted your journey over time</p>
+          <p className="text-sm text-slate-400 mt-0.5">How AI adapted your journey over time</p>
         </div>
         {adaptations.length > 0 && (
-          <span className="text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full">
+          <span className="text-sm font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full">
             {adaptations.length} adaptations
           </span>
         )}
@@ -147,7 +147,7 @@ export default function PlanEvolution({ learningPlan = [], agentDecisions = [] }
         >
           <div className="text-3xl mb-3">✅</div>
           <p className="text-sm font-bold text-emerald-300">No adaptations needed yet</p>
-          <p className="text-xs text-slate-500 mt-1">Your performance has been consistent — the AI has not needed to adjust your plan.</p>
+          <p className="text-sm text-slate-400 mt-1">Your performance has been consistent — the AI has not needed to adjust your plan.</p>
         </motion.div>
       ) : (
         <>
@@ -167,26 +167,26 @@ export default function PlanEvolution({ learningPlan = [], agentDecisions = [] }
           <div className="mt-5 rounded-xl border border-slate-700/50 bg-slate-800/30 p-4">
             <div className="flex items-center gap-6 flex-wrap text-sm">
               <div className="flex items-center gap-2">
-                <span className="text-slate-500">AI made</span>
+                <span className="text-slate-400">AI made</span>
                 <span className="font-black text-indigo-300">{adaptations.length} plan adjustments</span>
               </div>
               {addedByAgent > 0 && (
                 <>
-                  <span className="text-slate-700">•</span>
+                  <span className="text-slate-400">•</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-500">Added</span>
+                    <span className="text-slate-400">Added</span>
                     <span className="font-black text-amber-300">{addedByAgent} sessions</span>
-                    <span className="text-slate-500">to reinforce weak areas</span>
+                    <span className="text-slate-400">to reinforce weak areas</span>
                   </div>
                 </>
               )}
               {savedDays > 0 && (
                 <>
-                  <span className="text-slate-700">•</span>
+                  <span className="text-slate-400">•</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-500">Estimated</span>
+                    <span className="text-slate-400">Estimated</span>
                     <span className="font-black text-emerald-300">~{savedDays} days saved</span>
-                    <span className="text-slate-500">by optimizing path</span>
+                    <span className="text-slate-400">by optimizing path</span>
                   </div>
                 </>
               )}

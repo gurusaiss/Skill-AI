@@ -2,17 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../utils/api.js';
 import AgentThinking from '../components/AgentThinking.jsx';
+import PageContainer from '../components/PageContainer.jsx';
+import { ratingFromPercent, ratingStyle } from '../utils/assessmentRules.js';
 
 const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 
-// ── Grade metadata ────────────────────────────────────────────────────────────
-const GRADE_META = {
-  A: { label: 'Outstanding', color: '#10B981', bg: 'bg-emerald-500/15', border: 'border-emerald-500/30', emoji: '🏆' },
-  B: { label: 'Proficient',  color: '#6366F1', bg: 'bg-indigo-500/15',  border: 'border-indigo-500/30',  emoji: '⭐' },
-  C: { label: 'Developing',  color: '#F59E0B', bg: 'bg-amber-500/15',   border: 'border-amber-500/30',   emoji: '📈' },
-  D: { label: 'Needs Work',  color: '#F97316', bg: 'bg-orange-500/15',  border: 'border-orange-500/30',  emoji: '💪' },
-  F: { label: 'Keep Going',  color: '#EF4444', bg: 'bg-red-500/15',     border: 'border-red-500/30',     emoji: '🔄' },
+// ── Rating metadata (Expert / Intermediate / Basic / No Rating; no letter grades) ──
+const RATING_META = {
+  Expert: { emoji: '🏆', bg: 'bg-emerald-500/15', border: 'border-emerald-500/30' },
+  Intermediate: { emoji: '⭐', bg: 'bg-sky-500/15', border: 'border-sky-500/30' },
+  Basic: { emoji: '📈', bg: 'bg-amber-500/15', border: 'border-amber-500/30' },
+  'No Rating': { emoji: '🔄', bg: 'bg-rose-500/15', border: 'border-rose-500/30' },
 };
+function metaForScore(score) {
+  const label = ratingFromPercent(score);
+  return { label, color: ratingStyle(label).hex, ...(RATING_META[label] || RATING_META['No Rating']) };
+}
 
 // ── Setup Phase ───────────────────────────────────────────────────────────────
 function SetupPhase({ onStart, defaultRole = '', defaultSkills = '', moduleBanner = null }) {
@@ -31,7 +36,7 @@ function SetupPhase({ onStart, defaultRole = '', defaultSkills = '', moduleBanne
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10 space-y-6">
+    <PageContainer className="space-y-5">
       {/* Module Banner */}
       {moduleBanner && (
         <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 px-5 py-3 flex items-center gap-3">
@@ -41,14 +46,17 @@ function SetupPhase({ onStart, defaultRole = '', defaultSkills = '', moduleBanne
       )}
 
       {/* Header */}
-      <div className="text-center mb-4">
-        <div className="text-5xl mb-3">🎤</div>
-        <h1 className="text-3xl font-black text-slate-100">Interview Simulator</h1>
-        <p className="text-sm text-slate-500 mt-2">AI-powered mock interviews to test your readiness</p>
+      <div className="flex items-center gap-4">
+        <div className="text-5xl">🎤</div>
+        <div>
+          <h1 className="text-3xl font-black text-slate-100">Interview Simulator</h1>
+          <p className="text-base text-slate-400 mt-1">AI-powered mock interviews to test your readiness</p>
+        </div>
       </div>
 
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
       {/* Setup form */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 space-y-5">
+      <div className="xl:col-span-2 rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-6 space-y-5">
         <div>
           <label className="text-xs font-black text-slate-300 uppercase tracking-wider block mb-2">
             Target Role
@@ -57,7 +65,7 @@ function SetupPhase({ onStart, defaultRole = '', defaultSkills = '', moduleBanne
             type="text"
             value={role}
             onChange={e => setRole(e.target.value)}
-            className="w-full rounded-xl border border-slate-700 bg-[#060B14] px-4 py-3 text-slate-100 text-sm focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded-xl border border-slate-700 bg-[#060B14] px-4 py-3 text-slate-100 text-base focus:border-indigo-500 focus:outline-none"
             placeholder="e.g. Frontend Developer, Chef, Fashion Designer, Lawyer"
           />
         </div>
@@ -70,13 +78,13 @@ function SetupPhase({ onStart, defaultRole = '', defaultSkills = '', moduleBanne
             type="text"
             value={skills}
             onChange={e => setSkills(e.target.value)}
-            className="w-full rounded-xl border border-slate-700 bg-[#060B14] px-4 py-3 text-slate-100 text-sm focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded-xl border border-slate-700 bg-[#060B14] px-4 py-3 text-slate-100 text-base focus:border-indigo-500 focus:outline-none"
             placeholder="e.g. React, JavaScript, CSS, Responsive Design"
           />
-          <p className="text-xs text-slate-600 mt-1.5">Separate multiple skills with commas</p>
+          <p className="text-sm text-slate-400 mt-1.5">Separate multiple skills with commas</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="text-xs font-black text-slate-300 uppercase tracking-wider block mb-2">
               Difficulty
@@ -84,7 +92,7 @@ function SetupPhase({ onStart, defaultRole = '', defaultSkills = '', moduleBanne
             <select
               value={difficulty}
               onChange={e => setDifficulty(e.target.value)}
-              className="w-full rounded-xl border border-slate-700 bg-[#060B14] px-4 py-3 text-slate-100 text-sm focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded-xl border border-slate-700 bg-[#060B14] px-4 py-3 text-slate-100 text-base focus:border-indigo-500 focus:outline-none"
             >
               <option value="easy">Easy</option>
               <option value="medium">Medium</option>
@@ -99,7 +107,7 @@ function SetupPhase({ onStart, defaultRole = '', defaultSkills = '', moduleBanne
             <select
               value={questionCount}
               onChange={e => setQuestionCount(Number(e.target.value))}
-              className="w-full rounded-xl border border-slate-700 bg-[#060B14] px-4 py-3 text-slate-100 text-sm focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded-xl border border-slate-700 bg-[#060B14] px-4 py-3 text-slate-100 text-base focus:border-indigo-500 focus:outline-none"
             >
               <option value="3">3 Questions</option>
               <option value="5">5 Questions</option>
@@ -112,36 +120,37 @@ function SetupPhase({ onStart, defaultRole = '', defaultSkills = '', moduleBanne
         <button
           onClick={handleStart}
           disabled={!role.trim() || !skills.trim()}
-          className="w-full py-4 rounded-xl font-black text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all hover:shadow-xl hover:shadow-indigo-500/20 active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-full py-4 rounded-xl font-black text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all hover:shadow-xl hover:shadow-indigo-500/20 active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed"
         >
           🚀 Start Interview
         </button>
       </div>
 
       {/* Info cards */}
-      <div className="grid md:grid-cols-3 gap-3">
-        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4 text-center">
+      <div className="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-1 gap-3">
+        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5 text-center">
           <div className="text-2xl mb-1">🤖</div>
-          <p className="text-xs font-bold text-indigo-300">AI-Powered</p>
-          <p className="text-xs text-slate-600 mt-1">Gemini evaluates your answers</p>
+          <p className="text-sm font-bold text-indigo-300">AI-Powered</p>
+          <p className="text-sm text-slate-400 mt-1">Gemini evaluates your answers</p>
         </div>
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-center">
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5 text-center">
           <div className="text-2xl mb-1">📊</div>
-          <p className="text-xs font-bold text-emerald-300">Real-Time Feedback</p>
-          <p className="text-xs text-slate-600 mt-1">Instant scoring & suggestions</p>
+          <p className="text-sm font-bold text-emerald-300">Real-Time Feedback</p>
+          <p className="text-sm text-slate-400 mt-1">Instant scoring & suggestions</p>
         </div>
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5 text-center">
           <div className="text-2xl mb-1">🎯</div>
-          <p className="text-xs font-bold text-amber-300">Role-Specific</p>
-          <p className="text-xs text-slate-600 mt-1">Questions match your target role</p>
+          <p className="text-sm font-bold text-amber-300">Role-Specific</p>
+          <p className="text-sm text-slate-400 mt-1">Questions match your target role</p>
         </div>
       </div>
-    </div>
+      </div>
+    </PageContainer>
   );
 }
 
 // ── Interview Phase ───────────────────────────────────────────────────────────
-function InterviewPhase({ questions, role, onComplete }) {
+function InterviewPhase({ questions, role, onComplete, externalError = '' }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answer, setAnswer] = useState('');
   const [evaluating, setEvaluating] = useState(false);
@@ -187,7 +196,7 @@ function InterviewPhase({ questions, role, onComplete }) {
 
   if (evaluating) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-14">
+      <PageContainer className="py-14">
         <AgentThinking 
           isVisible 
           messages={[
@@ -197,22 +206,22 @@ function InterviewPhase({ questions, role, onComplete }) {
             'Generating feedback…'
           ]} 
         />
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8 space-y-5">
+    <PageContainer className="space-y-5">
       {/* Progress header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-slate-500 uppercase tracking-widest font-black">
+          <p className="text-sm text-slate-400 uppercase tracking-widest font-black">
             Question {currentIndex + 1} of {questions.length}
           </p>
-          <p className="text-base font-black text-slate-100">{role} Interview</p>
+          <p className="text-lg font-black text-slate-100">{role} Interview</p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-slate-600">Progress</p>
+          <p className="text-sm text-slate-400">Progress</p>
           <p className="text-lg font-black text-indigo-400">{progress}%</p>
         </div>
       </div>
@@ -225,8 +234,15 @@ function InterviewPhase({ questions, role, onComplete }) {
         />
       </div>
 
+      {externalError && (
+        <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+          {externalError}. Your answers are kept, press Finish Interview to try again.
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
       {/* Question card */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 space-y-4">
+      <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-6 space-y-4">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold capitalize">
             {currentQuestion.type}
@@ -244,19 +260,19 @@ function InterviewPhase({ questions, role, onComplete }) {
           )}
         </div>
 
-        <h2 className="text-xl font-black text-slate-100 leading-snug">
+        <h2 className="text-2xl font-black text-slate-100 leading-snug">
           {currentQuestion.question}
         </h2>
 
         {currentQuestion.expectedPoints && currentQuestion.expectedPoints.length > 0 && (
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-            <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
+            <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">
               💡 Key Points to Cover
             </p>
             <ul className="space-y-1">
               {currentQuestion.expectedPoints.map((point, i) => (
-                <li key={i} className="text-xs text-slate-400 flex items-start gap-2">
-                  <span className="text-indigo-500 mt-0.5">•</span>
+                <li key={i} className="text-base text-slate-300 flex items-start gap-2">
+                  <span className="text-indigo-400 mt-0.5">•</span>
                   {point}
                 </li>
               ))}
@@ -266,15 +282,15 @@ function InterviewPhase({ questions, role, onComplete }) {
       </div>
 
       {/* Answer area */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 space-y-4">
+      <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-6 space-y-4">
         <div className="flex items-center justify-between">
           <label className="text-sm font-black text-slate-300 uppercase tracking-wider">
             Your Answer
           </label>
-          <span className={`text-xs font-semibold ${
+          <span className={`text-sm font-semibold ${
             wordCount >= 50 ? 'text-emerald-400' : 
             wordCount >= 20 ? 'text-amber-400' : 
-            'text-slate-600'
+            'text-slate-400'
           }`}>
             {wordCount} words {wordCount >= 50 ? '✓' : wordCount >= 20 ? '(aim for 50+)' : '(too short)'}
           </span>
@@ -283,35 +299,37 @@ function InterviewPhase({ questions, role, onComplete }) {
         <textarea
           value={answer}
           onChange={e => setAnswer(e.target.value)}
-          className="w-full min-h-[220px] rounded-xl border border-slate-700 bg-[#060B14] p-4 text-slate-100 text-sm focus:border-indigo-500 focus:outline-none resize-y transition-colors"
+          className="w-full min-h-[260px] rounded-xl border border-slate-700 bg-[#060B14] p-4 text-slate-100 text-base focus:border-indigo-500 focus:outline-none resize-y transition-colors"
           placeholder="Type your answer here. Be specific, provide examples, and explain your reasoning..."
         />
 
-        <div className="flex items-center justify-between">
-          {error && <p className="text-xs text-red-400">{error}</p>}
-          <div className="ml-auto flex gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+          <div className="ml-auto flex flex-wrap gap-3">
             {currentIndex > 0 && (
               <button
                 onClick={() => {
+                  setError('');
                   setCurrentIndex(currentIndex - 1);
                   setAnswer(questions[currentIndex - 1].answer || '');
                 }}
-                className="px-6 py-3 rounded-xl font-bold text-sm border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-all"
+                className="px-6 py-3 rounded-xl font-bold text-base border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-all"
               >
                 ← Previous
               </button>
             )}
             <button
               onClick={handleSubmit}
-              disabled={wordCount < 10}
-              className="px-8 py-3 rounded-xl font-black text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={wordCount < 10 || answer.trim().length < 10}
+              className="px-8 py-3 rounded-xl font-black text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {currentIndex < questions.length - 1 ? 'Next Question →' : 'Finish Interview →'}
             </button>
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </PageContainer>
   );
 }
 
@@ -320,10 +338,10 @@ function ResultsPhase({ questions, report, role }) {
   const [expandedQuestion, setExpandedQuestion] = useState(null);
   const navigate = useNavigate();
 
-  const gradeMeta = GRADE_META[report.grade] || GRADE_META.F;
+  const gradeMeta = metaForScore(report?.overallScore);
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8 space-y-5">
+    <PageContainer className="space-y-5">
       {/* Overall score */}
       <div className={`rounded-2xl border p-6 text-center ${gradeMeta.bg} ${gradeMeta.border}`}>
         <div className="text-5xl mb-2">{gradeMeta.emoji}</div>
@@ -331,9 +349,9 @@ function ResultsPhase({ questions, report, role }) {
           {report.overallScore}
         </div>
         <div className="text-sm font-black uppercase tracking-widest" style={{ color: gradeMeta.color }}>
-          Grade {report.grade} — {gradeMeta.label}
+          Rating: {gradeMeta.label}
         </div>
-        <p className="text-slate-400 text-sm mt-3 max-w-lg mx-auto leading-relaxed">
+        <p className="text-slate-300 text-base mt-3 max-w-3xl mx-auto leading-relaxed">
           {report.summary}
         </p>
         <div className="flex items-center justify-center gap-4 mt-4 text-xs">
@@ -352,14 +370,15 @@ function ResultsPhase({ questions, report, role }) {
       </div>
 
       {/* Strengths & Areas to Improve */}
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+      <div className="grid grid-cols-1 gap-5">
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5">
-          <h3 className="text-sm font-black text-emerald-400 mb-3 uppercase tracking-wide">
+          <h3 className="text-base font-black text-emerald-400 mb-3 uppercase tracking-wide">
             ✅ Strengths
           </h3>
           <ul className="space-y-2">
             {(report.strengths || []).map((item, i) => (
-              <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+              <li key={i} className="text-base text-slate-300 flex items-start gap-2">
                 <span className="text-emerald-500 mt-0.5 flex-shrink-0">•</span>
                 {item}
               </li>
@@ -368,12 +387,12 @@ function ResultsPhase({ questions, report, role }) {
         </div>
 
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5">
-          <h3 className="text-sm font-black text-amber-400 mb-3 uppercase tracking-wide">
+          <h3 className="text-base font-black text-amber-400 mb-3 uppercase tracking-wide">
             📈 Areas to Improve
           </h3>
           <ul className="space-y-2">
             {(report.areasToImprove || []).map((item, i) => (
-              <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+              <li key={i} className="text-base text-slate-300 flex items-start gap-2">
                 <span className="text-amber-500 mt-0.5 flex-shrink-0">•</span>
                 {item}
               </li>
@@ -382,14 +401,15 @@ function ResultsPhase({ questions, report, role }) {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-5">
       {/* Recommendations */}
       <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5">
-        <h3 className="text-sm font-black text-indigo-400 mb-3 uppercase tracking-wide">
+        <h3 className="text-base font-black text-indigo-400 mb-3 uppercase tracking-wide">
           💡 Recommendations
         </h3>
         <ul className="space-y-2">
           {(report.recommendations || []).map((item, i) => (
-            <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+            <li key={i} className="text-base text-slate-300 flex items-start gap-2">
               <span className="text-indigo-500 mt-0.5 flex-shrink-0">{i + 1}.</span>
               {item}
             </li>
@@ -400,12 +420,12 @@ function ResultsPhase({ questions, report, role }) {
       {/* Next Steps */}
       {report.nextSteps && report.nextSteps.length > 0 && (
         <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-5">
-          <h3 className="text-sm font-black text-purple-400 mb-3 uppercase tracking-wide">
+          <h3 className="text-base font-black text-purple-400 mb-3 uppercase tracking-wide">
             🎯 Next Steps
           </h3>
           <ul className="space-y-2">
             {report.nextSteps.map((item, i) => (
-              <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+              <li key={i} className="text-base text-slate-300 flex items-start gap-2">
                 <span className="text-purple-500 mt-0.5 flex-shrink-0">→</span>
                 {item}
               </li>
@@ -414,16 +434,18 @@ function ResultsPhase({ questions, report, role }) {
         </div>
       )}
 
+      </div>
+      </div>
+
       {/* Question-by-question breakdown */}
       <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
-        <h3 className="text-sm font-black text-slate-300 mb-4 uppercase tracking-wide">
+        <h3 className="text-base font-black text-slate-300 mb-4 uppercase tracking-wide">
           📝 Question Breakdown
         </h3>
         <div className="space-y-2">
           {questions.filter(q => q.answer).map((q, i) => {
             const isExpanded = expandedQuestion === i;
-            const qGrade = q.feedback?.grade || 'F';
-            const qMeta = GRADE_META[qGrade] || GRADE_META.F;
+            const qMeta = metaForScore(q.score);
 
             return (
               <div key={i} className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
@@ -432,32 +454,32 @@ function ResultsPhase({ questions, report, role }) {
                   className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-800/40 transition-colors"
                 >
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <span className="text-xs font-mono text-slate-600">Q{i + 1}</span>
-                    <span className="text-sm text-slate-300 truncate flex-1">{q.question}</span>
+                    <span className="text-sm font-mono text-slate-400">Q{i + 1}</span>
+                    <span className="text-base text-slate-200 truncate flex-1" title={q.question}>{q.question}</span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className={`text-xs px-2 py-0.5 rounded-full border font-bold ${qMeta.bg} ${qMeta.border}`}
                       style={{ color: qMeta.color }}>
-                      {q.score}%
+                      {q.score}% · {qMeta.label}
                     </span>
-                    <span className="text-slate-600 text-xs">{isExpanded ? '▲' : '▼'}</span>
+                    <span className="text-slate-400 text-xs">{isExpanded ? '▲' : '▼'}</span>
                   </div>
                 </button>
 
                 {isExpanded && q.feedback && (
                   <div className="px-4 pb-4 space-y-3 border-t border-slate-700/40">
                     <div className="pt-3">
-                      <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">
                         Your Answer
                       </p>
-                      <p className="text-xs text-slate-400 leading-relaxed">{q.answer}</p>
+                      <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{q.answer}</p>
                     </div>
 
                     <div>
-                      <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">
                         Feedback
                       </p>
-                      <p className="text-xs text-slate-300 leading-relaxed">{q.feedback.feedback}</p>
+                      <p className="text-sm text-slate-300 leading-relaxed">{q.feedback.feedback}</p>
                     </div>
 
                     {q.feedback.strengths && q.feedback.strengths.length > 0 && (
@@ -467,7 +489,7 @@ function ResultsPhase({ questions, report, role }) {
                         </p>
                         <ul className="space-y-1">
                           {q.feedback.strengths.map((s, si) => (
-                            <li key={si} className="text-xs text-slate-400 flex items-start gap-2">
+                            <li key={si} className="text-sm text-slate-300 flex items-start gap-2">
                               <span className="text-emerald-500">•</span>
                               {s}
                             </li>
@@ -483,7 +505,7 @@ function ResultsPhase({ questions, report, role }) {
                         </p>
                         <ul className="space-y-1">
                           {q.feedback.weaknesses.map((w, wi) => (
-                            <li key={wi} className="text-xs text-slate-400 flex items-start gap-2">
+                            <li key={wi} className="text-sm text-slate-300 flex items-start gap-2">
                               <span className="text-amber-500">•</span>
                               {w}
                             </li>
@@ -500,21 +522,21 @@ function ResultsPhase({ questions, report, role }) {
       </div>
 
       {/* Actions */}
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <button
           onClick={() => window.location.reload()}
-          className="flex-1 py-3.5 rounded-xl font-black text-sm border border-indigo-700/50 bg-indigo-900/20 text-indigo-300 hover:text-indigo-200 hover:border-indigo-600 transition-all"
+          className="flex-1 py-3.5 rounded-xl font-black text-base border border-indigo-700/50 bg-indigo-900/20 text-indigo-300 hover:text-indigo-200 hover:border-indigo-600 transition-all"
         >
           🔄 New Interview
         </button>
         <button
           onClick={() => navigate('/dashboard')}
-          className="flex-1 py-3.5 rounded-xl font-black text-sm border border-slate-700 bg-slate-900/60 text-slate-300 hover:text-white hover:border-slate-500 transition-all"
+          className="flex-1 py-3.5 rounded-xl font-black text-base border border-slate-700 bg-slate-900/60 text-slate-300 hover:text-white hover:border-slate-500 transition-all"
         >
           ← Dashboard
         </button>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 
@@ -553,7 +575,7 @@ export default function InterviewSimulator() {
 
   // Derived module props for SetupPhase
   const defaultRole = moduleData?.title || '';
-  const defaultSkills = moduleData?.skills?.join(', ') || '';
+  const defaultSkills = (moduleData?.skills || []).map(x => (typeof x === 'string' ? x : x?.name || '')).filter(Boolean).join(', ');
   const moduleBanner = moduleData ? `Module Interview: ${moduleData.title}` : null;
 
   const handleStart = async (setupConfig) => {
@@ -590,7 +612,7 @@ export default function InterviewSimulator() {
 
   if (moduleLoading) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-14">
+      <PageContainer className="py-14">
         <AgentThinking
           isVisible
           messages={[
@@ -598,13 +620,13 @@ export default function InterviewSimulator() {
             'Preparing interview for module…',
           ]}
         />
-      </div>
+      </PageContainer>
     );
   }
 
   if (phase === 'loading') {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-14">
+      <PageContainer className="py-14">
         <AgentThinking
           isVisible
           messages={[
@@ -614,13 +636,13 @@ export default function InterviewSimulator() {
             'Preparing your interview…'
           ]}
         />
-      </div>
+      </PageContainer>
     );
   }
 
   if (phase === 'generating') {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-14">
+      <PageContainer className="py-14">
         <AgentThinking 
           isVisible 
           messages={[
@@ -630,7 +652,7 @@ export default function InterviewSimulator() {
             'Preparing your report…'
           ]} 
         />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -644,22 +666,22 @@ export default function InterviewSimulator() {
           moduleBanner={moduleBanner}
         />
         {error && (
-          <div className="mx-auto max-w-2xl px-6">
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-center">
-              <p className="text-sm text-red-400">{error}</p>
+          <PageContainer className="!pt-0">
+            <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-center">
+              <p className="text-base text-red-300">{error}. Check the role and skills, then press Start Interview to try again.</p>
             </div>
-          </div>
+          </PageContainer>
         )}
       </>
     );
   }
 
   if (phase === 'interview') {
-    return <InterviewPhase questions={questions} role={config.role} onComplete={handleComplete} />;
+    return <InterviewPhase questions={questions} role={config?.role || ''} onComplete={handleComplete} externalError={error} />;
   }
 
   if (phase === 'results' && report) {
-    return <ResultsPhase questions={questions} report={report} role={config.role} />;
+    return <ResultsPhase questions={questions} report={report} role={config?.role || ''} />;
   }
 
   return null;

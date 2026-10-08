@@ -4,6 +4,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import StatCard from '../../components/StatCard.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
 
 function PlanBadge({ plan }) {
   const styles = {
@@ -12,7 +15,7 @@ function PlanBadge({ plan }) {
     enterprise: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${styles[plan] || styles.trial}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-sm font-semibold border ${styles[plan] || styles.trial}`}>
       {plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : 'Trial'}
     </span>
   );
@@ -25,7 +28,7 @@ function StatusBadge({ status }) {
     inactive:  'bg-slate-500/20 text-slate-400 border-slate-500/30',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${styles[status] || styles.inactive}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-sm font-semibold border ${styles[status] || styles.inactive}`}>
       {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Inactive'}
     </span>
   );
@@ -38,7 +41,7 @@ function CompletionBar({ value = 0 }) {
       <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
         <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${value}%` }} />
       </div>
-      <span className="text-xs text-slate-400 tabular-nums w-9 text-right">{value}%</span>
+      <span className="text-sm text-slate-400 tabular-nums w-9 text-right">{value}%</span>
     </div>
   );
 }
@@ -61,12 +64,14 @@ export default function SuperAdminReports() {
   const [filterPlan, setFilterPlan] = useState('all');
   const [sortKey, setSortKey]   = useState('companyName');
   const [sortAsc, setSortAsc]   = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const fetchReports = useCallback(() => {
     setLoading(true);
+    setLoadError('');
     authFetch('/api/superadmin/reports')
       .then(d => setReports(Array.isArray(d) ? d : (d?.reports || [])))
-      .catch(err => setToast({ message: err.message, type: 'error' }))
+      .catch(err => { setLoadError(err.message || 'Could not load reports'); setToast({ message: err.message, type: 'error' }); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -109,7 +114,7 @@ export default function SuperAdminReports() {
 
   const SortIcon = ({ k }) => sortKey === k
     ? <span className="ml-1 text-violet-400">{sortAsc ? '↑' : '↓'}</span>
-    : <span className="ml-1 text-slate-600">↕</span>;
+    : <span className="ml-1 text-slate-400">↕</span>;
 
   if (loading) {
     return (
@@ -125,32 +130,24 @@ export default function SuperAdminReports() {
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC]">
 
-      <div className="max-w-7xl mx-auto px-6 py-8 lg:px-8">
+      <PageContainer>
 
-        {/* Header */}
-        <div className="flex items-start justify-between mb-8">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600/20 border border-violet-500/20 text-xl">📊</div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">Platform Reports</h1>
-                <p className="text-violet-400 text-sm font-semibold">SkillForge AI</p>
-              </div>
-            </div>
-            <p className="text-slate-400 text-sm mt-1 ml-[52px]">Company-level metrics — live data, no caching</p>
+        <PageHeader
+          icon="📊"
+          title="Platform Reports"
+          subtitle="Company-level metrics. Live data, no caching."
+          actions={<Button variant="primary" onClick={fetchReports}>Refresh</Button>}
+        />
+
+        {loadError ? (
+          <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <span className="min-w-0 flex-1">{loadError}</span>
+            <Button variant="danger" size="sm" onClick={fetchReports}>Retry</Button>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={fetchReports}
-              className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-white font-bold text-sm transition-colors"
-            >
-              ↻ Refresh
-            </button>
-          </div>
-        </div>
+        ) : null}
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-5">
           <StatCard label="Companies" value={reports.length}
             description="Companies included in this report."
             tooltip="Number of company records on the platform, before any filter below is applied."
@@ -174,62 +171,63 @@ export default function SuperAdminReports() {
         </div>
 
         {/* Filter Bar */}
-        <div className="flex flex-wrap items-center gap-3 mb-5">
-          <div className="relative flex-1 min-w-[200px] max-w-xs">
+        <div className="flex flex-wrap items-center gap-3 mb-5 rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4">
+          <div className="relative flex-1 min-w-[200px] sm:max-w-md">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search company, admin..."
-              className="w-full bg-[#1E293B] border border-slate-700 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
+              className="w-full bg-slate-900/60 border border-slate-700 rounded-xl pl-9 pr-4 py-2.5 text-base text-white placeholder-slate-400 focus:outline-none focus:border-violet-500/60"
             />
           </div>
           <select
             value={filterPlan}
             onChange={e => setFilterPlan(e.target.value)}
-            className="bg-[#1E293B] border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
+            className="bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-base text-white focus:outline-none focus:border-violet-500/60"
           >
             <option value="all">All Plans</option>
             <option value="trial">Trial</option>
             <option value="standard">Standard</option>
             <option value="enterprise">Enterprise</option>
           </select>
-          <span className="text-slate-500 text-sm ml-auto">{filtered.length} of {reports.length} companies</span>
+          <span className="text-slate-300 text-sm ml-auto">{filtered.length} of {reports.length} companies</span>
+          {(search || filterPlan !== 'all') ? <Button size="sm" variant="ghost" onClick={() => { setSearch(''); setFilterPlan('all'); }}>Clear Filters</Button> : null}
         </div>
 
         {/* Reports Table */}
-        <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl overflow-hidden">
+        <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl overflow-hidden">
           {filtered.length === 0 ? (
-            <div className="px-6 py-16 text-center text-slate-500">
+            <div className="px-6 py-16 text-center text-slate-400">
               <div className="text-4xl mb-3">📊</div>
-              <p className="text-sm">{search || filterPlan !== 'all' ? 'No companies match your filters.' : 'No company data yet.'}</p>
+              <p className="text-base">{search || filterPlan !== 'all' ? 'No companies match your filters.' : 'No company data yet.'}</p>
             </div>
           ) : (
             <div className="min-w-0">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-700/60 bg-slate-800/30">
-                    <th onClick={() => handleSort('companyName')} className="text-left px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-300">
+                    <th onClick={() => handleSort('companyName')} className="text-left px-6 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-300">
                       Company <SortIcon k="companyName" />
                     </th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Admin</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Plan / Status</th>
-                    <th onClick={() => handleSort('totalUsers')} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-300">
+                    <th className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Admin</th>
+                    <th className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Plan / Status</th>
+                    <th onClick={() => handleSort('totalUsers')} className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-300">
                       Users <SortIcon k="totalUsers" />
                     </th>
-                    <th onClick={() => handleSort('employees')} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-300">
+                    <th onClick={() => handleSort('employees')} className="hidden xl:table-cell text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-300">
                       Employees <SortIcon k="employees" />
                     </th>
-                    <th onClick={() => handleSort('totalAssignments')} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-300">
+                    <th onClick={() => handleSort('totalAssignments')} className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-300">
                       Assignments <SortIcon k="totalAssignments" />
                     </th>
-                    <th onClick={() => handleSort('completionRate')} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-300">
+                    <th onClick={() => handleSort('completionRate')} className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-300">
                       Completion <SortIcon k="completionRate" />
                     </th>
-                    <th onClick={() => handleSort('activeUsers')} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-300">
+                    <th onClick={() => handleSort('activeUsers')} className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-300">
                       Active (30d) <SortIcon k="activeUsers" />
                     </th>
-                    <th onClick={() => handleSort('createdAt')} className="hidden xl:table-cell text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-300">
+                    <th onClick={() => handleSort('createdAt')} className="hidden xl:table-cell text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-300">
                       Created <SortIcon k="createdAt" />
                     </th>
                   </tr>
@@ -239,14 +237,14 @@ export default function SuperAdminReports() {
                     <tr key={r.companyId} className="hover:bg-slate-700/20 transition-colors">
                       <td className="px-6 py-4">
                         <div>
-                          <p className="font-semibold text-white">{r.companyName}</p>
-                          {r.domain && <p className="text-xs text-slate-500 mt-0.5">{r.domain}</p>}
+                          <p className="font-semibold text-white text-base truncate max-w-[22rem]" title={r.companyName}>{r.companyName}</p>
+                          {r.domain && <p className="text-sm text-slate-400 mt-0.5">{r.domain}</p>}
                         </div>
                       </td>
                       <td className="px-4 py-4">
                         <div>
-                          <p className="text-white">{r.adminName}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{r.adminEmail}</p>
+                          <p className="text-white truncate max-w-[16rem]" title={r.adminName}>{r.adminName}</p>
+                          <p className="text-sm text-slate-400 mt-0.5 truncate max-w-[16rem]" title={r.adminEmail}>{r.adminEmail}</p>
                         </div>
                       </td>
                       <td className="px-4 py-4">
@@ -255,17 +253,17 @@ export default function SuperAdminReports() {
                           <StatusBadge status={r.status} />
                         </div>
                       </td>
-                      <td className="px-4 py-4 text-slate-300 tabular-nums font-medium">{r.totalUsers}</td>
-                      <td className="px-4 py-4 text-slate-300 tabular-nums">{r.employees}</td>
+                      <td className="px-4 py-4 text-slate-300 tabular-nums font-medium">{r.totalUsers}<span className="xl:hidden block text-sm font-normal text-slate-400">{r.employees} employees</span></td>
+                      <td className="hidden xl:table-cell px-4 py-4 text-slate-300 tabular-nums">{r.employees}</td>
                       <td className="px-4 py-4">
                         <div className="text-slate-300 tabular-nums">{r.totalAssignments}</div>
-                        <div className="text-xs text-slate-500 mt-0.5">{r.completedAssignments} done</div>
+                        <div className="text-sm text-slate-400 mt-0.5">{r.completedAssignments} done</div>
                       </td>
                       <td className="px-4 py-4 min-w-[80px]">
                         <CompletionBar value={r.completionRate} />
                       </td>
                       <td className="px-4 py-4 text-slate-300 tabular-nums">{r.activeUsers}</td>
-                      <td className="hidden xl:table-cell px-4 py-4 text-slate-500 text-xs">{formatDate(r.createdAt)}</td>
+                      <td className="hidden xl:table-cell px-4 py-4 text-slate-300 text-sm">{formatDate(r.createdAt)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -275,10 +273,10 @@ export default function SuperAdminReports() {
         </div>
 
         {/* Footer note */}
-        <div className="mt-4 text-center text-slate-600 text-xs">
+        <div className="mt-4 text-center text-slate-400 text-sm">
           All data is live from the database — no caching. Click column headers to sort.
         </div>
-      </div>
+      </PageContainer>
     </div>
   );
 }

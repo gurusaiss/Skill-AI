@@ -5,6 +5,10 @@ import { authFetch } from '../utils/authFetch.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
 import ReminderButton from '../components/ReminderButton.jsx';
 import StatCard from '../components/StatCard.jsx';
+import PageContainer from '../components/PageContainer.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import Button from '../components/Button.jsx';
+import ActionMenu from '../components/ActionMenu.jsx';
 import { useNotification } from '../contexts/NotificationContext.jsx';
 import { ASSESSMENT_DURATION_MINUTES, normalizeDuration, ratingFromPercent, ratingForReport, ratingStyle, ratingDistribution } from '../utils/assessmentRules.js';
 import { AssignEmployeesModal, ReassignModal } from '../components/AssignAssessmentModals.jsx';
@@ -66,13 +70,13 @@ function ExportReportsModal({ assessment, token, onClose, showToast }) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60">
           <div>
             <h3 className="text-lg font-black text-white">Export Reports</h3>
-            <p className="text-xs text-slate-500 mt-0.5 truncate max-w-xs">{assessment.title}</p>
+            <p className="text-sm text-slate-400 mt-0.5 truncate max-w-xs">{assessment.title}</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">&times;</button>
+          <button type="button" aria-label="Close" title="Close" onClick={onClose} className="text-slate-400 hover:text-white text-xl">&times;</button>
         </div>
         <div className="px-6 py-5 space-y-5">
           <div>
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Format</label>
+            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 block">Format</label>
             <div className="grid grid-cols-4 gap-2">
               {formatOptions.map(({v,l}) => (
                 <button key={v} onClick={() => setFormat(v)}
@@ -84,7 +88,7 @@ function ExportReportsModal({ assessment, token, onClose, showToast }) {
           </div>
           {format !== 'zip' && (
             <div>
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Mode</label>
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 block">Mode</label>
               <div className="flex gap-2">
                 {[{v:'consolidated',l:'Consolidated'},{v:'individual',l:'Individual Sheets'}].map(({v,l}) => (
                   <button key={v} onClick={() => setMode(v)}
@@ -96,11 +100,11 @@ function ExportReportsModal({ assessment, token, onClose, showToast }) {
             </div>
           )}
           {format === 'zip' && (
-            <p className="text-xs text-slate-400 bg-slate-800/60 rounded-xl px-3 py-2">
+            <p className="text-sm text-slate-300 bg-slate-800/60 rounded-xl px-3 py-2">
               ZIP bundle: one PDF per employee, all in a single download.
             </p>
           )}
-          <p className="text-xs text-slate-500">
+          <p className="text-sm text-slate-400">
             Includes: Name, Email, ID, Job Role, Score, %, Rating, Classification, Status, Completion Date, Strengths, Improvement Areas, Recommendations.
           </p>
           <button onClick={handleExport} disabled={exporting}
@@ -181,6 +185,7 @@ export default function AssessmentManagement() {
     [employees]
   );
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const { notify: showToast } = useNotification();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -274,6 +279,7 @@ export default function AssessmentManagement() {
 
   const loadAll = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const [assessRes, empRes, groupRes] = await Promise.allSettled([
         authFetch('/api/assessments'),
@@ -303,10 +309,10 @@ export default function AssessmentManagement() {
         groupRes.status === 'rejected' && 'groups',
       ].filter(Boolean);
       if (failed.length > 0) {
-        showToast(`Failed to load ${failed.join(', ')} — showing last known data`, 'error');
+        setLoadError(`Failed to load ${failed.join(', ')}. Showing the last known data.`);
       }
     } catch (e) {
-      showToast(e.message || 'Failed to load data', 'error');
+      setLoadError(e.message || 'Failed to load data');
     } finally {
       setLoading(false);
     }
@@ -379,6 +385,7 @@ export default function AssessmentManagement() {
   };
 
   const handleCreate = async () => {
+    if (creating) return;
     setCreating(true);
     try {
       const targetUsers = modal.targetType === 'individual'
@@ -475,7 +482,7 @@ export default function AssessmentManagement() {
   };
 
   const saveEdit = async () => {
-    if (!editTarget) return;
+    if (!editTarget || saving) return;
     setSaving(true);
     try {
       await authFetch(`/api/assessments/${editTarget.id}`, {
@@ -587,120 +594,110 @@ export default function AssessmentManagement() {
     }
   };
 
+  const canCreate = hasFeaturePermission('assessments.create');
+  const canExport = hasFeaturePermission('reports.export');
+  const hasListFilters = !!(search || filterStatus !== 'all' || filterType !== 'all' || filterJobRole !== 'all');
+  const clearListFilters = () => { setSearch(''); setFilterStatus('all'); setFilterType('all'); setFilterJobRole('all'); };
+  const LIST_GRID = 'lg:grid-cols-[minmax(0,3fr)_minmax(0,1.6fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,1.5fr)]';
+
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <button
-              onClick={() => navigate(user?.role === 'admin' ? '/admin/dashboard' : '/manager/dashboard')}
-              className="text-slate-400 hover:text-white text-sm mb-2 flex items-center gap-2 transition-colors"
-            >
-              ← Back to Dashboard
-            </button>
-            <h1 className="text-3xl font-black text-white">Assessment Management</h1>
-            <p className="text-slate-400 text-sm mt-0.5">Create employee-specific assessments based on job roles and JDs</p>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setShowExportFormatModal(true)}
-              disabled={downloadingAll || !hasFeaturePermission('reports.export')}
-              title={!hasFeaturePermission('reports.export') ? "You don't have permission to export reports" : undefined}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-sm font-bold transition-all shadow-lg shadow-teal-500/20 disabled:opacity-40"
-            >
-              {downloadingAll ? 'Downloading…' : 'Download All Reports'}
-            </button>
-            <button
-              onClick={() => setAssignModal({ assessment: null })}
-              disabled={!hasFeaturePermission('assessments.create') || assessments.length === 0}
-              title={!hasFeaturePermission('assessments.create') ? "You don't have permission to assign assessments" : 'Pick employees and give them an existing assessment, with start and end dates'}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold transition-all shadow-lg shadow-sky-500/20"
-            >
-              + Assign employees
-            </button>
-            <button
-              onClick={() => setShowManualModal(true)}
-              disabled={!hasFeaturePermission('assessments.create')}
-              title={!hasFeaturePermission('assessments.create') ? "You don't have permission to create assessments" : undefined}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold transition-all shadow-lg shadow-emerald-500/20"
-            >
-              ✏ Manual Assessment
-            </button>
-            <button
-              onClick={openModal}
-              disabled={!hasFeaturePermission('assessments.create')}
-              title={!hasFeaturePermission('assessments.create') ? "You don't have permission to create assessments" : undefined}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold transition-all shadow-lg shadow-indigo-500/20"
-            >
-              + AI Assessment
-            </button>
-          </div>
+      <PageContainer>
+        <div className="mb-3">
+          <Button variant="ghost" size="sm" onClick={() => navigate(user?.role === 'admin' ? '/admin/dashboard' : '/manager/dashboard')}>
+            ← Back to Dashboard
+          </Button>
         </div>
 
+        {/* Header */}
+        <PageHeader
+          icon="📝"
+          title="Assessment Management"
+          subtitle="Create employee-specific assessments based on job roles and JDs"
+          actions={(
+            <>
+              <Button
+                variant="primary"
+                onClick={openModal}
+                disabled={!canCreate}
+                title={!canCreate ? "You don't have permission to create assessments" : 'Generate an assessment with AI from the job library'}
+              >
+                + AI Assessment
+              </Button>
+              <Button
+                onClick={() => setAssignModal({ assessment: null })}
+                disabled={!canCreate || assessments.length === 0}
+                title={!canCreate ? "You don't have permission to assign assessments" : 'Pick employees and give them an existing assessment, with start and end dates'}
+              >
+                Assign Employees
+              </Button>
+              <ActionMenu
+                label="More"
+                items={[
+                  { label: 'Create Manual Assessment', onClick: () => setShowManualModal(true), disabled: !canCreate },
+                  { label: downloadingAll ? 'Downloading all reports…' : 'Download All Reports', onClick: () => setShowExportFormatModal(true), disabled: downloadingAll || !canExport, divider: true },
+                  { label: 'Refresh List', onClick: loadAll },
+                ]}
+              />
+            </>
+          )}
+        />
+
+        {loadError ? (
+          <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            <span>{loadError}</span>
+            <Button size="sm" variant="danger" onClick={loadAll}>Retry</Button>
+          </div>
+        ) : null}
+
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          {[
-            { label: 'Total Assessments', value: assessments.length, icon: '📝', borderCls: 'border-indigo-500/25', bgCls: 'bg-indigo-500/5', textCls: 'text-indigo-400', numCls: 'text-indigo-300' },
-            { label: 'Total Employees Assigned', value: assessments.reduce((s, a) => s + (a.targetUsers?.length || 0), 0), icon: '👥', borderCls: 'border-purple-500/25', bgCls: 'bg-purple-500/5', textCls: 'text-purple-400', numCls: 'text-purple-300' },
-            { label: 'Active Employees', value: employees.length, icon: '🧑‍💼', borderCls: 'border-emerald-500/25', bgCls: 'bg-emerald-500/5', textCls: 'text-emerald-400', numCls: 'text-emerald-300' },
-          ].map((s, i) => (
-            <div key={i} className={`rounded-2xl border ${s.borderCls} ${s.bgCls} p-5 flex flex-col gap-2`}>
-              <div className="flex items-center justify-between">
-                <p className={`text-xs font-bold ${s.textCls} uppercase tracking-widest`}>{s.label}</p>
-                <span className="text-lg opacity-60">{s.icon}</span>
-              </div>
-              <p className={`text-4xl font-black ${s.numCls} leading-none`}>{s.value}</p>
-            </div>
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+          <StatCard label="Total Assessments" value={assessments.length} icon="📝"
+            borderClass="border-indigo-500/25" bgClass="bg-indigo-500/5" textClass="text-indigo-300"
+            description="Assessments created in your company."
+            tooltip="Every assessment you can see, including ones whose employees have all finished." />
+          <StatCard label="Total Employees Assigned" value={assessments.reduce((s, a) => s + (a.targetUsers?.length || 0), 0)} icon="👥"
+            borderClass="border-purple-500/25" bgClass="bg-purple-500/5" textClass="text-purple-300"
+            description="Assignments across all assessments."
+            tooltip="Sum of the employees targeted by each assessment. An employee on two assessments is counted twice." />
+          <StatCard label="Active Employees" value={employees.length} icon="🧑‍💼"
+            borderClass="border-emerald-500/25" bgClass="bg-emerald-500/5" textClass="text-emerald-300"
+            description="Employees you can assign to."
+            tooltip="Employee accounts available for assessment assignment." />
         </div>
 
         {/* Table */}
-        <div className="rounded-2xl border border-slate-700/40 bg-[#111827] overflow-hidden shadow-xl">
-          {/* Toolbar */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4 border-b border-slate-700/50 bg-slate-800/20">
-            <div className="relative flex-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 overflow-hidden shadow-xl">
+          {/* Toolbar + filters */}
+          <div className="flex flex-col gap-3 px-4 sm:px-5 py-4 border-b border-slate-700/50 bg-slate-800/30 lg:flex-row lg:items-center">
+            <div className="relative min-w-0 flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm" aria-hidden="true">🔍</span>
               <input
                 type="text"
+                aria-label="Search assessments"
                 placeholder="Search assessments..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 transition-colors"
+                className="w-full h-10 pl-9 pr-4 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 transition-colors"
               />
             </div>
-            <button
-              onClick={loadAll}
-              className="px-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-sm text-slate-400 hover:text-white hover:border-slate-600 font-semibold transition-all flex items-center gap-2"
-            >
-              <span>↻</span> Refresh
-            </button>
-          </div>
-
-          {/* Filter row */}
-          <div className="flex flex-wrap gap-2 px-5 pb-3">
-            <SearchableSelect value={filterStatus} onChange={setFilterStatus} allLabel="All Status"
-              options={[{ value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }, { value: 'completed', label: 'Completed' }]} />
-            <SearchableSelect value={filterType} onChange={setFilterType} allLabel="All Types"
-              options={[{ value: 'individual', label: 'Individual' }, { value: 'group', label: 'Group' }]} />
-            {jobRoles.length > 0 && (
-              <SearchableSelect value={filterJobRole} onChange={setFilterJobRole} allLabel="All Job Roles" options={jobRoles} />
-            )}
-            {(filterStatus !== 'all' || filterType !== 'all' || filterJobRole !== 'all') && (
-              <button onClick={() => { setFilterStatus('all'); setFilterType('all'); setFilterJobRole('all'); }}
-                className="px-3 py-1.5 bg-slate-700/50 border border-slate-600/40 rounded-lg text-slate-400 text-xs font-semibold hover:text-white transition-colors">
-                ✕ Clear
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <SearchableSelect value={filterStatus} onChange={setFilterStatus} allLabel="All Status"
+                options={[{ value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending' }, { value: 'completed', label: 'Completed' }]} />
+              <SearchableSelect value={filterType} onChange={setFilterType} allLabel="All Types"
+                options={[{ value: 'individual', label: 'Individual' }, { value: 'group', label: 'Group' }]} />
+              {jobRoles.length > 0 && (
+                <SearchableSelect value={filterJobRole} onChange={setFilterJobRole} allLabel="All Job Roles" options={jobRoles} />
+              )}
+              {hasListFilters && <Button onClick={clearListFilters}>Clear Filters</Button>}
+            </div>
           </div>
 
           {/* Table Header */}
-          <div
-            className="hidden md:grid md:grid-cols-[minmax(0,3fr)_minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,1.3fr)] gap-3 px-4 xl:px-5 py-3 border-b border-slate-700/40 bg-slate-800/30"
-          >
+          <div className={`hidden lg:grid ${LIST_GRID} gap-3 px-5 py-3 border-b border-slate-700/40 bg-slate-800/50`}>
             {['Assessment Title', 'Type / Role', 'Assigned', 'Completed', 'Pending', 'Avg Score', 'Actions'].map(h => (
-              <span key={h} className="text-[10px] xl:text-xs font-bold text-slate-500 uppercase tracking-wider truncate" title={h}>{h}</span>
+              <span key={h} className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate" title={h}>{h}</span>
             ))}
           </div>
 
@@ -718,13 +715,18 @@ export default function AssessmentManagement() {
               ))}
             </div>
           ) : filtered.length === 0 ? (
-            <div className="py-20 text-center">
-              <div className="text-6xl mb-4 opacity-20">📋</div>
-              <p className="text-lg font-bold text-slate-400 mb-1">No Assessments Yet</p>
-              <p className="text-sm text-slate-600">Click "Create Assessment" to get started.</p>
+            <div className="py-16 px-4 text-center">
+              <div className="text-6xl mb-4 opacity-30" aria-hidden="true">📋</div>
+              <p className="text-lg font-bold text-slate-200 mb-1">{hasListFilters ? 'No assessments match your filters' : 'No Assessments Yet'}</p>
+              <p className="text-sm text-slate-400 mb-4">
+                {hasListFilters ? 'Try a different search or clear the filters.' : 'Create an AI or manual assessment to get started.'}
+              </p>
+              {hasListFilters
+                ? <Button onClick={clearListFilters}>Clear Filters</Button>
+                : <Button variant="primary" onClick={openModal} disabled={!canCreate}>+ AI Assessment</Button>}
             </div>
           ) : (
-            <div className="divide-y divide-slate-700/20">
+            <div className="divide-y divide-slate-700/30">
               {filtered.map(a => {
                 const empAssignments = a.employeeAssignments || [];
                 const submittedCount = empAssignments.filter(ea => ea.status === 'submitted').length;
@@ -739,58 +741,56 @@ export default function AssessmentManagement() {
                 return (
                 <div
                   key={a.id}
-                  className="group grid grid-cols-2 md:grid-cols-[minmax(0,3fr)_minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,1.3fr)] items-center gap-3 px-4 xl:px-5 py-4 hover:bg-slate-800/30 transition-all"
+                  className={`grid grid-cols-2 ${LIST_GRID} items-center gap-x-3 gap-y-2 px-4 sm:px-5 py-4 hover:bg-slate-700/20 transition-colors`}
                 >
                   {/* Title */}
-                  <div className="min-w-0 col-span-2 md:col-span-1">
+                  <div className="min-w-0 col-span-2 lg:col-span-1">
                     <button
+                      type="button"
                       onClick={() => { setViewDetail(a); setDetailTab('overview'); }}
-                      className="text-sm font-bold text-white hover:text-indigo-300 transition-colors text-left block truncate max-w-full"
+                      className="text-base font-bold text-white hover:text-indigo-300 transition-colors text-left block truncate max-w-full"
+                      title={a.title}
                     >
                       {a.title}
                     </button>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-sm text-slate-400 mt-0.5">
                       {a.questionCount ? `${a.questionCount} Qs` : ''}
-                      {` · ${normalizeDuration(a.duration)} min`}
+                      {`${a.questionCount ? ' · ' : ''}${normalizeDuration(a.duration)} min`}
                       {a.assessmentDate ? ` · ${new Date(a.assessmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}` : ''}
                     </p>
                   </div>
                   {/* Type / Role */}
-                  <div className="min-w-0">
-                    {a.assessmentType && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-500/15 text-violet-300 border border-violet-500/25 truncate block w-fit max-w-full mb-0.5" title={a.assessmentType}>{a.assessmentType}</span>}
-                    {jobRoles.length > 0 && <span className="text-[10px] text-slate-500 truncate block">{jobRoles.slice(0,2).join(', ')}{jobRoles.length>2?` +${jobRoles.length-2}`:''}</span>}
+                  <div className="min-w-0 col-span-2 lg:col-span-1">
+                    {a.assessmentType && <span className="px-2 py-0.5 rounded text-xs font-bold bg-violet-500/15 text-violet-300 border border-violet-500/25 truncate block w-fit max-w-full mb-0.5" title={a.assessmentType}>{a.assessmentType}</span>}
+                    {jobRoles.length > 0 && <span className="text-sm text-slate-300 truncate block" title={jobRoles.join(', ')}>{jobRoles.slice(0,2).join(', ')}{jobRoles.length>2?` +${jobRoles.length-2}`:''}</span>}
                   </div>
                   {/* Assigned */}
-                  <div><span className="text-sm font-black text-indigo-300">{totalAssigned}</span></div>
+                  <div><span className="lg:hidden text-sm text-slate-400 mr-2">Assigned</span><span className="text-base font-black text-indigo-300">{totalAssigned}</span></div>
                   {/* Completed */}
-                  <div><span className="text-sm font-black text-emerald-300">{submittedCount}</span></div>
+                  <div><span className="lg:hidden text-sm text-slate-400 mr-2">Completed</span><span className="text-base font-black text-emerald-300">{submittedCount}</span></div>
                   {/* Pending */}
-                  <div><span className={`text-sm font-black ${pendingCount > 0 ? 'text-amber-300' : 'text-slate-500'}`}>{pendingCount}</span></div>
+                  <div><span className="lg:hidden text-sm text-slate-400 mr-2">Pending</span><span className={`text-base font-black ${pendingCount > 0 ? 'text-amber-300' : 'text-slate-400'}`}>{pendingCount}</span></div>
                   {/* Avg Score */}
                   <div>
+                    <span className="lg:hidden text-sm text-slate-400 mr-2">Avg score</span>
                     {avgScore !== null
-                      ? <span className={`text-sm font-black ${ratingStyle(ratingFromPercent(avgScore)).text}`} title={ratingFromPercent(avgScore)}>{avgScore}%</span>
-                      : <span className="text-xs text-slate-600">—</span>}
+                      ? <span className={`text-base font-black ${ratingStyle(ratingFromPercent(avgScore)).text}`} title={ratingFromPercent(avgScore)}>{avgScore}%</span>
+                      : <span className="text-sm text-slate-400">—</span>}
                   </div>
                   {/* Actions */}
-                  <div className="flex flex-wrap items-center gap-1.5 col-span-2 md:col-span-1">
-                    <button
-                      onClick={() => { setViewDetail(a); setDetailTab('overview'); }}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-indigo-300 text-xs font-semibold transition-colors"
-                      title="View Assessment Details"
-                    >
-                      View
-                    </button>
-                    <button
-                      onClick={() => openEdit(a)}
-                      className="px-2.5 py-1.5 bg-slate-700/60 hover:bg-slate-700 border border-slate-600/40 rounded-lg text-slate-300 text-xs font-semibold transition-colors"
-                      title="Edit"
-                    >✏️</button>
-                    <button
-                      onClick={() => deleteAssessment(a.id)}
-                      className="px-2.5 py-1.5 bg-slate-700/60 hover:bg-red-900/40 border border-slate-600/40 hover:border-red-500/30 rounded-lg text-slate-400 hover:text-red-400 text-xs font-semibold transition-colors"
-                      title="Delete"
-                    >🗑️</button>
+                  <div className="flex flex-wrap items-center gap-2 col-span-2 lg:col-span-1">
+                    <Button size="sm" variant="primary" onClick={() => { setViewDetail(a); setDetailTab('overview'); }} title="View assessment details">
+                      View Details
+                    </Button>
+                    <ActionMenu
+                      label="Manage"
+                      size="sm"
+                      items={[
+                        { label: 'Edit title, date and deadline', onClick: () => openEdit(a) },
+                        { label: 'Assign employees', onClick: () => setAssignModal({ assessment: a }), disabled: !canCreate || a.isActive === false },
+                        { label: 'Delete assessment', onClick: () => deleteAssessment(a.id), danger: true, divider: true },
+                      ]}
+                    />
                   </div>
                 </div>
                 );
@@ -799,28 +799,28 @@ export default function AssessmentManagement() {
           )}
 
           {!loading && filtered.length > 0 && (
-            <div className="px-5 py-3 border-t border-slate-700/30 bg-slate-800/10 flex items-center justify-between">
-              <p className="text-xs text-slate-600">
-                Showing <span className="text-slate-400 font-semibold">{filtered.length}</span> of{' '}
-                <span className="text-slate-400 font-semibold">{assessments.length}</span> assessments
+            <div className="px-5 py-3 border-t border-slate-700/30 bg-slate-800/20 flex items-center justify-between">
+              <p className="text-sm text-slate-400">
+                Showing <span className="text-slate-200 font-semibold">{filtered.length}</span> of{' '}
+                <span className="text-slate-200 font-semibold">{assessments.length}</span> assessments
               </p>
             </div>
           )}
         </div>
-      </div>
+      </PageContainer>
 
       {/* ===== CREATE ASSESSMENT MODAL ===== */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col">
+          <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col">
 
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 sticky top-0 bg-[#0F172A] z-10">
               <div>
                 <h3 className="text-lg font-black text-white">Create Assessment</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Assign unique AI-generated assessments to employees</p>
+                <p className="text-sm text-slate-400 mt-0.5">Assign unique AI-generated assessments to employees</p>
               </div>
-              <button onClick={closeModal} className="text-slate-500 hover:text-white text-xl transition-colors">✕</button>
+              <button type="button" aria-label="Close" title="Close" onClick={closeModal} className="text-slate-300 hover:text-white text-xl transition-colors">✕</button>
             </div>
 
             {/* Step Indicator */}
@@ -837,12 +837,12 @@ export default function AssessmentManagement() {
                         ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
                         : modal.step === s.num
                         ? 'bg-indigo-600 border-indigo-500 text-white'
-                        : 'bg-slate-800 border-slate-700 text-slate-500'
+                        : 'bg-slate-800 border-slate-700 text-slate-400'
                     }`}>
                       {modal.step > s.num ? '✓' : s.num}
                     </div>
                     <span className={`text-xs font-semibold transition-colors ${
-                      modal.step === s.num ? 'text-white' : modal.step > s.num ? 'text-emerald-400' : 'text-slate-500'
+                      modal.step === s.num ? 'text-white' : modal.step > s.num ? 'text-emerald-400' : 'text-slate-400'
                     }`}>{s.label}</span>
                   </div>
                   {i < 2 && <div className="flex-1 h-px bg-slate-700/60 mx-3" />}
@@ -855,7 +855,7 @@ export default function AssessmentManagement() {
               <div className="p-6 space-y-5 flex-1">
                 {/* Target type radio */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Target</label>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 block">Target</label>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { value: 'individual', label: 'Individual Employees', icon: '👤' },
@@ -888,7 +888,7 @@ export default function AssessmentManagement() {
                 {modal.targetType === 'individual' && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
                         Select Employees
                       </label>
                       <span className="text-xs text-indigo-400 font-semibold">
@@ -896,7 +896,7 @@ export default function AssessmentManagement() {
                       </span>
                     </div>
                     {employees.length === 0 ? (
-                      <div className="py-10 text-center text-slate-500 text-sm rounded-xl border border-slate-700/40 bg-slate-800/30">
+                      <div className="py-10 text-center text-slate-400 text-sm rounded-xl border border-slate-700/40 bg-slate-800/30">
                         No employees found
                       </div>
                     ) : (
@@ -926,7 +926,7 @@ export default function AssessmentManagement() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-semibold text-white truncate">{emp.name || '—'}</p>
-                                <p className="text-xs text-slate-500 truncate">{emp.email}</p>
+                                <p className="text-sm text-slate-400 truncate">{emp.email}</p>
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0">
                                 {emp.jobRole && (
@@ -953,7 +953,7 @@ export default function AssessmentManagement() {
                 {/* Department: dynamic dropdown, sourced from actual employee records */}
                 {modal.targetType === 'department' && (
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Department</label>
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 block">Department</label>
                     {departments.length > 0 ? (
                       <>
                         <SearchableSelect
@@ -964,7 +964,7 @@ export default function AssessmentManagement() {
                           includeAllOption={false}
                         />
                         {modal.department && (
-                          <p className="text-xs text-slate-500 mt-1">
+                          <p className="text-sm text-slate-400 mt-1">
                             {employees.filter(e => e.department === modal.department).length} employee(s) in this department will be assigned
                           </p>
                         )}
@@ -980,9 +980,9 @@ export default function AssessmentManagement() {
                 {/* Group: dropdown */}
                 {modal.targetType === 'group' && (
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Select Group</label>
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 block">Select Group</label>
                     {groups.length === 0 ? (
-                      <div className="py-8 text-center text-slate-500 text-sm rounded-xl border border-slate-700/40 bg-slate-800/30">
+                      <div className="py-8 text-center text-slate-400 text-sm rounded-xl border border-slate-700/40 bg-slate-800/30">
                         No groups found. Create groups in the Groups section.
                       </div>
                     ) : (
@@ -1017,7 +1017,7 @@ export default function AssessmentManagement() {
               <div className="p-6 space-y-5 flex-1">
                 {/* Assessment Type */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Assessment Type</label>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">Assessment Type</label>
                   <select
                     value={modal.assessmentType}
                     onChange={e => updateModal({ assessmentType: e.target.value })}
@@ -1029,7 +1029,7 @@ export default function AssessmentManagement() {
 
                 {/* Assessment Date */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">
                     Start Date <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -1039,12 +1039,12 @@ export default function AssessmentManagement() {
                     min={new Date().toISOString().split('T')[0]}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
                   />
-                  <p className="text-slate-600 text-xs mt-1">The assessment becomes available to employees on this date — set the Deadline below for when it's due</p>
+                  <p className="text-slate-400 text-xs mt-1">The assessment becomes available to employees on this date — set the Deadline below for when it's due</p>
                 </div>
 
                 {/* Title */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">
                     Title <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -1058,7 +1058,7 @@ export default function AssessmentManagement() {
 
                 {/* Question Count */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">
                     Question Count
                   </label>
                   <label className="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all mb-2 border-emerald-500/40 bg-emerald-500/5">
@@ -1070,7 +1070,7 @@ export default function AssessmentManagement() {
                     />
                     <span>
                       <span className="block text-sm font-semibold text-emerald-300">Use every approved question (recommended)</span>
-                      <span className="block text-xs text-slate-400 mt-0.5">
+                      <span className="block text-sm text-slate-300 mt-0.5">
                         Each employee receives their role's full approved bank from the Job Library. Selected employees can hold different roles, so each gets their own role's approved count.
                       </span>
                     </span>
@@ -1085,15 +1085,15 @@ export default function AssessmentManagement() {
                         onChange={e => updateModal({ questionCount: Math.max(1, parseInt(e.target.value) || 1) })}
                         className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
                       />
-                      <p className="text-xs text-slate-500 mt-1">Caps each employee at this many questions. If a role's approved bank holds fewer, all available are used.</p>
+                      <p className="text-sm text-slate-400 mt-1">Caps each employee at this many questions. If a role's approved bank holds fewer, all available are used.</p>
                     </>
                   )}
                 </div>
 
                 {/* Difficulty Distribution */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
-                    Difficulty Distribution <span className="text-slate-600 font-normal normal-case">(% each — used when pulling from question bank)</span>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">
+                    Difficulty Distribution <span className="text-slate-400 font-normal normal-case">(% each — used when pulling from question bank)</span>
                   </label>
                   <div className="grid grid-cols-3 gap-2">
                     {[
@@ -1112,7 +1112,7 @@ export default function AssessmentManagement() {
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-slate-500 mt-1.5">
+                  <p className="text-sm text-slate-400 mt-1.5">
                     {modal.useAllApproved ? (
                       <>Applied proportionally across each role's full approved bank.</>
                     ) : (
@@ -1127,7 +1127,7 @@ export default function AssessmentManagement() {
 
                 {/* Question Types */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Question Types</label>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 block">Question Types</label>
                   <div className="flex flex-wrap gap-2">
                     {QUESTION_TYPE_OPTIONS.map(opt => (
                       <button
@@ -1145,7 +1145,7 @@ export default function AssessmentManagement() {
                             ? 'bg-indigo-500 border-indigo-400'
                             : 'border-slate-600'
                         }`}>
-                          {modal.questionTypes.includes(opt.value) && <span className="text-white text-[8px] font-black">✓</span>}
+                          {modal.questionTypes.includes(opt.value) && <span className="text-white text-xs font-black">✓</span>}
                         </span>
                         {opt.label}
                       </button>
@@ -1155,8 +1155,8 @@ export default function AssessmentManagement() {
 
                 {/* Difficulty Filter */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
-                    Difficulty Filter <span className="text-slate-600 font-normal normal-case">(pulls from role's question bank)</span>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">
+                    Difficulty Filter <span className="text-slate-400 font-normal normal-case">(pulls from role's question bank)</span>
                   </label>
                   <select
                     value={modal.difficulty || ''}
@@ -1172,7 +1172,7 @@ export default function AssessmentManagement() {
 
                 {/* Duration */}
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">
                     Duration (minutes)
                   </label>
                   <input
@@ -1187,8 +1187,8 @@ export default function AssessmentManagement() {
 
                 {/* Deadline */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                    Deadline <span className="text-slate-600 font-normal normal-case">(date + time)</span>
+                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                    Deadline <span className="text-slate-400 font-normal normal-case">(date + time)</span>
                   </label>
                   <input
                     type="datetime-local"
@@ -1196,7 +1196,7 @@ export default function AssessmentManagement() {
                     onChange={e => updateModal({ deadline: e.target.value })}
                     className="w-full px-3 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
                   />
-                  <p className="text-slate-600 text-xs mt-1">Employee cannot submit after this time</p>
+                  <p className="text-slate-400 text-xs mt-1">Employee cannot submit after this time</p>
                 </div>
 
                 {/* Advanced Settings (collapsible) */}
@@ -1229,31 +1229,31 @@ export default function AssessmentManagement() {
                 {/* Summary Card */}
                 <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4 mb-5">
                   <h4 className="text-sm font-black text-white mb-3">Assessment Summary</h4>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Title</span>
-                      <span className="text-white font-semibold truncate max-w-[140px] text-right">{modal.title}</span>
+                      <span className="text-slate-400">Title</span>
+                      <span className="text-white font-semibold truncate max-w-[60%] text-right">{modal.title}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Date</span>
+                      <span className="text-slate-400">Date</span>
                       <span className="text-white font-semibold">{modal.assessmentDate || '—'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Employees</span>
+                      <span className="text-slate-400">Employees</span>
                       <span className="text-indigo-300 font-bold">{modal.targetType === 'individual' ? modal.selectedUsers.length : 'Group'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Questions each</span>
+                      <span className="text-slate-400">Questions each</span>
                       <span className="text-white font-semibold">
                         {modal.useAllApproved ? "Role's full approved bank" : modal.questionCount}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Duration</span>
+                      <span className="text-slate-400">Duration</span>
                       <span className="text-white font-semibold">{modal.duration} min</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Question types</span>
+                      <span className="text-slate-400">Question types</span>
                       <span className="text-white font-semibold">{modal.questionTypes.join(', ')}</span>
                     </div>
                   </div>
@@ -1262,7 +1262,7 @@ export default function AssessmentManagement() {
                 {/* Per-employee list */}
                 {modal.targetType === 'individual' && selectedEmployeeObjects.length > 0 && (
                   <div className="mb-5">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 block">
                       Selected Employees ({selectedEmployeeObjects.length})
                     </label>
                     <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
@@ -1278,14 +1278,14 @@ export default function AssessmentManagement() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-semibold text-white truncate">{emp.name || '—'}</p>
-                              {emp.jobRole && <p className="text-xs text-slate-500">{emp.jobRole}</p>}
+                              {emp.jobRole && <p className="text-sm text-slate-400">{emp.jobRole}</p>}
                             </div>
                             {!hasJD ? (
                               <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-amber-500/15 border border-amber-500/30 text-amber-400 flex-shrink-0">
                                 ⚠ No JD — using job role
                               </span>
                             ) : (
-                              <span className="text-xs text-slate-500 italic flex-shrink-0">Will get unique questions from their JD</span>
+                              <span className="text-sm text-slate-400 italic flex-shrink-0">Will get unique questions from their JD</span>
                             )}
                           </div>
                         );
@@ -1337,14 +1337,14 @@ export default function AssessmentManagement() {
       {/* ===== EDIT ASSESSMENT MODAL ===== */}
       {editTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl">
+          <div className="bg-[#0F172A] border border-slate-700 rounded-2xl w-full max-w-xl shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
               <h3 className="text-lg font-black text-white">Edit Assessment</h3>
-              <button onClick={() => setEditTarget(null)} className="text-slate-500 hover:text-white text-xl">✕</button>
+              <button type="button" aria-label="Close" title="Close" onClick={() => setEditTarget(null)} className="text-slate-300 hover:text-white text-xl">✕</button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Title</label>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">Title</label>
                 <input
                   type="text"
                   value={editForm.title}
@@ -1353,7 +1353,7 @@ export default function AssessmentManagement() {
                 />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Start Date</label>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">Start Date</label>
                 <input
                   type="date"
                   value={editForm.assessmentDate}
@@ -1362,7 +1362,7 @@ export default function AssessmentManagement() {
                 />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Duration (minutes)</label>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">Duration (minutes)</label>
                 <input
                   type="number"
                   min={5}
@@ -1373,7 +1373,7 @@ export default function AssessmentManagement() {
                 />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Deadline</label>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">Deadline</label>
                 <input
                   type="datetime-local"
                   value={editForm.deadline}
@@ -1404,15 +1404,15 @@ export default function AssessmentManagement() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-[#0F172A] z-10">
               <div>
                 <h3 className="text-lg font-black text-white">Edit Questions</h3>
-                <p className="text-xs text-slate-500 mt-0.5">{qEditTarget.title} · {qDraft.length} question{qDraft.length === 1 ? '' : 's'}</p>
+                <p className="text-sm text-slate-400 mt-0.5">{qEditTarget.title} · {qDraft.length} question{qDraft.length === 1 ? '' : 's'}</p>
               </div>
-              <button onClick={() => setQEditTarget(null)} className="text-slate-500 hover:text-white text-xl transition-colors">✕</button>
+              <button type="button" aria-label="Close" title="Close" onClick={() => setQEditTarget(null)} className="text-slate-300 hover:text-white text-xl transition-colors">✕</button>
             </div>
 
             {/* Employee selector (questions are per-employee) */}
             {(qEditTarget.employeeAssignments?.length || 0) > 1 && (
               <div className="px-6 pt-4">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Employee (questions are unique per employee)</label>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">Employee (questions are unique per employee)</label>
                 <select
                   value={qEmpIdx}
                   onChange={e => selectQEmployee(parseInt(e.target.value))}
@@ -1436,7 +1436,7 @@ export default function AssessmentManagement() {
             {/* Question list */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
               {qDraft.length === 0 ? (
-                <div className="py-10 text-center text-slate-500 text-sm">No questions for this employee. Add one below.</div>
+                <div className="py-10 text-center text-slate-400 text-sm">No questions for this employee. Add one below.</div>
               ) : qDraft.map((q, qi) => (
                 <div key={qi} className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-4 space-y-3">
                   <div className="flex items-center justify-between gap-2">
@@ -1482,7 +1482,7 @@ export default function AssessmentManagement() {
                     <div className="space-y-1.5">
                       {(q.options || []).map((opt, oi) => (
                         <div key={oi} className="flex items-center gap-2">
-                          <span className="text-xs text-slate-500 w-4 flex-shrink-0">{String.fromCharCode(65 + oi)}</span>
+                          <span className="text-sm text-slate-400 w-4 flex-shrink-0">{String.fromCharCode(65 + oi)}</span>
                           <input
                             type="text"
                             value={opt}
@@ -1497,7 +1497,7 @@ export default function AssessmentManagement() {
                   {/* Answer + explanation */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs font-bold text-slate-500 mb-1 block">
+                      <label className="text-xs font-bold text-slate-400 mb-1 block">
                         {q.type === 'mcq' ? 'Correct Answer (A/B/C/D)' : q.type === 'fill_blank' ? 'Correct Answer' : 'Suggested Answer / Evaluation Notes'}
                       </label>
                       {q.type === 'subjective' ? (
@@ -1519,7 +1519,7 @@ export default function AssessmentManagement() {
                       )}
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-slate-500 mb-1 block">Skill Area</label>
+                      <label className="text-xs font-bold text-slate-400 mb-1 block">Skill Area</label>
                       <input
                         type="text"
                         value={q.skillArea || ''}
@@ -1530,7 +1530,7 @@ export default function AssessmentManagement() {
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-500 mb-1 block">Explanation</label>
+                    <label className="text-xs font-bold text-slate-400 mb-1 block">Explanation</label>
                     <input
                       type="text"
                       value={q.explanation || ''}
@@ -1558,11 +1558,11 @@ export default function AssessmentManagement() {
                       >
                         <span className="text-xl">{icon}</span>
                         <span className="text-xs font-bold text-white">{label}</span>
-                        <span className="text-[10px] text-slate-500 leading-tight">{desc}</span>
+                        <span className="text-xs text-slate-400 leading-tight">{desc}</span>
                       </button>
                     ))}
                   </div>
-                  <button onClick={() => setQTypePickerOpen(false)} className="mt-3 w-full text-xs text-slate-500 hover:text-slate-300 transition-colors">Cancel</button>
+                  <button onClick={() => setQTypePickerOpen(false)} className="mt-3 w-full text-sm text-slate-400 hover:text-slate-300 transition-colors">Cancel</button>
                 </div>
               ) : (
                 <button
@@ -1602,7 +1602,7 @@ export default function AssessmentManagement() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-[#0F172A]">
               <div>
                 <h3 className="text-lg font-black text-white">{viewReport.title} — Report</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Submitted employee results</p>
+                <p className="text-sm text-slate-400 mt-0.5">Submitted employee results</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1628,12 +1628,12 @@ export default function AssessmentManagement() {
                 >
                   ⬇ Download PDF
                 </button>
-                <button onClick={() => setViewReport(null)} className="text-slate-500 hover:text-white text-xl transition-colors">✕</button>
+                <button type="button" aria-label="Close" title="Close" onClick={() => setViewReport(null)} className="text-slate-300 hover:text-white text-xl transition-colors">✕</button>
               </div>
             </div>
             <div className="p-6 space-y-3">
               {(viewReport.employeeAssignments?.filter(ea => ea.status === 'submitted') || []).length === 0 ? (
-                <p className="text-slate-500 text-sm text-center py-10">No submitted results yet.</p>
+                <p className="text-slate-400 text-sm text-center py-10">No submitted results yet.</p>
               ) : (
                 viewReport.employeeAssignments
                   .filter(ea => ea.status === 'submitted')
@@ -1655,7 +1655,7 @@ export default function AssessmentManagement() {
                         <div className="flex items-center justify-between">
                           <div>
                             <p className="text-sm font-bold text-white">{emp?.name || ea.userName || ea.userId}</p>
-                            {ea.jobRole && <p className="text-xs text-slate-500">{ea.jobRole}</p>}
+                            {ea.jobRole && <p className="text-sm text-slate-400">{ea.jobRole}</p>}
                           </div>
                           <div className="flex items-center gap-2">
                             {score !== undefined && (
@@ -1669,17 +1669,17 @@ export default function AssessmentManagement() {
                         {classification && (
                           <div className="flex items-center gap-2 px-3 py-2 rounded-lg border" style={{ borderColor: classification.color + '40', backgroundColor: classification.color + '15' }}>
                             <span className="text-xs font-black" style={{ color: classification.color }}>{classification.label}</span>
-                            {readiness && <span className="text-xs text-slate-400 ml-auto">{readiness}</span>}
+                            {readiness && <span className="text-sm text-slate-300 ml-auto">{readiness}</span>}
                           </div>
                         )}
 
                         {/* Skill breakdown */}
                         {skillBreakdown.length > 0 && (
                           <div className="space-y-1.5">
-                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Skill Scores</p>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Skill Scores</p>
                             {skillBreakdown.map((sb, si) => (
                               <div key={si} className="flex items-center gap-2">
-                                <span className="text-xs text-slate-400 w-28 truncate flex-shrink-0">{sb.skill}</span>
+                                <span className="text-sm text-slate-300 w-28 truncate flex-shrink-0">{sb.skill}</span>
                                 <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
                                   <div className="h-full rounded-full transition-all" style={{ width: `${sb.pct}%`, backgroundColor: sb.pct >= 70 ? '#10B981' : sb.pct >= 40 ? '#F59E0B' : '#EF4444' }} />
                                 </div>
@@ -1723,7 +1723,7 @@ export default function AssessmentManagement() {
 
                         {/* Auto-module notice */}
                         {weakAreas.length > 0 && (
-                          <p className="text-xs text-slate-500 border-t border-slate-700/40 pt-2">
+                          <p className="text-sm text-slate-400 border-t border-slate-700/40 pt-2">
                             Training module auto-generated and assigned based on weak areas.
                           </p>
                         )}
@@ -1812,38 +1812,29 @@ export default function AssessmentManagement() {
         return (
           <div className="fixed inset-0 z-50 bg-[#0F172A] overflow-y-auto">
             {/* Top bar */}
-            <div className="sticky top-0 z-10 bg-[#0F172A]/95 backdrop-blur border-b border-slate-700/60 px-6 py-3 flex items-center justify-between">
-              <button onClick={() => setViewDetail(null)} className="flex items-center gap-2 text-slate-400 hover:text-white text-sm font-semibold transition-colors">
-                ← Back to Assessments
-              </button>
-              <div className="flex items-center gap-2">
-                {[['xlsx','📊 Excel'],['pdf','📄 PDF'],['docx','📝 Word']].map(([fmt,lbl]) => (
-                  <button key={fmt} onClick={() => doDetailExport(fmt)}
-                    disabled={!hasFeaturePermission('reports.export')}
-                    title={!hasFeaturePermission('reports.export') ? "You don't have permission to export reports" : undefined}
-                    className="px-3 py-1.5 rounded-lg bg-teal-600/20 hover:bg-teal-600/40 border border-teal-500/30 text-teal-300 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                    ⬇ {lbl}
-                  </button>
-                ))}
-                <button onClick={() => doDetailExport('zip')}
-                  disabled={!hasFeaturePermission('reports.export')}
-                  title={!hasFeaturePermission('reports.export') ? "You don't have permission to export reports" : undefined}
-                  className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 text-purple-300 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                  ⬇ ZIP Bundle
-                </button>
-              </div>
+            <div className="sticky top-0 z-10 bg-[#0F172A]/95 backdrop-blur border-b border-slate-700/60 px-3 sm:px-5 lg:px-6 2xl:px-8 py-3 flex flex-wrap items-center justify-between gap-2">
+              <Button variant="ghost" onClick={() => setViewDetail(null)}>← Back to Assessments</Button>
+              <ActionMenu
+                label="Download Report"
+                items={[
+                  { label: 'Excel (.xlsx)', onClick: () => doDetailExport('xlsx') },
+                  { label: 'PDF (.pdf)', onClick: () => doDetailExport('pdf') },
+                  { label: 'Word (.docx)', onClick: () => doDetailExport('docx') },
+                  { label: 'ZIP Bundle (one PDF per employee)', onClick: () => doDetailExport('zip'), divider: true },
+                ].map(i => ({ ...i, disabled: !hasFeaturePermission('reports.export') }))}
+              />
             </div>
 
-            <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+            <PageContainer className="space-y-6">
               {/* Header */}
               <div>
                 <div className="flex items-start gap-3 flex-wrap">
-                  <h2 className="text-2xl font-black text-white">{viewDetail.title}</h2>
+                  <h2 className="text-3xl font-black text-white break-words">{viewDetail.title}</h2>
                   {viewDetail.assessmentType && (
                     <span className="px-2 py-1 rounded-lg text-xs font-bold bg-violet-500/15 text-violet-300 border border-violet-500/25 mt-0.5">{viewDetail.assessmentType}</span>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-4 mt-2 text-xs text-slate-400">
+                <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-sm text-slate-300">
                   {jobRoles.length > 0 && <span>Job Role: <span className="text-white font-semibold">{jobRoles.join(', ')}</span></span>}
                   {viewDetail.createdAt && <span>Created: <span className="text-white font-semibold">{new Date(viewDetail.createdAt).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })}</span></span>}
                   {viewDetail.assessmentDate && <span>Start Date: <span className="text-white font-semibold">{new Date(viewDetail.assessmentDate).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' })}</span></span>}
@@ -1885,7 +1876,7 @@ export default function AssessmentManagement() {
                   {[['Highest Score', `${highScore}%`, 'text-emerald-300'],['Average Score', `${avgScore}%`, 'text-indigo-300'],['Lowest Score', `${lowScore}%`, 'text-red-300']].map(([l,v,c], i) => (
                     <div key={i} className="rounded-xl bg-slate-800/40 border border-slate-700/40 px-4 py-4 text-center">
                       <p className={`text-2xl font-black ${c}`}>{v}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{l}</p>
+                      <p className="text-sm text-slate-400 mt-0.5">{l}</p>
                     </div>
                   ))}
                 </div>
@@ -1893,35 +1884,38 @@ export default function AssessmentManagement() {
 
               {/* Employee Table */}
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <h3 className="text-base font-black text-white uppercase tracking-wider">
                     Employees Assigned to this Assessment
                     <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 text-xs font-bold">{empAssignments.length}</span>
                   </h3>
-                  <button
+                  <Button
+                    variant="primary"
                     onClick={() => setAssignModal({ assessment: viewDetail })}
                     disabled={!manageable || viewDetail.isActive === false}
                     title={viewDetail.isActive === false ? 'This assessment was replaced by a newer version' : 'Add employees to this assessment with their own start and end date'}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
                   >
-                    + Assign employees
-                  </button>
+                    + Assign Employees
+                  </Button>
                 </div>
                 {pickedEas.length > 0 && (
                   <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5">
                     <span className="text-sm font-bold text-white mr-1">{pickedEas.length} selected</span>
-                    <button onClick={remindPicked} disabled={bulkReminding}
-                      className="px-3 py-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/40 border border-amber-500/30 text-amber-200 text-xs font-bold disabled:opacity-50">{bulkReminding ? 'Sending...' : 'Send reminders'}</button>
-                    <button onClick={() => setBulkReassign({ assessment: viewDetail, targets: pickedEas.map(toTarget) })} disabled={!manageable}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-bold disabled:opacity-40">Reassign selected</button>
-                    <button onClick={() => setDeleteTargets({ assessment: viewDetail, targets: pickedEas.map(toTarget) })} disabled={!manageable}
-                      className="px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-200 text-xs font-bold disabled:opacity-40">Delete selected</button>
-                    <button onClick={() => setPickedRows(new Set())} className="ml-auto text-xs font-semibold text-slate-300 hover:text-white">Clear selection</button>
+                    <ActionMenu
+                      label="Bulk Actions"
+                      size="sm"
+                      items={[
+                        { label: bulkReminding ? 'Sending reminders…' : 'Send reminders', onClick: remindPicked, disabled: bulkReminding },
+                        { label: 'Reassign selected', onClick: () => setBulkReassign({ assessment: viewDetail, targets: pickedEas.map(toTarget) }), disabled: !manageable },
+                        { label: 'Delete selected', onClick: () => setDeleteTargets({ assessment: viewDetail, targets: pickedEas.map(toTarget) }), disabled: !manageable, danger: true, divider: true },
+                      ]}
+                    />
+                    <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setPickedRows(new Set())}>Clear Selection</Button>
                   </div>
                 )}
                 <div className="rounded-2xl border border-slate-700/40 overflow-hidden">
                   {/* Table header */}
-                  <div className={`hidden lg:grid ${ROW_GRID} gap-x-3 px-3 xl:px-4 py-3 bg-slate-800/50 border-b border-slate-700/40 text-[10px] xl:text-xs font-bold text-slate-500 uppercase tracking-wider items-center`}>
+                  <div className={`hidden lg:grid ${ROW_GRID} gap-x-3 px-3 xl:px-4 py-3 bg-slate-800/50 border-b border-slate-700/40 text-xs font-bold text-slate-300 uppercase tracking-wider items-center`}>
                     <input type="checkbox" aria-label="Select all employees" checked={allPicked}
                       onChange={() => setPickedRows(allPicked ? new Set() : new Set(empAssignments.map(ea => ea.userId)))} className="accent-indigo-500" />
                     {['Employee','Group / Manager','Status','Result','Duration','Actions'].map(h => (
@@ -1929,7 +1923,7 @@ export default function AssessmentManagement() {
                     ))}
                   </div>
                   {empAssignments.length === 0 ? (
-                    <div className="py-12 text-center text-slate-500">No employees assigned to this assessment.</div>
+                    <div className="py-12 text-center text-slate-300">No employees assigned to this assessment.</div>
                   ) : (
                     <div className="divide-y divide-slate-700/20">
                       {empAssignments.map((ea, i) => {
@@ -1948,20 +1942,20 @@ export default function AssessmentManagement() {
                             {/* Employee: name + ID + email stacked */}
                             <div className="min-w-0">
                               <p className="text-sm font-semibold text-white truncate" title={ea.userName || emp?.name || ea.userId}>{ea.userName || emp?.name || ea.userId}</p>
-                              <p className="text-[11px] text-slate-500 truncate" title={ea.userEmail || emp?.email || ''}>{ea.userEmail || emp?.email || '—'}</p>
-                              <p className="text-[11px] text-slate-500 truncate" title={ea.jobRole || ''}>
-                                <span className="text-slate-400">ID {emp?.employeeId || ea.userId?.slice(-8) || '—'}</span>{ea.jobRole ? ` · ${ea.jobRole}` : ''}
+                              <p className="text-sm text-slate-400 truncate" title={ea.userEmail || emp?.email || ''}>{ea.userEmail || emp?.email || '—'}</p>
+                              <p className="text-sm text-slate-400 truncate" title={ea.jobRole || ''}>
+                                <span className="text-slate-300">ID {emp?.employeeId || ea.userId?.slice(-8) || '—'}</span>{ea.jobRole ? ` · ${ea.jobRole}` : ''}
                               </p>
                             </div>
                             {/* Group + Manager */}
                             <div className="min-w-0">
-                              <p className="text-xs text-slate-300 truncate" title={group?.name || ''}><span className="lg:hidden text-slate-500">Group: </span>{group?.name || '—'}</p>
-                              <p className="text-[11px] text-slate-500 truncate" title={managerEmp?.name || ''}><span className="lg:hidden">Manager: </span>{managerEmp?.name || '—'}</p>
+                              <p className="text-sm text-slate-200 truncate" title={group?.name || ''}><span className="lg:hidden text-slate-400">Group: </span>{group?.name || '—'}</p>
+                              <p className="text-sm text-slate-400 truncate" title={managerEmp?.name || ''}><span className="lg:hidden">Manager: </span>{managerEmp?.name || '—'}</p>
                             </div>
                             {/* Status + Done + this employee's own window */}
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5 min-w-0">
-                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border capitalize truncate max-w-full inline-block ${STATUS_COLORS[ea.status || 'assigned'] || STATUS_COLORS.pending}`}>{(ea.status || 'assigned').replace('_', ' ')}</span>
+                                <span className={`px-2 py-0.5 rounded-md text-xs font-bold border capitalize truncate max-w-full inline-block ${STATUS_COLORS[ea.status || 'assigned'] || STATUS_COLORS.pending}`}>{(ea.status || 'assigned').replace('_', ' ')}</span>
                                 <span
                                   className={`text-sm font-black flex-shrink-0 ${ea.status === 'submitted' ? 'text-emerald-400' : 'text-red-400'}`}
                                   title={ea.status === 'submitted' ? 'Completed' : 'Not completed'}
@@ -1971,23 +1965,23 @@ export default function AssessmentManagement() {
                                 </span>
                               </div>
                               {(ea.dueAt || ea.startAt) && (
-                                <p className="text-[10px] text-slate-500 mt-1 truncate" title={`${ea.startAt ? 'From ' + new Date(ea.startAt).toLocaleString() : ''} ${ea.dueAt ? 'Until ' + new Date(ea.dueAt).toLocaleString() : ''}`}>
+                                <p className="text-sm text-slate-400 mt-1 truncate" title={`${ea.startAt ? 'From ' + new Date(ea.startAt).toLocaleString() : ''} ${ea.dueAt ? 'Until ' + new Date(ea.dueAt).toLocaleString() : ''}`}>
                                   {ea.dueAt ? `Due ${new Date(ea.dueAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
                                 </p>
                               )}
                             </div>
                             {/* Score + % + rating together */}
-                            <div className="min-w-0 flex items-baseline flex-wrap gap-x-1.5 text-xs">
+                            <div className="min-w-0 flex items-baseline flex-wrap gap-x-1.5 text-sm">
                               <span className="font-bold text-white" title="Correct / total">
                                 {ea.status === 'submitted' && sc.correct != null ? `${sc.correct}/${sc.total ?? ea.questions?.length ?? 0}` : '—'}
                               </span>
-                              <span className={`font-bold ${rating ? ratingStyle(rating).text : 'text-slate-500'}`}>
+                              <span className={`font-bold ${rating ? ratingStyle(rating).text : 'text-slate-400'}`}>
                                 {scorePct != null ? `${scorePct}%` : '—'}
                               </span>
-                              {rating ? <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${ratingStyle(rating).chip}`} title="Rating">{rating}</span> : null}
+                              {rating ? <span className={`px-2 py-0.5 rounded-md text-xs font-bold ${ratingStyle(rating).chip}`} title="Rating">{rating}</span> : null}
                             </div>
                             {/* Duration */}
-                            <span className="text-xs text-slate-400 truncate">{durationStr}</span>
+                            <span className="text-sm text-slate-300 truncate">{durationStr}</span>
                             {/* Actions: quick reminder + labelled Manage menu */}
                             <div className="min-w-0 flex flex-wrap items-center gap-1.5">
                               <ReminderButton
@@ -2020,9 +2014,9 @@ export default function AssessmentManagement() {
 
               {/* Assessment Settings */}
               {viewDetail.settings && (
-                <div className="rounded-2xl border border-slate-700/40 bg-slate-800/20 p-5">
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4">Assessment Settings</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5">
+                  <p className="text-sm font-black text-slate-300 uppercase tracking-wider mb-4">Assessment Settings</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 text-sm">
                     {[
                       ['Question Types', viewDetail.questionTypes?.join(', ') || '—'],
                       ['Question Order', viewDetail.settings.questionOrder || 'Same'],
@@ -2031,14 +2025,14 @@ export default function AssessmentManagement() {
                       ['Mandatory', viewDetail.settings.completion?.mandatory ? 'Yes' : 'No'],
                     ].map(([k,v], i) => (
                       <div key={i} className="rounded-xl bg-slate-800/60 border border-slate-700/40 px-3 py-2">
-                        <p className="text-slate-500 mb-0.5">{k}</p>
+                        <p className="text-slate-400 mb-0.5">{k}</p>
                         <p className="font-semibold text-white capitalize">{v}</p>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-            </div>
+            </PageContainer>
           </div>
         );
       })()}
@@ -2138,7 +2132,7 @@ export default function AssessmentManagement() {
                   <span className="text-2xl">{icon}</span>
                   <div>
                     <p className="text-sm font-bold text-white">{label}</p>
-                    <p className="text-xs text-slate-400">{desc}</p>
+                    <p className="text-sm text-slate-300">{desc}</p>
                   </div>
                 </button>
               ))}
@@ -2168,14 +2162,14 @@ function AssessmentSettingsPanel({ settings, onChange }) {
   return (
     <div className="border border-slate-700/50 rounded-xl overflow-hidden">
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-800/40 hover:bg-slate-800/70 transition-colors">
-        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">⚙ Advanced Settings</span>
-        <span className="text-slate-500 text-sm">{open ? '▲' : '▼'}</span>
+        <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">⚙ Advanced Settings</span>
+        <span className="text-slate-400 text-sm">{open ? '▲' : '▼'}</span>
       </button>
       {open && (
         <div className="p-4 space-y-5 bg-slate-900/40">
           {/* Question Order */}
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Question Display</p>
+            <p className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Question Display</p>
             {[['same','All users see same questions in same order'],['shuffled','All users see same questions in different order']].map(([v,l]) => (
               <label key={v} className="flex items-center gap-2 mb-1.5 cursor-pointer">
                 <input type="radio" checked={s.questionOrder===v} onChange={() => upd('questionOrder',v)} className="accent-indigo-500" />
@@ -2185,19 +2179,19 @@ function AssessmentSettingsPanel({ settings, onChange }) {
           </div>
           {/* Marking Scheme */}
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Marking Scheme</p>
+            <p className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Marking Scheme</p>
             <div className="grid grid-cols-3 gap-2 text-xs">
               {[['easy','Easy','text-emerald-400'],['medium','Medium','text-amber-400'],['hard','Hard','text-red-400']].map(([diff,label,cls]) => (
                 <div key={diff} className="bg-slate-800/60 rounded-xl p-3 space-y-1.5">
                   <p className={`font-bold ${cls}`}>{label}</p>
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-500 w-14">Correct:</span>
+                    <span className="text-slate-400 w-14">Correct:</span>
                     <input type="number" min={0} max={10} value={s.markingScheme[diff].correct}
                       onChange={e => upd(`markingScheme.${diff}.correct`, parseInt(e.target.value)||0)}
                       className="w-12 px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-white text-center focus:outline-none focus:border-indigo-500" />
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-500 w-14">Wrong:</span>
+                    <span className="text-slate-400 w-14">Wrong:</span>
                     <input type="number" min={-5} max={0} value={s.markingScheme[diff].wrong}
                       onChange={e => upd(`markingScheme.${diff}.wrong`, parseInt(e.target.value)||0)}
                       className="w-12 px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-white text-center focus:outline-none focus:border-indigo-500" />
@@ -2209,7 +2203,7 @@ function AssessmentSettingsPanel({ settings, onChange }) {
           {/* Pass % */}
           <div className="flex items-center gap-4">
             <div className="flex-1">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pass Percentage</p>
+              <p className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">Pass Percentage</p>
               <div className="flex items-center gap-2">
                 <input type="number" min={1} max={100} value={s.passPercentage}
                   onChange={e => upd('passPercentage', Math.min(100, Math.max(1, parseInt(e.target.value)||80)))}
@@ -2218,19 +2212,19 @@ function AssessmentSettingsPanel({ settings, onChange }) {
               </div>
             </div>
             <div className="flex-1">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Reattempts</p>
+              <p className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">Reattempts</p>
               <div className="flex items-center gap-2">
                 <input type="number" min={-1} value={s.reattempts}
                   onChange={e => upd('reattempts', parseInt(e.target.value))}
                   className="w-20 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm text-center focus:outline-none focus:border-indigo-500" />
-                <span className="text-slate-500 text-xs">{s.reattempts===-1?'Unlimited':s.reattempts===0?'None':`Attempts`}</span>
+                <span className="text-slate-400 text-xs">{s.reattempts===-1?'Unlimited':s.reattempts===0?'None':`Attempts`}</span>
               </div>
             </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">{chk('allowReattemptToBeatScore',s.allowReattemptToBeatScore)}{lbl('Allow reattempts to beat previous score')}</label>
           {/* Timing */}
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Quiz Timing</p>
+            <p className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Quiz Timing</p>
             <div className="flex gap-3 mb-2">
               {[['untimed','Untimed'],['timed','Overall Time Limit']].map(([v,l]) => (
                 <label key={v} className="flex items-center gap-2 cursor-pointer">
@@ -2252,7 +2246,7 @@ function AssessmentSettingsPanel({ settings, onChange }) {
           <label className="flex items-center gap-2 cursor-pointer">{chk('navigation.forwardOnly',s.navigation.forwardOnly)}{lbl('Allow only forward navigation')}</label>
           {/* Results */}
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Result Visibility</p>
+            <p className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Result Visibility</p>
             <div className="space-y-1.5">
               <label className="flex items-center gap-2 cursor-pointer">{chk('results.hideFromParticipants',s.results.hideFromParticipants)}{lbl('Hide results from participants')}</label>
               <label className="flex items-center gap-2 cursor-pointer">{chk('results.revealOnSubmission',s.results.revealOnSubmission)}{lbl('Reveal answers on submission')}</label>
@@ -2262,7 +2256,7 @@ function AssessmentSettingsPanel({ settings, onChange }) {
           </div>
           {/* Completion */}
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Completion Rules</p>
+            <p className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Completion Rules</p>
             <div className="space-y-1.5">
               <label className="flex items-center gap-2 cursor-pointer">{chk('completion.mandatory',s.completion.mandatory)}{lbl('Assessment mandatory')}</label>
               <label className="flex items-center gap-2 cursor-pointer">{chk('completion.markCompleteOnlyIfPassed',s.completion.markCompleteOnlyIfPassed)}{lbl('Mark complete only if passed')}</label>
@@ -2396,9 +2390,9 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
           <div>
             <h2 className="text-xl font-black text-white">Create Manual Assessment</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Step {step} of 3 — {['Select Employees', 'Add Questions', 'Review & Create'][step-1]}</p>
+            <p className="text-sm text-slate-400 mt-0.5">Step {step} of 3 — {['Select Employees', 'Add Questions', 'Review & Create'][step-1]}</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">✕</button>
+          <button type="button" aria-label="Close" title="Close" onClick={onClose} className="text-slate-400 hover:text-white text-2xl">✕</button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -2406,7 +2400,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
           {step === 1 && (
             <div className="p-6 space-y-4">
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Select Employees</label>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Select Employees</label>
                 <span className="text-xs text-indigo-400 font-semibold">{selectedUsers.length} selected</span>
               </div>
               <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
@@ -2422,7 +2416,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-white truncate">{emp.name || '—'}</p>
-                        <p className="text-xs text-slate-500 truncate">{emp.email}</p>
+                        <p className="text-sm text-slate-400 truncate">{emp.email}</p>
                       </div>
                       {emp.jobRole && <span className="text-xs px-2 py-0.5 rounded-md bg-slate-700 text-slate-300">{emp.jobRole}</span>}
                     </div>
@@ -2449,15 +2443,15 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
                     {t.l}
                   </button>
                 ))}
-                <span className="ml-auto text-xs text-slate-500 my-auto">{questions.length} questions added</span>
+                <span className="ml-auto text-sm text-slate-400 my-auto">{questions.length} questions added</span>
               </div>
 
               {qSource === 'upload' && (
                 <div className="space-y-3">
-                  <div className="bg-slate-800/40 border border-slate-700/60 rounded-xl p-4 text-xs text-slate-400 space-y-1">
+                  <div className="bg-slate-800/40 border border-slate-700/60 rounded-xl p-4 text-sm text-slate-300 space-y-1">
                     <p className="font-semibold text-slate-300">Required CSV columns:</p>
                     <p>Question, Option A, Option B, Option C, Option D, Correct Answer, Difficulty, Category</p>
-                    <p className="text-slate-500">Correct Answer should be A, B, C, or D. Difficulty: easy/medium/hard</p>
+                    <p className="text-slate-400">Correct Answer should be A, B, C, or D. Difficulty: easy/medium/hard</p>
                   </div>
                   <div onClick={() => fileRef.current?.click()}
                     className="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-emerald-500 transition-colors">
@@ -2478,14 +2472,14 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
                       className="w-full bg-[#0F172A] border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-xs text-slate-400 mb-1 block">Difficulty</label>
+                        <label className="text-sm text-slate-300 mb-1 block">Difficulty</label>
                         <select value={newQ.difficulty} onChange={e => setNewQ(p => ({ ...p, difficulty: e.target.value }))}
                           className="w-full bg-[#0F172A] border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none">
                           <option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option>
                         </select>
                       </div>
                       <div>
-                        <label className="text-xs text-slate-400 mb-1 block">Category</label>
+                        <label className="text-sm text-slate-300 mb-1 block">Category</label>
                         <input value={newQ.skillArea} onChange={e => setNewQ(p => ({ ...p, skillArea: e.target.value }))} placeholder="e.g. Leadership"
                           className="w-full bg-[#0F172A] border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none" />
                       </div>
@@ -2497,7 +2491,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
                     ))}
                     <div className="flex items-center gap-3">
                       <div className="flex-1">
-                        <label className="text-xs text-slate-400 mb-1 block">Correct Answer</label>
+                        <label className="text-sm text-slate-300 mb-1 block">Correct Answer</label>
                         <select value={newQ.answer} onChange={e => setNewQ(p => ({ ...p, answer: e.target.value }))}
                           className="w-full bg-[#0F172A] border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none">
                           {['A','B','C','D'].map(l => <option key={l}>{l}</option>)}
@@ -2515,7 +2509,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {questions.map((q, i) => (
                         <div key={i} className="flex items-start gap-3 px-3 py-2 rounded-lg bg-slate-800/40 border border-slate-700/40">
-                          <span className="text-xs font-bold text-slate-500 mt-0.5 w-5 flex-shrink-0">{i+1}.</span>
+                          <span className="text-xs font-bold text-slate-400 mt-0.5 w-5 flex-shrink-0">{i+1}.</span>
                           <p className="text-sm text-slate-300 flex-1 line-clamp-2">{q.question}</p>
                           <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${q.difficulty === 'easy' ? 'bg-emerald-500/20 text-emerald-300' : q.difficulty === 'hard' ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'}`}>{q.difficulty}</span>
                           <button onClick={() => setQuestions(p => p.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-300 text-xs flex-shrink-0">✕</button>
@@ -2542,20 +2536,20 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
               <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
                 <h4 className="text-sm font-black text-white">Assessment Summary</h4>
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="flex justify-between"><span className="text-slate-500">Employees</span><span className="text-white font-bold">{selectedUsers.length}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-500">Total Questions</span><span className="text-white font-bold">{questions.length}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-500">Easy</span><span className="text-emerald-300 font-bold">{diffCounts.easy}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-500">Medium</span><span className="text-amber-300 font-bold">{diffCounts.medium}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-500">Hard</span><span className="text-red-300 font-bold">{diffCounts.hard}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Employees</span><span className="text-white font-bold">{selectedUsers.length}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Total Questions</span><span className="text-white font-bold">{questions.length}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Easy</span><span className="text-emerald-300 font-bold">{diffCounts.easy}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Medium</span><span className="text-amber-300 font-bold">{diffCounts.medium}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Hard</span><span className="text-red-300 font-bold">{diffCounts.hard}</span></div>
                 </div>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Title</label>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">Title</label>
                 <input value={title} onChange={e => setTitle(e.target.value)} placeholder={`Manual Assessment - ${assessmentDate}`}
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none" />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Assessment Type</label>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">Assessment Type</label>
                 <select value={assessmentType} onChange={e => setAssessmentType(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none">
                   {ASSESSMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -2563,18 +2557,18 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Date</label>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">Date</label>
                   <input type="date" value={assessmentDate} onChange={e => setAssessmentDate(e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none" />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Duration (min)</label>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">Duration (min)</label>
                   <input type="number" min={5} max={180} value={duration} onChange={e => setDuration(parseInt(e.target.value) || ASSESSMENT_DURATION_MINUTES)}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none" />
                 </div>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Deadline (optional)</label>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 block">Deadline (optional)</label>
                 <input type="datetime-local" value={deadline} onChange={e => setDeadline(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:border-emerald-500 focus:outline-none" />
               </div>
@@ -2585,7 +2579,7 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
               {reviewConfirming && (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-2">
                   <p className="text-sm text-amber-300 font-semibold">Confirm before assigning</p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-sm text-slate-300">
                     This will immediately assign <span className="text-white font-bold">{questions.length}</span> question{questions.length !== 1 ? 's' : ''} to <span className="text-white font-bold">{selectedUsers.length}</span> employee{selectedUsers.length !== 1 ? 's' : ''}
                     {deadline ? <> with a deadline of <span className="text-white font-bold">{new Date(deadline).toLocaleString()}</span></> : ' with no deadline'}. This cannot be undone from here.
                   </p>

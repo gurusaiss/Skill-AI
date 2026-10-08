@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import AuthShell from './AuthShell';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function ResetPassword() {
@@ -124,16 +125,9 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-[#060B14] flex items-center justify-center px-4">
-      {/* Background gradient */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] rounded-full bg-indigo-600/10 blur-[120px]" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-purple-600/8 blur-[100px]" />
-      </div>
-
-      <div className="relative w-full max-w-md">
+    <AuthShell>
         {/* Logo/Brand */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 lg:hidden">
           <Link to="/" className="inline-block">
             <h1 className="text-4xl font-black tracking-tight">
               <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
@@ -175,7 +169,7 @@ export default function ResetPassword() {
                 value={formData.password}
                 onChange={handleChange}
                 placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors"
+                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none transition-colors"
                 disabled={loading || !token}
                 autoFocus
               />
@@ -194,7 +188,7 @@ export default function ResetPassword() {
                       {passwordStrength.label}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-400">
                     Use 8+ characters with uppercase, lowercase, and numbers
                   </p>
                 </div>
@@ -213,7 +207,7 @@ export default function ResetPassword() {
                 value={formData.confirmPassword}
                 onChange={handleChange}
                 placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors"
+                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none transition-colors"
                 disabled={loading || !token}
               />
             </div>
@@ -222,7 +216,7 @@ export default function ResetPassword() {
             <button
               type="submit"
               disabled={loading || !token}
-              className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
+              className="w-full py-3.5 rounded-xl font-bold text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
             >
               {loading ? '⏳ Resetting password...' : 'Reset Password'}
             </button>
@@ -244,13 +238,12 @@ export default function ResetPassword() {
           <div className="mt-6 text-center">
             <Link
               to="/auth/forgot-password"
-              className="text-sm text-slate-500 hover:text-slate-400 transition-colors"
+              className="text-sm text-slate-400 hover:text-slate-400 transition-colors"
             >
               Request a new reset link →
             </Link>
           </div>
         )}
-      </div>
-    </div>
+      </AuthShell>
   );
 }

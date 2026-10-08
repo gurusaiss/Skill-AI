@@ -9,7 +9,7 @@ export default function Certificate() {
   const { notify } = useNotification();
 
   const skill = params.get('skill') || 'Full-Stack Development';
-  const score = parseInt(params.get('score') || '88', 10);
+  const score = Number.isFinite(parseInt(params.get("score") || "88", 10)) ? parseInt(params.get("score") || "88", 10) : 88;
   const days  = parseInt(params.get('days')  || '21', 10);
   const name  = params.get('name')  || 'Valued Learner';
 
@@ -29,6 +29,8 @@ export default function Certificate() {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(msg).then(() => {
         notify('Copied to clipboard! Share it anywhere', 'success');
+      }).catch(() => {
+        notify(msg, "info");
       });
     } else {
       notify(msg, 'info');
@@ -56,16 +58,16 @@ export default function Certificate() {
         </button>
         <button
           onClick={handleDownload}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 transition-all text-sm font-bold shadow-lg shadow-indigo-500/30"
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 transition-all text-base font-bold shadow-lg shadow-indigo-500/30"
         >
-          ⬇ Download PNG
+          ⬇ Print or Save as PDF
         </button>
       </div>
 
       {/* ── CERTIFICATE CARD ──────────────────────────────────────── */}
       <div
         ref={certRef}
-        className="relative bg-[#F8FAFC] text-slate-900 rounded-3xl shadow-2xl max-w-2xl w-full overflow-hidden"
+        className="relative bg-[#F8FAFC] text-slate-900 rounded-3xl shadow-2xl max-w-4xl w-full overflow-hidden"
         style={{
           border: '6px double #6366f1',
           boxShadow: '0 0 60px rgba(99,102,241,0.3), 0 25px 50px rgba(0,0,0,0.5)',
@@ -78,7 +80,7 @@ export default function Certificate() {
         <div className="absolute bottom-3 right-3 w-10 h-10 border-b-4 border-r-4 border-violet-400 rounded-br-xl opacity-60" />
 
         {/* Inner padding */}
-        <div className="px-10 py-10 text-center">
+        <div className="px-6 sm:px-14 py-10 sm:py-14 text-center">
 
           {/* Logo / Brand */}
           <div className="flex items-center justify-center gap-3 mb-6">
@@ -95,7 +97,7 @@ export default function Certificate() {
               >
                 SKILL FORGE AI
               </p>
-              <p className="text-xs text-slate-500 tracking-widest uppercase font-semibold">Autonomous Career Intelligence</p>
+              <p className="text-sm text-slate-500 tracking-widest uppercase font-semibold">Autonomous Career Intelligence</p>
             </div>
           </div>
 
@@ -111,7 +113,7 @@ export default function Certificate() {
             Certificate of Completion
           </p>
           <h1
-            className="text-4xl font-black mb-6 leading-tight"
+            className="text-4xl sm:text-5xl font-black mb-6 leading-tight"
             style={{
               fontFamily: 'Georgia, "Times New Roman", serif',
               letterSpacing: '-0.01em',
@@ -218,8 +220,8 @@ export default function Certificate() {
         </div>
       </div>
 
-      <p className="mt-6 text-slate-600 text-xs print:hidden">
-        Click "Download PNG" to save · "Share Achievement" to copy message
+      <p className="mt-6 text-slate-400 text-sm print:hidden">
+        Click "Print or Save as PDF" to save · "Share Achievement" to copy message
       </p>
 
       {/* Print styles */}

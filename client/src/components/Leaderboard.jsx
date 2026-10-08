@@ -59,7 +59,7 @@ export default function Leaderboard({ stats, userName }) {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-black text-white">🏆 Global Leaderboard</h2>
-          <p className="text-xs text-slate-500 mt-0.5">See how you rank among learners worldwide</p>
+          <p className="text-sm text-slate-400 mt-0.5">See how you rank among learners worldwide</p>
         </div>
         {/* Period toggle */}
         <div className="flex gap-1 p-1 rounded-xl bg-slate-800/60 border border-slate-700/50">
@@ -67,7 +67,7 @@ export default function Leaderboard({ stats, userName }) {
             <button
               key={p}
               onClick={() => setPeriod(p)}
-              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
                 period === p
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
                   : 'text-slate-400 hover:text-slate-200'
@@ -95,10 +95,10 @@ export default function Leaderboard({ stats, userName }) {
               } ${heights[pos]}`}
             >
               <div className="text-2xl mb-1">{MEDAL[actualRank] || actualRank}</div>
-              <p className={`text-xs font-black text-center leading-tight ${r.isUser ? 'text-indigo-300' : 'text-slate-200'}`}>
+              <p className={`text-sm font-black text-center leading-tight ${r.isUser ? 'text-indigo-300' : 'text-slate-200'}`}>
                 {r.name}
               </p>
-              <p className="text-xs font-mono font-bold text-slate-400 mt-0.5">{r.xp.toLocaleString()} XP</p>
+              <p className="text-sm font-mono font-bold text-slate-400 mt-0.5">{r.xp.toLocaleString()} XP</p>
             </div>
           );
         })}
@@ -109,7 +109,7 @@ export default function Leaderboard({ stats, userName }) {
         {/* Table header */}
         <div className="grid grid-cols-[44px_1fr_80px_60px_60px_72px] gap-2 px-4 py-2.5 border-b border-slate-700/60 bg-slate-800/40">
           {['Rank', 'Name', 'Skill', 'Sessions', 'Score', 'XP'].map(h => (
-            <p key={h} className="text-xs font-black text-slate-500 uppercase tracking-widest truncate">{h}</p>
+            <p key={h} className="text-sm font-black text-slate-400 uppercase tracking-widest truncate">{h}</p>
           ))}
         </div>
 
@@ -132,7 +132,7 @@ export default function Leaderboard({ stats, userName }) {
                     r.rank === 1 ? 'text-yellow-400' :
                     r.rank === 2 ? 'text-slate-300' :
                     r.rank === 3 ? 'text-amber-600' :
-                    r.isUser ? 'text-indigo-400' : 'text-slate-500'
+                    r.isUser ? 'text-indigo-400' : 'text-slate-400'
                   }`}>
                     {MEDAL[r.rank] || `#${r.rank}`}
                   </span>
@@ -145,31 +145,31 @@ export default function Leaderboard({ stats, userName }) {
                       {r.name}
                     </span>
                     {r.isUser && (
-                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-600/30 text-indigo-300 font-bold flex-shrink-0">You</span>
+                      <span className="text-sm px-1.5 py-0.5 rounded-full bg-indigo-600/30 text-indigo-300 font-bold flex-shrink-0">You</span>
                     )}
                   </div>
                   {rankChange !== 0 && !r.isUser && (
-                    <span className={`text-xs font-bold ${rankChange > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <span className={`text-sm font-bold ${rankChange > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {rankChange > 0 ? `▲ +${rankChange}` : `▼ ${rankChange}`}
                     </span>
                   )}
                 </div>
 
                 {/* Skill */}
-                <span className="text-xs text-slate-400 font-medium truncate">{r.skill}</span>
+                <span className="text-sm text-slate-400 font-medium truncate">{r.skill}</span>
 
                 {/* Sessions */}
-                <span className="text-xs font-mono font-bold text-slate-300 text-center">{r.sessions}</span>
+                <span className="text-sm font-mono font-bold text-slate-300 text-center">{r.sessions}</span>
 
                 {/* Score */}
-                <span className={`text-xs font-mono font-black text-center ${
+                <span className={`text-sm font-mono font-black text-center ${
                   r.score >= 90 ? 'text-emerald-400' :
                   r.score >= 75 ? 'text-indigo-400' :
                   'text-amber-400'
                 }`}>{r.score}%</span>
 
                 {/* XP */}
-                <span className={`text-xs font-mono font-black text-right ${r.isUser ? 'text-indigo-300' : 'text-slate-400'}`}>
+                <span className={`text-sm font-mono font-black text-right ${r.isUser ? 'text-indigo-300' : 'text-slate-400'}`}>
                   {r.xp.toLocaleString()}
                 </span>
               </div>
@@ -179,7 +179,7 @@ export default function Leaderboard({ stats, userName }) {
       </div>
 
       {/* Footer */}
-      <p className="text-center text-xs text-slate-600">
+      <p className="text-center text-sm text-slate-400">
         🟢 Updated 5 minutes ago · Rankings based on XP earned · {rows.length} learners shown
       </p>
     </div>

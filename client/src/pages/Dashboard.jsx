@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import PageContainer from '../components/PageContainer.jsx';
 import SharedTabBar from '../components/TabBar.jsx';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api, scoreColor } from '../utils/api.js';
@@ -37,16 +38,19 @@ function ProgressBar({ value, color = '#6366f1', thin = false }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // STAT CARD
 // ─────────────────────────────────────────────────────────────────────────────
-function StatCard({ label, value, icon, color = '#6366f1', sub, onClick }) {
+function StatCard({ label, value, icon, color = '#6366f1', sub, onClick, description }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="flex-1 min-w-[90px] rounded-2xl border border-slate-700/60 bg-slate-800/50 hover:bg-slate-800/80 hover:border-slate-600 transition-all p-4 text-center group"
+      title={description || label}
+      className="flex-1 min-w-0 rounded-2xl border border-slate-700/60 bg-slate-800/50 hover:bg-slate-800/80 hover:border-slate-600 transition-all p-4 text-center group"
     >
       <div className="text-2xl mb-2">{icon}</div>
       <div className="text-2xl font-black font-mono leading-none mb-1" style={{ color }}>{value}</div>
       <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">{label}</div>
-      {sub && <div className="text-xs text-slate-600 mt-1">{sub}</div>}
+      {sub && <div className="text-xs text-slate-400 mt-1">{sub}</div>}
+      {description && <div className="text-xs leading-snug text-slate-400 mt-1.5">{description}</div>}
     </button>
   );
 }
@@ -191,7 +195,7 @@ function PlanTimeline({ learningPlan, navigate }) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-base font-black text-white">{skill}</p>
-                <p className="text-xs text-slate-500">{days.length} sessions · {doneCount} completed · {pct}%</p>
+                <p className="text-xs text-slate-400">{days.length} sessions · {doneCount} completed · {pct}%</p>
               </div>
               <div className="w-24 hidden sm:block">
                 <ProgressBar value={pct} thin />
@@ -238,7 +242,7 @@ function PlanTimeline({ learningPlan, navigate }) {
 
                     <div className="flex items-center justify-between">
                       <span className={`text-xs font-semibold capitalize ${tc.text}`}>{d.sessionType}</span>
-                      <span className="text-xs text-slate-600">{d.estimatedMinutes}m</span>
+                      <span className="text-xs text-slate-400">{d.estimatedMinutes}m</span>
                     </div>
 
                     {d.addedByAgent && (
@@ -262,7 +266,7 @@ function PlanTimeline({ learningPlan, navigate }) {
       })}
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-4 pt-2 text-xs text-slate-500">
+      <div className="flex flex-wrap gap-4 pt-2 text-xs text-slate-400">
         {[
           ['bg-emerald-500/10 border-emerald-500/25', '✅', 'Completed'],
           ['bg-indigo-500/10 border-indigo-500/30',   '⚔️', 'Practice'],
@@ -284,14 +288,14 @@ function PlanTimeline({ learningPlan, navigate }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function SkillBars({ skills, diagnosticScores, onSkillClick }) {
   const [expanded, setExpanded] = useState(null);
-  if (!skills.length) return <p className="text-slate-500 text-center py-10">No skills loaded.</p>;
+  if (!skills.length) return <p className="text-slate-400 text-center py-10">No skills loaded.</p>;
 
   const barColor = m => m >= 75 ? '#10b981' : m >= 50 ? '#6366f1' : m > 0 ? '#f59e0b' : '#475569';
   const statusBadge = {
     complete:     'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
     active:       'bg-indigo-500/15  text-indigo-400  border-indigo-500/30',
     demonstrated: 'bg-teal-500/15    text-teal-400    border-teal-500/30',
-    locked:       'bg-slate-800      text-slate-600   border-slate-700',
+    locked:       'bg-slate-800      text-slate-400   border-slate-700',
   };
 
   return (
@@ -304,14 +308,14 @@ function SkillBars({ skills, diagnosticScores, onSkillClick }) {
           <div key={skill.id} className={`rounded-xl border transition-all overflow-hidden ${isOpen ? 'border-indigo-500/30 bg-indigo-500/5' : 'border-slate-700/50 bg-slate-800/30'}`}>
             <div className="flex items-center gap-3 px-4 py-3.5">
               <button onClick={() => setExpanded(isOpen ? null : skill.id)}
-                className="text-slate-500 hover:text-slate-300 transition-colors flex-shrink-0">
+                className="text-slate-400 hover:text-slate-300 transition-colors flex-shrink-0">
                 <span className={`text-sm inline-block transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}>▶</span>
               </button>
               <button onClick={() => onSkillClick?.(skill)} className="flex-1 text-left min-w-0">
                 <span className="text-sm font-semibold text-slate-200 hover:text-white transition-colors">{skill.name}</span>
               </button>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {diag != null && <span className="text-xs text-slate-500 hidden sm:block">Diag {diag}%</span>}
+                {diag != null && <span className="text-xs text-slate-400 hidden sm:block">Diag {diag}%</span>}
                 <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold capitalize ${statusBadge[skill.status] || statusBadge.locked}`}>
                   {skill.status}
                 </span>
@@ -334,10 +338,10 @@ function SkillBars({ skills, diagnosticScores, onSkillClick }) {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-600 italic">Complete sessions to populate topics.</p>
+                  <p className="text-xs text-slate-400 italic">Complete sessions to populate topics.</p>
                 )}
                 {diag != null && (
-                  <p className="text-xs text-slate-500 mt-3">
+                  <p className="text-xs text-slate-400 mt-3">
                     Diagnostic: <span className="font-bold text-slate-400">{diag}%</span>
                     {diag < 50 ? ' · extra practice added' : diag >= 75 ? ' · strong baseline' : ' · moderate baseline'}
                   </p>
@@ -347,7 +351,7 @@ function SkillBars({ skills, diagnosticScores, onSkillClick }) {
           </div>
         );
       })}
-      <p className="text-xs text-slate-600 text-center pt-1">Click skill name for details · click ▶ to expand topics</p>
+      <p className="text-xs text-slate-400 text-center pt-1">Click skill name for details · click ▶ to expand topics</p>
     </div>
   );
 }
@@ -357,7 +361,7 @@ function SkillBars({ skills, diagnosticScores, onSkillClick }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function ScoreChart({ sessions }) {
   if (sessions.length < 2) return (
-    <div className="h-44 flex flex-col items-center justify-center text-slate-600 text-sm gap-2">
+    <div className="h-44 flex flex-col items-center justify-center text-slate-400 text-sm gap-2">
       <span className="text-3xl opacity-30">📈</span>
       Complete 2+ sessions to see your trend
     </div>
@@ -398,7 +402,7 @@ function RecentSessions({ sessions, onSessionClick }) {
   if (!sessions.length) return (
     <div className="text-center py-14">
       <div className="text-4xl mb-3 opacity-30">📝</div>
-      <p className="text-slate-500">No sessions completed yet — start Day 1!</p>
+      <p className="text-slate-400">No sessions completed yet — start Day 1!</p>
     </div>
   );
   return (
@@ -406,9 +410,9 @@ function RecentSessions({ sessions, onSessionClick }) {
       {[...sessions].reverse().slice(0, 10).map((s, i) => (
         <button key={i} onClick={() => onSessionClick?.(s)}
           className="w-full flex items-center gap-3 rounded-xl bg-slate-800/40 border border-slate-700/40 hover:bg-slate-800/70 hover:border-slate-600 px-4 py-3.5 transition-all text-left">
-          <span className="font-mono text-slate-500 font-bold w-10 flex-shrink-0 text-sm">D{s.day}</span>
+          <span className="font-mono text-slate-400 font-bold w-10 flex-shrink-0 text-sm">D{s.day}</span>
           <span className="flex-1 text-slate-200 font-semibold text-sm truncate">{s.skillName}</span>
-          <span className="text-xs text-slate-500 truncate max-w-[120px] hidden sm:block">{s.strengths?.[0]?.slice(0, 35) || '—'}</span>
+          <span className="text-xs text-slate-400 truncate max-w-[120px] hidden sm:block">{s.strengths?.[0]?.slice(0, 35) || '—'}</span>
           <span className={`font-black font-mono text-sm w-12 text-right ${scoreColor(s.score)}`}>{s.score}%</span>
           <span className="text-xs font-black px-2 py-1 rounded-lg font-mono" style={{
             backgroundColor: s.score >= 75 ? '#10b98118' : s.score >= 50 ? '#6366f118' : '#ef444418',
@@ -480,7 +484,7 @@ function CareerOverview({ goal, sessions, onProjectClick }) {
           { label: 'Intensity',     value: goal?.profile?.intensity || '—' },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-xl border border-slate-700/50 bg-slate-800/40 p-4">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
             <p className="text-sm font-bold text-slate-100 capitalize">{value}</p>
           </div>
         ))}
@@ -514,9 +518,9 @@ function CareerOverview({ goal, sessions, onProjectClick }) {
               <span className="text-xl flex-shrink-0">{p.level}</span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-slate-200">{p.title}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{p.desc}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{p.desc}</p>
               </div>
-              <span className="text-slate-600 flex-shrink-0">→</span>
+              <span className="text-slate-400 flex-shrink-0">→</span>
             </button>
           ))}
         </div>
@@ -531,7 +535,7 @@ function CareerOverview({ goal, sessions, onProjectClick }) {
               className="flex items-center gap-3 rounded-xl border border-slate-700/50 bg-slate-800/40 hover:border-slate-600 hover:bg-slate-800/70 px-4 py-3 transition-all group">
               <span className="text-lg">{r.icon}</span>
               <span className="text-sm font-semibold text-slate-300 group-hover:text-white transition-colors flex-1">{r.label}</span>
-              <span className="text-slate-600 group-hover:text-slate-400 text-xs">↗</span>
+              <span className="text-slate-400 group-hover:text-slate-400 text-xs">↗</span>
             </a>
           ))}
         </div>
@@ -609,17 +613,26 @@ export default function Dashboard() {
       <AgentThinking isVisible messages={['Loading dashboard…', 'Fetching your progress…', 'Syncing agent state…']} />
     </div>
   );
-  if (error)     return <div className="p-8 text-red-400 text-center text-sm">{error}</div>;
+  if (error)     return (
+    <PageContainer>
+      <div role="alert" className="rounded-2xl border border-red-500/40 bg-red-500/10 p-5 text-center">
+        <p className="text-base font-bold text-red-300">Could not load your dashboard</p>
+        <p className="text-sm text-red-200/80 mt-1">{error}</p>
+        <button type="button" onClick={() => { setError(null); setLoading(true); const uid = localStorage.getItem('skillforge:userId'); api.getDashboard(uid).then(d => { setDashboard(d); setLoading(false); }).catch(e => { setError(e.message); setLoading(false); }); }}
+          className="mt-4 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold">Retry</button>
+      </div>
+    </PageContainer>
+  );
   if (!dashboard) return null;
 
-  const { goal, learningPlan, sessions, stats, adaptations, diagnosticScores, agentDecisions = [] } = dashboard;
+  const { goal = {}, learningPlan = [], sessions = [], stats = {}, adaptations = [], diagnosticScores, agentDecisions = [] } = dashboard;
   const completed     = learningPlan.filter(d => d.completed).length;
   const total         = learningPlan.length;
   const completionPct = total ? Math.round((completed / total) * 100) : 0;
   const todaysMission = learningPlan.find(d => !d.completed);
 
   return (
-    <div className="min-h-screen px-4 py-6 max-w-5xl mx-auto space-y-5">
+    <PageContainer className="min-h-screen space-y-5">
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
       <MetricModal   isOpen={metricModal.isOpen}  onClose={() => setMetricModal({ isOpen: false, metric: null })}   metric={metricModal.metric} />
@@ -627,8 +640,9 @@ export default function Dashboard() {
       <SkillDetailModal  isOpen={skillModal.isOpen}   onClose={() => setSkillModal({ isOpen: false, skill: null })}    skill={skillModal.skill} />
       <HistoryDetailModal isOpen={historyModal.isOpen} onClose={() => setHistoryModal({ isOpen: false, session: null })} session={historyModal.session} />
 
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       {/* ── HEADER ──────────────────────────────────────────────────────────── */}
-      <div className="rounded-2xl border border-slate-700/60 bg-slate-900/80 p-6">
+      <div className="rounded-2xl border border-slate-700/60 bg-slate-900/80 p-4 sm:p-6 min-w-0">
         {/* Goal + progress */}
         <div className="flex items-start gap-4 mb-5">
           <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-3xl flex-shrink-0">
@@ -641,35 +655,36 @@ export default function Dashboard() {
           </div>
           <div className="text-right flex-shrink-0">
             <p className="text-3xl font-black text-white font-mono">{completionPct}%</p>
-            <p className="text-xs text-slate-500 mt-0.5">{completed}/{total} days</p>
+            <p className="text-xs text-slate-400 mt-0.5">{completed}/{total} days</p>
           </div>
         </div>
 
         <ProgressBar value={completionPct} color="#6366f1" />
 
         {/* Stats row */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-5">
-          <StatCard label="Avg Score"   value={`${stats.avgScore ?? 0}%`}   icon="📊" color={(stats.avgScore ?? 0)  >= 75 ? '#10b981' : (stats.avgScore ?? 0)  >= 50 ? '#6366f1' : '#f59e0b'} onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('avgScore', stats.avgScore ?? 0) })} />
-          <StatCard label="Best Score"  value={`${stats.bestScore ?? 0}%`}  icon="🏆" color={(stats.bestScore ?? 0) >= 75 ? '#10b981' : (stats.bestScore ?? 0) >= 50 ? '#6366f1' : '#f59e0b'} onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('bestScore', stats.bestScore ?? 0) })} />
-          <StatCard label="Sessions"    value={stats.totalSessions ?? 0}    icon="✅" color="#6366f1" onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('sessions', stats.totalSessions ?? 0) })} />
-          <StatCard label="AI Tweaks"   value={adaptations.length}     icon="⚡" color="#f59e0b" sub="adaptations" onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('adaptations', adaptations.length) })} />
+        <div className="grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-5 gap-3 mt-5">
+          <StatCard description="Average across all completed sessions" label="Avg Score"   value={`${stats.avgScore ?? 0}%`}   icon="📊" color={(stats.avgScore ?? 0)  >= 75 ? '#10b981' : (stats.avgScore ?? 0)  >= 50 ? '#6366f1' : '#f59e0b'} onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('avgScore', stats.avgScore ?? 0) })} />
+          <StatCard description="Your highest single-session score" label="Best Score"  value={`${stats.bestScore ?? 0}%`}  icon="🏆" color={(stats.bestScore ?? 0) >= 75 ? '#10b981' : (stats.bestScore ?? 0) >= 50 ? '#6366f1' : '#f59e0b'} onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('bestScore', stats.bestScore ?? 0) })} />
+          <StatCard description="Learning sessions you have finished" label="Sessions"    value={stats.totalSessions ?? 0}    icon="✅" color="#6366f1" onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('sessions', stats.totalSessions ?? 0) })} />
+          <StatCard description="Times the AI adapted your plan" label="AI Tweaks"   value={adaptations.length}     icon="⚡" color="#f59e0b" sub="adaptations" onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('adaptations', adaptations.length) })} />
           {avgTrend !== null ? (
-            <StatCard label="Trend" value={`${avgTrend > 0 ? '+' : ''}${avgTrend}%`} icon={avgTrend >= 0 ? '📈' : '📉'} color={avgTrend >= 0 ? '#10b981' : '#ef4444'} sub="vs early" onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('trend', avgTrend) })} />
+            <StatCard description="Recent vs early session scores" label="Trend" value={`${avgTrend > 0 ? '+' : ''}${avgTrend}%`} icon={avgTrend >= 0 ? '📈' : '📉'} color={avgTrend >= 0 ? '#10b981' : '#ef4444'} sub="vs early" onClick={() => setMetricModal({ isOpen: true, metric: getMetricData('trend', avgTrend) })} />
           ) : (
-            <StatCard label="Trend" value="—" icon="📉" color="#475569" sub="need 4+ sessions" />
+            <StatCard description="Needs at least 4 sessions" label="Trend" value="—" icon="📉" color="#475569" sub="need 4+ sessions" />
           )}
         </div>
       </div>
 
       {/* ── TODAY'S MISSION ─────────────────────────────────────────────────── */}
-      <div>
-        <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 px-1">📌 Today's Mission</p>
+      <div className="min-w-0">
+        <p className="text-sm font-black text-slate-300 uppercase tracking-widest mb-3 px-1">📌 Today's Mission</p>
         <MissionCard
           planDay={todaysMission}
           adaptations={adaptations}
           onLaunch={handleLaunch}
           loading={launching}
         />
+      </div>
       </div>
 
       {/* ── TABBED SECTION ──────────────────────────────────────────────────── */}
@@ -680,7 +695,7 @@ export default function Dashboard() {
         </div>
 
         {/* Tab content */}
-        <div className="p-5">
+        <div className="p-4 sm:p-5 lg:p-6">
 
           {/* OVERVIEW */}
           {activeTab === 'overview' && (
@@ -697,7 +712,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between mb-5">
                 <div>
                   <h3 className="text-base font-black text-white">Learning Roadmap</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">{completed} of {total} sessions completed</p>
+                  <p className="text-sm text-slate-400 mt-0.5">{completed} of {total} sessions completed</p>
                 </div>
                 <span className="text-sm font-black text-indigo-400 font-mono">{completionPct}%</span>
               </div>
@@ -723,7 +738,7 @@ export default function Dashboard() {
               <SkillBars skills={goal.skills || []} diagnosticScores={diagnosticScores} onSkillClick={s => setSkillModal({ isOpen: true, skill: s })} />
               {sessions.length > 0 && (
                 <div className="mt-6 pt-5 border-t border-slate-800">
-                  <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Digital Twin</p>
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Digital Twin</p>
                   <SkillDigitalTwin skills={goal.skills} sessions={sessions} diagnosticScores={diagnosticScores} />
                 </div>
               )}
@@ -733,12 +748,12 @@ export default function Dashboard() {
 
           {/* PERFORMANCE */}
           {activeTab === 'performance' && (
-            <div className="space-y-6">
-              <div>
+            <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
+              <div className="min-w-0">
                 <h3 className="text-base font-black text-white mb-4">Score Trend</h3>
                 <ScoreChart sessions={sessions} />
               </div>
-              <div className="border-t border-slate-800 pt-5">
+              <div className="min-w-0 border-t border-slate-800 pt-5 2xl:border-t-0 2xl:pt-0">
                 <h3 className="text-base font-black text-white mb-4">Mastery Forecast</h3>
                 <PredictiveMasteryForecast sessions={sessions} skills={goal.skills} />
               </div>
@@ -750,7 +765,7 @@ export default function Dashboard() {
             <div className="space-y-5">
               <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-5">
                 <h3 className="text-base font-black text-white mb-1">7-Agent Pipeline</h3>
-                <p className="text-xs text-slate-500 mb-4">Click any agent to see its role and decisions</p>
+                <p className="text-sm text-slate-400 mb-4">Click any agent to see its role and decisions</p>
                 <div className="flex flex-wrap gap-2">
                   {[
                     { icon: '🎯', name: 'GoalAgent',       color: '#6366F1', role: 'Goal Analysis',      desc: 'Parses your goal text, detects the learning domain, identifies your learner level and intensity, and extracts detected tools or keywords.', trigger: 'Runs first — triggered by goal submission.' },
@@ -788,14 +803,14 @@ export default function Dashboard() {
                         <span className="text-2xl">{agentPopup.icon}</span>
                         <div>
                           <p className="text-base font-black" style={{ color: agentPopup.color }}>{agentPopup.name}</p>
-                          <p className="text-xs text-slate-500 uppercase tracking-widest">{agentPopup.role}</p>
+                          <p className="text-xs text-slate-400 uppercase tracking-widest">{agentPopup.role}</p>
                         </div>
                       </div>
-                      <button onClick={() => setAgentPopup(null)} className="text-slate-600 hover:text-slate-400 transition-colors px-2 py-1 rounded-lg hover:bg-slate-800">✕</button>
+                      <button onClick={() => setAgentPopup(null)} aria-label="Close agent details" title="Close" className="text-slate-400 hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-slate-800">✕</button>
                     </div>
                     <p className="text-sm text-slate-300 leading-relaxed">{agentPopup.desc}</p>
                     <div className="rounded-lg bg-slate-900/60 border border-slate-700/40 px-3 py-2.5">
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">When it fires</p>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">When it fires</p>
                       <p className="text-sm text-slate-400">{agentPopup.trigger}</p>
                     </div>
                   </div>
@@ -805,7 +820,7 @@ export default function Dashboard() {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Decision Log</p>
-                  <span className="text-xs text-slate-600">{agentDecisions.length} entries</span>
+                  <span className="text-xs text-slate-400">{agentDecisions.length} entries</span>
                 </div>
                 <div className="h-96 overflow-hidden rounded-xl border border-slate-700/50">
                   <AgentBrain decisions={agentDecisions} isThinking={false} />
@@ -819,7 +834,7 @@ export default function Dashboard() {
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-black text-white">Session History</h3>
-                <span className="text-xs text-slate-500">{sessions.length} sessions · click for details</span>
+                <span className="text-sm text-slate-400">{sessions.length} sessions · click for details</span>
               </div>
               <RecentSessions sessions={sessions} onSessionClick={s => setHistoryModal({ isOpen: true, session: s })} />
             </div>
@@ -852,7 +867,7 @@ export default function Dashboard() {
         disabled={generating || sessions.length === 0}
         className={`w-full py-4 rounded-2xl font-black text-base transition-all ${
           generating || sessions.length === 0
-            ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700'
+            ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
             : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white hover:shadow-2xl hover:shadow-emerald-500/20 active:scale-[0.99]'
         }`}
       >
@@ -861,6 +876,6 @@ export default function Dashboard() {
           : '📜 Generate Competency Report →'}
       </button>
 
-    </div>
+    </PageContainer>
   );
 }

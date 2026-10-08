@@ -300,7 +300,7 @@ export default function Assessment() {
                   className="sr-only"
                 />
                 <span className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-black border ${
-                  selected ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-500'
+                  selected ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'
                 }`}>
                   {optionLabels[oi] || oi + 1}
                 </span>
@@ -353,13 +353,13 @@ export default function Assessment() {
     const skillBreakdown = report.skillBreakdown || [];
 
     return (
-      <div className="min-h-screen bg-[#0F172A] text-white p-4 sm:p-8">
-        <div className="max-w-xl mx-auto">
-          <div className="rounded-2xl border border-slate-700/50 bg-[#1E293B] p-8 shadow-2xl mb-4">
-            <h2 className="text-center text-xs font-black text-slate-500 uppercase tracking-widest mb-6">Assessment Report</h2>
-            <h1 className="text-center text-lg font-bold text-white mb-1">{assessment?.title || 'Assessment'}</h1>
+      <div className="min-h-screen bg-[#0F172A] text-white px-3 sm:px-5 lg:px-6 2xl:px-8 py-4 sm:py-6">
+        <div className="w-full grid grid-cols-1 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-4 items-start">
+          <div className="rounded-2xl border border-slate-700/50 bg-[#1E293B] p-5 sm:p-8 shadow-2xl min-w-0">
+            <h2 className="text-center text-sm font-black text-slate-400 uppercase tracking-widest mb-6">Assessment Report</h2>
+            <h1 className="text-center text-xl font-bold text-white mb-1">{assessment?.title || 'Assessment'}</h1>
             {assessment?.jobRole && (
-              <p className="text-center text-xs text-indigo-300 mb-6">{assessment.jobRole}</p>
+              <p className="text-center text-sm text-indigo-300 mb-6">{assessment.jobRole}</p>
             )}
 
             <ScoreRing pct={pct} rating={reportRating} />
@@ -371,7 +371,7 @@ export default function Assessment() {
                 { label: 'Correct', value: `${correct}/${total}` },
               ].map(item => (
                 <div key={item.label} className="rounded-xl bg-slate-800/60 border border-slate-700/30 p-3 text-center">
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">{item.label}</p>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">{item.label}</p>
                   <p className="text-xl font-black" style={{ color: item.color || '#e2e8f0' }}>{item.value}</p>
                 </div>
               ))}
@@ -380,12 +380,12 @@ export default function Assessment() {
             {/* Rating band and what it means */}
             <div className={`rounded-xl px-4 py-3 mb-4 ${ratingInfo.chip}`} title={`Score range for ${reportRating}: ${ratingInfo.range}`}>
               <span className="text-xs font-black uppercase tracking-widest">{reportRating}</span>
-              <p className="text-xs text-slate-400 mt-1">{ratingInfo.readiness} (score range {ratingInfo.range})</p>
+              <p className="text-sm text-slate-400 mt-1">{ratingInfo.readiness} (score range {ratingInfo.range})</p>
             </div>
 
             {weakAreas.length > 0 && (
               <div className="rounded-xl px-4 py-2.5 mb-4 bg-indigo-500/8 border border-indigo-500/20">
-                <p className="text-xs text-indigo-300 font-semibold">
+                <p className="text-sm text-indigo-300 font-semibold">
                   A personalized training module has been assigned to you based on your assessment results.
                 </p>
               </div>
@@ -421,7 +421,7 @@ export default function Assessment() {
 
             {skillBreakdown.length > 0 && (
               <div className="mb-6">
-                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Skill Breakdown</p>
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Skill Breakdown</p>
                 <div className="space-y-2.5">
                   {skillBreakdown.map((item, i) => (
                     <MiniBar
@@ -440,7 +440,7 @@ export default function Assessment() {
                 <p className="text-xs font-black text-red-400 uppercase tracking-widest mb-2">Missing Competencies</p>
                 <div className="flex flex-wrap gap-1.5">
                   {missingCompetencies.map((m, i) => (
-                    <span key={i} className="text-xs px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300">{m}</span>
+                    <span key={i} className="text-sm px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300">{m}</span>
                   ))}
                 </div>
               </div>
@@ -451,7 +451,7 @@ export default function Assessment() {
                 <p className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-2">Recommended Learning</p>
                 <div className="flex flex-wrap gap-1.5">
                   {recommendedLearningAreas.map((r, i) => (
-                    <span key={i} className="text-xs px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">{r}</span>
+                    <span key={i} className="text-sm px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">{r}</span>
                   ))}
                 </div>
               </div>
@@ -467,8 +467,8 @@ export default function Assessment() {
 
           {/* ── Question-by-Question Review ── */}
           {(report.breakdown?.length > 0) && (
-            <div className="rounded-2xl border border-slate-700/50 bg-[#1E293B] p-6 shadow-xl mt-4">
-              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-5">📋 Answer Review</h3>
+            <div className="rounded-2xl border border-slate-700/50 bg-[#1E293B] p-5 sm:p-6 shadow-xl min-w-0">
+              <h3 className="text-base font-black text-slate-300 uppercase tracking-widest mb-5">📋 Answer Review</h3>
               <div className="space-y-4">
                 {report.breakdown.map((b, i) => (
                   <div key={i} className={`rounded-xl border p-4 ${b.isCorrect ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
@@ -477,13 +477,13 @@ export default function Assessment() {
                       <span className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-black border ${b.isCorrect ? 'bg-emerald-600/30 border-emerald-500/40 text-emerald-300' : 'bg-red-600/30 border-red-500/40 text-red-300'}`}>
                         {b.isCorrect ? '✓' : '✗'}
                       </span>
-                      <p className="text-white text-sm font-semibold leading-snug">Q{i + 1}. {b.question}</p>
+                      <p className="text-white text-base font-semibold leading-snug">Q{i + 1}. {b.question}</p>
                     </div>
 
                     {/* Answers */}
                     <div className="ml-10 space-y-1.5">
                       {/* User's answer */}
-                      <div className={`flex items-start gap-2 text-xs rounded-lg px-3 py-2 ${
+                      <div className={`flex items-start gap-2 text-sm rounded-lg px-3 py-2 ${
                         b.isCorrect
                           ? 'bg-emerald-500/10 text-emerald-300'
                           : b.userAnswer
@@ -496,7 +496,7 @@ export default function Assessment() {
 
                       {/* Correct answer — always show when wrong */}
                       {!b.isCorrect && (
-                        <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2 bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                        <div className="flex items-start gap-2 text-sm rounded-lg px-3 py-2 bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
                           <span className="font-bold shrink-0">✓ Correct:</span>
                           <span>{b.correctOptionText || b.correctAnswer}</span>
                         </div>
@@ -504,7 +504,7 @@ export default function Assessment() {
 
                       {/* Explanation — why the correct answer is correct */}
                       {b.explanation && (
-                        <div className="flex items-start gap-2 text-xs rounded-lg px-3 py-2 bg-indigo-500/10 text-indigo-200 border border-indigo-500/20">
+                        <div className="flex items-start gap-2 text-sm rounded-lg px-3 py-2 bg-indigo-500/10 text-indigo-200 border border-indigo-500/20">
                           <span className="shrink-0">💡</span>
                           <span>{b.explanation}</span>
                         </div>
@@ -650,23 +650,23 @@ export default function Assessment() {
         </div>
       )}
 
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className="w-full px-3 sm:px-5 lg:px-6 2xl:px-8 py-4 sm:py-6">
         {/* Header */}
         <div className="mb-6">
           <div className="flex flex-wrap items-center gap-2 mb-3">
-            <h1 className="text-2xl font-black text-white">{assessment.title}</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-white">{assessment.title}</h1>
           </div>
           <div className="flex flex-wrap gap-2">
             {(assessment.jobRole || assessment.job_role) && (
-              <span className="px-3 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-bold">
+              <span className="px-3 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-sm font-bold">
                 {assessment.jobRole || assessment.job_role}
               </span>
             )}
-            <span className="px-3 py-1 rounded-full bg-slate-700/50 border border-slate-700 text-slate-400 text-xs font-bold">
+            <span className="px-3 py-1 rounded-full bg-slate-700/50 border border-slate-700 text-slate-400 text-sm font-bold">
               ⏱ {normalizeDuration(assessment.duration)} mins
             </span>
             {(assessment.scheduledDate || assessment.date) && (
-              <span className="px-3 py-1 rounded-full bg-slate-700/50 border border-slate-700 text-slate-400 text-xs font-bold">
+              <span className="px-3 py-1 rounded-full bg-slate-700/50 border border-slate-700 text-slate-400 text-sm font-bold">
                 📅 {new Date(assessment.scheduledDate || assessment.date).toLocaleDateString()}
               </span>
             )}
@@ -676,7 +676,7 @@ export default function Assessment() {
         {/* Progress bar */}
         {questions.length > 0 && (
           <div className="mb-6">
-            <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1.5">
+            <div className="flex items-center justify-between text-sm text-slate-300 font-semibold mb-1.5">
               <span>Progress</span>
               <span>{answeredCount} / {questions.length} answered</span>
             </div>
@@ -691,7 +691,7 @@ export default function Assessment() {
 
         {/* Error */}
         {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
+          <div role="alert" className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm">
             {error}
           </div>
         )}
@@ -702,12 +702,12 @@ export default function Assessment() {
             <p className="text-slate-400">This assessment has no questions.</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
             {paginated && (
-              <div className="flex items-center justify-between rounded-xl border border-slate-700/40 bg-[#1E293B] px-4 py-2.5 text-xs">
+              <div className="xl:col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-700/40 bg-[#1E293B] px-4 py-2.5 text-sm">
                 <span className="text-slate-400">
                   Page <span className="text-white font-bold">{safePage + 1}</span> of {totalPages}
-                  <span className="text-slate-600"> · </span>
+                  <span className="text-slate-400"> · </span>
                   questions <span className="text-white font-semibold">{pageStart + 1}–{pageEnd}</span> of {questions.length}
                 </span>
                 <span className={unansweredOnPage > 0 ? 'text-amber-400 font-semibold' : 'text-emerald-400 font-semibold'}>
@@ -718,15 +718,15 @@ export default function Assessment() {
             {visibleQuestions.map((q, i) => {
               const idx = pageStart + i;
               return (
-              <div key={idx} className="rounded-2xl border border-slate-700/40 bg-[#1E293B] p-5 sm:p-6">
+              <div key={idx} className="min-w-0 rounded-2xl border border-slate-700/40 bg-[#1E293B] p-5 sm:p-6">
                 <div className="flex items-start gap-3 mb-4">
-                  <span className="flex-shrink-0 w-7 h-7 rounded-lg bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 text-xs flex items-center justify-center font-black">
+                  <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 text-sm flex items-center justify-center font-black">
                     {idx + 1}
                   </span>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-slate-100 leading-relaxed">{q.question || q.text || q.prompt}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-base font-semibold text-slate-100 leading-relaxed">{q.question || q.text || q.prompt}</p>
                     {q.type && (
-                      <span className="inline-block mt-1 text-xs text-slate-500 capitalize">
+                      <span className="inline-block mt-1 text-sm text-slate-400 capitalize">
                         {q.type.replace(/_/g, ' ')}
                       </span>
                     )}
@@ -741,7 +741,7 @@ export default function Assessment() {
             })}
 
             {paginated && (
-              <div className="flex items-center justify-between gap-3 pt-2">
+              <div className="xl:col-span-2 flex flex-wrap items-center justify-between gap-3 pt-2">
                 <button
                   onClick={() => { setPage(p => Math.max(0, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                   disabled={safePage === 0}
@@ -764,7 +764,7 @@ export default function Assessment() {
                         key={p}
                         onClick={() => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                         title={`Questions ${from + 1}–${to} · ${done}/${to - from} answered`}
-                        className={`w-8 h-8 rounded-lg text-xs font-black transition-all border ${
+                        className={`w-9 h-9 rounded-lg text-sm font-black transition-all border ${
                           p === safePage
                             ? 'bg-indigo-600 text-white border-indigo-500'
                             : complete
@@ -813,11 +813,11 @@ export default function Assessment() {
               const isOnAnotherPage = paginated && firstUnansweredPage !== safePage;
               return (
                 <div className="mt-3 flex flex-col items-center gap-2">
-                  <p className="text-xs text-slate-500">Answer all questions to submit</p>
+                  <p className="text-sm text-slate-400">Answer all questions to submit</p>
                   {isOnAnotherPage && (
                     <button
                       onClick={() => { setPage(firstUnansweredPage); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                      className="text-xs font-semibold text-amber-400 hover:text-amber-300 underline underline-offset-2"
+                      className="text-sm font-semibold text-amber-400 hover:text-amber-300 underline underline-offset-2"
                     >
                       Go to page {firstUnansweredPage + 1} — question {firstUnansweredIdx + 1} is unanswered
                     </button>

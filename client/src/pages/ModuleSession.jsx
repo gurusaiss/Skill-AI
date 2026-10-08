@@ -274,7 +274,7 @@ function SessionVisual({ visual }) {
                 <li key={i} className="flex items-center gap-2 text-xs text-slate-300">
                   <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
                   <span className="flex-1">{d.label}</span>
-                  <span className="text-slate-500 font-semibold">{Math.round((d.value / total) * 100)}%</span>
+                  <span className="text-slate-400 font-semibold">{Math.round((d.value / total) * 100)}%</span>
                 </li>
               ))}
             </ul>
@@ -291,7 +291,7 @@ function SessionVisual({ visual }) {
             <div key={i}>
               <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
                 <span>{d.label}</span>
-                <span className="text-slate-500 font-semibold">{d.value}</span>
+                <span className="text-slate-400 font-semibold">{d.value}</span>
               </div>
               <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden">
                 <div className="h-full rounded-full transition-all" style={{ width: `${(d.value / max) * 100}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
@@ -398,7 +398,7 @@ function ChartBlock({ block }) {
               <li key={i} className="flex items-center gap-2 text-xs text-slate-300">
                 <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
                 <span className="flex-1">{d.label}</span>
-                <span className="text-slate-500 font-semibold">{Math.round((d.value / total) * 100)}%</span>
+                <span className="text-slate-400 font-semibold">{Math.round((d.value / total) * 100)}%</span>
               </li>
             ))}
           </ul>
@@ -415,7 +415,7 @@ function ChartBlock({ block }) {
           <div key={i}>
             <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
               <span>{d.label}</span>
-              <span className="text-slate-500 font-semibold">{d.value}{block.unit ? ` ${block.unit}` : ''}</span>
+              <span className="text-slate-400 font-semibold">{d.value}{block.unit ? ` ${block.unit}` : ''}</span>
             </div>
             <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden">
               <div className="h-full rounded-full" style={{ width: `${(d.value / max) * 100}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
@@ -589,11 +589,11 @@ function CardDeck({ cards, forceRevealed = false }) {
               onClick={() => setRevealed(p => ({ ...p, [i]: !p[i] }))}
               className="text-left rounded-lg border border-slate-700/60 bg-slate-900/50 hover:border-indigo-500/40 p-3 transition-all min-h-[84px]"
             >
-              {c.tag && <span className="inline-block text-[10px] uppercase tracking-wider text-slate-500 mb-1">{c.tag}</span>}
+              {c.tag && <span className="inline-block text-xs uppercase tracking-wider text-slate-400 mb-1">{c.tag}</span>}
               <p className="text-sm font-semibold text-white leading-snug">{c.front}</p>
               {open
                 ? <p className="text-xs text-indigo-200 mt-2 leading-relaxed">{c.back}</p>
-                : <p className="text-xs text-slate-500 mt-2 italic">Tap to reveal</p>}
+                : <p className="text-xs text-slate-400 mt-2 italic">Tap to reveal</p>}
             </button>
           );
         })}
@@ -631,7 +631,7 @@ function AbbreviationsBlock({ abbreviations }) {
             <dt className="font-black text-white whitespace-nowrap">{a.short}</dt>
             <dd className="text-slate-400">
               {a.full}
-              {a.note && <span className="block text-xs text-slate-500 italic">{a.note}</span>}
+              {a.note && <span className="block text-xs text-slate-400 italic">{a.note}</span>}
             </dd>
           </div>
         ))}
@@ -650,7 +650,7 @@ function MnemonicsBlock({ mnemonics }) {
           <div key={i}>
             <p className="text-lg font-black text-purple-200 tracking-wide font-mono">{m.device}</p>
             {m.expands && <p className="text-sm text-slate-300 mt-0.5">{m.expands}</p>}
-            {m.howToUse && <p className="text-xs text-slate-500 mt-0.5 italic">{m.howToUse}</p>}
+            {m.howToUse && <p className="text-xs text-slate-400 mt-0.5 italic">{m.howToUse}</p>}
           </div>
         ))}
       </div>
@@ -673,12 +673,12 @@ function KeepInMindBlock({ points }) {
         {list.map((p, i) => (
           <li key={i}>
             <div className="flex items-start gap-2">
-              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border flex-shrink-0 ${SEVERITY_STYLES[p.severity] || SEVERITY_STYLES.important}`}>
+              <span className={`px-1.5 py-0.5 rounded text-xs font-bold uppercase border flex-shrink-0 ${SEVERITY_STYLES[p.severity] || SEVERITY_STYLES.important}`}>
                 {p.severity || 'important'}
               </span>
               <p className="text-sm text-slate-200 leading-snug">{p.point}</p>
             </div>
-            {p.why && <p className="text-xs text-slate-500 mt-0.5 ml-[4.25rem] leading-relaxed">{p.why}</p>}
+            {p.why && <p className="text-xs text-slate-400 mt-0.5 ml-[4.25rem] leading-relaxed">{p.why}</p>}
           </li>
         ))}
       </ul>
@@ -698,7 +698,7 @@ function SubtopicStrip({ subtopics }) {
             <div>
               <p className="text-sm font-semibold text-white">
                 {s.name}
-                {s.minutes ? <span className="ml-2 text-xs text-slate-500 font-normal">{s.minutes} min</span> : null}
+                {s.minutes ? <span className="ml-2 text-xs text-slate-400 font-normal">{s.minutes} min</span> : null}
               </p>
               {s.summary && <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{s.summary}</p>}
             </div>
@@ -755,10 +755,10 @@ function ContentPhase({ session, sessionIndex, module, preparingDeep, onStartQui
         <div className="h-1 bg-indigo-500 transition-all duration-300" style={{ width: `${readProgress}%` }} />
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
+      <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-10">
         {/* Breadcrumb + Home */}
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2 text-xs text-slate-500">
+          <div className="flex items-center gap-2 text-sm text-slate-400 min-w-0 flex-wrap">
             <span>{module?.title || 'Module'}</span>
             <span>/</span>
             <span className="text-slate-300">{title}</span>
@@ -766,7 +766,7 @@ function ContentPhase({ session, sessionIndex, module, preparingDeep, onStartQui
           <button
             onClick={onHome}
             title="Module Home"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700/60 bg-slate-800/50 hover:bg-slate-700/60 text-slate-400 hover:text-white text-xs font-semibold transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700/60 bg-slate-800/50 hover:bg-slate-700/60 text-slate-300 hover:text-white text-sm font-semibold transition-all"
           >
             <span>🏠</span> Module Home
           </button>
@@ -790,7 +790,7 @@ function ContentPhase({ session, sessionIndex, module, preparingDeep, onStartQui
         )}
 
         {/* Content scroll area */}
-        <div className="space-y-6" ref={contentRef}>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start" ref={contentRef}>
           {/* Learning Objectives */}
           {learningObjectives.length > 0 && (
             <section className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5">
@@ -977,15 +977,15 @@ function NotesPhase({ session, sessionIndex, module, quizResults, onBack, onHome
 
   return (
     <div className="min-h-screen bg-[#0F172A]">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
+      <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-10">
         <div className="flex items-center justify-between mb-6">
-          <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-white transition-colors">
+          <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors">
             <span>←</span> Back to Session
           </button>
           <button
             onClick={onHome}
             title="Module Home"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700/60 bg-slate-800/50 hover:bg-slate-700/60 text-slate-400 hover:text-white text-xs font-semibold transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700/60 bg-slate-800/50 hover:bg-slate-700/60 text-slate-300 hover:text-white text-sm font-semibold transition-all"
           >
             <span>🏠</span> Module Home
           </button>
@@ -1007,7 +1007,7 @@ function NotesPhase({ session, sessionIndex, module, quizResults, onBack, onHome
           </button>
         </div>
 
-        <div className="space-y-6">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
           {learningObjectives.length > 0 && (
             <section className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5">
               <h2 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-3">🎯 Learning Objectives</h2>
@@ -1111,7 +1111,7 @@ function NotesPhase({ session, sessionIndex, module, quizResults, onBack, onHome
                             <p className="text-xs text-emerald-400">Correct: {r.answer}</p>
                           </>
                         )}
-                        {r.explanation && <p className="text-xs text-slate-500 mt-1 italic">{r.explanation}</p>}
+                        {r.explanation && <p className="text-xs text-slate-400 mt-1 italic">{r.explanation}</p>}
                       </div>
                     </div>
                   </div>
@@ -1243,7 +1243,7 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
         <div className="text-center">
           <div className="text-4xl mb-4 animate-spin">⟳</div>
           <p className="text-slate-400 text-sm">Generating your knowledge quiz…</p>
-          <p className="text-slate-600 text-xs mt-1">Using AI to tailor questions to this session</p>
+          <p className="text-slate-400 text-xs mt-1">Using AI to tailor questions to this session</p>
         </div>
       </div>
     );
@@ -1273,10 +1273,10 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
 
   return (
     <div className="min-h-screen bg-[#0F172A]">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
+      <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-10">
         {/* Progress */}
         <div className="mb-6">
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+          <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
             <span>Question {currentQ + 1} of {questions.length}</span>
             <span>{Object.keys(answers).length} answered</span>
           </div>
@@ -1306,7 +1306,7 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
             )}
           </div>
 
-          <p className="text-lg font-bold text-white leading-snug mb-6">{q.question}</p>
+          <p className="text-xl font-bold text-white leading-snug mb-6">{q.question}</p>
 
           {/* MCQ options */}
           {q.type === 'mcq' && (!q.options || q.options.length === 0) && (
@@ -1315,7 +1315,7 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
             </div>
           )}
           {q.type === 'mcq' && q.options && q.options.length > 0 && (
-            <div className="space-y-2.5">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
               {q.options.map((opt, oi) => {
                 const letter = ['A', 'B', 'C', 'D'][oi];
                 const selected = answers[currentQ] === letter;
@@ -1323,7 +1323,7 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
                   <button
                     key={oi}
                     onClick={() => handleAnswer(currentQ, letter)}
-                    className={`w-full text-left rounded-xl border px-4 py-3 transition-all text-sm font-medium ${
+                    className={`w-full text-left rounded-xl border px-4 py-3 transition-all text-base font-medium ${
                       selected
                         ? 'border-indigo-500/60 bg-indigo-600/20 text-indigo-100'
                         : 'border-slate-700/50 bg-slate-800/50 text-slate-300 hover:border-slate-600 hover:bg-slate-800'
@@ -1379,7 +1379,7 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
                 className={`w-6 h-6 rounded-full text-xs font-black transition-all ${
                   i === currentQ ? 'bg-indigo-600 text-white'
                   : answers[i] !== undefined ? 'bg-emerald-600/30 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-slate-700 text-slate-500'
+                  : 'bg-slate-700 text-slate-400'
                 }`}
               >
                 {i + 1}
@@ -1427,7 +1427,7 @@ function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatc
 
   return (
     <div className="min-h-screen bg-[#0F172A]">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
+      <div className="w-full min-w-0 px-3 sm:px-5 lg:px-6 2xl:px-8 py-10">
         {/* Score card */}
         <div className={`rounded-2xl border p-8 text-center mb-8 ${passed ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
           <div className="text-6xl mb-4">{pct >= 90 ? '🌟' : pct >= 70 ? '🎉' : '📚'}</div>
@@ -1511,7 +1511,7 @@ function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatc
           >
             <span className="text-lg">🔁</span>
             <span>Rewatch Session</span>
-            <span className="text-xs text-slate-500 font-normal">Review the material</span>
+            <span className="text-xs text-slate-400 font-normal">Review the material</span>
           </button>
           <button
             onClick={onRetryQuiz}
@@ -1519,7 +1519,7 @@ function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatc
           >
             <span className="text-lg">🔄</span>
             <span>Retry Quiz</span>
-            <span className="text-xs text-slate-500 font-normal">Try for a higher score</span>
+            <span className="text-xs text-slate-400 font-normal">Try for a higher score</span>
           </button>
         </div>
 
@@ -1579,7 +1579,7 @@ function ScorePhase({ score, sessionTitle, sessionIndex, totalSessions, onRewatc
                       </>
                     )}
                     {r.explanation && (
-                      <p className="text-xs text-slate-500 mt-1 italic">{r.explanation}</p>
+                      <p className="text-xs text-slate-400 mt-1 italic">{r.explanation}</p>
                     )}
                   </div>
                 </div>
@@ -1883,7 +1883,7 @@ export default function ModuleSession() {
         <div className="text-center max-w-sm">
           <div className="text-5xl mb-4">⚠️</div>
           <h2 className="text-xl font-black text-white mb-2">Session Not Found</h2>
-          <p className="text-slate-400 text-sm mb-6">{error}</p>
+          <p className="text-slate-400 text-sm mb-6">{error || "This session could not be loaded."}</p>
           <button
             onClick={goToDashboard}
             className="px-6 py-3 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all"
@@ -1918,7 +1918,7 @@ export default function ModuleSession() {
           </p>
           <button
             onClick={() => navigate(`/admin/modules?edit=${moduleId}`)}
-            className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-colors flex-shrink-0"
+            className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-sm font-bold transition-colors flex-shrink-0"
           >
             ✎ Edit Module
           </button>

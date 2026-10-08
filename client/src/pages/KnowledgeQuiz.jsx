@@ -95,7 +95,7 @@ function KnowledgeQuiz() {
 
   if (completed) return (
     <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-6">
-      <div className="max-w-lg w-full">
+      <div className="w-full max-w-2xl">
         <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-8 text-center">
           <div className="text-6xl mb-4">{score >= 60 ? '🎉' : '💪'}</div>
           <h2 className="text-2xl font-black text-white mb-2">Knowledge Quiz Complete</h2>
@@ -105,7 +105,7 @@ function KnowledgeQuiz() {
              score >= 60 ? 'Good start! There is room for improvement.' :
              'This module will help build your knowledge from the ground up.'}
           </p>
-          <p className="text-xs text-slate-500 mb-6">
+          <p className="text-xs text-slate-400 mb-6">
             {score < 60 ? '9 AI agents are generating your personalized learning roadmap based on your quiz results.' :
              'Your personalized learning plan is being generated based on your current knowledge level.'}
           </p>
@@ -122,21 +122,21 @@ function KnowledgeQuiz() {
   if (!q) return null;
 
   return (
-    <div className="min-h-screen bg-[#0F172A] py-12 px-6">
-      <div className="max-w-2xl mx-auto">
+    <div className="min-h-screen bg-[#0F172A] py-8 px-3 sm:px-5 lg:px-6 2xl:px-8">
+      <div className="w-full min-w-0">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-black text-white mb-2">KNOWLEDGE QUIZ</h1>
           <p className="text-slate-400 text-sm">Answer {questions.length} questions to assess your current knowledge</p>
           {moduleInfo && <p className="text-indigo-300 text-xs mt-2 font-semibold">{moduleInfo.title}</p>}
         </div>
 
-        <div className="flex justify-center gap-2 mb-8">
+        <div className="flex flex-wrap justify-center gap-2 mb-8">
           {questions.map((_, i) => (
-            <div key={i}
+            <div key={i} role="button" tabIndex={0} aria-label={`Go to question ${i + 1}`} onKeyDown={(e) => { if (e.key === "Enter") setCurrentQ(i); }}
               className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                 i === currentQ ? 'bg-indigo-600 text-white ring-2 ring-indigo-400 ring-offset-2 ring-offset-slate-900' :
                 answers[i] >= 0 ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30' :
-                'bg-slate-700/50 text-slate-500 border border-slate-600/50'
+                'bg-slate-700/50 text-slate-300 border border-slate-600/50 cursor-pointer'
               }`}
               onClick={() => setCurrentQ(i)}
             >{i + 1}</div>
@@ -145,9 +145,9 @@ function KnowledgeQuiz() {
 
         <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 p-8">
           <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-1">Question {currentQ + 1} of {questions.length}</p>
-          <h2 className="text-lg font-bold text-white mb-6">{q.text}</h2>
+          <h2 className="text-xl font-bold text-white mb-6">{q.text}</h2>
 
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
             {q.options.map((opt, idx) => (
               <button key={idx}
                 onClick={() => handleAnswer(idx)}
@@ -157,7 +157,7 @@ function KnowledgeQuiz() {
                     : 'bg-slate-900/50 border-slate-700/40 text-slate-300 hover:border-slate-600 hover:bg-slate-800/50'
                 }`}
               >
-                <span className="text-sm">{opt}</span>
+                <span className="text-base">{opt}</span>
               </button>
             ))}
           </div>

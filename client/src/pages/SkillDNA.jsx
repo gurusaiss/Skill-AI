@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import TabBar from '../components/TabBar.jsx';
+import PageContainer from '../components/PageContainer.jsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LineChart, Line, AreaChart, Area,
@@ -145,7 +146,7 @@ function TraitBar({ label, value, color }) {
 function DNAProfileCard({ dna, isDemo }) {
   if (!dna) return (
     <div className="bg-[#1E293B] rounded-2xl p-6 border border-slate-700/50 flex items-center justify-center h-full min-h-[280px]">
-      <p className="text-slate-500 text-sm">Not enough sessions to classify your DNA type yet.</p>
+      <p className="text-slate-400 text-sm">Not enough sessions to classify your DNA type yet.</p>
     </div>
   );
 
@@ -191,15 +192,15 @@ function DNAProfileCard({ dna, isDemo }) {
         <div className="mt-4 grid grid-cols-3 gap-3 text-center">
           <div className="bg-slate-800/60 rounded-xl p-3">
             <p className="text-xl font-black text-white">{dna.avgScore}%</p>
-            <p className="text-xs text-slate-500 mt-0.5">Avg Score</p>
+            <p className="text-xs text-slate-400 mt-0.5">Avg Score</p>
           </div>
           <div className="bg-slate-800/60 rounded-xl p-3">
             <p className="text-xl font-black text-violet-400">{dna.consistency}%</p>
-            <p className="text-xs text-slate-500 mt-0.5">Consistency</p>
+            <p className="text-xs text-slate-400 mt-0.5">Consistency</p>
           </div>
           <div className="bg-slate-800/60 rounded-xl p-3">
             <p className="text-xl font-black text-indigo-400">{dna.scoreVariance}</p>
-            <p className="text-xs text-slate-500 mt-0.5">Variance</p>
+            <p className="text-xs text-slate-400 mt-0.5">Variance</p>
           </div>
         </div>
       </div>
@@ -305,7 +306,7 @@ function PerformanceHeatmap({ userId }) {
           <h3 className="text-base font-bold text-white mt-0.5">Peak Performance Times</h3>
         </div>
         <div className="group relative">
-          <span className="text-slate-500 cursor-help text-sm">ⓘ</span>
+          <span className="text-slate-400 cursor-help text-sm">ⓘ</span>
           <div className="absolute right-0 mt-1 w-52 bg-slate-700 text-xs text-slate-300 rounded-xl p-3 hidden group-hover:block z-10 shadow-xl border border-slate-600/50">
             Simulated based on your learning profile. Shows likely peak performance windows across the week.
           </div>
@@ -318,7 +319,7 @@ function PerformanceHeatmap({ userId }) {
           <div className="flex mb-1 pl-9">
             {Array.from({ length: 24 }, (_, h) => (
               <div key={h} className="flex-1 text-center">
-                {HOUR_LABELS[h] ? <span className="text-[9px] text-slate-500">{HOUR_LABELS[h]}</span> : null}
+                {HOUR_LABELS[h] ? <span className="text-xs text-slate-400">{HOUR_LABELS[h]}</span> : null}
               </div>
             ))}
           </div>
@@ -326,7 +327,7 @@ function PerformanceHeatmap({ userId }) {
           {/* Grid rows */}
           {grid.map((row, d) => (
             <div key={d} className="flex items-center mb-0.5 gap-0.5">
-              <span className="text-[10px] text-slate-500 w-8 flex-shrink-0 text-right pr-1">{DAY_LABELS[d]}</span>
+              <span className="text-xs text-slate-400 w-8 flex-shrink-0 text-right pr-1">{DAY_LABELS[d]}</span>
               {row.map((val, h) => {
                 const isPeak = d === peakD && h === peakH;
                 return (
@@ -342,11 +343,11 @@ function PerformanceHeatmap({ userId }) {
 
           {/* Legend */}
           <div className="flex items-center gap-3 mt-3 justify-end">
-            <span className="text-[10px] text-slate-500">Low</span>
+            <span className="text-xs text-slate-400">Low</span>
             {INTENSITY_CLASSES.map((cls, i) => (
               <div key={i} className={`w-4 h-3 rounded-sm ${cls}`} />
             ))}
-            <span className="text-[10px] text-slate-500">High</span>
+            <span className="text-xs text-slate-400">High</span>
           </div>
         </div>
       </div>
@@ -419,7 +420,7 @@ function ForgettingCurve({ avgScore }) {
           </AreaChart>
         </ResponsiveContainer>
 
-        <p className="text-xs text-slate-500 mt-3 text-center">
+        <p className="text-xs text-slate-400 mt-3 text-center">
           Formula: R = e<sup>(-t/S)</sup> where stability S = {Math.max(5, Math.round((avgScore / 100) * 20))} days based on your avg score
         </p>
       </div>
@@ -451,7 +452,7 @@ function MemoryBrowser({ memory, loading, error }) {
             <p className="text-xs text-teal-400 uppercase tracking-widest font-semibold">Agent Memory</p>
             <h3 className="text-base font-bold text-white mt-0.5">What AI Knows About You</h3>
           </div>
-          {loading && <span className="text-xs text-slate-500 animate-pulse">Loading memory...</span>}
+          {loading && <span className="text-xs text-slate-400 animate-pulse">Loading memory...</span>}
           {error && <span className="text-xs text-amber-400">Using sample data</span>}
           {!loading && !error && memory && (
             <span className="text-xs bg-teal-900/30 text-teal-400 border border-teal-500/20 px-2 py-0.5 rounded-full">Live</span>
@@ -465,7 +466,7 @@ function MemoryBrowser({ memory, loading, error }) {
           {activeTab === 0 && (
             <motion.div key="facts" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
               {semanticEntries.length === 0 ? (
-                <p className="text-slate-500 text-sm">No facts learned yet.</p>
+                <p className="text-slate-400 text-sm">No facts learned yet.</p>
               ) : (
                 <div className="space-y-3">
                   {semanticEntries.map(([key, val]) => (
@@ -483,7 +484,7 @@ function MemoryBrowser({ memory, loading, error }) {
                             transition={{ duration: 0.8, ease: 'easeOut' }}
                           />
                         </div>
-                        <p className="text-[10px] text-slate-600 mt-0.5">{Math.round((val.confidence || 0.5) * 100)}% confidence</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{Math.round((val.confidence || 0.5) * 100)}% confidence</p>
                       </div>
                     </div>
                   ))}
@@ -495,7 +496,7 @@ function MemoryBrowser({ memory, loading, error }) {
           {activeTab === 1 && (
             <motion.div key="patterns" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
               {proceduralEntries.length === 0 ? (
-                <p className="text-slate-500 text-sm">No patterns detected yet. Keep learning!</p>
+                <p className="text-slate-400 text-sm">No patterns detected yet. Keep learning!</p>
               ) : (
                 <div className="space-y-3">
                   {proceduralEntries.map(([pattern, data]) => (
@@ -523,7 +524,7 @@ function MemoryBrowser({ memory, loading, error }) {
           {activeTab === 2 && (
             <motion.div key="episodes" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
               {episodes.length === 0 ? (
-                <p className="text-slate-500 text-sm">No episodes recorded yet.</p>
+                <p className="text-slate-400 text-sm">No episodes recorded yet.</p>
               ) : (
                 <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
                   {episodes.map((ep, i) => (
@@ -535,11 +536,11 @@ function MemoryBrowser({ memory, loading, error }) {
                       <div className="pb-3 flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
                           <span className="text-xs text-violet-400 font-semibold capitalize">{(ep.type || 'event').replace(/_/g, ' ')}</span>
-                          <span className="text-[10px] text-slate-600">
+                          <span className="text-xs text-slate-400">
                             {ep.timestamp ? new Date(ep.timestamp).toLocaleDateString() : ''}
                           </span>
                           {ep.importance >= 8 && (
-                            <span className="text-[10px] bg-amber-900/30 text-amber-400 px-1.5 rounded-full border border-amber-500/20">High</span>
+                            <span className="text-xs bg-amber-900/30 text-amber-400 px-1.5 rounded-full border border-amber-500/20">High</span>
                           )}
                         </div>
                         <p className="text-sm text-slate-300 leading-relaxed">{ep.content}</p>
@@ -603,24 +604,24 @@ export default function SkillDNA() {
   }, [userId]);
 
   return (
-    <div className="min-h-screen bg-[#0F172A] px-4 py-10 max-w-7xl mx-auto">
+    <PageContainer className="min-h-screen bg-[#0F172A]">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="mb-10 text-center"
+        className="mb-6 text-left"
       >
         <div className="inline-flex items-center gap-2 bg-violet-900/20 border border-violet-500/20 px-4 py-1.5 rounded-full text-xs text-violet-400 font-semibold uppercase tracking-widest mb-4">
           <span>🧬</span> Skill DNA Analytics
         </div>
-        <h1 className="text-4xl md:text-5xl font-black text-white mb-3">
+        <h1 className="text-3xl md:text-4xl font-black text-white mb-3">
           Your{' '}
           <span className="bg-gradient-to-r from-violet-400 via-indigo-400 to-sky-400 bg-clip-text text-transparent">
             Skill DNA
           </span>
         </h1>
-        <p className="text-slate-400 max-w-xl mx-auto leading-relaxed">
+        <p className="text-slate-400 max-w-3xl leading-relaxed text-base">
           A deep-learning analysis of how you learn, when you peak, and what the AI has discovered about your unique cognitive profile.
         </p>
         {isDemo && (
@@ -636,13 +637,9 @@ export default function SkillDNA() {
         <VelocityChart sessions={activeSessions} />
       </div>
 
-      {/* Row 2: Performance Heatmap */}
-      <div className="mb-6">
+      {/* Row 2: Performance Heatmap + Forgetting Curve side by side on wide screens */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
         <PerformanceHeatmap userId={userId || 'demo'} />
-      </div>
-
-      {/* Row 3: Forgetting Curve */}
-      <div className="mb-6">
         <ForgettingCurve avgScore={avgScore} />
       </div>
 
@@ -650,6 +647,6 @@ export default function SkillDNA() {
       <div className="mb-6">
         <MemoryBrowser memory={memory} loading={memoryLoading} error={memoryError} />
       </div>
-    </div>
+    </PageContainer>
   );
 }

@@ -4,6 +4,9 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
 import TabBar from '../components/TabBar.jsx';
+import PageContainer from '../components/PageContainer.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import Button from '../components/Button.jsx';
 import ModuleReports from './reports/ModuleReports.jsx';
 import { useNotification } from '../contexts/NotificationContext.jsx';
 import { ratingForReport, ratingStyle } from '../utils/assessmentRules.js';
@@ -104,13 +107,13 @@ ${assignments.map(a => `<tr>
 }
 
 // ─── Shared table styling tokens (used by the standardized Reports table) ─────
-const TH_CLS = 'px-2 xl:px-3 py-2.5 text-left text-[11px] xl:text-xs font-bold text-slate-400 uppercase tracking-wider select-none';
-const TD_CLS = 'px-2 xl:px-3 py-3 text-sm text-slate-200 align-middle';
+const TH_CLS = 'px-3 xl:px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider select-none';
+const TD_CLS = 'px-3 xl:px-4 py-3 text-sm text-slate-200 align-middle';
 const PAGE_SIZE = 20;
 
 function SortIcon({ active, dir }) {
-  if (!active) return <span className="text-slate-600 text-[10px] ml-1">↕</span>;
-  return <span className="text-indigo-400 text-[10px] ml-1">{dir === 'asc' ? '▲' : '▼'}</span>;
+  if (!active) return <span className="text-slate-500 text-xs ml-1">↕</span>;
+  return <span className="text-indigo-400 text-xs ml-1">{dir === 'asc' ? '▲' : '▼'}</span>;
 }
 
 // Reports page for admins/managers: Training Reports (existing table) + Modules (engagement review)
@@ -119,9 +122,9 @@ function AdminReportsTabs({ user, navigate }) {
   const [tab, setTab] = useState(initial);
   return (
     <div className="bg-[#0F172A] min-h-screen">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+      <PageContainer className="!pb-0">
         <TabBar active={tab} onChange={setTab} tabs={[{ key: 'training', label: 'Training Reports' }, { key: 'modules', label: 'Modules' }]} />
-      </div>
+      </PageContainer>
       {tab === 'modules' ? <ModuleReports /> : <AdminReportView user={user} navigate={navigate} />}
     </div>
   );
@@ -399,34 +402,27 @@ function AdminReportView({ user, navigate }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-8 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-[#0F172A] text-white px-3 sm:px-5 lg:px-6 2xl:px-8 py-6 w-full">
       <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2">← Back to Dashboard</button>
 
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-white">Training Reports</h1>
-          <p className="text-slate-400 text-sm mt-0.5">
-            {user?.role === 'manager'
-              ? 'Your team\'s training completion overview'
-              : 'Platform-wide employee training completion overview'}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowDownloadModal(true)} disabled={!!downloadingFmt || !hasFeaturePermission('reports.export')}
-            title={!hasFeaturePermission('reports.export') ? "You don't have permission to export reports" : undefined}
-            className="px-4 py-2 rounded-lg bg-teal-600/20 border border-teal-500/30 text-teal-300 hover:bg-teal-600/40 text-sm font-medium transition-all disabled:opacity-40">
-            {downloadingFmt ? 'Downloading…' : '⬇ Download All Reports'}
-          </button>
-          <button onClick={loadReports} className="px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white text-sm font-medium transition-all">↻ Refresh</button>
-        </div>
-      </div>
+      <PageHeader
+        title="Training Reports"
+        subtitle={user?.role === 'manager' ? "Your team's training completion overview" : 'Platform-wide employee training completion overview'}
+        actions={<>
+          <Button variant="success" onClick={() => setShowDownloadModal(true)} disabled={!!downloadingFmt || !hasFeaturePermission('reports.export')}
+            title={!hasFeaturePermission('reports.export') ? "You don't have permission to export reports" : undefined}>
+            {downloadingFmt ? 'Downloading…' : 'Download All Reports'}
+          </Button>
+          <Button variant="secondary" onClick={loadReports}>Refresh</Button>
+        </>}
+      />
 
       {/* Table card */}
       <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 overflow-hidden">
         {/* Filter bar */}
         <div className="flex flex-col gap-3 px-5 py-4 border-b border-slate-700/40">
           <input type="text" placeholder="Search by employee, email, or assessment/module name..." value={search} onChange={e => setSearch(e.target.value)}
-            className="w-full px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+            className="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-base text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500" />
           <div className="flex flex-wrap gap-2 items-center">
             <SearchableSelect value={reportType} onChange={setReportType} allLabel="All Report Types"
               options={[{ value: 'module', label: 'Module' }, { value: 'assessment', label: 'Assessment' }]} />
@@ -439,23 +435,23 @@ function AdminReportView({ user, navigate }) {
             <SearchableSelect value={statusFilter} onChange={setStatusFilter} allLabel="All Statuses"
               options={statusOptions.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))} />
             <div className="flex items-center gap-1.5">
-              <label className="text-xs text-slate-500">From</label>
+              <label className="text-sm text-slate-400">From</label>
               <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs focus:outline-none focus:border-indigo-500" />
+                className="px-3 py-2 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-sm focus:outline-none focus:border-indigo-500" />
             </div>
             <div className="flex items-center gap-1.5">
-              <label className="text-xs text-slate-500">To</label>
+              <label className="text-sm text-slate-400">To</label>
               <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                className="px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs focus:outline-none focus:border-indigo-500" />
+                className="px-3 py-2 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-sm focus:outline-none focus:border-indigo-500" />
             </div>
             {hasActiveFilters && (
               <button onClick={clearFilters}
-                className="px-3 py-1.5 bg-slate-700/50 border border-slate-600/40 rounded-lg text-slate-400 text-xs font-semibold hover:text-white transition-colors">
-                ✕ Clear Filters
+                className="px-3 py-2 bg-slate-700/50 border border-slate-600/40 rounded-lg text-slate-300 text-sm font-semibold hover:text-white transition-colors">
+                Clear Filters
               </button>
             )}
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-sm text-slate-400">
             Showing <span className="text-slate-300 font-semibold">{sorted.length}</span> of <span className="text-slate-400">{allRows.length}</span> total records
             {hasActiveFilters && ' (filtered)'}
           </p>
@@ -471,13 +467,13 @@ function AdminReportView({ user, navigate }) {
           <div className="p-8 text-center text-red-400">
             <p className="font-semibold mb-1">Failed to load reports</p>
             <p className="text-sm text-red-400/70">{error}</p>
-            <button onClick={loadReports} className="mt-4 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm hover:bg-red-500/20 transition-colors">Retry</button>
+            <button onClick={loadReports} className="mt-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm hover:bg-red-500/20 transition-colors">Retry</button>
           </div>
         ) : sorted.length === 0 ? (
           <div className="py-16 text-center">
             <div className="text-5xl mb-4 opacity-20">📊</div>
             <p className="text-lg font-bold text-slate-400 mb-1">No Reports Found</p>
-            <p className="text-sm text-slate-600">{hasActiveFilters ? 'Try adjusting or clearing your filters.' : 'Reports will appear once employees have assignments.'}</p>
+            <p className="text-sm text-slate-400">{hasActiveFilters ? 'Try adjusting or clearing your filters.' : 'Reports will appear once employees have assignments.'}</p>
           </div>
         ) : (
           <>
@@ -513,22 +509,22 @@ function AdminReportView({ user, navigate }) {
                       <tr key={r.id} className="hover:bg-slate-800/20 transition-all h-[52px]">
                         <td className={TD_CLS}>
                           <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500/30 to-purple-500/20 border border-indigo-500/20 flex items-center justify-center text-[10px] font-black text-indigo-300 flex-shrink-0">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500/30 to-purple-500/20 border border-indigo-500/20 flex items-center justify-center text-xs font-black text-indigo-300 flex-shrink-0">
                               {r.employeeName.charAt(0).toUpperCase()}
                             </div>
-                            <div className="min-w-0"><span className="block font-semibold text-white truncate" title={r.employeeName}>{r.employeeName}</span><span className="xl:hidden block text-[11px] text-slate-500 truncate" title={`${r.staffId || r.employeeId || ''} ${r.jobRole || ''}`}>{r.staffId || r.employeeId}{r.jobRole ? ` · ${r.jobRole}` : ''}</span></div>
+                            <div className="min-w-0"><span className="block font-semibold text-white truncate" title={r.employeeName}>{r.employeeName}</span><span className="xl:hidden block text-xs text-slate-400 truncate" title={`${r.staffId || r.employeeId || ''} ${r.jobRole || ''}`}>{r.staffId || r.employeeId}{r.jobRole ? ` · ${r.jobRole}` : ''}</span></div>
                           </div>
                         </td>
-                        <td className={`${TD_CLS} hidden xl:table-cell text-slate-500 font-mono text-xs truncate max-w-[100px]`} title={r.staffId || r.employeeId}>{r.staffId || r.employeeId}</td>
+                        <td className={`${TD_CLS} hidden xl:table-cell text-slate-400 font-mono text-xs truncate max-w-[140px]`} title={r.staffId || r.employeeId}>{r.staffId || r.employeeId}</td>
                         <td className={`${TD_CLS} hidden xl:table-cell text-slate-400 truncate max-w-[130px]`} title={r.jobRole}>{r.jobRole}</td>
-                        <td className={`${TD_CLS} truncate max-w-[200px]`} title={r.name}>
+                        <td className={`${TD_CLS} truncate max-w-[320px]`} title={r.name}>
                           <span className="mr-1">{r.type === 'assessment' ? '📝' : '📚'}</span>{r.name}
                         </td>
                         <td className={TD_CLS}><span className="capitalize text-xs px-2 py-0.5 rounded bg-slate-700/40 border border-slate-600/40 whitespace-nowrap">{r.status}</span></td>
                         <td className={TD_CLS}>{r.score != null ? (
                           <span className="inline-flex items-center gap-1.5 min-w-0">
                             <span className={`text-xs font-bold ${valueColor}`}>{Math.round(r.score)}%</span>
-                            {r.type === 'assessment' && r.rating && <span className={`truncate px-1.5 py-0.5 rounded text-[10px] font-bold ${ratingStyle(r.rating).chip}`} title={`Rating: ${r.rating}`}>{r.rating}</span>}
+                            {r.type === 'assessment' && r.rating && <span className={`truncate px-1.5 py-0.5 rounded text-xs font-bold ${ratingStyle(r.rating).chip}`} title={`Rating: ${r.rating}`}>{r.rating}</span>}
                           </span>
                         ) : <span className="text-slate-600">—</span>}</td>
                         <td className={TD_CLS}>
@@ -546,18 +542,18 @@ function AdminReportView({ user, navigate }) {
                           {r.type === 'module' ? (
                             <button
                               onClick={() => downloadReportPDF({ employeeName: r.employeeName, email: r.email, completionRate: displayValue, completedAssignments: r.status === 'completed' ? 1 : 0, totalAssignments: 1, assignments: [{ moduleName: r.name, status: r.status, progress: displayValue, dueDate: r.deadline }] })}
-                              className="px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all whitespace-nowrap bg-indigo-600/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30"
+                              className="px-3 py-2 rounded-lg border text-sm font-semibold transition-all whitespace-nowrap bg-indigo-600/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30"
                             >
-                              ↓ PDF
+                              Download PDF
                             </button>
                           ) : (
                             <button
                               onClick={() => setRowDownloadTarget(r)}
                               disabled={!hasFeaturePermission('reports.download')}
                               title={!hasFeaturePermission('reports.download') ? "You don't have permission to download reports" : 'Download full report'}
-                              className="px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap bg-slate-700/30 border-slate-600/30 text-slate-300 hover:bg-slate-700/50 hover:border-slate-500/50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                              className="px-3 py-2 rounded-lg border text-sm font-semibold whitespace-nowrap bg-slate-700/30 border-slate-600/30 text-slate-300 hover:bg-slate-700/50 hover:border-slate-500/50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                             >
-                              📊 {displayValue}% ↓
+                              Download Report
                             </button>
                           )}
                         </td>
@@ -571,12 +567,12 @@ function AdminReportView({ user, navigate }) {
             {/* Pagination */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between px-5 py-3 border-t border-slate-700/40">
-                <p className="text-xs text-slate-500">Page {page} of {totalPages}</p>
+                <p className="text-sm text-slate-400">Page {page} of {totalPages}</p>
                 <div className="flex gap-1.5">
                   <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold disabled:opacity-30 hover:enabled:bg-slate-700 transition-colors">‹ Prev</button>
+                    className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-sm font-semibold disabled:opacity-30 hover:enabled:bg-slate-700 transition-colors">‹ Prev</button>
                   <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold disabled:opacity-30 hover:enabled:bg-slate-700 transition-colors">Next ›</button>
+                    className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-sm font-semibold disabled:opacity-30 hover:enabled:bg-slate-700 transition-colors">Next ›</button>
                 </div>
               </div>
             )}
@@ -694,12 +690,12 @@ function EmployeeReportView({ user, navigate }) {
   const hasNothing = modules.length === 0 && assessments.length === 0;
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-8 max-w-5xl mx-auto">
+    <div className="min-h-screen bg-[#0F172A] text-white px-3 sm:px-5 lg:px-6 2xl:px-8 py-6 w-full">
       <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2">← Back to Dashboard</button>
 
       <div className="mb-8">
         <h1 className="text-3xl font-black text-white">My Learning History</h1>
-        <p className="text-slate-400 text-sm">Every module and assessment you've been assigned</p>
+        <p className="text-slate-400 text-base">Every module and assessment you've been assigned</p>
       </div>
 
       {hasNothing ? (
@@ -709,20 +705,20 @@ function EmployeeReportView({ user, navigate }) {
           <p className="text-slate-400">You'll see your modules and assessments here once you're assigned some.</p>
         </div>
       ) : (
-        <div className="space-y-8">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
           {modules.length > 0 && (
-            <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-6 sm:p-8">
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Modules</h3>
+            <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-4 sm:p-5">
+              <h3 className="text-base font-bold text-slate-300 uppercase tracking-wider mb-4">Modules</h3>
               <div className="space-y-3">
                 {modules.map((m, i) => (
                   <div key={m.id || i} className="flex items-center justify-between gap-3 p-4 rounded-xl bg-slate-800/40 border border-slate-700/30">
                     <div className="min-w-0">
                       <p className="font-semibold text-white truncate">{m.title || m.module_name || m.name || `Module #${i + 1}`}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">Status: {m.status || 'assigned'} · Progress: {m.progress || 0}%</p>
+                      <p className="text-sm text-slate-400 mt-0.5">Status: {m.status || 'assigned'} · Progress: {m.progress || 0}%</p>
                     </div>
                     <button
                       onClick={() => navigate(`/report?moduleId=${m.assignable_id || m.module_id}&assignmentId=${m.id}`)}
-                      className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700/60 hover:text-white text-xs font-bold transition-all whitespace-nowrap"
+                      className="flex-shrink-0 px-4 py-2 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-200 hover:bg-slate-700/60 hover:text-white text-sm font-bold transition-all whitespace-nowrap"
                     >
                       View Report →
                     </button>
@@ -733,8 +729,8 @@ function EmployeeReportView({ user, navigate }) {
           )}
 
           {assessments.length > 0 && (
-            <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-6 sm:p-8">
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Assessments</h3>
+            <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-4 sm:p-5">
+              <h3 className="text-base font-bold text-slate-300 uppercase tracking-wider mb-4">Assessments</h3>
               <div className="space-y-3">
                 {assessments.map((a, i) => {
                   const id = a.id || a._id;
@@ -744,14 +740,14 @@ function EmployeeReportView({ user, navigate }) {
                     <div key={id || i} className="flex items-center justify-between gap-3 p-4 rounded-xl bg-slate-800/40 border border-slate-700/30">
                       <div className="min-w-0">
                         <p className="font-semibold text-white truncate">{a.title}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">
+                        <p className="text-sm text-slate-400 mt-0.5">
                           Status: {a.status || 'pending'}{score !== null ? ` · Score: ${Math.round(score)}%` : ''}
                         </p>
                       </div>
                       {isSubmitted && id && (
                         <button
                           onClick={() => navigate(`/assessment/${id}`)}
-                          className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-300 hover:bg-slate-700/60 hover:text-white text-xs font-bold transition-all whitespace-nowrap"
+                          className="flex-shrink-0 px-4 py-2 rounded-lg bg-slate-700/40 border border-slate-600/40 text-slate-200 hover:bg-slate-700/60 hover:text-white text-sm font-bold transition-all whitespace-nowrap"
                         >
                           View Report →
                         </button>
@@ -912,7 +908,7 @@ ${allWeaknesses.length > 0 ? `<h2>Areas to Improve</h2><ul>${allWeaknesses.map(s
   const statusColor = asn.status === 'completed' ? 'text-emerald-400' : asn.status === 'in_progress' ? 'text-amber-400' : 'text-slate-400';
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-8 max-w-4xl mx-auto">
+    <div className="min-h-screen bg-[#0F172A] text-white px-3 sm:px-5 lg:px-6 2xl:px-8 py-6 w-full">
       <button
         onClick={() => navigate(`/module/${moduleId}/learn${assignmentId ? `?assignmentId=${assignmentId}` : ''}`)}
         className="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-2"
@@ -920,58 +916,58 @@ ${allWeaknesses.length > 0 ? `<h2>Areas to Improve</h2><ul>${allWeaknesses.map(s
         ← Back to Module
       </button>
 
-      <div className="mb-8 flex items-center justify-between">
-        <div>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-3xl font-black text-white">Module Report</h1>
-          <p className="text-slate-400 text-sm mt-0.5">{mod.title || 'Module Training Report'}</p>
+          <p className="text-slate-400 text-base mt-0.5">{mod.title || 'Module Training Report'}</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <button
             onClick={downloadModuleReportPDF}
-            className="px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white text-sm font-medium transition-all"
+            className="px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-300 hover:text-white text-sm font-medium transition-all"
           >
-            ↓ Download Report
+            Download Report
           </button>
           <button
             onClick={() => navigate(`/module/${moduleId}/learn${assignmentId ? `?assignmentId=${assignmentId}` : ''}`)}
             className="px-4 py-2 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 text-sm font-bold transition-all"
           >
-            ← Back to Module
+            Back to Module
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-5">
-          <p className="text-xs text-indigo-400 font-bold uppercase tracking-widest mb-1">Overall Progress</p>
+          <p className="text-sm text-indigo-400 font-bold uppercase tracking-wider mb-1">Overall Progress</p>
           <p className="text-3xl font-black text-white">{progress}<span className="text-xl text-indigo-400">%</span></p>
         </div>
         <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5">
-          <p className="text-xs text-emerald-400 font-bold uppercase tracking-widest mb-1">Days Completed</p>
+          <p className="text-sm text-emerald-400 font-bold uppercase tracking-wider mb-1">Days Completed</p>
           <p className="text-3xl font-black text-white">{sessionsCompleted}<span className="text-xl text-slate-400">/{totalSessions || '—'}</span></p>
         </div>
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
-          <p className="text-xs text-amber-400 font-bold uppercase tracking-widest mb-1">Avg Quiz Score</p>
+          <p className="text-sm text-amber-400 font-bold uppercase tracking-wider mb-1">Avg Quiz Score</p>
           <p className="text-3xl font-black text-white">{avgScore !== null ? <>{avgScore}<span className="text-xl text-amber-400">%</span></> : '—'}</p>
         </div>
         <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-5">
-          <p className="text-xs text-purple-400 font-bold uppercase tracking-widest mb-1">Status</p>
+          <p className="text-sm text-purple-400 font-bold uppercase tracking-wider mb-1">Status</p>
           <p className={`text-xl font-black capitalize ${statusColor}`}>{asn.status || 'assigned'}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-4">
-          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Questions Answered</p>
-          <p className="text-xl font-black text-white">{totalCorrect}<span className="text-sm text-slate-500">/{totalQuestions || '—'} correct</span></p>
+          <p className="text-sm text-slate-400 font-bold uppercase tracking-wider mb-1">Questions Answered</p>
+          <p className="text-xl font-black text-white">{totalCorrect}<span className="text-sm text-slate-400">/{totalQuestions || '—'} correct</span></p>
         </div>
         <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-4">
-          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Best Day</p>
-          <p className="text-sm font-bold text-white truncate">{bestDay ? `Day ${bestDay.day} — ${bestDay.score}%` : '—'}</p>
+          <p className="text-sm text-slate-400 font-bold uppercase tracking-wider mb-1">Best Day</p>
+          <p className="text-base font-bold text-white truncate">{bestDay ? `Day ${bestDay.day} — ${bestDay.score}%` : '—'}</p>
         </div>
         <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-4">
-          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Needs Review</p>
-          <p className="text-sm font-bold text-white truncate">{worstDay ? `Day ${worstDay.day} — ${worstDay.score}%` : '—'}</p>
+          <p className="text-sm text-slate-400 font-bold uppercase tracking-wider mb-1">Needs Review</p>
+          <p className="text-base font-bold text-white truncate">{worstDay ? `Day ${worstDay.day} — ${worstDay.score}%` : '—'}</p>
         </div>
       </div>
 
@@ -990,7 +986,7 @@ ${allWeaknesses.length > 0 ? `<h2>Areas to Improve</h2><ul>${allWeaknesses.map(s
 
       {mod.description || mod.skills?.length > 0 ? (
         <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-6 mb-6">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Module Details</h3>
+          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Module Details</h3>
           {mod.description && <div className="text-sm text-slate-400 mb-3">{mod.description}</div>}
           {mod.skills?.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-2">
@@ -1012,13 +1008,13 @@ ${allWeaknesses.length > 0 ? `<h2>Areas to Improve</h2><ul>${allWeaknesses.map(s
       {/* Score trend across completed days */}
       {completedRows.length > 0 && (
         <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-6 mb-6">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Quiz Score by Day</h3>
+          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Quiz Score by Day</h3>
           <div className="space-y-2.5">
             {completedRows.map(r => (
               <div key={r.day}>
-                <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
+                <div className="flex items-center justify-between text-sm text-slate-300 mb-1">
                   <span>Day {r.day} — {r.title}</span>
-                  <span className="text-slate-500 font-semibold">{r.score}%</span>
+                  <span className="text-slate-400 font-semibold">{r.score}%</span>
                 </div>
                 <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden">
                   <div
@@ -1035,33 +1031,33 @@ ${allWeaknesses.length > 0 ? `<h2>Areas to Improve</h2><ul>${allWeaknesses.map(s
       {/* Day-by-day breakdown table */}
       <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 overflow-hidden mb-6">
         <div className="p-4 border-b border-slate-700/40">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Day-by-Day Breakdown</h3>
+          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Day-by-Day Breakdown</h3>
         </div>
         <div className="min-w-0">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs text-slate-500 uppercase tracking-wider border-b border-slate-700/40">
-                <th className="px-4 py-2.5">Day</th>
-                <th className="px-4 py-2.5">Session</th>
-                <th className="px-4 py-2.5">Status</th>
-                <th className="px-4 py-2.5">Score</th>
-                <th className="px-4 py-2.5">Correct</th>
-                <th className="px-4 py-2.5">Completed</th>
+              <tr className="text-left text-xs text-slate-400 uppercase tracking-wider border-b border-slate-700/40">
+                <th className="px-4 py-3">Day</th>
+                <th className="px-4 py-3">Session</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Score</th>
+                <th className="px-4 py-3">Correct</th>
+                <th className="px-4 py-3">Completed</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/30">
               {dayRows.map(r => (
                 <tr key={r.day}>
-                  <td className="px-4 py-2.5 text-slate-400 font-semibold">{r.day}</td>
-                  <td className="px-4 py-2.5 text-white font-medium max-w-xs truncate">{r.title}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-4 py-3 text-slate-400 font-semibold">{r.day}</td>
+                  <td className="px-4 py-3 text-white font-medium max-w-md truncate" title={r.title}>{r.title}</td>
+                  <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${r.status === 'completed' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-700/40 border-slate-600/40 text-slate-400'}`}>
                       {r.status}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-slate-300">{r.score !== null ? `${r.score}%` : '—'}</td>
-                  <td className="px-4 py-2.5 text-slate-300">{r.correct !== null ? `${r.correct}/${r.total}` : '—'}</td>
-                  <td className="px-4 py-2.5 text-slate-500 text-xs">{r.completedAt ? new Date(r.completedAt).toLocaleDateString() : '—'}</td>
+                  <td className="px-4 py-3 text-slate-300">{r.score !== null ? `${r.score}%` : '—'}</td>
+                  <td className="px-4 py-3 text-slate-300">{r.correct !== null ? `${r.correct}/${r.total}` : '—'}</td>
+                  <td className="px-4 py-3 text-slate-400 text-sm">{r.completedAt ? new Date(r.completedAt).toLocaleDateString() : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -1071,23 +1067,23 @@ ${allWeaknesses.length > 0 ? `<h2>Areas to Improve</h2><ul>${allWeaknesses.map(s
 
       {/* Strengths & weaknesses, aggregated across every completed day */}
       {(allStrengths.length > 0 || allWeaknesses.length > 0) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           {allStrengths.length > 0 && (
             <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5">
-              <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-3">💪 Strengths</h3>
+              <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3">💪 Strengths</h3>
               <ul className="space-y-1.5">
                 {allStrengths.map((s, i) => (
-                  <li key={i} className="text-xs text-slate-300 leading-snug flex gap-2"><span className="text-emerald-400 flex-shrink-0">✓</span><span>{s}</span></li>
+                  <li key={i} className="text-sm text-slate-300 leading-snug flex gap-2"><span className="text-emerald-400 flex-shrink-0">✓</span><span>{s}</span></li>
                 ))}
               </ul>
             </div>
           )}
           {allWeaknesses.length > 0 && (
             <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-5">
-              <h3 className="text-xs font-bold text-rose-400 uppercase tracking-widest mb-3">🎯 Areas to Review</h3>
+              <h3 className="text-sm font-bold text-rose-400 uppercase tracking-wider mb-3">🎯 Areas to Review</h3>
               <ul className="space-y-1.5">
                 {allWeaknesses.map((s, i) => (
-                  <li key={i} className="text-xs text-slate-300 leading-snug flex gap-2"><span className="text-rose-400 flex-shrink-0">✗</span><span>{s}</span></li>
+                  <li key={i} className="text-sm text-slate-300 leading-snug flex gap-2"><span className="text-rose-400 flex-shrink-0">✗</span><span>{s}</span></li>
                 ))}
               </ul>
             </div>

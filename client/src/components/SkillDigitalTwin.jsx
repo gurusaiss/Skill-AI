@@ -96,7 +96,7 @@ function SkillNode({ skill, cx, cy, isSelected, onSelect, sessions }) {
         x={cx}
         y={cy + 10}
         textAnchor="middle"
-        fontSize="9"
+        fontSize="11"
         fill={color}
         fontWeight="bold"
         dominantBaseline="middle"
@@ -113,7 +113,7 @@ function SkillNode({ skill, cx, cy, isSelected, onSelect, sessions }) {
             y={cy - r + 4}
             textAnchor="middle"
             dominantBaseline="middle"
-            fontSize="8"
+            fontSize="10"
             fill={color}
             fontWeight="bold"
           >
@@ -136,7 +136,7 @@ function SkillLabel({ skill, cx, cy, labelX, labelY }) {
           x={labelX}
           y={labelY + i * 12}
           textAnchor="middle"
-          fontSize="9"
+          fontSize="11"
           fill={color}
           fontWeight="600"
           opacity="0.9"
@@ -164,7 +164,7 @@ export default function SkillDigitalTwin({ skills = [], sessions = [], diagnosti
 
   if (!skills.length) {
     return (
-      <div className="flex items-center justify-center h-64 text-slate-600 text-sm">
+      <div className="flex items-center justify-center h-64 text-slate-400 text-sm">
         Complete your diagnostic to activate your Digital Twin
       </div>
     );
@@ -309,7 +309,7 @@ export default function SkillDigitalTwin({ skills = [], sessions = [], diagnosti
           <text x={cx} y={cy - 6} textAnchor="middle" fontSize="18" fontWeight="900" fill="#6366F1">
             {avgMastery}%
           </text>
-          <text x={cx} y={cy + 9} textAnchor="middle" fontSize="7" fill="#475569" fontWeight="600">
+          <text x={cx} y={cy + 9} textAnchor="middle" fontSize="9" fill="#94A3B8" fontWeight="600">
             TWIN SYNC
           </text>
         </svg>
@@ -318,7 +318,7 @@ export default function SkillDigitalTwin({ skills = [], sessions = [], diagnosti
       {/* Selected skill details */}
       {selectedSkill && (
         <div
-          className="rounded-xl border p-3 text-xs"
+          className="rounded-xl border p-3 text-sm"
           style={{
             borderColor: `${getNodeColor(selectedSkill.mastery, selectedSkill.status)}30`,
             backgroundColor: `${getNodeColor(selectedSkill.mastery, selectedSkill.status)}08`,
@@ -327,7 +327,7 @@ export default function SkillDigitalTwin({ skills = [], sessions = [], diagnosti
           <div className="flex items-center justify-between mb-2">
             <span className="font-bold text-slate-200">{selectedSkill.name}</span>
             <button
-              className="text-slate-600 text-xs hover:text-slate-400"
+              className="text-slate-400 text-base hover:text-slate-200 w-8 h-8" aria-label="Close skill details" title="Close"
               onClick={() => setSelectedSkill(null)}
             >
               ✕
@@ -338,29 +338,29 @@ export default function SkillDigitalTwin({ skills = [], sessions = [], diagnosti
               <div className="text-lg font-black" style={{ color: getNodeColor(selectedSkill.mastery, selectedSkill.status) }}>
                 {selectedSkill.mastery || 0}%
               </div>
-              <div className="text-slate-600 text-xs">Current Mastery</div>
+              <div className="text-slate-400 text-sm">Current Mastery</div>
             </div>
             <div className="text-center">
               <div className="text-lg font-black text-red-400">
                 {diagnosticScores[selectedSkill.id] || 0}%
               </div>
-              <div className="text-slate-600 text-xs">Diagnostic Base</div>
+              <div className="text-slate-400 text-sm">Diagnostic Base</div>
             </div>
             <div className="text-center">
               <div className="text-lg font-black text-emerald-400">
                 +{Math.max(0, (selectedSkill.mastery || 0) - (diagnosticScores[selectedSkill.id] || 0))}%
               </div>
-              <div className="text-slate-600 text-xs">Growth</div>
+              <div className="text-slate-400 text-sm">Growth</div>
             </div>
           </div>
-          <div className="mt-2 text-xs text-slate-500 uppercase tracking-wider">
+          <div className="mt-2 text-sm text-slate-400 uppercase tracking-wider">
             Sessions: {sessions.filter(s => s.skillId === selectedSkill.id).length} completed
           </div>
         </div>
       )}
 
       {/* Legend */}
-      <div className="flex items-center justify-center gap-4 text-xs text-slate-500">
+      <div className="flex items-center justify-center gap-4 text-sm text-slate-400">
         {[
           { color: COLORS.mastered, label: 'Mastered ≥75%' },
           { color: COLORS.active,   label: 'Learning' },

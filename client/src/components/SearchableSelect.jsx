@@ -105,16 +105,18 @@ export default function SearchableSelect({
     <div ref={containerRef} className="relative inline-block">
       <button
         type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen(v => !v)}
-        className={`px-3 py-1.5 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-xs font-semibold focus:outline-none focus:border-indigo-500 transition-colors flex items-center gap-2 disabled:opacity-50 ${className}`}
+        className={`px-3.5 py-2 bg-slate-800 border border-slate-700/60 rounded-lg text-slate-300 text-sm font-semibold focus:outline-none focus:border-indigo-500 transition-colors flex items-center gap-2 disabled:opacity-50 ${className}`}
       >
-        <span className="truncate max-w-[160px]">{selected?.label ?? placeholder}</span>
-        <span className="text-slate-500 text-[10px]">{open ? '▲' : '▼'}</span>
+        <span className="truncate max-w-[220px]">{selected?.label ?? placeholder}</span>
+        <span className="text-slate-400 text-sm">{open ? '▲' : '▼'}</span>
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-2xl overflow-hidden">
+        <div className="absolute z-30 mt-1 w-64 max-w-[calc(100vw-1.5rem)] bg-slate-800 border border-slate-700 rounded-lg shadow-2xl overflow-hidden">
           <div className="p-1.5 border-b border-slate-700/60">
             <input
               ref={inputRef}
@@ -123,12 +125,12 @@ export default function SearchableSelect({
               onChange={e => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search..."
-              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-md text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-md text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
             />
           </div>
           <div ref={listRef} className="max-h-56 overflow-y-auto py-1">
             {filtered.length === 0 ? (
-              <p className="px-3 py-2 text-xs text-slate-500">No matches</p>
+              <p className="px-3 py-2 text-sm text-slate-400">No matches</p>
             ) : (
               filtered.map((opt, i) => (
                 <button
@@ -137,7 +139,7 @@ export default function SearchableSelect({
                   type="button"
                   onMouseEnter={() => setHighlight(i)}
                   onClick={() => commit(opt)}
-                  className={`w-full text-left px-3 py-1.5 text-xs transition-colors truncate ${
+                  className={`w-full text-left px-3 py-2 text-sm transition-colors truncate ${
                     opt.value === value ? 'bg-indigo-600/20 text-indigo-300 font-semibold' : i === highlight ? 'bg-slate-700/60 text-white' : 'text-slate-300'
                   }`}
                 >

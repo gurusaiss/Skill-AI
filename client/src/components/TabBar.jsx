@@ -25,8 +25,8 @@ export default function TabBar({
   variant = 'pill',
 }) {
   const sizeCls = size === 'sm'
-    ? 'px-1.5 sm:px-2 py-1 text-[11px] gap-1'
-    : 'px-2 sm:px-2.5 xl:px-3.5 py-1.5 xl:py-2 text-[11px] sm:text-xs xl:text-sm gap-1 xl:gap-1.5';
+    ? 'px-1.5 sm:px-2 py-1 text-xs gap-1'
+    : 'px-2 sm:px-2.5 xl:px-3.5 py-1.5 xl:py-2 text-xs sm:text-xs xl:text-sm gap-1 xl:gap-1.5';
 
   const wrapCls = variant === 'underline'
     ? 'flex flex-wrap gap-x-1 gap-y-0 border-b border-slate-800 w-full max-w-full min-w-0'
@@ -66,7 +66,7 @@ export default function TabBar({
             )}
             <span className="truncate min-w-0">{t.label}</span>
             {t.badge != null && t.badge !== false && t.badge !== '' && (
-              <span className="flex-shrink-0 ml-0.5 rounded-full bg-slate-700/80 px-1.5 text-[10px] leading-4 font-bold text-slate-200">
+              <span className="flex-shrink-0 ml-0.5 rounded-full bg-slate-700/80 px-1.5 text-xs leading-4 font-bold text-slate-200">
                 {t.badge}
               </span>
             )}

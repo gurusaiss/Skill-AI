@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import AuthShell from './AuthShell';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function ForgotPassword() {
@@ -50,16 +51,9 @@ export default function ForgotPassword() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-[#060B14] flex items-center justify-center px-4">
-        {/* Background gradient */}
-        <div className="fixed inset-0 pointer-events-none">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] rounded-full bg-indigo-600/10 blur-[120px]" />
-          <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-purple-600/8 blur-[100px]" />
-        </div>
-
-        <div className="relative w-full max-w-md">
+      <AuthShell>
           {/* Logo/Brand */}
-          <div className="text-center mb-8">
+          <div className="text-center mb-8 lg:hidden">
             <Link to="/" className="inline-block">
               <h1 className="text-4xl font-black tracking-tight">
                 <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
@@ -96,7 +90,7 @@ export default function ForgotPassword() {
 
             <button
               onClick={() => navigate('/auth/login')}
-              className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all active:scale-[0.98]"
+              className="w-full py-3.5 rounded-xl font-bold text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all active:scale-[0.98]"
             >
               Back to Login
             </button>
@@ -104,28 +98,20 @@ export default function ForgotPassword() {
             <div className="mt-4">
               <button
                 onClick={() => setSuccess(false)}
-                className="text-sm text-slate-500 hover:text-slate-400 transition-colors"
+                className="text-sm text-slate-400 hover:text-slate-400 transition-colors"
               >
                 Didn't receive the email? Try again
               </button>
             </div>
           </div>
-        </div>
-      </div>
+        </AuthShell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#060B14] flex items-center justify-center px-4">
-      {/* Background gradient */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] rounded-full bg-indigo-600/10 blur-[120px]" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-purple-600/8 blur-[100px]" />
-      </div>
-
-      <div className="relative w-full max-w-md">
+    <AuthShell>
         {/* Logo/Brand */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 lg:hidden">
           <Link to="/" className="inline-block">
             <h1 className="text-4xl font-black tracking-tight">
               <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
@@ -166,7 +152,7 @@ export default function ForgotPassword() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition-colors"
+                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-[#060B14] text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none transition-colors"
                 disabled={loading}
                 autoFocus
               />
@@ -176,7 +162,7 @@ export default function ForgotPassword() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
+              className="w-full py-3.5 rounded-xl font-bold text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
             >
               {loading ? '⏳ Sending...' : 'Send Reset Link'}
             </button>
@@ -195,14 +181,13 @@ export default function ForgotPassword() {
 
         {/* Additional Help */}
         <div className="mt-6 text-center">
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-400">
             Need help?{' '}
             <a href="#" className="text-slate-400 hover:text-slate-300 transition-colors">
               Contact support
             </a>
           </p>
         </div>
-      </div>
-    </div>
+      </AuthShell>
   );
 }

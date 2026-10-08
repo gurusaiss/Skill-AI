@@ -1,6 +1,7 @@
 import React from 'react';
 
-function ProgressRing({ percentage, size = 120, label = 'Progress' }) {
+function ProgressRing({ percentage: rawPercentage = 0, size = 120, label = 'Progress' }) {
+  const percentage = Number.isFinite(Number(rawPercentage)) ? Number(rawPercentage) : 0;
   const radius = (size - 12) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (Math.min(100, Math.max(0, percentage)) / 100) * circumference;

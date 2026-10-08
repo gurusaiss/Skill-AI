@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import TabBar from '../../components/TabBar.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
+import ActionMenu from '../../components/ActionMenu.jsx';
+import StatCard from '../../components/StatCard.jsx';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
@@ -116,7 +121,7 @@ function getAvatarColor(role) {
 
 
 function SortIcon({ column, sortBy, sortDir }) {
-  if (sortBy !== column) return <span className="text-slate-600 ml-1">⇅</span>;
+  if (sortBy !== column) return <span className="text-slate-400 ml-1">⇅</span>;
   return <span className="text-indigo-400 ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
 }
 
@@ -309,7 +314,7 @@ function DetailModal({ user, assignments, onClose, onEdit, onDeleteSuccess, setT
           <div>
             <h3 className="text-slate-300 font-semibold text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="w-5 h-5 rounded bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-xs">M</span>
-              Assigned Modules <span className="text-slate-600 font-normal normal-case">({userAssignments.length})</span>
+              Assigned Modules <span className="text-slate-400 font-normal normal-case">({userAssignments.length})</span>
             </h3>
             {userAssignments.length === 0 ? (
               <p className="text-slate-500 text-sm italic">No modules assigned</p>
@@ -859,7 +864,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                     className={inputCls}
                     placeholder="e.g. Frontend Developer"
                   />
-                  <p className="text-xs text-slate-600 mt-0.5">JD auto-fills from Role Library on match</p>
+                  <p className="text-xs text-slate-400 mt-0.5">JD auto-fills from Role Library on match</p>
                 </div>
                 <div>
                   <FieldLabel>Department</FieldLabel>
@@ -894,7 +899,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                   </div>
                 )}
                 {additionalRoles.length === 0 && !showAddRoleForm && (
-                  <p className="text-xs text-slate-600 mb-2">No additional roles. Click "+ Add Job Role" to assign multiple roles.</p>
+                  <p className="text-xs text-slate-400 mb-2">No additional roles. Click "+ Add Job Role" to assign multiple roles.</p>
                 )}
                 {showAddRoleForm && (
                   <div className="rounded-xl border border-indigo-500/30 bg-slate-800/40 p-3 space-y-2">
@@ -963,7 +968,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                         <button type="button" onClick={() => copyCred(regeneratedCreds.activationUrl, 'Link')} className="px-2.5 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold whitespace-nowrap">Copy</button>
                       </div>
                     )}
-                    <p className="text-[10px] text-slate-500">User will be forced to set a new password on next login.</p>
+                    <p className="text-xs text-slate-400">User will be forced to set a new password on next login.</p>
                   </div>
                 )}
               </div>
@@ -1052,7 +1057,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                         <>
                           <p className="text-4xl mb-2">📂</p>
                           <p className="text-slate-300 text-sm font-semibold">Click to choose file</p>
-                          <p className="text-slate-600 text-xs mt-1">PDF, DOCX, DOC, TXT, RTF</p>
+                          <p className="text-slate-400 text-xs mt-1">PDF, DOCX, DOC, TXT, RTF</p>
                         </>
                       )}
                     </div>
@@ -1092,7 +1097,7 @@ function EditModal({ user, modules, users, assignments, onClose, onSaved, setToa
                     <textarea value={form.jobDescription} onChange={f('jobDescription')} rows={8}
                       className={`${inputCls} resize-y min-h-[120px] font-mono text-xs leading-relaxed`}
                       placeholder="Paste the full Job Description here. No character limit…" />
-                    <p className="text-slate-600 text-xs mt-1">{form.jobDescription.length.toLocaleString()} chars · Saved when you click Save Changes below</p>
+                    <p className="text-slate-400 text-xs mt-1">{form.jobDescription.length.toLocaleString()} chars · Saved when you click Save Changes below</p>
                   </>
                 )}
               </div>
@@ -1792,7 +1797,7 @@ function ImportModal({ onClose, onImported, setToast }) {
                         {row.managerName || row.managerEmail ? (
                           <>
                             <span className="block text-slate-300">{row.managerName || '—'}</span>
-                            <span className="block text-slate-500 text-[11px]">{row.managerEmail || ''}</span>
+                            <span className="block text-slate-400 text-xs">{row.managerEmail || ''}</span>
                           </>
                         ) : '—'}
                       </td>
@@ -2222,6 +2227,10 @@ export default function UserManagement() {
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [manageAccessUser, setManageAccessUser] = useState(null);
+  const [showMapping, setShowMapping] = useState(false);
+  const [showBulkUpdate, setShowBulkUpdate] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   // View follows the effective (switched) role so admins acting as manager see the
   // manager-scoped variant, and vice versa. Access is still gated by hasRole below.
@@ -2235,6 +2244,7 @@ export default function UserManagement() {
 
   const fetchData = async () => {
     setLoading(true);
+    setLoadError('');
     setLastRefreshed(new Date());
     try {
       const [usersData, assignmentsData, modulesData] = await Promise.allSettled([
@@ -2265,9 +2275,9 @@ export default function UserManagement() {
         modulesData.status === 'rejected' && 'modules',
       ].filter(Boolean);
       if (failed.length > 0) {
-        setToast({ message: `Failed to load ${failed.join(', ')} — showing last known data`, type: 'error' });
+        setLoadError(`Failed to load ${failed.join(', ')}${users.length ? ' — showing last known data' : ''}.`);
       }
-    } catch { setToast({ message: 'Failed to load data', type: 'error' }); }
+    } catch { setLoadError('Failed to load data.'); }
     finally { setLoading(false); }
   };
 
@@ -2343,8 +2353,33 @@ export default function UserManagement() {
     setUsers(prev => [newUser, ...prev]);
   };
 
+  const deleteUser = async (u) => {
+    if (!window.confirm(`Delete ${u.name} (${u.email})? This cannot be undone.`)) return;
+    setDeletingId(u.userId);
+    try {
+      await authFetch(`/api/users/${u.userId}`, { method: 'DELETE' });
+      setUsers(prev => prev.filter(x => x.userId !== u.userId));
+      setToast({ message: `${u.name} deleted`, type: 'success' });
+    } catch (err) { setToast({ message: err.message, type: 'error' }); }
+    finally { setDeletingId(null); }
+  };
+
+  const canCreate = hasFeaturePermission('users.create');
+  const managerName = (id) => users.find(m => m.userId === id)?.name || '—';
+  const hasFilters = !!(search || filterDept !== 'all' || filterStatus !== 'all');
+  const clearFilters = () => { setSearch(''); setFilterDept('all'); setFilterStatus('all'); };
+  const rowActions = (u) => {
+    const isSelf = u.userId === user?.userId;
+    return [
+      { label: 'View details', onClick: () => setDetailUser(u) },
+      { label: 'Edit user', onClick: () => setEditUser(u) },
+      { label: 'Manage access', onClick: () => setManageAccessUser(u), hidden: !isAdmin },
+      { label: deletingId === u.userId ? 'Deleting...' : 'Delete user', onClick: () => deleteUser(u), danger: true, divider: true, hidden: isSelf, disabled: deletingId === u.userId },
+    ];
+  };
+
   const thClass = 'py-3 px-2 xl:px-3 text-left';
-  const thBtn = 'flex items-center gap-0.5 text-xs font-bold text-slate-400 hover:text-white uppercase tracking-wider transition-colors';
+  const thBtn = 'flex items-center gap-0.5 text-sm font-bold text-slate-400 hover:text-white uppercase tracking-wider transition-colors';
 
   return (
     <div className="min-h-screen bg-[#0F172A]">
@@ -2365,6 +2400,13 @@ export default function UserManagement() {
         <ImportModal onClose={() => setShowImport(false)} onImported={fetchData} setToast={setToast} />
       )}
 
+      {showMapping && isAdmin && (
+        <ManagerMappingModal onClose={() => setShowMapping(false)} onDone={fetchData} setToast={setToast} />
+      )}
+      {showBulkUpdate && isAdmin && (
+        <BulkUpdateModal onClose={() => setShowBulkUpdate(false)} onDone={fetchData} setToast={setToast} />
+      )}
+
       {manageAccessUser && isAdmin && (
         <ManageAccessModal
           user={manageAccessUser}
@@ -2374,55 +2416,49 @@ export default function UserManagement() {
         />
       )}
 
-      <div className="max-w-7xl mx-auto p-6 lg:p-8">
+      <PageContainer>
+        <button onClick={() => navigate('/admin/dashboard')} className="text-slate-300 hover:text-white text-sm flex items-center gap-1.5 mb-3 transition-colors">← Back to Dashboard</button>
+        <PageHeader
+          icon="👥"
+          title="User Management"
+          subtitle="Manage users, roles, job roles, JDs, and assignments"
+          actions={
+            <>
+              <Button variant="primary" onClick={() => setShowCreate(true)} disabled={!canCreate}
+                title={!canCreate ? "You don't have permission to add users" : undefined}>Add User</Button>
+              <ActionMenu
+                label="Bulk actions"
+                items={[
+                  { label: 'Bulk import users', onClick: () => setShowImport(true), disabled: !canCreate },
+                  { label: 'Bulk update users', onClick: () => setShowBulkUpdate(true), hidden: !isAdmin },
+                  { label: 'Bulk manager mapping', onClick: () => setShowMapping(true), hidden: !isAdmin },
+                  { label: 'Refresh list', onClick: fetchData, divider: true },
+                ]}
+              />
+            </>
+          }
+        />
 
-        {/* Page header */}
-        <div className="mb-8">
-          <button onClick={() => navigate('/admin/dashboard')} className="text-slate-500 hover:text-slate-300 text-sm flex items-center gap-1.5 mb-5 transition-colors">← Back to Dashboard</button>
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-black text-white tracking-tight">User Management</h1>
-              <p className="text-slate-400 mt-1">Manage users, roles, job roles, JDs, and assignments</p>
-            </div>
-            <div className="flex items-center gap-3">
-              {/* Stats */}
-              <div className="flex gap-2 text-sm">
-                <div className="bg-slate-800 border border-slate-700/60 rounded-xl px-3 py-2 text-center">
-                  <div className="text-xl font-bold text-white">{users.length}</div>
-                  <div className="text-slate-500 text-xs">Total</div>
-                </div>
-                <div className="bg-slate-800 border border-slate-700/60 rounded-xl px-3 py-2 text-center">
-                  <div className="text-xl font-bold text-emerald-300">{employeeUsers.length}</div>
-                  <div className="text-slate-500 text-xs">Employees</div>
-                </div>
-                <div className="bg-slate-800 border border-slate-700/60 rounded-xl px-3 py-2 text-center">
-                  <div className="text-xl font-bold text-sky-300">{staffUsers.length}</div>
-                  <div className="text-slate-500 text-xs">Management</div>
-                </div>
-              </div>
-              {/* Import button */}
-              <button onClick={() => setShowImport(true)}
-                disabled={!hasFeaturePermission('users.create')}
-                title={!hasFeaturePermission('users.create') ? "You don't have permission to add users" : undefined}
-                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-600 rounded-xl text-white font-bold text-sm transition-colors shadow-lg shadow-emerald-900/30">
-                📥 Bulk Import
-              </button>
-              {/* Create button */}
-              <button onClick={() => setShowCreate(true)}
-                disabled={!hasFeaturePermission('users.create')}
-                title={!hasFeaturePermission('users.create') ? "You don't have permission to add users" : undefined}
-                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-white font-bold text-sm transition-colors shadow-lg shadow-indigo-500/20">
-                ➕ Add User
-              </button>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+          <StatCard label="Total Users" value={users.length} icon="👥" description="Everyone in your company" tooltip="All user accounts you can see, including employees and management."
+            borderClass="border-indigo-500/20" bgClass="bg-indigo-500/5" textClass="text-indigo-400" />
+          <StatCard label="Employees" value={employeeUsers.length} icon="🧑‍💼" description="Learners and non-management roles" tooltip="Users whose role is not admin or a manager-level role."
+            borderClass="border-emerald-500/20" bgClass="bg-emerald-500/5" textClass="text-emerald-400" />
+          <StatCard label="Management" value={staffUsers.length} icon="👔" description="Admins and manager-level roles" tooltip="Admins, managers, leadership, leads, WFM and assistant or senior manager roles."
+            borderClass="border-sky-500/20" bgClass="bg-sky-500/5" textClass="text-sky-400" />
         </div>
 
+        {loadError && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <span>{loadError}</span>
+            <Button variant="danger" size="sm" onClick={fetchData}>Retry</Button>
+          </div>
+        )}
+
         {/* Controls */}
-        <div className="space-y-3 mb-5">
-          {/* Row 1: Tabs + Search + Count */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="sm:w-72 sm:flex-shrink-0 min-w-0">
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5 mb-5 space-y-3">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-center">
+            <div className="min-w-0">
               <TabBar active={activeTab}
                 onChange={(id) => { setActiveTab(id); setSortBy('name'); setSearch(''); setFilterDept('all'); setFilterStatus('all'); }}
                 tabs={[
@@ -2431,22 +2467,15 @@ export default function UserManagement() {
                 ]} />
             </div>
 
-            <div className="flex-1 relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+            <div className="relative min-w-0">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
               <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                aria-label="Search users"
                 placeholder="Search name, ID, email, phone, job role, department…"
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-800 border border-slate-700/60 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 transition-colors" />
-            </div>
-
-            <div className="flex items-center gap-2 text-slate-500 text-sm whitespace-nowrap">
-              <span>{displayedUsers.length} shown</span>
-              <button onClick={fetchData} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-700/50 bg-slate-800/40 hover:bg-slate-700/50 hover:text-white transition-all text-xs font-medium">
-                <span className={loading ? 'animate-spin' : ''}>↻</span> Refresh
-              </button>
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-900/50 border border-slate-700/60 rounded-xl text-white placeholder-slate-400 text-base focus:outline-none focus:border-indigo-500 transition-colors" />
             </div>
           </div>
 
-          {/* Row 2: Additional filters */}
           <div className="flex flex-wrap items-center gap-2">
             {activeTab === 'employees' ? (
               <>
@@ -2462,29 +2491,18 @@ export default function UserManagement() {
                   allLabel="All Statuses"
                   options={[{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'pending', label: 'Pending' }]}
                 />
-                {(filterDept !== 'all' || filterStatus !== 'all') && (
-                  <button onClick={() => { setFilterDept('all'); setFilterStatus('all'); }}
-                    className="px-3 py-2 rounded-xl bg-slate-700/50 border border-slate-600/40 text-xs text-slate-400 font-semibold hover:text-white transition-colors">
-                    ✕ Clear
-                  </button>
-                )}
               </>
             ) : (
-              <>
-                <SearchableSelect
-                  value={filterStatus}
-                  onChange={setFilterStatus}
-                  allLabel="All Roles"
-                  options={['admin', ...MANAGER_TIER_ROLES].map(r => ({ value: r, label: ROLE_LABELS[r] || r }))}
-                />
-                {filterStatus !== 'all' && (
-                  <button onClick={() => setFilterStatus('all')}
-                    className="px-3 py-2 rounded-xl bg-slate-700/50 border border-slate-600/40 text-xs text-slate-400 font-semibold hover:text-white transition-colors">
-                    ✕ Clear
-                  </button>
-                )}
-              </>
+              <SearchableSelect
+                value={filterStatus}
+                onChange={setFilterStatus}
+                allLabel="All Roles"
+                options={['admin', ...MANAGER_TIER_ROLES].map(r => ({ value: r, label: ROLE_LABELS[r] || r }))}
+              />
             )}
+            {hasFilters && <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button>}
+            <span className="ml-auto text-slate-300 text-sm font-semibold">{displayedUsers.length} shown</span>
+            <Button variant="secondary" size="sm" onClick={fetchData} loading={loading}>Refresh</Button>
           </div>
         </div>
 
@@ -2502,13 +2520,58 @@ export default function UserManagement() {
             ))}
           </div>
         ) : displayedUsers.length === 0 ? (
-          <div className="bg-[#111827] border border-slate-700/40 rounded-2xl p-16 text-center shadow-xl">
-            <div className="text-5xl mb-4 opacity-20">👤</div>
-            <h3 className="text-lg font-bold text-slate-400 mb-1">{(search || filterDept !== 'all' || filterStatus !== 'all') ? 'No users match your filters' : 'No users yet'}</h3>
-            <p className="text-slate-600 text-sm">{(search || filterDept !== 'all' || filterStatus !== 'all') ? 'Try adjusting your search or filter options' : 'Click "+ Add User" to create the first user'}</p>
+          <div className="bg-[#111827] border border-slate-700/40 rounded-2xl p-10 sm:p-16 text-center shadow-xl">
+            <div className="text-5xl mb-4 opacity-40">👤</div>
+            <h3 className="text-lg font-bold text-slate-200 mb-1">{hasFilters ? 'No users match your filters' : 'No users yet'}</h3>
+            <p className="text-slate-300 text-sm">{hasFilters ? 'Try adjusting your search or filter options' : 'Use Add User to create the first user'}</p>
+            {hasFilters && <Button variant="secondary" className="mt-4" onClick={clearFilters}>Clear filters</Button>}
           </div>
         ) : (
-          <div className="bg-[#111827] border border-slate-700/40 rounded-2xl overflow-hidden shadow-xl">
+          <>
+          {/* Card list below lg */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:hidden">
+            {displayedUsers.map(u => {
+              const isSelf = u.userId === user?.userId;
+              return (
+                <div key={u.userId} className="min-w-0 rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <button onClick={() => setDetailUser(u)} className="flex min-w-0 items-center gap-3 text-left">
+                      <div className={`w-10 h-10 rounded-xl border flex items-center justify-center text-sm font-bold shrink-0 ${getAvatarColor(u.role)}`}>{getAvatarInitials(u.name)}</div>
+                      <div className="min-w-0">
+                        <p className="truncate text-base font-semibold text-white" title={u.name}>{u.name}{isSelf && <span className="ml-1.5 text-sm text-slate-400">(you)</span>}</p>
+                        <p className="truncate text-sm text-slate-400" title={u.email}>{u.email}</p>
+                      </div>
+                    </button>
+                    <ActionMenu label="Manage" size="sm" items={rowActions(u)} />
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+                    <div className="min-w-0"><dt className="text-slate-400">{activeTab === 'employees' ? 'Employee ID' : 'Manager ID'}</dt><dd className="truncate font-mono text-slate-200">{u.employeeId || '—'}</dd></div>
+                    <div className="min-w-0"><dt className="text-slate-400">Phone</dt><dd className="truncate text-slate-200">{u.phone || '—'}</dd></div>
+                    {activeTab === 'employees' ? (
+                      <>
+                        <div className="min-w-0"><dt className="text-slate-400">Job role</dt><dd className="truncate text-slate-200" title={u.jobRole || ''}>{u.jobRole || '—'}</dd></div>
+                        <div className="min-w-0"><dt className="text-slate-400">Department</dt><dd className="truncate text-slate-200">{u.department || '—'}</dd></div>
+                        <div className="min-w-0"><dt className="text-slate-400">Manager</dt><dd className="truncate text-slate-200">{u.managerId ? managerName(u.managerId) : 'Unassigned'}</dd></div>
+                        <div className="min-w-0"><dt className="text-slate-400">Modules</dt><dd className="text-slate-200">{getUserAssignments(u.userId).length} assigned{(u.jobDescription || u.jobDescriptionFile) ? ' · JD' : ' · No JD'}</dd></div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="min-w-0"><dt className="text-slate-400">Role</dt><dd className="truncate capitalize text-slate-200">{u.role}</dd></div>
+                        <div className="min-w-0"><dt className="text-slate-400">Status</dt><dd className="truncate capitalize text-slate-200">{u.status || 'active'}</dd></div>
+                      </>
+                    )}
+                  </dl>
+                  {(u.accesses || []).length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {(u.accesses || []).map(a => <span key={a} className="px-2 py-0.5 rounded text-sm font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/25 capitalize">{a}</span>)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden lg:block bg-[#111827] border border-slate-700/40 rounded-2xl overflow-hidden shadow-xl">
             <div className="min-w-0">
               <table className="w-full">
                 <thead className="bg-slate-800/30 border-b border-slate-700/40">
@@ -2532,7 +2595,7 @@ export default function UserManagement() {
                       </>
                     )}
                     <th className={thClass}><span className={thBtn}>Access</span></th>
-                    <th className={`${thClass} text-right pr-5`}><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</span></th>
+                    <th className={`${thClass} text-right pr-5`}><span className="text-sm font-bold text-slate-400 uppercase tracking-wider">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/20">
@@ -2550,14 +2613,14 @@ export default function UserManagement() {
                             </div>
                             <div className="min-w-0">
                               <span className="text-white font-semibold text-sm group-hover/name:text-indigo-300 transition-colors">
-                                {u.name}{isSelf && <span className="ml-1.5 text-xs text-slate-500">(you)</span>}
+                                {u.name}{isSelf && <span className="ml-1.5 text-sm text-slate-400">(you)</span>}
                               </span>
-                              <span className="2xl:hidden block text-[11px] font-mono text-slate-500">{u.employeeId || '—'}</span>
+                              <span className="2xl:hidden block text-sm font-mono text-slate-400">{u.employeeId || '—'}</span>
                             </div>
                           </button>
                         </td>
                         <td className="hidden 2xl:table-cell py-3 px-3"><span className="text-slate-300 text-sm font-mono">{u.employeeId || '—'}</span></td>
-                        <td className="py-3 px-2 xl:px-3 min-w-0"><span className="text-slate-400 text-sm break-all" title={u.email}>{u.email}</span><span className="2xl:hidden block text-[11px] text-slate-500">{u.phone || '—'}</span></td>
+                        <td className="py-3 px-2 xl:px-3 min-w-0"><span className="text-slate-400 text-sm break-all" title={u.email}>{u.email}</span><span className="2xl:hidden block text-sm text-slate-400">{u.phone || '—'}</span></td>
                         <td className="hidden 2xl:table-cell py-3 px-3"><span className="text-slate-400 text-sm whitespace-nowrap">{u.phone || '—'}</span></td>
 
                         {activeTab === 'employees' ? (
@@ -2565,36 +2628,36 @@ export default function UserManagement() {
                             <td className="py-3 px-4">
                               {u.jobRole ? (
                                 <div className="flex flex-wrap gap-1 max-w-full">
-                                  <span className="px-2 py-0.5 rounded-lg text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/25" title="Primary job role">{u.jobRole}</span>
+                                  <span className="px-2 py-0.5 rounded-lg text-sm font-medium bg-amber-500/15 text-amber-300 border border-amber-500/25" title="Primary job role">{u.jobRole}</span>
                                   {(u.additionalJobRoles || []).map(r => (
-                                    <span key={r.id || r.roleName} className="px-2 py-0.5 rounded-lg text-xs font-medium bg-slate-700/40 text-slate-300 border border-slate-600/40" title="Additional job role">{r.roleName}</span>
+                                    <span key={r.id || r.roleName} className="px-2 py-0.5 rounded-lg text-sm font-medium bg-slate-700/40 text-slate-300 border border-slate-600/40" title="Additional job role">{r.roleName}</span>
                                   ))}
                                 </div>
-                              ) : <span className="text-slate-600 text-xs italic">—</span>}
+                              ) : <span className="text-slate-400 text-sm italic">—</span>}
                             </td>
-                            <td className="py-3 px-2 xl:px-3"><span className="text-slate-400 text-sm">{u.department || '—'}</span><span className="xl:hidden block text-[11px] text-slate-500">Mgr: {users.find(m => m.userId === u.managerId)?.name || '—'}</span></td>
+                            <td className="py-3 px-2 xl:px-3"><span className="text-slate-400 text-sm">{u.department || '—'}</span><span className="xl:hidden block text-sm text-slate-400">Mgr: {users.find(m => m.userId === u.managerId)?.name || '—'}</span></td>
                             <td className="hidden xl:table-cell py-3 px-3">
                               {u.managerId ? (
                                 <span className="text-slate-300 text-sm">{users.find(m => m.userId === u.managerId)?.name || '—'}</span>
-                              ) : <span className="text-slate-600 text-xs italic">Unassigned</span>}
+                              ) : <span className="text-slate-400 text-sm italic">Unassigned</span>}
                             </td>
                             <td className="py-3 px-4">
                               {hasJD
-                                ? <span className="px-2 py-0.5 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">✓ JD</span>
-                                : <span className="px-2 py-0.5 rounded-lg text-xs bg-slate-700/50 text-slate-500 border border-slate-700">No JD</span>}
+                                ? <span className="px-2 py-0.5 rounded-lg text-sm font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">✓ JD</span>
+                                : <span className="px-2 py-0.5 rounded-lg text-sm bg-slate-700/50 text-slate-400 border border-slate-700">No JD</span>}
                             </td>
                             <td className="py-3 px-4">
                               <span className="text-slate-300 text-sm font-medium">{userAssignments.length}</span>
-                              <span className="text-slate-600 text-xs ml-1">assigned</span>
+                              <span className="text-slate-400 text-sm ml-1">assigned</span>
                             </td>
                           </>
                         ) : (
                           <>
                             <td className="py-3 px-4">
-                              <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getRoleBadge(u.role)}`}>{u.role}</span>
+                              <span className={`px-2.5 py-1 rounded-lg text-sm font-semibold border capitalize ${getRoleBadge(u.role)}`}>{u.role}</span>
                             </td>
                             <td className="py-3 px-4">
-                              <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold border capitalize ${getStatusBadge(u.status || 'active')}`}>{u.status || 'active'}</span>
+                              <span className={`px-2.5 py-1 rounded-lg text-sm font-semibold border capitalize ${getStatusBadge(u.status || 'active')}`}>{u.status || 'active'}</span>
                             </td>
                           </>
                         )}
@@ -2603,26 +2666,16 @@ export default function UserManagement() {
                         <td className="py-3 px-4">
                           <div className="flex flex-wrap gap-1">
                             {(u.accesses || []).length === 0
-                              ? <span className="text-slate-600 text-xs">—</span>
+                              ? <span className="text-slate-400 text-sm">—</span>
                               : (u.accesses || []).map(a => (
-                                  <span key={a} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/25 capitalize">{a}</span>
+                                  <span key={a} className="px-1.5 py-0.5 rounded text-sm font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/25 capitalize">{a}</span>
                                 ))}
                           </div>
                         </td>
 
                         <td className="py-3 px-4">
-                          <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                            {isAdmin && (
-                              <button onClick={() => setManageAccessUser(u)} title="Manage Access" className="w-8 h-8 flex items-center justify-center rounded-lg bg-cyan-600/10 hover:bg-cyan-600/30 text-cyan-400 border border-cyan-600/20 hover:border-cyan-500/40 transition-all text-sm">🔑</button>
-                            )}
-                            <button onClick={() => setEditUser(u)} title="Edit" className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-600/10 hover:bg-blue-600/30 text-blue-400 border border-blue-600/20 hover:border-blue-500/40 transition-all text-sm">✏️</button>
-                            {!isSelf && (
-                              <button onClick={async () => {
-                                if (!window.confirm(`Delete ${u.name} (${u.email})? This cannot be undone.`)) return;
-                                try { await authFetch(`/api/users/${u.userId}`, { method: 'DELETE' }); setUsers(prev => prev.filter(x => x.userId !== u.userId)); setToast({ message: `${u.name} deleted`, type: 'success' }); }
-                                catch (err) { setToast({ message: err.message, type: 'error' }); }
-                              }} title="Delete" className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-600/10 hover:bg-red-600/30 text-red-400 border border-red-600/20 hover:border-red-500/40 transition-all text-sm">🗑️</button>
-                            )}
+                          <div className="flex items-center justify-end">
+                            <ActionMenu label="Manage" size="sm" items={rowActions(u)} />
                           </div>
                         </td>
                       </tr>
@@ -2631,18 +2684,18 @@ export default function UserManagement() {
                 </tbody>
               </table>
             </div>
-            <div className="px-6 py-3 border-t border-slate-700/30 bg-slate-800/10 flex items-center justify-between">
-              <p className="text-xs text-slate-600">
+            <div className="px-6 py-3 border-t border-slate-700/30 bg-slate-800/10 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-slate-300">
                 Showing <span className="text-slate-400 font-semibold">{displayedUsers.length}</span> of{' '}
                 <span className="text-slate-400 font-semibold">{activeTab === 'staff' ? staffUsers.length : employeeUsers.length}</span>{' '}
                 {activeTab === 'staff' ? 'staff' : 'employees'}
-                {lastRefreshed && <span className="ml-3 text-slate-700">· Refreshed {lastRefreshed.toLocaleTimeString()}</span>}
+                {lastRefreshed && <span className="ml-3 text-slate-400">· Refreshed {lastRefreshed.toLocaleTimeString()}</span>}
               </p>
-              <button onClick={fetchData} className="text-xs text-slate-600 hover:text-slate-400 transition-colors flex items-center gap-1">↻ Refresh</button>
             </div>
           </div>
+          </>
         )}
-      </div>
+      </PageContainer>
     </div>
   );
 }

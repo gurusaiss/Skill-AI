@@ -12,6 +12,7 @@ export default function ModuleLearn() {
   const [sessionIdx, setSessionIdx] = useState(0);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (moduleId) loadModule();
@@ -24,20 +25,7 @@ export default function ModuleLearn() {
       if (mod.content?.sessions?.length) setSessionIdx(0);
       if (mod.progress !== undefined) setProgress(mod.progress);
     } catch (e) {
-      setModule({
-        id: moduleId, title: 'Learning Module', description: 'Module content', difficulty: 'intermediate', estimated_duration: '7 days',
-        content: {
-          sessions: [
-            { day: 1, title: 'Introduction & Fundamentals', type: 'concept', duration: '45 min', concepts: ['Core principles', 'Key terminology', 'Domain overview'], activities: ['Read the introduction', 'Review key terms glossary'], practice: ['Define 3 key concepts in your own words'] },
-            { day: 2, title: 'Core Skills Development', type: 'practice', duration: '60 min', concepts: ['Skill building', 'Best practices', 'Common patterns'], activities: ['Complete guided exercise', 'Analyze example scenarios'], practice: ['Build a simple project', 'Complete skill assessment'] },
-            { day: 3, title: 'Advanced Topics', type: 'concept', duration: '50 min', concepts: ['Advanced patterns', 'Optimization techniques', 'Industry standards'], activities: ['Study advanced materials', 'Review case studies'], practice: ['Implement advanced feature', 'Peer code review'] },
-            { day: 4, title: 'Practical Application', type: 'practice', duration: '90 min', concepts: ['Real-world scenarios', 'Problem solving', 'Integration'], activities: ['Work on capstone project', 'Debug sample issues'], practice: ['Complete project milestone', 'Write documentation'] },
-            { day: 5, title: 'Review & Assessment', type: 'assessment', duration: '60 min', concepts: ['Knowledge review', 'Skill demonstration', 'Final project'], activities: ['Complete review quiz', 'Present findings'], practice: ['Final project submission', 'Self-assessment'] },
-            { day: 6, title: 'Adaptive Practice', type: 'practice', duration: '45 min', concepts: ['Weak area reinforcement', 'Advanced drills'], activities: ['Targeted exercises', 'Performance analysis'], practice: ['Complete adaptive drill set'] },
-            { day: 7, title: 'Mastery Certification', type: 'assessment', duration: '30 min', concepts: ['Comprehensive review', 'Final evaluation'], activities: ['Take mastery assessment', 'Review feedback'], practice: ['Certification quiz'] },
-          ]
-        }
-      });
+      setLoadError(e?.message || 'Could not load this module.');
     } finally { setLoading(false); }
   };
 
@@ -48,7 +36,7 @@ export default function ModuleLearn() {
       setSessionIdx(sessionIdx + 1);
     }
     if (assignmentId) {
-      try { await authFetch(`/api/assignments/${assignmentId}`, { method: 'PUT', body: JSON.stringify({ progress: newPct, status: newPct >= 100 ? 'completed' : 'in_progress' }) }); } catch {}
+      try { await authFetch(`/api/assignments/${assignmentId}`, { method: 'PUT', body: JSON.stringify({ progress: newPct, status: newPct >= 100 ? 'completed' : 'in_progress' }) }); } catch (e) { setLoadError('Progress could not be saved: ' + (e?.message || 'network error')); }
     }
   };
 
@@ -62,7 +50,9 @@ export default function ModuleLearn() {
   const current = sessions[sessionIdx] || sessions[0];
   if (!current) return (
     <div className="min-h-screen bg-[#0F172A] flex items-center justify-center p-6">
-      <div className="text-center text-slate-400">No sessions available for this module.</div>
+      <div className="text-center text-slate-300 text-base">
+        {loadError ? (<><p className="text-red-300 mb-3">{loadError}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); loadModule(); }} className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold">Retry</button></>) : 'No sessions available for this module.'}
+      </div>
     </div>
   );
 
@@ -72,12 +62,12 @@ export default function ModuleLearn() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0F172A] py-8 px-6">
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-screen bg-[#0F172A] py-6 px-3 sm:px-5 lg:px-6 2xl:px-8">
+      <div className="w-full">
         <div className="flex items-center justify-between mb-6">
           <button onClick={() => navigate('/dashboard')} className="text-slate-400 hover:text-white text-sm flex items-center gap-2">← Dashboard</button>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-500">Progress: <span className="text-emerald-400 font-bold">{progress}%</span></span>
+            <span className="text-xs text-slate-400">Progress: <span className="text-emerald-400 font-bold">{progress}%</span></span>
             <div className="w-32 h-2 bg-slate-700 rounded-full overflow-hidden">
               <div className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
             </div>
@@ -102,7 +92,7 @@ export default function ModuleLearn() {
 
         <div className="grid lg:grid-cols-[280px_1fr] gap-6">
           <div className="space-y-2">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Learning Sessions</h3>
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Learning Sessions</h3>
             {sessions.map((s, i) => (
               <button key={i}
                 onClick={() => setSessionIdx(i)}
@@ -119,7 +109,7 @@ export default function ModuleLearn() {
                   <span className={`text-xs px-1.5 py-0.5 rounded border ${getTypeColor(s.type)}`}>{s.type}</span>
                 </div>
                 <p className="text-xs font-semibold mt-1 truncate">{s.title}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{s.duration}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{s.duration}</p>
               </button>
             ))}
           </div>

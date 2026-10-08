@@ -102,13 +102,14 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-2xl rounded-2xl border border-slate-700/50 bg-slate-900 shadow-2xl my-8">
+      <div className="relative w-full max-w-3xl rounded-2xl border border-slate-700/50 bg-slate-900 shadow-2xl my-8">
 
         {/* Header */}
         <div className="relative p-6 pb-4 bg-gradient-to-br from-indigo-600/15 to-purple-600/15 border-b border-slate-700/50">
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 text-slate-400 hover:text-white transition-all flex items-center justify-center text-sm"
+            aria-label="Close" title="Close"
+            className="absolute top-4 right-4 w-10 h-10 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 text-slate-400 hover:text-white transition-all flex items-center justify-center text-sm"
           >
             ✕
           </button>
@@ -117,19 +118,19 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
               🌳
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Skill Detail</p>
+              <p className="text-sm font-black text-slate-400 uppercase tracking-widest">Skill Detail</p>
               <h2 className="text-xl font-black text-white leading-tight mt-0.5">{skill.name}</h2>
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <span
-                  className="px-3 py-1 rounded-full text-xs font-bold border"
+                  className="px-3 py-1 rounded-full text-sm font-bold border"
                   style={{ backgroundColor: `${masteryColor}15`, borderColor: `${masteryColor}30`, color: masteryColor }}
                 >
                   {masteryLabel}
                 </span>
-                <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-800/60 text-slate-300 border border-slate-700">
+                <span className="px-3 py-1 rounded-full text-sm font-bold bg-slate-800/60 text-slate-300 border border-slate-700">
                   {skill.mastery}% Mastery
                 </span>
-                <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-800/60 text-slate-400 border border-slate-700 capitalize">
+                <span className="px-3 py-1 rounded-full text-sm font-bold bg-slate-800/60 text-slate-400 border border-slate-700 capitalize">
                   {skill.status || 'active'}
                 </span>
               </div>
@@ -147,14 +148,14 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
           {activeTab === 'overview' && (
             <div className="space-y-4">
               <div>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">What Is This Skill?</p>
+                <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">What Is This Skill?</p>
                 <p className="text-sm text-slate-300 leading-relaxed">
                   {skill.explanation || skill.description || `${skill.name} is a core skill in your learning path that practitioners apply regularly in professional settings. It forms the foundation for more advanced concepts and is essential for achieving your target goal.`}
                 </p>
               </div>
 
               <div className="rounded-xl border border-amber-500/25 bg-amber-500/8 p-4">
-                <p className="text-xs font-black text-amber-400 uppercase tracking-widest mb-2">💡 Why It Matters</p>
+                <p className="text-sm font-black text-amber-400 uppercase tracking-widest mb-2">💡 Why It Matters</p>
                 <p className="text-sm text-amber-200/80 leading-relaxed">
                   {skill.importance || `Mastering ${skill.name} unlocks the ability to tackle more complex challenges in your domain. Professionals who excel in this area are consistently in demand and are able to deliver higher-quality work with greater confidence and speed.`}
                 </p>
@@ -168,7 +169,7 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
                   { label: 'Demand', value: industry.demand, color: demandColor },
                 ].map(({ label, value, color }) => (
                   <div key={label} className="rounded-xl bg-slate-800/40 border border-slate-700/50 p-3">
-                    <p className="text-xs text-slate-500 uppercase tracking-widest mb-1">{label}</p>
+                    <p className="text-sm text-slate-400 uppercase tracking-widest mb-1">{label}</p>
                     <p className="text-base font-black capitalize" style={{ color }}>{value}</p>
                   </div>
                 ))}
@@ -180,11 +181,11 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
           {activeTab === 'concepts' && (
             <div className="space-y-4">
               <div>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Key Concepts & Learning Points</p>
+                <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-3">Key Concepts & Learning Points</p>
                 <div className="space-y-2">
                   {learningPoints.map((concept, i) => (
                     <div key={i} className="flex items-center gap-3 rounded-xl bg-slate-800/40 border border-slate-700/40 p-3">
-                      <span className="w-6 h-6 rounded-md bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-xs font-black text-indigo-400 flex-shrink-0">
+                      <span className="w-6 h-6 rounded-md bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-sm font-black text-indigo-400 flex-shrink-0">
                         {i + 1}
                       </span>
                       <span className="text-sm text-slate-300 font-medium leading-snug">{concept}</span>
@@ -194,8 +195,8 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
               </div>
 
               <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                <p className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-2">Mastery Signals</p>
-                <p className="text-xs text-slate-400 mb-2">You've mastered {skill.name} when you can:</p>
+                <p className="text-sm font-black text-emerald-400 uppercase tracking-widest mb-2">Mastery Signals</p>
+                <p className="text-sm text-slate-400 mb-2">You've mastered {skill.name} when you can:</p>
                 <ul className="space-y-1.5">
                   {[
                     `Apply ${skill.name} correctly in unfamiliar scenarios`,
@@ -218,7 +219,7 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
             <div className="space-y-4">
               <div className="rounded-xl border p-4" style={{ borderColor: `${demandColor}30`, backgroundColor: `${demandColor}08` }}>
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-black uppercase tracking-widest" style={{ color: demandColor }}>Market Demand</p>
+                  <p className="text-sm font-black uppercase tracking-widest" style={{ color: demandColor }}>Market Demand</p>
                   <span className="text-sm font-black" style={{ color: demandColor }}>{industry.demand}</span>
                 </div>
                 <p className="text-sm text-slate-300 leading-relaxed">{industry.trend}</p>
@@ -226,20 +227,20 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-slate-800/40 border border-slate-700/50 p-4">
-                  <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Avg. Salary Range</p>
+                  <p className="text-sm text-slate-400 uppercase tracking-widest mb-2">Avg. Salary Range</p>
                   <p className="text-sm font-black text-emerald-400">{industry.avgSalary}</p>
                 </div>
                 <div className="rounded-xl bg-slate-800/40 border border-slate-700/50 p-4">
-                  <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">Demand Level</p>
+                  <p className="text-sm text-slate-400 uppercase tracking-widest mb-2">Demand Level</p>
                   <p className="text-sm font-black" style={{ color: demandColor }}>{industry.demand}</p>
                 </div>
               </div>
 
               <div>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Job Roles That Use This Skill</p>
+                <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">Job Roles That Use This Skill</p>
                 <div className="flex flex-wrap gap-2">
                   {industry.roles.map((role, i) => (
-                    <span key={i} className="text-xs px-3 py-1.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-medium">
+                    <span key={i} className="text-sm px-3 py-1.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-medium">
                       {role}
                     </span>
                   ))}
@@ -247,10 +248,10 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
               </div>
 
               <div>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Companies Hiring</p>
+                <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">Companies Hiring</p>
                 <div className="flex flex-wrap gap-2">
                   {industry.companies.map((c, i) => (
-                    <span key={i} className="text-xs px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400">
+                    <span key={i} className="text-sm px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400">
                       {c}
                     </span>
                   ))}
@@ -263,11 +264,11 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
           {activeTab === 'practice' && (
             <div className="space-y-4">
               <div>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">How to Apply This Skill</p>
+                <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-3">How to Apply This Skill</p>
                 <ul className="space-y-2">
                   {practicalApps.map((app, i) => (
                     <li key={i} className="flex items-start gap-3 rounded-xl bg-slate-800/40 border border-slate-700/40 px-3 py-3">
-                      <span className="w-6 h-6 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-xs font-black text-emerald-400 flex-shrink-0 mt-0.5">
+                      <span className="w-6 h-6 rounded-md bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-sm font-black text-emerald-400 flex-shrink-0 mt-0.5">
                         {i + 1}
                       </span>
                       <span className="text-sm text-slate-300 leading-relaxed">{app}</span>
@@ -277,7 +278,7 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
               </div>
 
               <div className="rounded-xl border border-purple-500/25 bg-purple-500/8 p-4">
-                <p className="text-xs font-black text-purple-400 uppercase tracking-widest mb-2">Practice Challenge</p>
+                <p className="text-sm font-black text-purple-400 uppercase tracking-widest mb-2">Practice Challenge</p>
                 <p className="text-sm text-slate-300 leading-relaxed">
                   Build a mini-project that demonstrates {skill.name}. Focus on applying it in a real scenario, not just theoretical exercises. Share it publicly (GitHub, portfolio) to validate your skill.
                 </p>
@@ -299,13 +300,13 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
                     style={{ width: `${Math.max(skill.mastery, 2)}%`, backgroundColor: masteryColor }}
                   />
                 </div>
-                <div className="flex justify-between text-xs text-slate-600 mt-1">
+                <div className="flex justify-between text-sm text-slate-400 mt-1">
                   <span>0%</span><span>Developing 50%</span><span>Proficient 75%</span><span>Expert 100%</span>
                 </div>
               </div>
 
               <div className="rounded-xl bg-slate-800/40 border border-slate-700/50 p-4">
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Mastery Assessment</p>
+                <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-2">Mastery Assessment</p>
                 <p className="text-sm text-slate-300 leading-relaxed">
                   {skill.mastery >= 75
                     ? `🏆 You have strong mastery of ${skill.name}. Focus on applying it in complex, real-world scenarios and consider tackling advanced topics.`
@@ -316,7 +317,7 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
               </div>
 
               <div>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Learning Path</p>
+                <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-3">Learning Path</p>
                 <div className="space-y-2">
                   {[
                     { step: 'Learn core definitions and theory', done: skill.mastery > 5 },
@@ -328,10 +329,10 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
                     <div key={i} className={`flex items-center gap-3 rounded-lg border px-3 py-2 transition-all ${
                       item.done ? 'bg-emerald-500/8 border-emerald-500/25' : 'bg-slate-800/30 border-slate-700/40'
                     }`}>
-                      <span className={`text-sm flex-shrink-0 ${item.done ? 'text-emerald-400' : 'text-slate-600'}`}>
+                      <span className={`text-sm flex-shrink-0 ${item.done ? 'text-emerald-400' : 'text-slate-400'}`}>
                         {item.done ? '✅' : '○'}
                       </span>
-                      <span className={`text-sm ${item.done ? 'text-emerald-300' : 'text-slate-500'}`}>{item.step}</span>
+                      <span className={`text-sm ${item.done ? 'text-emerald-300' : 'text-slate-400'}`}>{item.step}</span>
                     </div>
                   ))}
                 </div>
@@ -344,7 +345,7 @@ export default function SkillDetailModal({ isOpen, onClose, skill }) {
         <div className="p-4 bg-slate-800/30 border-t border-slate-700/50">
           <button
             onClick={onClose}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm transition-all hover:shadow-lg hover:shadow-indigo-500/20"
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-base transition-all hover:shadow-lg hover:shadow-indigo-500/20"
           >
             Continue Learning
           </button>

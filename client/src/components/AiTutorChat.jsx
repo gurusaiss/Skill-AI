@@ -22,7 +22,7 @@ function getWelcomeMessage(pathname) {
 function TypingIndicator() {
   return (
     <div className="flex items-end gap-2 mb-3">
-      <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-xs flex-shrink-0">
+      <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-sm flex-shrink-0">
         🤖
       </div>
       <div className="bg-[#1E293B] border border-slate-700/50 rounded-2xl rounded-bl-sm px-4 py-3">
@@ -51,12 +51,12 @@ function ChatMessage({ msg }) {
       transition={{ duration: 0.22 }}
     >
       {!isUser && (
-        <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-xs flex-shrink-0">
+        <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-sm flex-shrink-0">
           🤖
         </div>
       )}
       <div
-        className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+        className={`max-w-[85%] px-4 py-2.5 rounded-2xl text-base leading-relaxed whitespace-pre-wrap ${
           isUser
             ? 'bg-indigo-600 text-white rounded-br-sm'
             : 'bg-[#1E293B] border border-slate-700/50 text-slate-200 rounded-bl-sm'
@@ -151,7 +151,7 @@ export default function AiTutorChat() {
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-            title="Open AI Tutor"
+            title="Open AI Tutor" aria-label="Open AI Tutor"
           >
             <motion.span
               animate={{ scale: [1, 1.15, 1] }}
@@ -170,8 +170,8 @@ export default function AiTutorChat() {
         {open && (
           <motion.div
             key="panel"
-            className="fixed bottom-6 right-6 z-50 flex flex-col w-[350px] max-w-[calc(100vw-24px)] rounded-2xl shadow-2xl border border-slate-700/60 overflow-hidden"
-            style={{ height: '480px', background: '#0F172A' }}
+            className="fixed bottom-6 right-6 z-50 flex flex-col w-[440px] max-w-[calc(100vw-24px)] rounded-2xl shadow-2xl border border-slate-700/60 overflow-hidden"
+            style={{ height: 'min(620px, calc(100vh - 48px))', background: '#0F172A' }}
             initial={{ opacity: 0, y: 60, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 60, scale: 0.95 }}
@@ -182,7 +182,7 @@ export default function AiTutorChat() {
               <div className="flex items-center gap-2">
                 <span className="text-lg">🤖</span>
                 <div>
-                  <div className="text-sm font-semibold text-white leading-tight">AI Tutor</div>
+                  <div className="text-base font-semibold text-white leading-tight">AI Tutor</div>
                   <div className="flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     <span className="text-xs text-slate-400">Online</span>
@@ -191,7 +191,7 @@ export default function AiTutorChat() {
               </div>
               <button
                 onClick={() => setOpen(false)}
-                className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-colors text-sm"
+                className="w-9 h-9 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-colors text-base" aria-label="Close AI Tutor"
                 title="Close"
               >
                 ✕
@@ -214,7 +214,7 @@ export default function AiTutorChat() {
                   <button
                     key={chip}
                     onClick={() => sendMessage(chip)}
-                    className="text-xs px-3 py-1.5 rounded-full border border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/20 hover:border-indigo-400 transition-colors"
+                    className="text-sm px-3.5 py-2 rounded-full border border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/20 hover:border-indigo-400 transition-colors"
                   >
                     {chip}
                   </button>
@@ -232,22 +232,22 @@ export default function AiTutorChat() {
                   onKeyDown={handleKeyDown}
                   placeholder="Ask me anything..."
                   rows={1}
-                  className="flex-1 bg-[#0F172A] border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                  className="flex-1 bg-[#0F172A] border border-slate-700 rounded-xl px-3 py-2.5 text-base text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
                   style={{ maxHeight: '96px', overflowY: 'auto' }}
                   disabled={loading}
                 />
                 <button
                   onClick={() => sendMessage()}
                   disabled={loading || !input.trim()}
-                  className="w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-white transition-colors flex-shrink-0"
-                  title="Send"
+                  className="w-11 h-11 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-white transition-colors flex-shrink-0"
+                  title="Send" aria-label="Send message"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                     <path d="M3.105 2.289a.75.75 0 00-.826.95l1.903 6.557H13.5a.75.75 0 010 1.5H4.182l-1.903 6.557a.75.75 0 00.826.95 28.896 28.896 0 0015.293-7.154.75.75 0 000-1.115A28.897 28.897 0 003.105 2.289z" />
                   </svg>
                 </button>
               </div>
-              <p className="text-xs text-slate-600 mt-1.5 text-center">Press Enter to send · Shift+Enter for newline</p>
+              <p className="text-xs text-slate-400 mt-1.5 text-center">Press Enter to send · Shift+Enter for newline</p>
             </div>
           </motion.div>
         )}

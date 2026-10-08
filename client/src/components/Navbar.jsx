@@ -196,7 +196,7 @@ function Navbar() {
                 title="Notifications" className={iconBtn}>
                 <NavIcon name="bell" />
                 {unreadCount > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 px-1 text-[10px] font-bold text-white ring-2 ring-slate-900">
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 px-1 text-xs font-bold text-white ring-2 ring-slate-900">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}

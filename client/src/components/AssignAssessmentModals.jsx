@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { authFetch } from '../utils/authFetch.js';
+import Button from './Button.jsx';
 
 // Two dialogs for giving an EXISTING assessment to employees:
 //   AssignEmployeesModal  add one or many employees (a new joiner, or anyone who
@@ -37,14 +38,14 @@ export function DateFields({ start, end, onStart, onEnd }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <label className="block">
-        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Start date &amp; time</span>
+        <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Start date &amp; time</span>
         <input type="datetime-local" value={start} onChange={e => onStart(e.target.value)}
-          className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-indigo-500" />
+          className="mt-1 w-full px-3 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-indigo-500" />
       </label>
       <label className="block">
-        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">End date &amp; time</span>
+        <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">End date &amp; time</span>
         <input type="datetime-local" value={end} onChange={e => onEnd(e.target.value)}
-          className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-indigo-500" />
+          className="mt-1 w-full px-3 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-indigo-500" />
       </label>
     </div>
   );
@@ -54,13 +55,13 @@ export function Shell({ title, subtitle, onClose, children, wide = false }) {
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`bg-[#0F172A] border border-slate-700 rounded-2xl w-full ${wide ? 'max-w-5xl' : 'max-w-2xl'} max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col`}>
-        <div className="flex items-start justify-between px-6 py-4 border-b border-slate-700/60 sticky top-0 bg-[#0F172A] z-10">
+      <div className={`bg-[#0F172A] border border-slate-700 rounded-2xl w-full ${wide ? 'max-w-6xl' : 'max-w-2xl'} max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col`}>
+        <div role="dialog" aria-modal="true" aria-label={title} className="flex items-start justify-between px-5 sm:px-6 py-4 border-b border-slate-700/60 sticky top-0 bg-[#0F172A] z-10">
           <div className="min-w-0">
-            <h3 className="text-lg font-black text-white truncate">{title}</h3>
-            {subtitle ? <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p> : null}
+            <h3 className="text-xl font-black text-white truncate" title={typeof title === 'string' ? title : undefined}>{title}</h3>
+            {subtitle ? <p className="text-sm text-slate-400 mt-0.5 break-words">{subtitle}</p> : null}
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-white text-xl ml-3" aria-label="Close">✕</button>
+          <button type="button" onClick={onClose} className="h-9 w-9 shrink-0 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white text-xl ml-3" aria-label="Close" title="Close">✕</button>
         </div>
         {children}
       </div>
@@ -172,6 +173,7 @@ export function AssignEmployeesModal({ assessments = [], assessment: fixedAssess
   });
 
   const submit = async () => {
+    if (submitting) return;
     setError('');
     const win = validateWindow(start, end);
     if (win.error) { setError(win.error); return; }
@@ -209,23 +211,23 @@ export function AssignEmployeesModal({ assessments = [], assessment: fixedAssess
   if (results) {
     return (
       <Shell title="Assignment result" subtitle={`${selected.size} employee${selected.size === 1 ? '' : 's'} · ${results.rows.length} assessment${results.rows.length === 1 ? '' : 's'}`} onClose={onClose}>
-        <div className="p-6 space-y-3">
+        <div className="p-5 sm:p-6 space-y-3">
           {results.rows.map(r => (
             <div key={r.id} className={`rounded-xl border p-3 ${r.ok ? 'border-slate-700/60 bg-slate-800/30' : 'border-red-500/30 bg-red-500/5'}`}>
               <p className="text-sm font-bold text-white break-words">{r.title}</p>
-              {!r.ok ? <p className="text-xs text-red-300 mt-1">Not assigned: {r.error}</p> : (
+              {!r.ok ? <p className="text-sm text-red-300 mt-1">Not assigned: {r.error}</p> : (
                 <div className="mt-1 space-y-1">
-                  {r.data.added?.length > 0 && <p className="text-xs text-emerald-300 break-words">Added: {r.data.added.map(x => x.name || nameOf(x.userId)).join(', ')}</p>}
-                  {r.data.reassigned?.length > 0 && <p className="text-xs text-indigo-300 break-words">Given again (new attempt): {r.data.reassigned.map(x => x.name || nameOf(x.userId)).join(', ')}</p>}
-                  {r.data.skipped?.map((s, i) => <p key={i} className="text-xs text-amber-300 break-words">Skipped {s.name || nameOf(s.userId)}: {s.reason}</p>)}
-                  {!r.data.added?.length && !r.data.reassigned?.length && !r.data.skipped?.length && <p className="text-xs text-slate-400">No changes.</p>}
+                  {r.data.added?.length > 0 && <p className="text-sm text-emerald-300 break-words">Added: {r.data.added.map(x => x.name || nameOf(x.userId)).join(', ')}</p>}
+                  {r.data.reassigned?.length > 0 && <p className="text-sm text-indigo-300 break-words">Given again (new attempt): {r.data.reassigned.map(x => x.name || nameOf(x.userId)).join(', ')}</p>}
+                  {r.data.skipped?.map((s, i) => <p key={i} className="text-sm text-amber-300 break-words">Skipped {s.name || nameOf(s.userId)}: {s.reason}</p>)}
+                  {!r.data.added?.length && !r.data.reassigned?.length && !r.data.skipped?.length && <p className="text-sm text-slate-300">No changes.</p>}
                 </div>
               )}
             </div>
           ))}
-          <p className="text-xs text-slate-400">Window: {fmt(results.startAt)} to {fmt(results.dueAt)}{notify ? ' · employees were emailed where email is set up' : ''}</p>
+          <p className="text-sm text-slate-300">Window: {fmt(results.startAt)} to {fmt(results.dueAt)}{notify ? ' · employees were emailed where email is set up' : ''}</p>
           <div className="flex justify-end">
-            <button onClick={onClose} className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white">Done</button>
+            <Button variant="primary" onClick={onClose}>Done</Button>
           </div>
         </div>
       </Shell>
@@ -239,9 +241,9 @@ export function AssignEmployeesModal({ assessments = [], assessment: fixedAssess
         <input type="checkbox" checked={on} onChange={() => toggleAssessment(a.id)} className="accent-indigo-500 mt-1" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-white truncate" title={a.title}>{a.title}</p>
-          <p className="text-xs text-slate-500 truncate">{(a.employeeAssignments || []).length} assigned · {a.questionCount ?? '-'} questions</p>
+          <p className="text-sm text-slate-400 truncate">{(a.employeeAssignments || []).length} assigned · {a.questionCount ?? '-'} questions</p>
         </div>
-        {isRec ? <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">Fits role</span> : null}
+        {isRec ? <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">Fits role</span> : null}
       </label>
     );
   };
@@ -249,22 +251,22 @@ export function AssignEmployeesModal({ assessments = [], assessment: fixedAssess
   return (
     <Shell wide title={fixedAssessment ? 'Assign employees' : 'Assign an assessment'}
       subtitle={fixedAssessment ? fixedAssessment.title : 'Pick the employees on the left and the assessment(s) on the right'} onClose={onClose}>
-      <div className="p-6 space-y-5">
+      <div className="p-5 sm:p-6 space-y-5">
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-5">
           {/* Employees */}
           <div className="min-w-0">
             <div className="flex items-center justify-between mb-2 gap-2">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">1. Employees</label>
-              <div className="flex items-center gap-3 text-xs shrink-0">
-                <button onClick={selectAllShown} className="font-semibold text-indigo-300 hover:text-indigo-200">Select all shown</button>
-                <button onClick={() => setSelected(new Set())} className="font-semibold text-slate-400 hover:text-white">Clear</button>
+              <span className="text-sm font-bold text-slate-200 uppercase tracking-wider">1. Employees</span>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button size="sm" variant="ghost" onClick={selectAllShown}>Select all shown</Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear selection</Button>
               </div>
             </div>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, employee ID, email, department, job role"
-              className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
-            <div className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-700/50 divide-y divide-slate-700/30">
+            <input value={search} aria-label="Search employees" onChange={e => setSearch(e.target.value)} placeholder="Search name, employee ID, email, department, job role"
+              className="w-full px-3 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+            <div className="mt-2 max-h-[46vh] overflow-y-auto rounded-xl border border-slate-700/50 divide-y divide-slate-700/30">
               {candidates.length === 0 ? (
-                <p className="text-sm text-slate-500 py-6 text-center">No employees match.</p>
+                <div className="text-sm text-slate-300 py-6 text-center">No employees match your search.{search ? <div className="mt-2"><Button size="sm" onClick={() => setSearch('')}>Clear search</Button></div> : null}</div>
               ) : candidates.map(e => {
                 const ea = statusFor(e.userId);
                 const done = ea?.status === 'submitted';
@@ -272,13 +274,13 @@ export function AssignEmployeesModal({ assessments = [], assessment: fixedAssess
                 const sub = [e.employeeId, e.jobRole, e.department, e.email].filter(Boolean).join(' · ');
                 return (
                   <label key={e.userId} className={`flex items-center gap-3 px-3 py-2 ${disabled ? 'opacity-50' : 'hover:bg-slate-800/50 cursor-pointer'}`}>
-                    <input type="checkbox" checked={selected.has(e.userId)} disabled={disabled} onChange={() => toggleEmployee(e)} className="accent-indigo-500" />
+                    <input type="checkbox" checked={selected.has(e.userId)} disabled={disabled} onChange={() => toggleEmployee(e)} className="h-4 w-4 accent-indigo-500" />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-white truncate" title={e.name}>{e.name}</p>
-                      <p className="text-xs text-slate-500 truncate" title={sub}>{sub}</p>
+                      <p className="text-sm text-slate-400 truncate" title={sub}>{sub}</p>
                     </div>
                     {ea ? (
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${done ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'}`}>
+                      <span className={`px-2 py-0.5 rounded-md text-xs font-bold border shrink-0 ${done ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'}`}>
                         {done ? 'Completed' : 'Assigned'}
                       </span>
                     ) : null}
@@ -286,75 +288,74 @@ export function AssignEmployeesModal({ assessments = [], assessment: fixedAssess
                 );
               })}
             </div>
-            <p className="text-xs text-slate-500 mt-1.5">{selected.size} selected</p>
+            <p className="text-sm text-slate-300 mt-1.5">{selected.size} selected</p>
           </div>
 
           {/* Assessments */}
           <div className="min-w-0">
             <div className="flex items-center justify-between mb-2 gap-2">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">2. Assessment{fixedAssessment ? '' : '(s)'}</label>
-              {!fixedAssessment && pickedIds.size > 0 ? <button onClick={() => setPickedIds(new Set())} className="text-xs font-semibold text-slate-400 hover:text-white shrink-0">Clear</button> : null}
+              <span className="text-sm font-bold text-slate-200 uppercase tracking-wider">2. Assessment{fixedAssessment ? '' : '(s)'}</span>
+              {!fixedAssessment && pickedIds.size > 0 ? <Button size="sm" variant="ghost" onClick={() => setPickedIds(new Set())}>Clear selection</Button> : null}
             </div>
             {fixedAssessment ? (
               <div className="rounded-xl border border-slate-700/50 bg-slate-800/40 px-4 py-3">
                 <p className="text-sm font-bold text-white break-words">{fixedAssessment.title}</p>
-                <p className="text-xs text-slate-400 mt-1">{(fixedAssessment.employeeAssignments || []).length} assigned · {fixedAssessment.questionCount ?? '-'} questions · same questions for everyone</p>
+                <p className="text-sm text-slate-300 mt-1">{(fixedAssessment.employeeAssignments || []).length} assigned · {fixedAssessment.questionCount ?? '-'} questions · same questions for everyone</p>
               </div>
             ) : (
               <>
-                <input value={assessSearch} onChange={e => setAssessSearch(e.target.value)} placeholder="Search assessments by title"
-                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
-                <div className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-700/50">
+                <input value={assessSearch} aria-label="Search assessments" onChange={e => setAssessSearch(e.target.value)} placeholder="Search assessments by title"
+                  className="w-full px-3 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                <div className="mt-2 max-h-[46vh] overflow-y-auto rounded-xl border border-slate-700/50">
                   {recommended.length + others.length === 0 ? (
-                    <p className="text-sm text-slate-500 py-6 text-center">No existing assessments found.</p>
+                    <p className="text-sm text-slate-300 py-6 text-center">No existing assessments found.</p>
                   ) : (
                     <>
                       {recommended.length > 0 && (
                         <div>
-                          <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/5 border-b border-slate-700/40 truncate" title={selectedRoles.join(', ')}>Recommended for this job role ({selectedRoles.join(', ')})</p>
+                          <p className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/5 border-b border-slate-700/40 truncate" title={selectedRoles.join(', ')}>Recommended for this job role ({selectedRoles.join(', ')})</p>
                           <div className="divide-y divide-slate-700/30">{recommended.map(a => assessRow(a, true))}</div>
                         </div>
                       )}
                       {others.length > 0 && (
                         <div>
-                          {recommended.length > 0 && <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-800/40 border-y border-slate-700/40">All assessments</p>}
+                          {recommended.length > 0 && <p className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-300 bg-slate-800/40 border-y border-slate-700/40">All assessments</p>}
                           <div className="divide-y divide-slate-700/30">{others.map(a => assessRow(a, false))}</div>
                         </div>
                       )}
                     </>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 mt-1.5">{pickedIds.size} selected{pickedIds.size > 1 ? ' · each one is assigned in turn and reported separately' : ''}</p>
+                <p className="text-sm text-slate-300 mt-1.5">{pickedIds.size} selected{pickedIds.size > 1 ? ' · each one is assigned in turn and reported separately' : ''}</p>
               </>
             )}
           </div>
         </div>
 
         <div>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">3. Start and end</p>
+          <p className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-2">3. Start and end</p>
           <DateFields start={start} end={end} onStart={setStart} onEnd={setEnd} />
         </div>
 
         <div className="space-y-2">
-          <label className="flex items-center gap-2 text-xs text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-slate-200">
             <input type="checkbox" checked={retake} onChange={e => { setRetake(e.target.checked); if (!e.target.checked && pickedIds.size === 1) setSelected(prev => new Set([...prev].filter(id => statusFor(id)?.status !== 'submitted'))); }} className="accent-indigo-500" />
             Let employees who already completed it take it again (their earlier result stays on record)
           </label>
-          <label className="flex items-center gap-2 text-xs text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-slate-200">
             <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} className="accent-indigo-500" />
             Email the employees about this assignment
           </label>
-          <p className="text-[11px] text-slate-500">Everyone gets the same questions as the rest of that assessment. Each attempt is timed at 60 minutes. An employee who was deleted from an assessment is added back only by assigning here.</p>
+          <p className="text-sm text-slate-400">Everyone gets the same questions as the rest of that assessment. Each attempt is timed at 60 minutes. An employee who was deleted from an assessment is added back only by assigning here.</p>
         </div>
 
-        {error ? <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
+        {error ? <p role="alert" className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
 
-        <div className="flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-semibold text-slate-300">Cancel</button>
-          <button onClick={submit} disabled={submitting || selected.size === 0 || pickedIds.size === 0}
-            className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold text-white">
+        <div className="flex flex-wrap justify-end gap-3">
+          <Button onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button variant="primary" onClick={submit} loading={submitting} disabled={selected.size === 0 || pickedIds.size === 0}>
             {submitting ? 'Assigning...' : `Assign ${selected.size} employee${selected.size === 1 ? '' : 's'} to ${pickedIds.size} assessment${pickedIds.size === 1 ? '' : 's'}`}
-          </button>
+          </Button>
         </div>
       </div>
     </Shell>
@@ -371,6 +372,7 @@ export function ReassignModal({ assessment, ea, employeeName, onClose, onDone, s
   const [error, setError] = useState('');
 
   const submit = async () => {
+    if (submitting) return;
     setError('');
     const win = validateWindow(start, end);
     if (win.error) { setError(win.error); return; }
@@ -392,7 +394,7 @@ export function ReassignModal({ assessment, ea, employeeName, onClose, onDone, s
 
   return (
     <Shell title="Reassign assessment" subtitle={`${employeeName} · ${assessment.title}`} onClose={onClose}>
-      <div className="p-6 space-y-5">
+      <div className="p-5 sm:p-6 space-y-5">
         <p className="text-sm text-slate-300">
           {employeeName} {completed ? 'has completed' : 'has not completed'} this assessment
           {ea?.dueAt || assessment.deadline ? <> (due {fmt(ea?.dueAt || assessment.deadline)})</> : null}.
@@ -401,23 +403,22 @@ export function ReassignModal({ assessment, ea, employeeName, onClose, onDone, s
         <DateFields start={start} end={end} onStart={setStart} onEnd={setEnd} />
         <div className="space-y-2">
           {completed && (
-            <label className="flex items-center gap-2 text-xs text-slate-300">
+            <label className="flex items-center gap-2 text-sm text-slate-200">
               <input type="checkbox" checked={retake} onChange={e => setRetake(e.target.checked)} className="accent-indigo-500" />
               Start a new attempt (the earlier result stays on record)
             </label>
           )}
-          <label className="flex items-center gap-2 text-xs text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-slate-200">
             <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} className="accent-indigo-500" />
             Email {employeeName} about the new dates
           </label>
         </div>
-        {error ? <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
-        <div className="flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-semibold text-slate-300">Cancel</button>
-          <button onClick={submit} disabled={submitting || (completed && !retake)}
-            className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold text-white">
+        {error ? <p role="alert" className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p> : null}
+        <div className="flex flex-wrap justify-end gap-3">
+          <Button onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button variant="primary" onClick={submit} loading={submitting} disabled={completed && !retake}>
             {submitting ? 'Reassigning…' : 'Reassign'}
-          </button>
+          </Button>
         </div>
       </div>
     </Shell>

@@ -26,8 +26,8 @@ function fuzzyMatch(typed, roles) {
   return best;
 }
 
-const inputCls = 'w-full px-4 py-2.5 rounded-xl border border-slate-700/60 bg-slate-800/60 text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none transition-all duration-200 text-sm';
-const labelCls = 'block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1';
+const inputCls = 'w-full px-4 py-2.5 rounded-xl border border-slate-700/60 bg-slate-800/60 text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none transition-all duration-200 text-base';
+const labelCls = 'block text-sm font-semibold text-slate-400 uppercase tracking-wider mb-1';
 
 const AuthModal = ({ isOpen, onClose }) => {
   const [mode, setMode] = useState('login'); // 'login' | 'signup'
@@ -194,7 +194,7 @@ const AuthModal = ({ isOpen, onClose }) => {
 
         {/* Modal */}
         <motion.div
-          className="relative w-full max-w-md max-h-[90vh] overflow-y-auto"
+          className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto"
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: -20 }}
@@ -210,7 +210,7 @@ const AuthModal = ({ isOpen, onClose }) => {
               </h3>
               <button
                 onClick={onClose}
-                className="w-8 h-8 rounded-lg bg-slate-800/60 hover:bg-slate-700/60 text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center"
+                aria-label="Close" title="Close" className="w-10 h-10 rounded-lg bg-slate-800/60 hover:bg-slate-700/60 text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center"
               >✕</button>
             </div>
 
@@ -244,11 +244,11 @@ const AuthModal = ({ isOpen, onClose }) => {
                       className={inputCls} placeholder="Re-enter new password" disabled={loading} />
                   </div>
                   <button type="submit" disabled={loading}
-                    className="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
+                    className="w-full py-3 rounded-xl font-bold text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
                     {loading ? '⏳ Updating…' : 'Set New Password & Continue'}
                   </button>
                   <button type="button" onClick={() => { setForcedChange(null); setNewPassword(''); setConfirmNewPassword(''); setError(''); }}
-                    className="w-full text-center text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                    className="w-full text-center text-sm text-slate-400 hover:text-slate-300 transition-colors">
                     ← Back to Sign In
                   </button>
                 </form>
@@ -269,7 +269,7 @@ const AuthModal = ({ isOpen, onClose }) => {
                     className={inputCls} placeholder="••••••••" disabled={loading} />
                 </div>
                 <button type="submit" disabled={loading}
-                  className="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
+                  className="w-full py-3 rounded-xl font-bold text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
                   {loading ? '⏳ Signing in...' : '🔐 Sign In'}
                 </button>
               </form>
@@ -295,12 +295,12 @@ const AuthModal = ({ isOpen, onClose }) => {
                     autoComplete="off"
                   />
                   {codeStatus === 'checking' && (
-                    <p className="mt-1 text-xs text-slate-400">Verifying...</p>
+                    <p className="mt-1 text-sm text-slate-400">Verifying...</p>
                   )}
                   {codeStatus?.ok && (
                     <div className="mt-1 flex items-center gap-2">
-                      <span className="text-xs text-emerald-400">✓ {codeStatus.companyName}</span>
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      <span className="text-sm text-emerald-400">✓ {codeStatus.companyName}</span>
+                      <span className={`text-sm font-bold px-2 py-0.5 rounded-full ${
                         codeStatus.detectedRole === 'manager'
                           ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                           : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
@@ -310,7 +310,7 @@ const AuthModal = ({ isOpen, onClose }) => {
                     </div>
                   )}
                   {codeStatus?.ok === false && (
-                    <p className="mt-1 text-xs text-red-400">✗ {codeStatus.error}</p>
+                    <p className="mt-1 text-sm text-red-400">✗ {codeStatus.error}</p>
                   )}
                 </div>
 
@@ -345,7 +345,7 @@ const AuthModal = ({ isOpen, onClose }) => {
                     </div>
                   )}
                   {matchedRole && formData.jobRole && (
-                    <p className="mt-1 text-xs text-emerald-400">
+                    <p className="mt-1 text-sm text-emerald-400">
                       ✓ Matched "{matchedRole.roleName}" — JD & assessment will be auto-assigned
                     </p>
                   )}
@@ -377,23 +377,23 @@ const AuthModal = ({ isOpen, onClose }) => {
                   <input type="checkbox" checked={formData.acceptedTerms}
                     onChange={e => set('acceptedTerms', e.target.checked)}
                     className="mt-0.5 w-4 h-4 rounded border-slate-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500" />
-                  <span className="text-xs text-slate-400">
+                  <span className="text-sm text-slate-400">
                     I agree to the{' '}
-                    <a href="#" className="text-indigo-400 hover:text-indigo-300">Terms of Service</a>{' '}
+                    <a href="#" onClick={e => e.preventDefault()} className="text-indigo-400 hover:text-indigo-300">Terms of Service</a>{' '}
                     and{' '}
-                    <a href="#" className="text-indigo-400 hover:text-indigo-300">Privacy Policy</a>
+                    <a href="#" onClick={e => e.preventDefault()} className="text-indigo-400 hover:text-indigo-300">Privacy Policy</a>
                   </span>
                 </label>
 
                 <button type="submit" disabled={loading}
-                  className="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
+                  className="w-full py-3 rounded-xl font-bold text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20">
                   {loading ? '⏳ Creating account...' : '✨ Create Account'}
                 </button>
               </form>
             )}
 
             {/* Toggle */}
-            <p className="mt-4 text-center text-sm text-slate-500">
+            <p className="mt-4 text-center text-sm text-slate-400">
               {isSignup ? 'Already have an account? ' : "Don't have an account? "}
               <button
                 onClick={() => { setMode(isSignup ? 'login' : 'signup'); setError(''); }}
@@ -408,14 +408,14 @@ const AuthModal = ({ isOpen, onClose }) => {
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-slate-700/60" />
               </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="px-3 bg-slate-900/95 text-slate-600">or continue with</span>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-3 bg-slate-900/95 text-slate-400">or continue with</span>
               </div>
             </div>
 
             {/* Google OAuth */}
             <button type="button" onClick={handleGoogleLogin} disabled={loading}
-              className="w-full py-2.5 rounded-xl border border-slate-700/60 bg-slate-800/60 hover:bg-slate-800/80 text-slate-300 font-semibold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-40">
+              className="w-full py-3 rounded-xl border border-slate-700/60 bg-slate-800/60 hover:bg-slate-800/80 text-slate-300 font-semibold text-base transition-all flex items-center justify-center gap-2 disabled:opacity-40">
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />

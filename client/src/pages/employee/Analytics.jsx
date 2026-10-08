@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useState, useMemo } from 'react';
+import PageContainer from '../../components/PageContainer.jsx';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -43,7 +44,7 @@ const KpiCard = ({ label, value, sub, color, icon, description, tooltip }) => (
     tooltip={tooltip}
     borderClass="border-slate-700/40"
     bgClass="bg-slate-800/30"
-    textClass="text-slate-500"
+    textClass="text-slate-400"
     className="rounded-2xl"
   />
 );
@@ -52,7 +53,7 @@ const ChartCard = ({ title, subtitle, children, loading, className = '' }) => (
   <div className={`rounded-2xl border border-slate-700/40 bg-slate-900/60 backdrop-blur-sm p-5 ${className}`}>
     <div className="mb-4">
       <h3 className="text-sm font-black text-white">{title}</h3>
-      {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
     </div>
     {loading ? (
       <div className="h-44 rounded-xl bg-slate-800/40 animate-pulse" />
@@ -67,6 +68,7 @@ export default function Analytics() {
   const [loading, setLoading]           = useState(true);
   const [assignments, setAssignments]   = useState([]);
   const [assessments, setAssessments]   = useState([]);
+  const [loadError, setLoadError]       = useState('');
 
   const userId = user?.userId || user?.id;
 
@@ -78,6 +80,7 @@ export default function Analytics() {
 
   const loadAll = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const [asgn, asmt] = await Promise.allSettled([
         authFetch(`/api/assignments?userId=${userId}`),
@@ -85,7 +88,8 @@ export default function Analytics() {
       ]);
       if (asgn.status  === 'fulfilled') setAssignments(Array.isArray(asgn.value)  ? asgn.value  : (asgn.value?.assignments || []));
       if (asmt.status  === 'fulfilled') setAssessments(Array.isArray(asmt.value)  ? asmt.value  : (asmt.value?.assessments || []));
-    } catch { /* fail silently */ }
+      if (asgn.status === 'rejected' && asmt.status === 'rejected') setLoadError(asgn.reason?.message || 'Could not load your analytics.');
+    } catch (e) { setLoadError(e?.message || 'Could not load your analytics.'); }
     finally { setLoading(false); }
   };
 
@@ -206,16 +210,16 @@ export default function Analytics() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <PageContainer>
 
         {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
+        <div className="flex flex-wrap items-center gap-4 mb-6">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500/30 to-cyan-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl">
             📊
           </div>
           <div>
             <h1 className="text-3xl font-black text-white tracking-tight">My Learning Analytics</h1>
-            <p className="text-slate-400 text-sm mt-0.5">
+            <p className="text-slate-400 text-sm sm:text-base mt-0.5">
               {user?.name || 'You'} · {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </p>
           </div>
@@ -234,6 +238,13 @@ export default function Analytics() {
             </button>
           </div>
         </div>
+
+        {loadError && !loading && (
+          <div role="alert" className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 px-5 py-4">
+            <p className="text-sm text-red-200">{loadError}</p>
+            <button type="button" onClick={loadAll} className="px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/40 text-red-100 hover:bg-red-500/30 text-sm font-bold">Retry</button>
+          </div>
+        )}
 
         {/* KPI Row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -276,12 +287,12 @@ export default function Analytics() {
         </div>
 
         {/* Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-4 gap-4 sm:gap-6">
 
           {/* Chart 1: Assignment Status Breakdown */}
           <ChartCard title="Assignment Status" subtitle="Your current module completion breakdown" loading={loading}>
             {statusBreakdown.length > 0 ? (
-              <ResponsiveContainer width="100%" height={200}>
+              <ResponsiveContainer width="100%" height={260}>
                 <PieChart>
                   <Pie data={statusBreakdown} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
                     {statusBreakdown.map((entry, i) => <Cell key={entry.name} fill={entry.color} opacity={0.85} />)}
@@ -291,18 +302,18 @@ export default function Analytics() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-44 flex items-center justify-center text-slate-600 text-sm">No assignments yet</div>
+              <div className="h-44 flex items-center justify-center text-slate-400 text-sm">No assignments yet</div>
             )}
           </ChartCard>
 
           {/* Chart 2: Module Progress Bar */}
           <ChartCard title="Module Progress" subtitle="Top modules by completion %" loading={loading}>
             {progressData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={200}>
+              <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={progressData} layout="vertical" margin={{ top: 0, right: 30, bottom: 0, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
-                  <XAxis type="number" domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} unit="%" />
-                  <YAxis type="category" dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} width={90} />
+                  <XAxis type="number" domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} unit="%" />
+                  <YAxis type="category" dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} width={90} />
                   <Tooltip contentStyle={customTooltipStyle} formatter={(v) => [`${v}%`, 'Progress']} />
                   <Bar dataKey="progress" radius={[0, 4, 4, 0]}>
                     {progressData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
@@ -310,26 +321,26 @@ export default function Analytics() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-44 flex items-center justify-center text-slate-600 text-sm">No modules assigned yet</div>
+              <div className="h-44 flex items-center justify-center text-slate-400 text-sm">No modules assigned yet</div>
             )}
           </ChartCard>
 
           {/* Chart 3: Assessment Score Trend */}
           <ChartCard title="Assessment Scores" subtitle="Your most recent test results" loading={loading}>
             {assessmentScores.length > 0 ? (
-              <ResponsiveContainer width="100%" height={200}>
+              <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={assessmentScores} margin={{ top: 5, right: 10, bottom: 30, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                   <XAxis
                     dataKey="name"
-                    tick={{ fill: '#94a3b8', fontSize: 9 }}
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
                     axisLine={false}
                     tickLine={false}
                     angle={-35}
                     textAnchor="end"
                     interval={0}
                   />
-                  <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} unit="%" />
+                  <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} unit="%" />
                   <Tooltip contentStyle={customTooltipStyle} formatter={(v, _n, item) => [`${v}%  (${item?.payload?.rating || ''})`, 'Score']} />
                   <Bar dataKey="score" name="Score" radius={[6, 6, 0, 0]}>
                     {assessmentScores.map((entry, i) => (
@@ -340,8 +351,8 @@ export default function Analytics() {
               </ResponsiveContainer>
             ) : (
               <div className="h-44 flex flex-col items-center justify-center gap-2">
-                <span className="text-slate-600 text-sm">No submitted assessments yet</span>
-                <span className="text-xs text-slate-700">Complete assessments to track your scores</span>
+                <span className="text-slate-400 text-sm">No submitted assessments yet</span>
+                <span className="text-xs text-slate-400">Complete assessments to track your scores</span>
               </div>
             )}
           </ChartCard>
@@ -349,11 +360,11 @@ export default function Analytics() {
           {/* Chart 4: Content Type Distribution */}
           <ChartCard title="Learning Mix" subtitle="Types of content assigned to you" loading={loading}>
             {typeBreakdown.length > 0 ? (
-              <ResponsiveContainer width="100%" height={200}>
+              <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={typeBreakdown} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={customTooltipStyle} cursor={{ fill: 'rgba(99,102,241,0.1)' }} />
                   <Bar dataKey="value" name="Count" radius={[6, 6, 0, 0]}>
                     {typeBreakdown.map((_, i) => (
@@ -363,7 +374,7 @@ export default function Analytics() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-44 flex items-center justify-center text-slate-600 text-sm">No data yet</div>
+              <div className="h-44 flex items-center justify-center text-slate-400 text-sm">No data yet</div>
             )}
           </ChartCard>
 
@@ -380,7 +391,7 @@ export default function Analytics() {
             ].map(item => (
               <StatCard key={item.label} label={item.label} value={<span style={{ color: item.color }}>{item.value}</span>}
                 description={item.description} tooltip={item.tooltip}
-                borderClass="border-slate-700/30" bgClass="bg-slate-800/40" textClass="text-slate-500" />
+                borderClass="border-slate-700/30" bgClass="bg-slate-800/40" textClass="text-slate-400" />
             ))}
           </div>
         )}
@@ -389,7 +400,7 @@ export default function Analytics() {
         <div className="mt-6 rounded-2xl border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-violet-500/5 p-5 flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-bold text-white">Ready to boost your score?</p>
-            <p className="text-xs text-slate-500 mt-0.5">Start a learning session or take a challenge to track your progress here.</p>
+            <p className="text-sm text-slate-400 mt-0.5">Start a learning session or take a challenge to track your progress here.</p>
           </div>
           <button
             onClick={() => navigate('/dashboard')}
@@ -399,7 +410,7 @@ export default function Analytics() {
           </button>
         </div>
 
-      </div>
+      </PageContainer>
     </div>
   );
 }

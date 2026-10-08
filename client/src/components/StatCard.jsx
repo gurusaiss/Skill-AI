@@ -37,9 +37,9 @@ export default function StatCard({
         <div className="min-w-0">
           <p className={`text-xs font-bold ${textClass} uppercase tracking-widest mb-1`}>{label}</p>
           <p className="text-2xl font-black text-white">{value}</p>
-          {sub ? <p className="text-[11px] text-slate-400 mt-0.5">{sub}</p> : null}
+          {sub ? <p className="text-xs text-slate-400 mt-0.5">{sub}</p> : null}
           {description ? (
-            <p className="text-[11px] leading-snug text-slate-500 mt-1.5">{description}</p>
+            <p className="text-xs leading-snug text-slate-500 mt-1.5">{description}</p>
           ) : null}
         </div>
         {icon ? <div className="text-3xl opacity-50 flex-shrink-0">{icon}</div> : null}

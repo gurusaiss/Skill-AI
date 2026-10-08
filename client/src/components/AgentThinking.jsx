@@ -20,7 +20,7 @@ function AgentThinking({ isVisible, messages = ['Analyzing...', 'Processing...',
           🧠
         </div>
         <div>
-          <p className="text-sm uppercase tracking-[0.25em] text-indigo-300">Agent Thinking</p>
+          <p className="text-sm uppercase tracking-widest text-indigo-300">Agent Thinking</p>
           <p className="text-xl font-semibold text-white">{messages[index]}</p>
         </div>
       </div>

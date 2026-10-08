@@ -85,14 +85,14 @@ function AgentBubble({ decision, index, isLatest }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2 mb-1">
               <span className="text-sm font-black" style={{ color: meta.color }}>{meta.name}</span>
-              <span className="text-xs text-slate-600 font-mono flex-shrink-0">{ts}</span>
+              <span className="text-sm text-slate-400 font-mono flex-shrink-0">{ts}</span>
             </div>
 
             <p className="text-sm text-slate-200 leading-relaxed font-semibold mb-1">
               {safe(decision.title)}
             </p>
 
-            <p className="text-xs text-slate-400 leading-relaxed">
+            <p className="text-sm text-slate-400 leading-relaxed">
               {isLatest
                 ? <TypewriterText text={safe(decision.detail)} />
                 : safe(decision.detail)
@@ -101,8 +101,8 @@ function AgentBubble({ decision, index, isLatest }) {
 
             {expanded && decision.reasoning && (
               <div className="mt-3 pt-3 border-t border-slate-700/40">
-                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1.5">Internal Reasoning</p>
-                <p className="text-xs text-slate-400 italic leading-relaxed">
+                <p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-1.5">Internal Reasoning</p>
+                <p className="text-sm text-slate-400 italic leading-relaxed">
                   {isLatest
                     ? <TypewriterText text={safe(decision.reasoning)} speed={8} />
                     : safe(decision.reasoning)
@@ -113,13 +113,13 @@ function AgentBubble({ decision, index, isLatest }) {
 
             <div className="mt-2 flex items-center justify-between">
               <span
-                className="text-xs px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider"
+                className="text-sm px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider"
                 style={{ backgroundColor: `${meta.color}15`, color: meta.color }}
               >
                 {decision.type.replace(/_/g, ' ')}
               </span>
               {decision.reasoning && (
-                <button className="text-xs text-slate-600 hover:text-slate-400 transition-colors">
+                <button className="text-sm text-slate-400 hover:text-slate-200 transition-colors">
                   {expanded ? '▲ hide' : '▼ reasoning'}
                 </button>
               )}
@@ -138,7 +138,7 @@ function LivePulse() {
         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
         <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
       </span>
-      <span className="text-xs text-emerald-400 font-semibold uppercase tracking-widest">Live</span>
+      <span className="text-sm text-emerald-400 font-semibold uppercase tracking-widest">Live</span>
     </div>
   );
 }
@@ -162,8 +162,8 @@ export default function AgentBrain({ decisions = [], isThinking = false, thinkin
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-lg bg-indigo-500/20 flex items-center justify-center text-sm">🧠</div>
           <div>
-            <p className="text-xs font-black text-slate-200 uppercase tracking-wider">Agent Brain</p>
-            <p className="text-xs text-slate-500">Multi-Agent Reasoning System</p>
+            <p className="text-sm font-black text-slate-200 uppercase tracking-wider">Agent Brain</p>
+            <p className="text-sm text-slate-400">Multi-Agent Reasoning System</p>
           </div>
         </div>
         <LivePulse />
@@ -178,8 +178,8 @@ export default function AgentBrain({ decisions = [], isThinking = false, thinkin
         {decisions.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-10">
             <div className="text-4xl mb-3 opacity-20">🧠</div>
-            <p className="text-sm text-slate-600 font-medium">No agent decisions yet.</p>
-            <p className="text-xs text-slate-700 mt-1">Decisions appear here as agents process your goal and sessions.</p>
+            <p className="text-sm text-slate-400 font-medium">No agent decisions yet.</p>
+            <p className="text-sm text-slate-400 mt-1">Decisions appear here as agents process your goal and sessions.</p>
           </div>
         ) : (
           decisions.map((d, i) => (
@@ -204,7 +204,7 @@ export default function AgentBrain({ decisions = [], isThinking = false, thinkin
                 />
               ))}
             </div>
-            <span className="text-xs text-slate-500 italic">
+            <span className="text-sm text-slate-400 italic">
               {thinkingMessage || 'Agent is reasoning...'}
             </span>
           </div>
@@ -214,8 +214,8 @@ export default function AgentBrain({ decisions = [], isThinking = false, thinkin
       {/* Stats footer */}
       <div className="px-4 py-2.5 border-t border-slate-800 bg-slate-900/40">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-600 font-semibold">{decisions.length} decisions logged</span>
-          <span className="text-xs text-slate-600">{Object.values(AGENT_NAMES).length} agents · Click bubble for reasoning</span>
+          <span className="text-sm text-slate-400 font-semibold">{decisions.length} decisions logged</span>
+          <span className="text-sm text-slate-400">{Object.values(AGENT_NAMES).length} agents · Click bubble for reasoning</span>
         </div>
       </div>
 

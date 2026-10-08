@@ -5,6 +5,9 @@ import { useNotification } from '../../contexts/NotificationContext.jsx';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import StatCard from '../../components/StatCard.jsx';
 import TabBar from '../../components/TabBar.jsx';
+import ActionMenu from '../../components/ActionMenu.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
 
 const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
 const DASH = '—';
@@ -67,19 +70,15 @@ async function downloadFile(path, fallbackName) {
   URL.revokeObjectURL(url);
 }
 
-function FormatButtons({ onPick, busy, formats = ['xlsx', 'pdf', 'docx'], disabled, size = 'md' }) {
-  const label = { xlsx: 'Excel', pdf: 'PDF', docx: 'Word', zip: 'ZIP' };
-  const pad = size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-2 text-sm';
+function FormatButtons({ onPick, busy, formats = ['xlsx', 'pdf', 'docx'], disabled, size = 'md', label: menuLabel = 'Download' }) {
+  const label = { xlsx: 'Excel (.xlsx)', pdf: 'PDF (.pdf)', docx: 'Word (.docx)', zip: 'ZIP of all files (.zip)' };
   return (
-    <div className="flex flex-wrap gap-2">
-      {formats.map(f => (
-        <button key={f} type="button" disabled={disabled || !!busy}
-          onClick={(e) => { e.stopPropagation(); onPick(f); }}
-          className={`${pad} rounded-lg bg-teal-600/20 border border-teal-500/30 text-teal-300 hover:bg-teal-600/40 font-semibold transition-all disabled:opacity-40`}>
-          {busy === f ? 'Preparing…' : `⬇ ${label[f]}`}
-        </button>
-      ))}
-    </div>
+    <ActionMenu
+      label={busy ? 'Preparing…' : menuLabel}
+      size={size}
+      variant="secondary"
+      items={formats.map(f => ({ label: label[f] || f, disabled: disabled || !!busy, onClick: () => onPick(f) }))}
+    />
   );
 }
 
@@ -135,7 +134,7 @@ function DetailDrawer({ row, onClose, canDownload }) {
           <div className="min-w-0 flex-1">
             <p className="text-lg font-black text-white truncate" title={r.name}>{show(r.name)} <span className="text-slate-400 font-semibold text-sm">{r.employeeId ? `(${r.employeeId})` : ''}</span></p>
             <p className="text-sm text-slate-300 truncate" title={r.moduleTitle}>{show(r.moduleTitle)}</p>
-            <p className="text-xs text-slate-500 truncate">{[r.jobRole, r.department, r.managerName ? `Manager: ${r.managerName}` : ''].filter(Boolean).join('  |  ') || DASH}</p>
+            <p className="text-sm text-slate-400 truncate">{[r.jobRole, r.department, r.managerName ? `Manager: ${r.managerName}` : ''].filter(Boolean).join('  |  ') || DASH}</p>
           </div>
           <RatingChip rating={r.rating} />
           <button onClick={onClose} className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold">Close</button>
@@ -152,13 +151,13 @@ function DetailDrawer({ row, onClose, canDownload }) {
             <StatCard label="Questions" value={show(r.questionsTotal)} description={r.questionsTotal ? `${r.wrong} wrong, ${r.skipped} not answered` : 'None recorded'} tooltip="Questions in each day's latest attempt. Earlier attempts are listed in the review but not counted in the score." />
           </div>
 
-          <div className="text-xs text-slate-400 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="text-sm text-slate-400 grid grid-cols-1 sm:grid-cols-3 gap-2">
             <span>Assigned: <b className="text-slate-200">{fmtDate(r.assignedAt, true)}</b></span>
             <span>Started: <b className="text-slate-200">{fmtDate(r.startedAt, true)}</b></span>
             <span>Completed: <b className="text-slate-200">{fmtDate(r.completedAt, true)}</b></span>
           </div>
 
-          {canDownload ? <div><p className="text-xs uppercase tracking-widest text-slate-500 font-bold mb-2">Download this report</p><FormatButtons onPick={download} busy={busy} /></div> : null}
+          {canDownload ? <div><p className="text-sm uppercase tracking-wider text-slate-400 font-bold mb-2">Download this report</p><FormatButtons onPick={download} busy={busy} /></div> : null}
 
           {record && !record.hasDetail ? (
             <p className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">Answers for this module were not saved (it was completed before answer capture was added), so only progress and dates are available.</p>
@@ -189,7 +188,7 @@ function DetailDrawer({ row, onClose, canDownload }) {
                         <span className="text-slate-500">{d.sectionsTracked ? 'Sections opened: ' : 'Sections in this day: '}</span>
                         {d.sections.length ? d.sections.map(s => s.title).join('; ') : 'not recorded'}
                       </p>
-                      <p className="mt-1 text-xs text-slate-500">Quiz attempts: {show(d.attempts || null)}</p>
+                      <p className="mt-1 text-sm text-slate-400">Quiz attempts: {show(d.attempts || null)}</p>
                     </div>
                   ))}
                 </div>
@@ -200,11 +199,11 @@ function DetailDrawer({ row, onClose, canDownload }) {
                   <div className="flex flex-wrap items-center gap-2">
                     {['all', 'Correct', 'Wrong', 'Not answered'].map(f => (
                       <button key={f} onClick={() => setQFilter(f)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${qFilter === f ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'}`}>
+                        className={`px-4 py-2 rounded-full text-sm font-semibold border ${qFilter === f ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'}`}>
                         {f === 'all' ? 'All' : f}
                       </button>
                     ))}
-                    <label className="ml-auto flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                    <label className="ml-auto flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
                       <input type="checkbox" checked={latestOnly} onChange={e => setLatestOnly(e.target.checked)} /> Latest attempt only
                     </label>
                   </div>
@@ -241,7 +240,7 @@ function DetailDrawer({ row, onClose, canDownload }) {
                             <p className="text-sm text-white truncate" title={s.skill}>{s.skill}</p>
                             <div className="h-1.5 rounded bg-slate-700 mt-1.5"><div className={`h-1.5 rounded ${s.pct >= 70 ? 'bg-emerald-500' : 'bg-rose-500'}`} style={{ width: `${Math.min(100, s.pct)}%` }} /></div>
                           </div>
-                          <p className="text-sm font-bold text-slate-200">{fmtPct(s.pct)} <span className="text-xs text-slate-500 font-normal">({s.correct}/{s.total})</span></p>
+                          <p className="text-sm font-bold text-slate-200">{fmtPct(s.pct)} <span className="text-sm text-slate-400 font-normal">({s.correct}/{s.total})</span></p>
                         </div>
                       ))}
                     </div>
@@ -255,7 +254,7 @@ function DetailDrawer({ row, onClose, canDownload }) {
               {tab === 'timeline' ? (
                 <ol className="space-y-2">
                   {record.timeline.length === 0 ? <li className="text-slate-400 text-sm">No dated events recorded.</li> : record.timeline.map((t, i) => (
-                    <li key={i} className="flex gap-3 text-sm"><span className="text-slate-500 w-44 flex-shrink-0">{fmtDate(t.at, true)}</span><span className="text-slate-200 min-w-0 break-words">{t.event}</span></li>
+                    <li key={i} className="flex gap-3 text-sm"><span className="text-slate-400 w-44 flex-shrink-0">{fmtDate(t.at, true)}</span><span className="text-slate-200 min-w-0 break-words">{t.event}</span></li>
                   ))}
                 </ol>
               ) : null}
@@ -289,6 +288,7 @@ export default function ModuleReports() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [busy, setBusy] = useState(null);
   const optionsRef = useRef(data.options);
 
@@ -315,7 +315,7 @@ export default function ModuleReports() {
       .catch(e => { if (live) setError(e.message || 'Could not load module reports'); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [query, limit, offset]);
+  }, [query, limit, offset, reloadKey]);
 
   const exportAll = async (format) => {
     setBusy(format);
@@ -334,52 +334,49 @@ export default function ModuleReports() {
   const page = Math.floor(offset / limit) + 1;
   const pages = Math.max(1, Math.ceil(total / limit));
   const COLS = 'minmax(0,1.6fr) minmax(0,1.7fr) minmax(0,1fr) minmax(0,.6fr) minmax(0,.9fr) minmax(0,.7fr) minmax(0,1fr)';
-  const inputCls = 'w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500';
+  const inputCls = 'w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-base text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500';
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-white px-4 sm:px-6 py-6 max-w-7xl mx-auto">
-      <div className="mb-5">
-        <h1 className="text-2xl sm:text-3xl font-black text-white">Module Reports</h1>
-        <p className="text-slate-400 text-sm mt-0.5">Every module an employee has worked on: day-wise, section-wise, with each question answered, right or wrong. Review it here or download it.</p>
-      </div>
+    <PageContainer className="min-h-screen bg-[#0F172A] text-white">
+      <PageHeader title="Module Reports" subtitle="Every module an employee has worked on: day-wise, section-wise, with each question answered, right or wrong. Review it here or download it." />
 
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 mb-5">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-5">
         <StatCard label="Completed modules" value={show(summary?.completed)} description="Modules finished by the people listed" tooltip="Employee and module pairs where every day was completed, among the rows matching your filters." />
         <StatCard label="Employees" value={show(summary?.employees)} description="Distinct people in these results" tooltip="Number of different employees among the rows matching your filters." />
         <StatCard label="Average score" value={fmtPct(summary?.avgScore)} description="Across rows that have answers" tooltip="Mean of each row's score, where the score is correct answers divided by questions (latest attempt of each day)." />
         <StatCard label="Ratings" value={`${(ratings.Expert || 0) + (ratings.Intermediate || 0) + (ratings.Basic || 0) + (ratings['No Rating'] || 0)}`}
-          sub={`Expert ${ratings.Expert || 0} | Inter. ${ratings.Intermediate || 0} | Basic ${ratings.Basic || 0} | None ${ratings['No Rating'] || 0}`}
+          sub={`Expert ${ratings.Expert || 0} | Intermediate ${ratings.Intermediate || 0} | Basic ${ratings.Basic || 0} | No Rating ${ratings['No Rating'] || 0}`}
           description="Rated rows by level" tooltip="Expert 90 and above, Intermediate 80 to 89.99, Basic 70 to 79.99, No Rating below 70. Based on the unrounded score." />
         <StatCard label="Total time" value={fmtSec(summary?.totalTimeSec)} description="Active learning time" tooltip="Sum of tracked time. Modules worked on before time tracking was added contribute nothing." />
       </div>
 
-      <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-4 mb-5 space-y-3">
+      <div className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-4 sm:p-5 mb-5 space-y-4">
         <div className="flex flex-wrap gap-2 items-center">
           {STATUS_CHIPS.map(c => (
             <button key={c.key} onClick={() => setStatus(c.key)}
               className={`px-4 py-2 rounded-full text-sm font-semibold border transition-all ${status === c.key ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'}`}>{c.label}</button>
           ))}
-          <button onClick={reset} className="ml-auto px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-white">Reset filters</button>
+          <button onClick={reset} className="ml-auto px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:text-white border border-slate-700">Reset filters</button>
         </div>
         <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by employee, ID, email or module" className={inputCls} />
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
           <SearchableSelect value={employee} onChange={setEmployee} allLabel="All employees" placeholder="Employee" options={(opts.employees || []).map(e => ({ value: e.userId, label: `${e.name}${e.employeeId ? ` (${e.employeeId})` : ''}` }))} />
           <SearchableSelect value={moduleId} onChange={setModuleId} allLabel="All modules" placeholder="Module" options={(opts.modules || []).map(m => ({ value: m.id, label: m.title }))} />
           <SearchableSelect value={jobRole} onChange={setJobRole} allLabel="All job roles" placeholder="Job role" options={opts.jobRoles || []} />
-          <label className="text-xs text-slate-400">Completed from<input type="date" value={from} onChange={e => setFrom(e.target.value)} className={`${inputCls} mt-1`} /></label>
-          <label className="text-xs text-slate-400">Completed to<input type="date" value={to} onChange={e => setTo(e.target.value)} className={`${inputCls} mt-1`} /></label>
+          <label className="text-sm text-slate-400">Completed from<input type="date" value={from} onChange={e => setFrom(e.target.value)} className={`${inputCls} mt-1`} /></label>
+          <label className="text-sm text-slate-400">Completed to<input type="date" value={to} onChange={e => setTo(e.target.value)} className={`${inputCls} mt-1`} /></label>
         </div>
         <div className="flex flex-wrap items-center gap-3 pt-1">
-          <p className="text-sm text-slate-300 font-semibold">Download all ({total} matching):</p>
-          <FormatButtons formats={['xlsx', 'pdf', 'docx', 'zip']} onPick={exportAll} busy={busy} disabled={!canExport || total === 0} />
-          {!canExport ? <span className="text-xs text-slate-500">You do not have permission to export reports.</span> : null}
+          <p className="text-sm text-slate-300 font-semibold">Export all {total} matching records:</p>
+          <FormatButtons label="Export all" formats={['xlsx', 'pdf', 'docx', 'zip']} onPick={exportAll} busy={busy} disabled={!canExport || total === 0} />
+          {!canExport ? <span className="text-sm text-slate-400">You do not have permission to export reports.</span> : null}
         </div>
       </div>
 
-      {error ? <p className="text-rose-300 text-sm mb-3">{error}</p> : null}
+      {error ? <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"><span className="min-w-0 flex-1">{error}</span><button onClick={() => setReloadKey(k => k + 1)} className="px-4 py-2 rounded-lg border border-rose-500/40 font-semibold hover:bg-rose-500/20">Retry</button></div> : null}
 
       <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60">
-        <div className="hidden lg:grid gap-3 px-4 py-3 border-b border-slate-700/40 text-xs font-bold uppercase tracking-wider text-slate-500 grid-stack-lg" style={{ gridTemplateColumns: COLS }}>
+        <div className="hidden lg:grid gap-3 px-4 py-3 border-b border-slate-700/40 text-sm font-bold uppercase tracking-wider text-slate-400 grid-stack-lg" style={{ gridTemplateColumns: COLS }}>
           <span>Employee</span><span>Module</span><span>Completed</span><span>Days</span><span>Time</span><span>Score</span><span>Rating</span>
         </div>
         {loading && rows.length === 0 ? <p className="p-6 text-slate-400 text-sm">Loading{DASH}</p> : null}
@@ -389,21 +386,21 @@ export default function ModuleReports() {
             className="grid gap-x-3 gap-y-2 px-4 py-3 border-b border-slate-800/70 last:border-0 hover:bg-slate-800/50 cursor-pointer grid-stack-lg items-center"
             style={{ gridTemplateColumns: COLS }}>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-white truncate" title={r.name}>{show(r.name)}</p>
-              <p className="text-xs text-slate-400 truncate" title={`${r.employeeId} ${r.jobRole}`}>{[r.employeeId, r.jobRole].filter(Boolean).join('  |  ') || DASH}</p>
+              <p className="text-base font-semibold text-white truncate" title={r.name}>{show(r.name)}</p>
+              <p className="text-sm text-slate-400 truncate" title={`${r.employeeId} ${r.jobRole}`}>{[r.employeeId, r.jobRole].filter(Boolean).join('  |  ') || DASH}</p>
             </div>
             <div className="min-w-0">
-              <p className="text-sm text-slate-200 truncate" title={r.moduleTitle}>{show(r.moduleTitle)}</p>
-              <p className="text-xs text-slate-500 truncate" title={r.managerName}>{[r.department, r.managerName ? `Mgr: ${r.managerName}` : ''].filter(Boolean).join('  |  ') || r.status}</p>
+              <p className="text-base text-slate-200 truncate" title={r.moduleTitle}>{show(r.moduleTitle)}</p>
+              <p className="text-sm text-slate-400 truncate" title={r.managerName}>{[r.department, r.managerName ? `Mgr: ${r.managerName}` : ''].filter(Boolean).join('  |  ') || r.status}</p>
             </div>
-            <div className="min-w-0 text-sm text-slate-300"><span className="lg:hidden text-xs text-slate-500">Completed: </span>{fmtDate(r.completedAt)}</div>
-            <div className="min-w-0 text-sm text-slate-300"><span className="lg:hidden text-xs text-slate-500">Days: </span>{show(r.daysCompleted)}/{show(r.daysTotal)}</div>
-            <div className="min-w-0 text-sm text-slate-300 truncate"><span className="lg:hidden text-xs text-slate-500">Time: </span>{fmtSec(r.timeSpentSec)}</div>
-            <div className="min-w-0 text-sm font-bold text-white"><span className="lg:hidden text-xs text-slate-500 font-normal">Score: </span>{fmtPct(r.scorePct)}</div>
+            <div className="min-w-0 text-sm text-slate-300"><span className="lg:hidden text-sm text-slate-400">Completed: </span>{fmtDate(r.completedAt)}</div>
+            <div className="min-w-0 text-sm text-slate-300"><span className="lg:hidden text-sm text-slate-400">Days: </span>{show(r.daysCompleted)}/{show(r.daysTotal)}</div>
+            <div className="min-w-0 text-sm text-slate-300 truncate"><span className="lg:hidden text-sm text-slate-400">Time: </span>{fmtSec(r.timeSpentSec)}</div>
+            <div className="min-w-0 text-sm font-bold text-white"><span className="lg:hidden text-sm text-slate-400 font-normal">Score: </span>{fmtPct(r.scorePct)}</div>
             <div className="min-w-0"><RatingChip rating={r.rating} /></div>
-            <div className="col-span-full flex flex-wrap items-center gap-2 pt-1">
-              <button onClick={(e) => { e.stopPropagation(); setSelected(r); }} className="px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/40 text-xs font-semibold">Review answers</button>
-              {canDownload ? <FormatButtons size="sm" onPick={(f) => downloadRow(r, f)} /> : null}
+            <div className="col-span-full flex flex-wrap items-center gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+              <button onClick={(e) => { e.stopPropagation(); setSelected(r); }} className="px-4 py-2 rounded-lg bg-indigo-600/20 border border-indigo-500/40 text-indigo-200 hover:bg-indigo-600/40 text-sm font-semibold">Review answers</button>
+              {canDownload ? <FormatButtons size="sm" label="Download report" onPick={(f) => downloadRow(r, f)} /> : null}
             </div>
           </div>
         ))}
@@ -416,14 +413,14 @@ export default function ModuleReports() {
             </select>
           </label>
           <div className="ml-auto flex items-center gap-2">
-            <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))} className="px-3.5 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white disabled:opacity-40">Previous</button>
+            <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))} className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white disabled:opacity-40">Previous</button>
             <span>Page {page} of {pages}</span>
-            <button disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)} className="px-3.5 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white disabled:opacity-40">Next</button>
+            <button disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)} className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white disabled:opacity-40">Next</button>
           </div>
         </div>
       </div>
 
       {selected ? <DetailDrawer row={selected} onClose={() => setSelected(null)} canDownload={canDownload} /> : null}
-    </div>
+    </PageContainer>
   );
 }

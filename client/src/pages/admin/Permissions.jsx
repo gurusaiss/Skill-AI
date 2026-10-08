@@ -3,6 +3,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -58,6 +61,7 @@ export default function Permissions() {
   const [users, setUsers] = useState([]);
   const [catalog, setCatalog] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
 
@@ -94,16 +98,19 @@ export default function Permissions() {
     if (!hasRole('admin')) navigate('/dashboard');
   }, [navigate]);
 
-  useEffect(() => {
+  const loadAll = useCallback(() => {
     (async () => {
       setLoadingUsers(true);
       setLoadingRoleDefaults(true);
+      setLoadError('');
       try {
         const [usersRes, catalogRes, roleDefaultsRes] = await Promise.allSettled([
           authFetch('/api/users?light=1'),
           authFetch('/api/permissions/catalog'),
           authFetch('/api/permissions/role-defaults'),
         ]);
+        const failed = [usersRes, catalogRes, roleDefaultsRes].filter(r => r.status === 'rejected');
+        if (failed.length) setLoadError(failed[0].reason?.message || 'Some permission data could not be loaded.');
         if (usersRes.status === 'fulfilled') {
           const u = usersRes.value;
           setUsers(Array.isArray(u) ? u : u?.users || u?.data || []);
@@ -123,7 +130,9 @@ export default function Permissions() {
         setLoadingRoleDefaults(false);
       }
     })();
-  }, []);
+  }, [setToast]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   const filteredUsers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -315,35 +324,40 @@ export default function Permissions() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-6 md:p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">🔐 Permissions</h1>
-          <p className="text-slate-400 text-sm mt-1">Grant or revoke specific platform capabilities per user, on top of their role's defaults.</p>
-        </div>
+    <PageContainer className="text-white">
+      <div>
+        <PageHeader
+          icon="🔐"
+          title="Permissions"
+          subtitle="Grant or revoke specific platform capabilities per user, on top of their role's defaults."
+        />
+
+        {loadError ? (
+          <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            <span>{loadError}</span>
+            <Button size="sm" variant="danger" onClick={loadAll}>Retry</Button>
+          </div>
+        ) : null}
 
         {/* Role-default presets: platform-wide baseline for Admin / Manager /
             Employee, editable here like Users or Modules manage their own
             records. Every user of that role inherits this set unless they
             have their own per-user grant/revoke override. */}
         <div className="mb-6">
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Role Default Permissions</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-2">Role Default Permissions</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {ROLE_PRESETS.map(({ key, label, icon, color }) => {
               const c = PRESET_COLOR_CLASSES[color];
               const count = roleDefaults[key]?.length || 0;
               return (
-                <div key={key} className={`rounded-2xl border ${c.border} ${c.bg} p-4 flex items-center justify-between`}>
-                  <div>
-                    <p className={`text-sm font-black ${c.text} flex items-center gap-1.5`}>{icon} {label}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{loadingRoleDefaults ? 'Loading…' : `${count} permission${count !== 1 ? 's' : ''} by default`}</p>
+                <div key={key} className={`rounded-2xl border ${c.border} ${c.bg} p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3`}>
+                  <div className="min-w-0">
+                    <p className={`text-base font-black ${c.text} flex items-center gap-1.5`}>{icon} {label}</p>
+                    <p className="text-sm text-slate-300 mt-0.5">{loadingRoleDefaults ? 'Loading…' : `${count} permission${count !== 1 ? 's' : ''} by default`}</p>
                   </div>
-                  <button
-                    onClick={() => openPresetEditor(key)}
-                    className={`px-3 py-1.5 rounded-lg text-white text-xs font-bold transition-colors flex-shrink-0 ${c.btn}`}
-                  >
+                  <Button size="sm" variant="secondary" onClick={() => openPresetEditor(key)} disabled={loadingRoleDefaults || catalog.length === 0} title={catalog.length === 0 ? 'Permission catalog not loaded' : undefined}>
                     Edit Defaults
-                  </button>
+                  </Button>
                 </div>
               );
             })}
@@ -351,37 +365,46 @@ export default function Permissions() {
         </div>
 
         {bulkSelected.size > 0 && (
-          <div className="mb-4 flex items-center justify-between gap-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-3">
-            <p className="text-sm text-indigo-200 font-semibold">{bulkSelected.size} user{bulkSelected.size !== 1 ? 's' : ''} selected</p>
-            <div className="flex gap-2">
-              <button onClick={openBulkEdit} className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-xs font-bold transition-colors">
-                Apply Permissions to Selected →
-              </button>
-              <button onClick={() => { setBulkSelected(new Set()); setBulkMode(false); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 text-xs font-bold transition-colors">
-                Clear
-              </button>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-3">
+            <p className="text-base text-indigo-200 font-semibold">{bulkSelected.size} user{bulkSelected.size !== 1 ? 's' : ''} selected</p>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="primary" size="sm" onClick={openBulkEdit}>Apply Permissions to Selected →</Button>
+              <Button size="sm" onClick={() => { setBulkSelected(new Set()); setBulkMode(false); }}>Clear Selection</Button>
             </div>
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] gap-5">
           {/* User picker */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden flex flex-col max-h-[75vh]">
-            <div className="p-3 border-b border-slate-800">
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden flex flex-col max-h-[80vh] lg:sticky lg:top-4 self-start w-full">
+            <div className="p-3 border-b border-slate-800 flex flex-wrap items-center gap-2">
               <input
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search users…"
                 aria-label="Search users"
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                className="min-w-0 flex-1 h-10 px-3 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
               />
+              {filteredUsers.length > 0 ? (
+                <Button size="sm" onClick={() => setBulkSelected(prev => {
+                  const allIn = filteredUsers.every(u => prev.has(u.userId));
+                  const next = new Set(prev);
+                  filteredUsers.forEach(u => (allIn ? next.delete(u.userId) : next.add(u.userId)));
+                  return next;
+                })}>
+                  {filteredUsers.every(u => bulkSelected.has(u.userId)) ? 'Unselect all' : 'Select all'}
+                </Button>
+              ) : null}
             </div>
             <div className="overflow-y-auto flex-1">
               {loadingUsers ? (
-                <div className="p-6 text-center text-slate-500 text-sm">Loading users…</div>
+                <div className="p-6 text-center text-slate-400 text-sm">Loading users…</div>
               ) : filteredUsers.length === 0 ? (
-                <div className="p-6 text-center text-slate-500 text-sm">No users found</div>
+                <div className="p-6 text-center text-slate-400 text-sm">
+                  No users match your search.
+                  {search ? <div className="mt-3"><Button size="sm" onClick={() => setSearch('')}>Clear search</Button></div> : null}
+                </div>
               ) : filteredUsers.map(u => (
                 <div
                   key={u.userId}
@@ -393,18 +416,18 @@ export default function Permissions() {
                     checked={bulkSelected.has(u.userId)}
                     onChange={() => toggleBulkSelected(u.userId)}
                     onClick={e => e.stopPropagation()}
-                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 accent-indigo-500 flex-shrink-0"
+                    className="w-5 h-5 rounded border-slate-600 bg-slate-800 accent-indigo-500 flex-shrink-0"
                   />
                   <button
                     onClick={() => selectUser(u)}
                     className="flex-1 flex items-center gap-3 text-left min-w-0"
                   >
-                    <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-200 flex-shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold text-slate-200 flex-shrink-0">
                       {getAvatarInitials(u.name)}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">{u.name}</p>
-                      <p className="text-xs text-slate-500 truncate">{formatRoleLabel(u.role)}</p>
+                      <p className="text-sm font-semibold text-white truncate" title={u.name}>{u.name}</p>
+                      <p className="text-sm text-slate-400 truncate">{formatRoleLabel(u.role)}</p>
                     </div>
                   </button>
                 </div>
@@ -413,40 +436,31 @@ export default function Permissions() {
           </div>
 
           {/* Permission checklist */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 min-h-[300px]">
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 sm:p-6 min-h-[300px] min-w-0">
             {bulkMode ? (
               <>
-                <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800">
-                  <div>
-                    <h3 className="text-lg font-bold text-white">Bulk Edit — {bulkSelected.size} user{bulkSelected.size !== 1 ? 's' : ''}</h3>
-                    <p className="text-slate-400 text-sm">Click a permission to cycle: unchanged → grant → revoke → unchanged. Only changed permissions are applied.</p>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-5 pb-4 border-b border-slate-800">
+                  <div className="min-w-0">
+                    <h3 className="text-xl font-bold text-white">Bulk Edit — {bulkSelected.size} user{bulkSelected.size !== 1 ? 's' : ''}</h3>
+                    <p className="text-slate-300 text-sm">Click a permission to cycle: unchanged → grant → revoke → unchanged. Only changed permissions are applied.</p>
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => { setBulkMode(false); setBulkOverrides({}); }}
-                      className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 font-bold text-sm transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleBulkSave}
-                      disabled={bulkSaving}
-                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-white font-bold text-sm transition-colors flex items-center gap-2"
-                    >
-                      {bulkSaving ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Applying…</> : `✓ Apply to ${bulkSelected.size} User${bulkSelected.size !== 1 ? 's' : ''}`}
-                    </button>
+                    <Button onClick={() => { setBulkMode(false); setBulkOverrides({}); }}>Cancel</Button>
+                    <Button variant="primary" onClick={handleBulkSave} loading={bulkSaving}>
+                      {bulkSaving ? 'Applying…' : `Apply to ${bulkSelected.size} User${bulkSelected.size !== 1 ? 's' : ''}`}
+                    </Button>
                   </div>
                 </div>
 
                 <div className="mb-6 flex items-center gap-3 flex-wrap">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Set all selected to:</span>
+                  <span className="text-sm font-bold text-slate-300 uppercase tracking-wider">Set all selected to:</span>
                   {ROLE_PRESETS.map(({ key, label, icon, color }) => {
                     const c = PRESET_COLOR_CLASSES[color];
                     return (
                       <button
                         key={key}
                         onClick={() => applyPresetToBulk(key)}
-                        className={`px-4 py-2 rounded-xl border ${c.border} ${c.bg} ${c.text} font-black text-sm transition-transform hover:scale-105 flex items-center gap-1.5`}
+                        className={`px-4 py-2 rounded-xl border ${c.border} ${c.bg} ${c.text} font-black text-sm transition-transform hover:bg-slate-800/60 flex items-center gap-1.5`}
                       >
                         {icon} {label}
                       </button>
@@ -457,8 +471,8 @@ export default function Permissions() {
                 <div className="space-y-6">
                   {Object.entries(categories).map(([category, perms]) => (
                     <div key={category}>
-                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{category}</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <h4 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-2">{category}</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-2.5">
                         {perms.map(p => {
                           const override = bulkOverrides[p.key];
                           const state = override === 'grant' ? 'granted' : override === 'revoke' ? 'revoked' : 'default-off';
@@ -476,8 +490,8 @@ export default function Permissions() {
                                 {override === 'revoke' && <span className="text-xs text-white font-bold">✕</span>}
                               </div>
                               <div className="min-w-0">
-                                <p className={`text-sm font-bold ${override ? s.text : 'text-slate-400'}`}>{p.label} {suffix && <span className="text-[10px] font-normal opacity-70">{suffix}</span>}</p>
-                                <p className="text-xs text-slate-500 mt-0.5">{p.description}</p>
+                                <p className={`text-sm font-bold ${override ? s.text : 'text-slate-400'}`}>{p.label} {suffix && <span className="text-xs font-normal opacity-80">{suffix}</span>}</p>
+                                <p className="text-sm text-slate-400 mt-0.5">{p.description}</p>
                               </div>
                             </button>
                           );
@@ -488,34 +502,30 @@ export default function Permissions() {
                 </div>
               </>
             ) : !selectedUser ? (
-              <div className="flex items-center justify-center h-full text-slate-500 text-sm py-16">Select a user to manage their permissions, or check multiple users to bulk-edit</div>
+              <div className="flex items-center justify-center h-full text-slate-400 text-base text-center py-16">Select a user to manage their permissions, or check multiple users to bulk-edit</div>
             ) : loadingPerms || !permData ? (
-              <div className="flex items-center justify-center h-full text-slate-500 text-sm py-16">Loading permissions…</div>
+              <div className="flex items-center justify-center h-full text-slate-400 text-base py-16">Loading permissions…</div>
             ) : (
               <>
-                <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800">
-                  <div>
-                    <h3 className="text-lg font-bold text-white">{selectedUser.name}</h3>
-                    <p className="text-slate-400 text-sm">{selectedUser.email} · <span className="capitalize">{formatRoleLabel(permData.role)}</span></p>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-5 pb-4 border-b border-slate-800">
+                  <div className="min-w-0">
+                    <h3 className="text-xl font-bold text-white truncate" title={selectedUser.name}>{selectedUser.name}</h3>
+                    <p className="text-slate-300 text-sm break-all">{selectedUser.email} · <span className="capitalize">{formatRoleLabel(permData.role)}</span></p>
                   </div>
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-white font-bold text-sm transition-colors flex items-center gap-2"
-                  >
-                    {saving ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving…</> : '✓ Save Permissions'}
-                  </button>
+                  <Button variant="primary" onClick={handleSave} loading={saving}>
+                    {saving ? 'Saving…' : 'Save Permissions'}
+                  </Button>
                 </div>
 
                 <div className="mb-6 flex items-center gap-3 flex-wrap">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Quick-set to:</span>
+                  <span className="text-sm font-bold text-slate-300 uppercase tracking-wider">Quick-set to:</span>
                   {ROLE_PRESETS.map(({ key, label, icon, color }) => {
                     const c = PRESET_COLOR_CLASSES[color];
                     return (
                       <button
                         key={key}
                         onClick={() => applyPresetToUser(key)}
-                        className={`px-4 py-2 rounded-xl border ${c.border} ${c.bg} ${c.text} font-black text-sm transition-transform hover:scale-105 flex items-center gap-1.5`}
+                        className={`px-4 py-2 rounded-xl border ${c.border} ${c.bg} ${c.text} font-black text-sm transition-transform hover:bg-slate-800/60 flex items-center gap-1.5`}
                       >
                         {icon} {label}
                       </button>
@@ -526,8 +536,8 @@ export default function Permissions() {
                 <div className="space-y-6">
                   {Object.entries(categories).map(([category, perms]) => (
                     <div key={category}>
-                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{category}</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <h4 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-2">{category}</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-2.5">
                         {perms.map(p => {
                           const state = getPermState(p.key, permData);
                           const s = STATE_STYLES[state];
@@ -541,8 +551,8 @@ export default function Permissions() {
                               </div>
                               <input type="checkbox" className="hidden" checked={s.active} onChange={() => togglePermission(p.key)} />
                               <div className="min-w-0">
-                                <p className={`text-sm font-bold ${s.text}`}>{p.label} {s.suffix && <span className="text-[10px] font-normal opacity-70">{s.suffix}</span>}</p>
-                                <p className="text-xs text-slate-500 mt-0.5">{p.description}</p>
+                                <p className={`text-sm font-bold ${s.text}`}>{p.label} {s.suffix && <span className="text-xs font-normal opacity-80">{s.suffix}</span>}</p>
+                                <p className="text-sm text-slate-400 mt-0.5">{p.description}</p>
                               </div>
                             </label>
                           );
@@ -561,27 +571,23 @@ export default function Permissions() {
       {editingPreset && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setEditingPreset(null)}>
           <div
-            className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-2xl w-full max-h-[85vh] overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+            className="bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800">
-              <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-5 pb-4 border-b border-slate-800">
+              <div className="min-w-0">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
                   {ROLE_PRESETS.find(r => r.key === editingPreset)?.icon} Default Permissions — {ROLE_PRESETS.find(r => r.key === editingPreset)?.label}
                 </h3>
-                <p className="text-slate-400 text-sm mt-1">Every {editingPreset} user gets these by default, unless overridden per-user.</p>
+                <p className="text-slate-300 text-sm mt-1">Every {editingPreset} user gets these by default, unless overridden per-user.</p>
               </div>
               <div className="flex gap-2 flex-shrink-0">
-                <button onClick={() => setEditingPreset(null)} className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 font-bold text-sm transition-colors">
-                  Cancel
-                </button>
-                <button
-                  onClick={savePresetEditor}
-                  disabled={savingPreset}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-white font-bold text-sm transition-colors flex items-center gap-2"
-                >
-                  {savingPreset ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving…</> : '✓ Save Defaults'}
-                </button>
+                <Button onClick={() => setEditingPreset(null)}>Cancel</Button>
+                <Button variant="primary" onClick={savePresetEditor} loading={savingPreset}>
+                  {savingPreset ? 'Saving…' : 'Save Defaults'}
+                </Button>
               </div>
             </div>
 
@@ -603,7 +609,7 @@ export default function Permissions() {
                           <input type="checkbox" className="hidden" checked={active} onChange={() => togglePresetKey(p.key)} />
                           <div className="min-w-0">
                             <p className={`text-sm font-bold ${active ? 'text-emerald-300' : 'text-slate-400'}`}>{p.label}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">{p.description}</p>
+                            <p className="text-sm text-slate-400 mt-0.5">{p.description}</p>
                           </div>
                         </label>
                       );
@@ -615,6 +621,6 @@ export default function Permissions() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

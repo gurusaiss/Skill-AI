@@ -43,7 +43,7 @@ export default function SkillRadarChart({ skills }) {
       <div className="flex items-center justify-between mb-1">
         <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Skill Mastery Radar</p>
         {(!skills || skills.length === 0) && (
-          <span className="text-xs text-slate-600 italic">sample data</span>
+          <span className="text-xs text-slate-400 italic">sample data</span>
         )}
       </div>
 
@@ -56,7 +56,7 @@ export default function SkillRadarChart({ skills }) {
           />
           <PolarAngleAxis
             dataKey="name"
-            tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }}
+            tick={{ fill: '#94a3b8', fontSize: 13, fontWeight: 700 }}
             tickLine={false}
           />
 

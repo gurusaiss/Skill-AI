@@ -185,7 +185,7 @@ function ActivityHeatmap({ sessions }) {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-2 mt-4 text-xs text-slate-500">
+      <div className="flex items-center gap-2 mt-4 text-xs text-slate-400">
         <span>None</span>
         <div className="w-4 h-4 rounded bg-slate-800 border border-slate-700/50" />
         <div className="w-4 h-4 rounded bg-indigo-900" />
@@ -237,19 +237,19 @@ function BadgeCard({ badge, index }) {
       </div>
 
       {/* Name */}
-      <p className={`text-xs font-black leading-tight ${badge.unlocked ? 'text-white' : 'text-slate-500'}`}>
+      <p className={`text-xs font-black leading-tight ${badge.unlocked ? 'text-white' : 'text-slate-400'}`}>
         {badge.name}
       </p>
 
       {/* Description */}
-      <p className={`text-[10px] leading-snug ${badge.unlocked ? 'text-slate-400' : 'text-slate-600'}`}>
+      <p className={`text-xs leading-snug ${badge.unlocked ? 'text-slate-400' : 'text-slate-400'}`}>
         {badge.mystery && !badge.unlocked ? '???' : badge.desc}
       </p>
 
       {/* Earned tag */}
       {badge.unlocked && (
         <span
-          className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider border"
+          className="text-xs font-black px-2 py-0.5 rounded-full uppercase tracking-wider border"
           style={{ backgroundColor: `${badge.color}20`, borderColor: `${badge.color}40`, color: badge.color }}
         >
           Earned!
@@ -334,14 +334,14 @@ export default function AchievementSystem({ stats, sessions = [], plan }) {
             }}
           >
             <span className="text-4xl leading-none">{level.emoji}</span>
-            <span className="text-[10px] uppercase tracking-widest font-black" style={{ color: level.color }}>
+            <span className="text-xs uppercase tracking-widest font-black" style={{ color: level.color }}>
               {level.name}
             </span>
           </motion.div>
 
           {/* XP details */}
           <div className="flex-1 min-w-0 text-center sm:text-left">
-            <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">Current Level</p>
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Current Level</p>
             <h2 className="text-3xl font-black text-white mb-1">
               {level.emoji} {level.name}
             </h2>
@@ -350,7 +350,7 @@ export default function AchievementSystem({ stats, sessions = [], plan }) {
                 {totalXP.toLocaleString()} XP
               </span>
               {toNext > 0 && (
-                <span className="text-xs text-slate-500 font-semibold">
+                <span className="text-xs text-slate-400 font-semibold">
                   · {toNext.toLocaleString()} XP to next level
                 </span>
               )}
@@ -371,7 +371,7 @@ export default function AchievementSystem({ stats, sessions = [], plan }) {
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
               </motion.div>
             </div>
-            <div className="flex justify-between mt-1.5 text-[10px] text-slate-600 font-semibold">
+            <div className="flex justify-between mt-1.5 text-xs text-slate-400 font-semibold">
               <span>{level.minXP} XP</span>
               <span>{xpPct}%</span>
               <span>{level.maxXP === Infinity ? '∞' : `${level.maxXP + 1} XP`}</span>
@@ -386,10 +386,10 @@ export default function AchievementSystem({ stats, sessions = [], plan }) {
             >
               {badgesEarned}
             </div>
-            <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">
+            <div className="text-xs font-black text-slate-400 uppercase tracking-widest mt-0.5">
               Badges
             </div>
-            <div className="text-[10px] text-slate-600">of {badges.length}</div>
+            <div className="text-xs text-slate-400">of {badges.length}</div>
           </div>
         </div>
       </motion.div>
@@ -413,7 +413,7 @@ export default function AchievementSystem({ stats, sessions = [], plan }) {
             <span className="text-2xl font-black font-mono leading-none" style={{ color: card.color }}>
               {typeof card.value === 'number' ? card.value.toLocaleString() : card.value}
             </span>
-            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{card.label}</span>
+            <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{card.label}</span>
           </motion.div>
         ))}
       </motion.div>
@@ -424,7 +424,7 @@ export default function AchievementSystem({ stats, sessions = [], plan }) {
           <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
             <span>🏅</span> Achievements
           </h3>
-          <span className="text-xs font-bold text-slate-500">
+          <span className="text-xs font-bold text-slate-400">
             {badgesEarned} / {badges.length} unlocked
           </span>
         </div>
@@ -466,8 +466,8 @@ export default function AchievementSystem({ stats, sessions = [], plan }) {
               <div className="text-lg font-black font-mono" style={{ color: row.color }}>
                 +{row.value.toLocaleString()}
               </div>
-              <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">{row.label}</div>
-              <div className="text-[10px] text-slate-600 mt-0.5 font-mono">{row.formula}</div>
+              <div className="text-xs font-black text-slate-400 uppercase tracking-widest mt-1">{row.label}</div>
+              <div className="text-xs text-slate-400 mt-0.5 font-mono">{row.formula}</div>
             </div>
           ))}
         </div>

@@ -5,6 +5,10 @@ import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import StatCard from '../../components/StatCard.jsx';
 import CompanyBadge from '../../components/CompanyBadge.jsx';
+import PageContainer from '../../components/PageContainer.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
+import Button from '../../components/Button.jsx';
+import ActionMenu from '../../components/ActionMenu.jsx';
 
 // ─── Plan badge ───────────────────────────────────────────────────────────────
 
@@ -15,7 +19,7 @@ function PlanBadge({ plan }) {
     enterprise: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${styles[plan] || styles.trial}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-sm font-semibold border ${styles[plan] || styles.trial}`}>
       {plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : 'Trial'}
     </span>
   );
@@ -30,7 +34,7 @@ function StatusBadge({ status }) {
     inactive:  'bg-slate-500/20 text-slate-400 border-slate-500/30',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${styles[status] || styles.inactive}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-sm font-semibold border ${styles[status] || styles.inactive}`}>
       {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Inactive'}
     </span>
   );
@@ -39,7 +43,7 @@ function StatusBadge({ status }) {
 // ─── Form helpers shared by Create / Edit / Details ──────────────────────────
 
 const INPUT_CLS = 'w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60';
-const LABEL_CLS = 'block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5';
+const LABEL_CLS = 'block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5';
 const CODE_RE = /^[A-Za-z0-9-]{2,20}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -72,10 +76,10 @@ function Field({ label, error, required, hint, children }) {
     <div>
       <label className={LABEL_CLS}>
         {label} {required && <span className="text-red-400">*</span>}
-        {hint && <span className="text-slate-600 font-normal normal-case"> {hint}</span>}
+        {hint && <span className="text-slate-400 font-normal normal-case"> {hint}</span>}
       </label>
       {children}
-      {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
+      {error && <p className="text-red-400 text-sm mt-1">{error}</p>}
     </div>
   );
 }
@@ -170,13 +174,13 @@ function CopyBtn({ text, small = false }) {
   };
   if (small) return (
     <button onClick={copy} title="Copy"
-      className={`ml-1.5 px-2 py-0.5 rounded text-xs font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}>
+      className={`ml-1.5 px-2 py-0.5 rounded text-sm font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}>
       {copied ? '✓' : '📋'}
     </button>
   );
   return (
     <button onClick={copy}
-      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}>
+      className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}>
       {copied ? '✓ Copied' : '📋 Copy'}
     </button>
   );
@@ -198,57 +202,57 @@ function CompanyCreatedModal({ company, onClose }) {
 
         <div className="p-6 space-y-5">
           <div>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Company</p>
+            <p className="text-slate-400 text-sm font-bold uppercase tracking-wider mb-1">Company</p>
             <p className="text-white font-semibold">{company.companyName}</p>
           </div>
 
           <div>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Admin Account</p>
+            <p className="text-slate-400 text-sm font-bold uppercase tracking-wider mb-1">Admin Account</p>
             <p className="text-white text-sm">{company.adminEmail}</p>
           </div>
 
           {company.tempPassword && (
             <div>
-              <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Temporary Password</p>
+              <p className="text-slate-400 text-sm font-bold uppercase tracking-wider mb-1">Temporary Password</p>
               <div className="flex items-center gap-2 bg-slate-900 rounded-xl px-4 py-2.5 border border-amber-500/30">
-                <span className="font-mono text-amber-300 text-sm flex-1 tracking-widest">{company.tempPassword}</span>
+                <span className="font-mono text-amber-300 text-sm flex-1 tracking-wider">{company.tempPassword}</span>
                 <CopyBtn text={company.tempPassword} small />
               </div>
-              <p className="text-slate-500 text-xs mt-1">Shown once — admin must change after first login</p>
+              <p className="text-slate-400 text-sm mt-1">Shown once — admin must change after first login</p>
             </div>
           )}
 
           <div className="border-t border-slate-700/60 pt-4">
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">Access Codes — share with your team</p>
+            <p className="text-slate-400 text-sm font-bold uppercase tracking-wider mb-3">Access Codes — share with your team</p>
             <div className="space-y-3">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-amber-300 uppercase tracking-wider">Manager Code</span>
-                  <span className="text-xs text-slate-500">Role auto-assigned on signup</span>
+                  <span className="text-sm font-semibold text-amber-300 uppercase tracking-wider">Manager Code</span>
+                  <span className="text-sm text-slate-400">Role auto-assigned on signup</span>
                 </div>
                 <div className="flex items-center gap-2 bg-slate-900 rounded-xl px-4 py-2.5 border border-amber-500/30">
-                  <span className="font-mono text-amber-300 text-sm flex-1 tracking-widest">{company.managerCode || '—'}</span>
+                  <span className="font-mono text-amber-300 text-sm flex-1 tracking-wider">{company.managerCode || '—'}</span>
                   <CopyBtn text={company.managerCode} small />
                 </div>
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-indigo-300 uppercase tracking-wider">Employee Code</span>
-                  <span className="text-xs text-slate-500">Role auto-assigned on signup</span>
+                  <span className="text-sm font-semibold text-indigo-300 uppercase tracking-wider">Employee Code</span>
+                  <span className="text-sm text-slate-400">Role auto-assigned on signup</span>
                 </div>
                 <div className="flex items-center gap-2 bg-slate-900 rounded-xl px-4 py-2.5 border border-indigo-500/30">
-                  <span className="font-mono text-indigo-300 text-sm flex-1 tracking-widest">{company.employeeCode || '—'}</span>
+                  <span className="font-mono text-indigo-300 text-sm flex-1 tracking-wider">{company.employeeCode || '—'}</span>
                   <CopyBtn text={company.employeeCode} small />
                 </div>
               </div>
               {company.trainerCode && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Trainer Code</span>
-                    <span className="text-xs text-slate-500">Role auto-assigned on signup</span>
+                    <span className="text-sm font-semibold text-amber-400 uppercase tracking-wider">Trainer Code</span>
+                    <span className="text-sm text-slate-400">Role auto-assigned on signup</span>
                   </div>
                   <div className="flex items-center gap-2 bg-slate-900 rounded-xl px-4 py-2.5 border border-amber-400/30">
-                    <span className="font-mono text-amber-400 text-sm flex-1 tracking-widest">{company.trainerCode}</span>
+                    <span className="font-mono text-amber-400 text-sm flex-1 tracking-wider">{company.trainerCode}</span>
                     <CopyBtn text={company.trainerCode} small />
                   </div>
                 </div>
@@ -256,17 +260,17 @@ function CompanyCreatedModal({ company, onClose }) {
               {company.leadershipCode && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-semibold text-cyan-300 uppercase tracking-wider">Leadership Code</span>
-                    <span className="text-xs text-slate-500">Role auto-assigned on signup</span>
+                    <span className="text-sm font-semibold text-cyan-300 uppercase tracking-wider">Leadership Code</span>
+                    <span className="text-sm text-slate-400">Role auto-assigned on signup</span>
                   </div>
                   <div className="flex items-center gap-2 bg-slate-900 rounded-xl px-4 py-2.5 border border-cyan-500/30">
-                    <span className="font-mono text-cyan-300 text-sm flex-1 tracking-widest">{company.leadershipCode}</span>
+                    <span className="font-mono text-cyan-300 text-sm flex-1 tracking-wider">{company.leadershipCode}</span>
                     <CopyBtn text={company.leadershipCode} small />
                   </div>
                 </div>
               )}
             </div>
-            <p className="text-slate-500 text-xs mt-3">Codes are also visible in the Company Codes panel at any time.</p>
+            <p className="text-slate-400 text-sm mt-3">Codes are also visible in the Company Codes panel at any time.</p>
           </div>
         </div>
 
@@ -357,7 +361,7 @@ function CompanyCodesModal({ company, onClose, setToast }) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60 flex-shrink-0">
           <div>
             <h2 className="text-lg font-bold text-white">Access Codes</h2>
-            <p className="text-slate-400 text-xs mt-0.5">{company.name || company.companyName}</p>
+            <p className="text-slate-400 text-sm mt-0.5">{company.name || company.companyName}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
         </div>
@@ -366,22 +370,22 @@ function CompanyCodesModal({ company, onClose, setToast }) {
           {loading ? (
             <p className="text-slate-400 text-sm text-center py-8">Loading codes...</p>
           ) : codes.length === 0 ? (
-            <p className="text-slate-500 text-sm text-center py-8">No access codes yet.</p>
+            <p className="text-slate-400 text-sm text-center py-8">No access codes yet.</p>
           ) : codes.map(code => (
             <div key={code.id} className={`bg-slate-900/60 rounded-xl p-4 border ${code.isActive ? 'border-slate-700/40' : 'border-slate-700/20 opacity-60'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`font-mono text-sm tracking-widest ${CODE_COLOR[code.role] || 'text-white'}`}>{code.code}</span>
+                    <span className={`font-mono text-sm tracking-wider ${CODE_COLOR[code.role] || 'text-white'}`}>{code.code}</span>
                     <CopyBtn text={code.code} small />
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${ROLE_STYLE[code.role] || 'bg-slate-700 text-slate-300 border-slate-600'}`}>
+                    <span className={`text-sm font-semibold px-2 py-0.5 rounded-full border ${ROLE_STYLE[code.role] || 'bg-slate-700 text-slate-300 border-slate-600'}`}>
                       {code.role}
                     </span>
                     {!code.isActive && (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/40 text-red-300">Disabled</span>
+                      <span className="text-sm font-semibold px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/40 text-red-300">Disabled</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-4 mt-1.5 text-xs text-slate-500">
+                  <div className="flex items-center gap-4 mt-1.5 text-sm text-slate-400">
                     {code.label && <span>{code.label}</span>}
                     <span>Used: <span className="text-slate-300">{code.usageCount ?? 0}</span>{code.maxUsage != null ? `/${code.maxUsage}` : ''}</span>
                     {code.expiresAt && <span>Expires: <span className="text-slate-300">{new Date(code.expiresAt).toLocaleDateString()}</span></span>}
@@ -390,19 +394,19 @@ function CompanyCodesModal({ company, onClose, setToast }) {
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   <button onClick={() => doAction(code.id, { regenerate: true }, 'regenerated')}
                     disabled={busy === code.id + 'regenerated'}
-                    className="px-2.5 py-1.5 rounded-lg bg-violet-900/40 hover:bg-violet-900/60 text-violet-300 text-xs font-semibold transition-colors disabled:opacity-50">
+                    className="px-2.5 py-1.5 rounded-lg bg-violet-900/40 hover:bg-violet-900/60 text-violet-300 text-sm font-semibold transition-colors disabled:opacity-50">
                     {busy === code.id + 'regenerated' ? '...' : 'Regen'}
                   </button>
                   <button onClick={() => doAction(code.id, { isActive: !code.isActive }, code.isActive ? 'disabled' : 'enabled')}
                     disabled={busy === code.id + (code.isActive ? 'disabled' : 'enabled')}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${
+                    className={`px-2.5 py-1.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 ${
                       code.isActive ? 'bg-red-900/30 hover:bg-red-900/50 text-red-400' : 'bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400'
                     }`}>
                     {code.isActive ? 'Disable' : 'Enable'}
                   </button>
                   <button onClick={() => deleteCode(code.id)}
                     disabled={!!busy}
-                    className="px-2.5 py-1.5 rounded-lg bg-red-900/30 hover:bg-red-900/50 text-red-400 text-xs font-semibold transition-colors disabled:opacity-50">
+                    className="px-2.5 py-1.5 rounded-lg bg-red-900/30 hover:bg-red-900/50 text-red-400 text-sm font-semibold transition-colors disabled:opacity-50">
                     Del
                   </button>
                 </div>
@@ -413,11 +417,11 @@ function CompanyCodesModal({ company, onClose, setToast }) {
 
         <div className="flex gap-3 px-6 py-4 border-t border-slate-700/60 flex-shrink-0">
           <button onClick={() => createCode('manager')} disabled={!!busy}
-            className="flex-1 py-2.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 font-bold text-xs transition-colors disabled:opacity-50">
+            className="flex-1 py-2.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 font-bold text-sm transition-colors disabled:opacity-50">
             {busy === 'createmanager' ? '...' : '+ New Manager Code'}
           </button>
           <button onClick={() => createCode('employee')} disabled={!!busy}
-            className="flex-1 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 font-bold text-xs transition-colors disabled:opacity-50">
+            className="flex-1 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 font-bold text-sm transition-colors disabled:opacity-50">
             {busy === 'createemployee' ? '...' : '+ New Employee Code'}
           </button>
         </div>
@@ -483,7 +487,7 @@ function CreateCompanyModal({ onClose, onCreated, setToast }) {
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
           <CompanyFields form={form} set={set} errors={errors} codeHint="(auto-generated if blank)" codePlaceholder="e.g. ACME-01" />
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Plan</label>
+            <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Plan</label>
             <select
               value={form.plan}
               onChange={e => set('plan', e.target.value)}
@@ -496,10 +500,10 @@ function CreateCompanyModal({ onClose, onCreated, setToast }) {
           </div>
 
           <div className="border-t border-slate-700/60 pt-4">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Admin Account</p>
+            <p className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Admin Account</p>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                   Admin Full Name <span className="text-red-400">*</span>
                 </label>
                 <input
@@ -508,10 +512,10 @@ function CreateCompanyModal({ onClose, onCreated, setToast }) {
                   placeholder="Jane Smith"
                   className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
                 />
-                {errors.adminName && <p className="text-red-400 text-xs mt-1">{errors.adminName}</p>}
+                {errors.adminName && <p className="text-red-400 text-sm mt-1">{errors.adminName}</p>}
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                   Admin Email <span className="text-red-400">*</span>
                 </label>
                 <input
@@ -521,11 +525,11 @@ function CreateCompanyModal({ onClose, onCreated, setToast }) {
                   placeholder="admin@acme.com"
                   className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/60"
                 />
-                {errors.adminEmail && <p className="text-red-400 text-xs mt-1">{errors.adminEmail}</p>}
+                {errors.adminEmail && <p className="text-red-400 text-sm mt-1">{errors.adminEmail}</p>}
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Admin Password <span className="text-slate-600 font-normal normal-case">(auto-generated if blank)</span>
+                <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Admin Password <span className="text-slate-400 font-normal normal-case">(auto-generated if blank)</span>
                 </label>
                 <input
                   type="password"
@@ -539,7 +543,7 @@ function CreateCompanyModal({ onClose, onCreated, setToast }) {
           </div>
 
           <div className="bg-slate-900/40 border border-slate-700/40 rounded-xl px-4 py-3">
-            <p className="text-xs text-slate-400">
+            <p className="text-sm text-slate-400">
               After creation, you'll receive access codes for: <span className="text-amber-300 font-semibold">Employee</span>, <span className="text-amber-300 font-semibold">Manager</span>, <span className="text-amber-400 font-semibold">Trainer</span>, and <span className="text-cyan-300 font-semibold">Leadership</span> roles.
             </p>
           </div>
@@ -612,11 +616,11 @@ function EditCompanyModal({ company, onClose, onSaved, setToast }) {
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
           <CompanyFields form={form} set={set} errors={errors} codeHint="(must be unique)" codePlaceholder="e.g. ACME-01" />
-          <p className="text-xs text-slate-500">
+          <p className="text-sm text-slate-400">
             Renaming updates the name shown at the top of every admin, manager and employee portal for this company.
           </p>
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Plan</label>
+            <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Plan</label>
             <select
               value={form.plan}
               onChange={e => set('plan', e.target.value)}
@@ -628,7 +632,7 @@ function EditCompanyModal({ company, onClose, onSaved, setToast }) {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Status</label>
+            <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider mb-1.5">Status</label>
             <select
               value={form.status}
               onChange={e => set('status', e.target.value)}
@@ -716,9 +720,9 @@ function CompanyDetailsModal({ companyId, onClose, setToast }) {
             <dl className="space-y-3">
               {rows.map(([k, v]) => (
                 <div key={k} className="grid grid-cols-3 gap-3">
-                  <dt className="text-xs font-bold text-slate-500 uppercase tracking-wider pt-0.5">{k}</dt>
+                  <dt className="text-sm font-bold text-slate-400 uppercase tracking-wider pt-0.5">{k}</dt>
                   <dd className="col-span-2 text-sm text-white break-words whitespace-pre-wrap">
-                    {v === undefined || v === null || v === '' ? <span className="text-slate-600">—</span> : String(v)}
+                    {v === undefined || v === null || v === '' ? <span className="text-slate-400">—</span> : String(v)}
                   </dd>
                 </div>
               ))}
@@ -748,7 +752,7 @@ function ForceDeleteModal({ company, message, userCount, busy, onCancel, onConfi
             "Delete anyway" removes the company and all of its access codes. Its users are not deleted, but they will be
             unlinked from the company. This cannot be undone.
           </p>
-          {message && <p className="text-xs text-slate-500">{message}</p>}
+          {message && <p className="text-sm text-slate-400">{message}</p>}
         </div>
         <div className="flex gap-3 px-6 pb-5">
           <button onClick={onCancel} disabled={busy}
@@ -781,7 +785,7 @@ function CompanyUsers({ companyId }) {
 
   if (loading) return <div className="px-6 py-4 text-slate-400 text-sm">Loading users...</div>;
   if (error)   return <div className="px-6 py-4 text-red-400 text-sm">Error: {error}</div>;
-  if (!users.length) return <div className="px-6 py-4 text-slate-500 text-sm">No users found for this company.</div>;
+  if (!users.length) return <div className="px-6 py-4 text-slate-400 text-sm">No users found for this company.</div>;
 
   return (
     <div className="px-6 pb-4">
@@ -789,10 +793,10 @@ function CompanyUsers({ companyId }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-700/40">
-              <th className="text-left px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Name</th>
-              <th className="text-left px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Email</th>
-              <th className="text-left px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
-              <th className="text-left px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+              <th className="text-left px-4 py-2 text-sm font-bold text-slate-400 uppercase tracking-wider">Name</th>
+              <th className="text-left px-4 py-2 text-sm font-bold text-slate-400 uppercase tracking-wider">Email</th>
+              <th className="text-left px-4 py-2 text-sm font-bold text-slate-400 uppercase tracking-wider">Role</th>
+              <th className="text-left px-4 py-2 text-sm font-bold text-slate-400 uppercase tracking-wider">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -801,7 +805,7 @@ function CompanyUsers({ companyId }) {
                 <td className="px-4 py-2 text-white">{u.name || u.fullName || '—'}</td>
                 <td className="px-4 py-2 text-slate-400">{u.email}</td>
                 <td className="px-4 py-2">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
+                  <span className={`text-sm font-semibold px-2 py-0.5 rounded-full border ${
                     u.role === 'admin' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' :
                     u.role === 'manager' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' :
                     'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
@@ -840,6 +844,7 @@ export default function SuperAdminDashboard() {
   const [forceDelete, setForceDelete] = useState(null); // { company, message, userCount }
   const [deleting, setDeleting] = useState(false);
 
+  const [loadError, setLoadError] = useState('');
   const fetchData = async () => {
     try {
       const [statsData, companiesData] = await Promise.all([
@@ -848,7 +853,9 @@ export default function SuperAdminDashboard() {
       ]);
       setStats(statsData);
       setCompanies(Array.isArray(companiesData) ? companiesData : (companiesData?.companies || []));
+      setLoadError('');
     } catch (err) {
+      setLoadError(err.message || 'Could not load platform data');
       setToast({ message: err.message, type: 'error' });
     } finally {
       setLoading(false);
@@ -863,6 +870,7 @@ export default function SuperAdminDashboard() {
 
   const handleToggleStatus = async (company) => {
     const newStatus = company.status === 'active' ? 'suspended' : 'active';
+    if (newStatus === 'suspended' && !window.confirm(`Suspend "${company.name || company.companyName}"? Nobody in this company will be able to sign in until it is reactivated.`)) return;
     setTogglingId(company.id);
     try {
       await authFetch(`/api/superadmin/companies/${company.id}`, {
@@ -967,30 +975,27 @@ export default function SuperAdminDashboard() {
         />
       )}
 
-      <div className="max-w-7xl mx-auto px-6 py-8 lg:px-8">
+      <PageContainer>
 
-        {/* Page Header */}
-        <div className="flex items-start justify-between mb-8">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600/20 border border-violet-500/20 text-xl">🌐</div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">Super Admin Dashboard</h1>
-                <p className="text-violet-400 text-sm font-semibold">SkillForge AI</p>
-              </div>
-            </div>
-            <p className="text-slate-400 text-sm mt-1 ml-[52px]">Platform-wide overview — manage all companies and admins</p>
+        <PageHeader
+          icon="🌐"
+          title="Super Admin Dashboard"
+          subtitle="Platform-wide overview: manage all companies and admins"
+          actions={<>
+            <Button variant="secondary" onClick={() => { setLoading(true); fetchData(); }}>Refresh</Button>
+            <Button variant="primary" onClick={() => setShowCreate(true)}>Create Company</Button>
+          </>}
+        />
+
+        {loadError ? (
+          <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <span className="min-w-0 flex-1">{loadError}</span>
+            <Button variant="danger" size="sm" onClick={() => { setLoading(true); fetchData(); }}>Retry</Button>
           </div>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-500 rounded-xl text-white font-bold text-sm transition-colors shadow-lg"
-          >
-            <span>+</span> Create Company
-          </button>
-        </div>
+        ) : null}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 2xl:grid-cols-8 gap-4 mb-6">
           <StatCard icon="🏢" label="Total Companies" value={stats?.totalCompanies ?? '—'}
             description="Every company on the platform."
             tooltip="Count of all company records, whatever their plan or status."
@@ -1026,14 +1031,14 @@ export default function SuperAdminDashboard() {
         </div>
 
         {/* Companies Table */}
-        <div className="bg-[#1E293B] border border-slate-700/60 rounded-2xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-700/60 flex items-center justify-between">
-            <h2 className="text-base font-bold text-white">All Companies</h2>
-            <span className="text-slate-500 text-sm">{companies.length} total</span>
+        <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl overflow-hidden">
+          <div className="px-4 sm:px-6 py-4 border-b border-slate-700/60 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-white">All Companies</h2>
+            <span className="text-slate-400 text-sm">{companies.length} total</span>
           </div>
 
           {companies.length === 0 ? (
-            <div className="px-6 py-16 text-center text-slate-500">
+            <div className="px-6 py-16 text-center text-slate-300">
               <div className="text-4xl mb-3">🏢</div>
               <p className="text-sm">No companies yet. Create one to get started.</p>
             </div>
@@ -1042,13 +1047,13 @@ export default function SuperAdminDashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-700/60">
-                    <th className="text-left px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Company</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Plan</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Admin</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Users</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Employees</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                    <th className="text-right px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                    <th className="text-left px-6 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Company</th>
+                    <th className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Plan</th>
+                    <th className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Admin</th>
+                    <th className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Users</th>
+                    <th className="hidden xl:table-cell text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Employees</th>
+                    <th className="text-left px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                    <th className="text-right px-6 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/30">
@@ -1057,9 +1062,9 @@ export default function SuperAdminDashboard() {
                       <tr className="hover:bg-slate-700/20 transition-colors">
                         <td className="px-6 py-4">
                           <div>
-                            <p className="font-semibold text-white">{company.name || company.companyName}</p>
-                            {company.companyCode && <p className="text-xs font-mono text-violet-300 mt-0.5">{company.companyCode}</p>}
-                            {company.domain && <p className="text-xs text-slate-500 mt-0.5">{company.domain}</p>}
+                            <p className="font-semibold text-white text-base truncate max-w-[22rem]" title={company.name || company.companyName}>{company.name || company.companyName}</p>
+                            {company.companyCode && <p className="text-sm font-mono text-violet-300 mt-0.5">{company.companyCode}</p>}
+                            {company.domain && <p className="text-sm text-slate-400 mt-0.5">{company.domain}</p>}
                           </div>
                         </td>
                         <td className="px-4 py-4">
@@ -1067,58 +1072,29 @@ export default function SuperAdminDashboard() {
                         </td>
                         <td className="px-4 py-4">
                           <div>
-                            <p className="text-white">{company.adminName || '—'}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">{company.adminEmail || ''}</p>
+                            <p className="text-white truncate max-w-[16rem]" title={company.adminName}>{company.adminName || '—'}</p>
+                            <p className="text-sm text-slate-400 mt-0.5 truncate max-w-[16rem]" title={company.adminEmail}>{company.adminEmail || ''}</p>
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-slate-300 tabular-nums">{company.userCount ?? company.totalUsers ?? '—'}</td>
-                        <td className="px-4 py-4 text-slate-300 tabular-nums">{company.employeeCount ?? company.totalEmployees ?? '—'}</td>
+                        <td className="px-4 py-4 text-slate-300 tabular-nums">{company.userCount ?? company.totalUsers ?? '—'}<span className="xl:hidden block text-sm text-slate-400">{company.employeeCount ?? company.totalEmployees ?? '—'} employees</span></td>
+                        <td className="hidden xl:table-cell px-4 py-4 text-slate-300 tabular-nums">{company.employeeCount ?? company.totalEmployees ?? '—'}</td>
                         <td className="px-4 py-4">
                           <StatusBadge status={company.status} />
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => setDetailsId(company.id)}
-                              className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-xs font-semibold transition-colors"
-                            >
-                              Details
-                            </button>
-                            <button
-                              onClick={() => toggleExpand(company.id)}
-                              className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-xs font-semibold transition-colors"
-                            >
-                              {expandedRows[company.id] ? 'Hide Users' : 'View Users'}
-                            </button>
-                            <button
-                              onClick={() => setCodesCompany(company)}
-                              className="px-3 py-1.5 rounded-lg bg-amber-900/40 hover:bg-amber-900/60 text-amber-400 hover:text-amber-300 text-xs font-semibold transition-colors"
-                            >
-                              Codes
-                            </button>
-                            <button
-                              onClick={() => handleToggleStatus(company)}
-                              disabled={togglingId === company.id}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${
-                                company.status === 'active'
-                                  ? 'bg-red-900/40 hover:bg-red-900/60 text-red-400 hover:text-red-300'
-                                  : 'bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-400 hover:text-emerald-300'
-                              }`}
-                            >
-                              {togglingId === company.id ? '...' : company.status === 'active' ? 'Suspend' : 'Activate'}
-                            </button>
-                            <button
-                              onClick={() => setEditCompany(company)}
-                              className="px-3 py-1.5 rounded-lg bg-violet-900/40 hover:bg-violet-900/60 text-violet-400 hover:text-violet-300 text-xs font-semibold transition-colors"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteCompany(company)}
-                              className="px-3 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 text-xs font-semibold transition-colors"
-                            >
-                              Delete
-                            </button>
+                            <Button size="sm" variant="secondary" onClick={() => setDetailsId(company.id)}>Details</Button>
+                            <ActionMenu
+                              label="Manage"
+                              size="sm"
+                              items={[
+                                { label: expandedRows[company.id] ? 'Hide Users' : 'View Users', onClick: () => toggleExpand(company.id) },
+                                { label: 'Access Codes', onClick: () => setCodesCompany(company) },
+                                { label: 'Edit Company', onClick: () => setEditCompany(company) },
+                                { label: company.status === 'active' ? 'Suspend Company' : 'Activate Company', onClick: () => handleToggleStatus(company), disabled: togglingId === company.id, divider: true },
+                                { label: 'Delete Company', onClick: () => handleDeleteCompany(company), danger: true },
+                              ]}
+                            />
                           </div>
                         </td>
                       </tr>
@@ -1136,7 +1112,7 @@ export default function SuperAdminDashboard() {
             </div>
           )}
         </div>
-      </div>
+      </PageContainer>
     </div>
   );
 }
