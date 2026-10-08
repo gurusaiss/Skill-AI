@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
-import { gradeForReport } from '../../utils/assessmentRules.js';
+import { ratingForReport, ratingStyle, ratingDistribution } from '../../utils/assessmentRules.js';
 import StatCard from '../../components/StatCard.jsx';
 import TabBar from '../../components/TabBar.jsx';
 
@@ -354,11 +354,8 @@ export default function ManagerDashboard() {
     return { modules: mine.length, completed: done, progress, lastActive: last };
   };
 
-  // Assessment report stats. Pass/fail must use each report's OWN configured
-  // threshold (set at assessment-creation time), not a flat guess — otherwise
-  // this dashboard's pass rate disagrees with the employee's own report and
-  // the admin's export for the exact same submission. Falls back to 80 (the
-  // platform default) for reports submitted before passThreshold was persisted.
+  // Assessment report stats. Every submission gets a rating (Expert / Intermediate / Basic /
+  // No Rating) from its exact score, the same scale the employee report and the exports use.
   // De-duplicated: only the LATEST report per (assessment, employee) pair counts,
   // so retakes are not double-counted.
   const latestPair = new Map();
@@ -370,12 +367,14 @@ export default function ManagerDashboard() {
   }
   const teamReports = [...latestPair.values()];
   const reportScore = (r) => { const n = Number(r.rawScore ?? r.score); return Number.isFinite(n) ? n : 0; };
-  const isReportPassed = (r) => reportScore(r) >= (r.passThreshold ?? 80);
+  const reportRating = (r) => ratingForReport(r);
   const avgAssessmentScore = teamReports.length > 0
     ? Math.round(teamReports.reduce((s, r) => s + reportScore(r), 0) / teamReports.length)
     : null;
-  const passedReports = teamReports.filter(isReportPassed).length;
-  const needsAttention = teamReports.filter(r => !isReportPassed(r));
+  const teamRatings = ratingDistribution(teamReports.map(reportRating));
+  const topRated = teamRatings[0].count + teamRatings[1].count;
+  const topSharePct = teamReports.length ? Math.round((topRated / teamReports.length) * 100) : null;
+  const noRatingReports = teamReports.filter(r => reportRating(r) === 'No Rating');
 
   if (!user) return null;
 
@@ -468,13 +467,13 @@ export default function ManagerDashboard() {
                   .filter(r => r.userId === empId)
                   .sort((a, b) => reportWhen(b).localeCompare(reportWhen(a)))[0];
                 if (!empReport) return null;
-                const scoreColor = isReportPassed(empReport) ? 'text-emerald-400' : 'text-red-400';
+                const empRating = reportRating(empReport);
                 return (
                   <div>
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Assessment Report</h3>
                     <div className="rounded-xl bg-slate-800/50 border border-slate-700/40 p-4 flex items-center justify-between gap-4">
                       <div>
-                        <p className={`text-2xl font-black ${scoreColor}`}>{Math.round(reportScore(empReport))}%<span className="text-slate-500 text-sm font-bold ml-2">{gradeForReport(empReport) || empReport.grade}</span></p>
+                        <p className="text-2xl font-black text-white">{Math.round(reportScore(empReport))}%<span className={`ml-2 align-middle px-2.5 py-0.5 rounded-lg text-xs font-bold ${ratingStyle(empRating).chip}`}>{empRating}</span></p>
                         {empReport.weakAreas?.length > 0 && (
                           <p className="text-xs text-amber-400 mt-1">⚠ Weak areas: {empReport.weakAreas.join(', ')}</p>
                         )}
@@ -617,24 +616,38 @@ export default function ManagerDashboard() {
               tooltip="Mean score of the latest submission for each (assessment, employee) pair in your team. Retakes replace earlier attempts."
               textClass="text-indigo-400" bgClass="bg-slate-900/60" borderClass="border-slate-700/40" className="text-center" />
             <StatCard
-              label="Passed"
-              value={passedReports}
-              description="At or above pass mark"
-              tooltip="Submissions whose score is at or above that assessment's own pass threshold (default 80% if none was saved)."
+              label="Expert + Intermediate"
+              value={topSharePct == null ? '—' : `${topSharePct}%`}
+              description={`${topRated} of ${teamReports.length} submissions`}
+              tooltip="Share of the latest submissions rated Expert (90% and above) or Intermediate (80% to 89.99%)."
               textClass="text-emerald-400" bgClass="bg-slate-900/60" borderClass="border-slate-700/40" className="text-center" />
             <StatCard
-              label="Needs Attention"
-              value={needsAttention.length}
-              description="Below pass mark"
-              tooltip="Submissions scored below their assessment's pass threshold. Passed + Needs Attention = total submissions."
-              textClass="text-red-400" bgClass="bg-slate-900/60" borderClass="border-slate-700/40" className="text-center" />
+              label="No Rating"
+              value={noRatingReports.length}
+              description="Scored below 70%"
+              tooltip="Submissions scored 69.99% or lower, which earn no rating. Expert + Intermediate + Basic + No Rating = total submissions."
+              textClass="text-rose-400" bgClass="bg-slate-900/60" borderClass="border-slate-700/40" className="text-center" />
           </div>
+
+          {/* Rating distribution */}
+          {teamReports.length > 0 && (
+            <div className="mb-4 space-y-1.5" aria-label="Rating distribution">
+              {teamRatings.map((x) => (
+                <div key={x.label} className="flex items-center gap-2 text-xs" title={`${x.label}: score ${ratingStyle(x.label).range}`}>
+                  <span className={`w-24 shrink-0 truncate font-bold ${ratingStyle(x.label).text}`}>{x.label}</span>
+                  <div className="flex-1 min-w-0 h-2 rounded-full bg-slate-800 overflow-hidden">
+                    <div className={`h-full ${ratingStyle(x.label).bar}`} style={{ width: `${x.percent}%` }} />
+                  </div>
+                  <span className="w-16 shrink-0 text-right text-slate-400">{x.count} ({Math.round(x.percent)}%)</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Per-employee report rows */}
           <div className="space-y-2 max-h-56 overflow-y-auto">
             {teamReports.slice().sort((a, b) => reportScore(a) - reportScore(b)).map((r) => {
-              const scoreColor = isReportPassed(r) ? 'text-emerald-400' : 'text-red-400';
-              const gradeBg = isReportPassed(r) ? 'bg-emerald-500/15 border-emerald-500/30' : 'bg-red-500/15 border-red-500/30';
+              const rowRating = reportRating(r);
               return (
                 <div key={r.id} className="flex items-center gap-3 px-3 py-2.5 bg-slate-900/50 rounded-lg border border-slate-700/40">
                   <div className="w-7 h-7 rounded-lg bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 shrink-0">
@@ -648,20 +661,18 @@ export default function ManagerDashboard() {
                     {r.weakAreas?.length > 0 && (
                       <span className="text-xs text-amber-400 hidden sm:block">⚠ {r.weakAreas.slice(0,2).join(', ')}</span>
                     )}
-                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${gradeBg}`}>
-                      <span className={scoreColor}>{Math.round(reportScore(r))}%</span>
-                      <span className="text-slate-500 ml-1">{gradeForReport(r) || r.grade}</span>
-                    </span>
+                    <span className="text-xs font-bold text-slate-300">{Math.round(reportScore(r))}%</span>
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${ratingStyle(rowRating).chip}`}>{rowRating}</span>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {needsAttention.length > 0 && (
+          {noRatingReports.length > 0 && (
             <div className="mt-3 flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
               <span>⚠</span>
-              <span><strong>{needsAttention.length}</strong> employee{needsAttention.length !== 1 ? 's' : ''} scored below their assessment's pass threshold — consider approving auto-generated training modules.</span>
+              <span><strong>{noRatingReports.length}</strong> employee{noRatingReports.length !== 1 ? 's' : ''} finished with No Rating (below 70%) — consider approving auto-generated training modules.</span>
             </div>
           )}
         </div>

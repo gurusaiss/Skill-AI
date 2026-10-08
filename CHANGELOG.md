@@ -4,6 +4,26 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-12 (b) — New rating scale, module reports, and compact Excel reports
+
+**Rating scale replaces letter grades and Pass/Fail everywhere.** Score 90 and above is Expert, 80 to 89.99 is Intermediate, 70 to 79.99 is Basic, below 70 is No Rating, worked out on the exact (unrounded) score. Old results are rated the same way when shown. Dashboards that showed pass rate or "passed / needs attention" now show rating counts and shares; the employee result screen, manager and admin dashboards, reports, PDF, Word and Excel all use it. Readiness is derived from the rating so the two never disagree.
+**Excel reports redesigned.** Each workbook now has an Overview sheet (key numbers and rating distribution), a compact Results sheet of 14 narrow columns (one row per employee, no wrapped text, frozen header and first two columns, filters, colour-coded Status and Rating), a Details sheet for the long text, a Skills matrix coloured by rating, and a compact Question Review. PDF and Word follow the same rating wording.
+**Modules in Reports.** A new "Modules" tab under Reports lists completed modules by employee with filters (employee, module, job role, status, dates). Open any row to see the whole engagement: day-wise and section-wise progress, time spent, every question with the employee's answer, the correct answer and whether it was right, wrong or skipped, plus skills and a timeline. Download one employee-module or all filtered results as Excel, PDF, Word or a ZIP. The module screens now save each quiz attempt with the answers and time spent (modules finished before this only show what was saved then).
+**Re-approving a role no longer re-adds an employee whose assignment you deleted.**
+Files: `server/services/grading.js`, `client/src/utils/assessmentRules.js`, `server/services/reports/*`, `server/routes/moduleReports.js`, `server/services/moduleEngagement.js`, `server/routes/assignments.js`, `server/routes/roles.js`, `client/src/pages/reports/ModuleReports.jsx`, `ModuleSession.jsx`, `Report.jsx`, and the dashboards.
+
+---
+
+## 2026-10-12 — Assign by employee or by assessment, and manage each assigned employee (edit, reassign, delete)
+
+**Assign.** One dialog ("+ Assign employees" on the Assessments page, and inside each assessment): pick employees on the left (search by name, ID, email, department, job role), pick one or more existing assessments on the right (those that fit the employee's job role are shown first, and the best one is ticked for you), set start and end, and assign. A new joiner with an existing Job Library role takes three clicks. The result lists, per assessment, who was added, given again, or skipped and why.
+**Manage each employee inside an assessment.** Every row has a labelled "Manage" menu: View result, Edit dates, Reassign, Send reminder, Download report, Delete assignment. Tick rows for "Send reminders", "Reassign selected" or "Delete selected". The letter grade, Pass/Fail, Pass % / Fail % and Pass Threshold tiles are gone; the rating (Expert, Intermediate, Basic, No Rating) and a rating count per level are shown instead.
+**Delete is permanent and complete.** Deleting an assignment removes it from the assessment, the assignment row in the database, the employee's report and answers, and reminder history; the employee no longer sees it. Only an audit-log line is kept. If the employee already submitted, you must type their name or ID and click "Delete permanently". Deleting a whole assessment now also removes all of that and asks for confirmation.
+**It does not come back by itself.** The system remembers who was deleted from an assessment, so the automatic assignment for new joiners and the self-check when an employee opens their assessments will not re-add them (re-approving a role in the Job Library creates a new assessment and still needs a small separate change). Assigning them again on purpose clears that.
+Files: `server/services/assessmentRoster.js` (+ test), `server/services/AssessmentAutoAssign.js`, `server/services/DataStore.js` (delete helpers only), `server/routes/assessment.js`, `client/src/pages/AssessmentManagement.jsx`, `client/src/components/AssignAssessmentModals.jsx`, `client/src/components/AssignmentActions.jsx`.
+
+---
+
 ## 2026-10-11 — Pages load much faster, new header, and a read-only database check
 
 **Faster pages.** The biggest cause was the assessment list sending every employee's full question set (about 340 MB for a large assessment, taking 14 to 36 seconds) and the reports list sending every answer (about 170 MB, and in a large case it ran the server out of memory). Lists now send only what the screen shows (about 0.7 MB and 2.5 MB), and the full details load only when you open a row. Measured on synthetic data: assessments list 24 s to 0.02 s, reports 21 s to 0.14 s, admin dashboard 1.2 s to 0.07 s, the dashboard's first load 30 s to 0.15 s. Also: the server now remembers the signed-in user and table reads for a few seconds instead of asking the database on every call; static files are cached by the browser; missing files return 404 instead of the home page; the animation library loads only when needed.

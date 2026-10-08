@@ -26,6 +26,7 @@ import { preprocessDocumentText, extractJDCoreContent, removeFilenameFromText } 
 import GeminiService from '../services/GeminiService.js';
 import { ASSESSMENT_MIX, buildTypeSequence as buildAssessmentTypeSequence, mixCounts } from '../services/QuestionMix.js';
 import { ASSESSMENT_DURATION_MINUTES } from '../services/assessmentDefaults.js';
+import { collectRemovedUserIds } from '../services/assessmentRoster.js';
 
 // Use createRequire so CJS packages (pdf-parse, mammoth) load correctly from ESM
 const _require = createRequire(import.meta.url);
@@ -2199,13 +2200,27 @@ async function handleLockAssessment(req, res) {
     const normalizeRoleName = (s) => (s || '').toLowerCase().trim().replace(/[-_/]+/g, ' ').replace(/\s+/g, ' ');
     const targetRoleName = normalizeRoleName(role.roleName);
     const allUsers = await UserStore.getAllUsers({});
-    const targets = allUsers.filter(u =>
+    const allTargets = allUsers.filter(u =>
       (u.role === 'employee' || u.userRole === 'employee') &&
       normalizeRoleName(u.jobRole) === targetRoleName &&
       (u.companyId || 'default') === companyId
     );
 
-    if (targets.length === 0) {
+    // An admin can delete one employee's assignment from this role's assessment
+    // (tombstone in removedAssignments). Re-approving the role builds a NEW
+    // assessment, so carry those tombstones over and do not re-enrol those
+    // employees. Only an explicit "Assign" from the Assessments page clears one.
+    const priorActiveForRole = (await Assessments.getAll())
+      .filter(a => a.fromRoleId === role.id && (a.companyId || 'default') === companyId && a.isActive !== false);
+    const removedIds = collectRemovedUserIds(priorActiveForRole);
+    const carriedTombstones = [...new Map(
+      priorActiveForRole.flatMap(a => Array.isArray(a.removedAssignments) ? a.removedAssignments : [])
+        .filter(r => r?.userId)
+        .map(r => [r.userId, r])
+    ).values()];
+    const targets = allTargets.filter(u => !removedIds.has(u.userId || u.id));
+
+    if (allTargets.length === 0) {
       return res.status(400).json({ success: false, error: `No employees found with job role "${role.roleName}". Assign this role to employees first.` });
     }
 
@@ -2214,6 +2229,7 @@ async function handleLockAssessment(req, res) {
       id: randomUUID(),
       title: `${role.roleName} Assessment`,
       targetUsers: targets.map(u => u.userId || u.id),
+      removedAssignments: carriedTombstones,
       // employeeAssignments no longer embeds question text — it's a thin
       // roster; the actual questions are resolved from
       // employee_assessment_assignments (questionBankVersionId + order) at

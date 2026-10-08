@@ -3,8 +3,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
+import TabBar from '../components/TabBar.jsx';
+import ModuleReports from './reports/ModuleReports.jsx';
 import { useNotification } from '../contexts/NotificationContext.jsx';
-import { gradeForReport } from '../utils/assessmentRules.js';
+import { ratingForReport, ratingStyle } from '../utils/assessmentRules.js';
 
 // Every other page that makes a raw fetch (not via authFetch, which has its
 // own internal BASE_URL) declares this locally — this file was missing it
@@ -111,6 +113,20 @@ function SortIcon({ active, dir }) {
   return <span className="text-indigo-400 text-[10px] ml-1">{dir === 'asc' ? '▲' : '▼'}</span>;
 }
 
+// Reports page for admins/managers: Training Reports (existing table) + Modules (engagement review)
+function AdminReportsTabs({ user, navigate }) {
+  const initial = new URLSearchParams(window.location.search).get('tab') === 'modules' ? 'modules' : 'training';
+  const [tab, setTab] = useState(initial);
+  return (
+    <div className="bg-[#0F172A] min-h-screen">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+        <TabBar active={tab} onChange={setTab} tabs={[{ key: 'training', label: 'Training Reports' }, { key: 'modules', label: 'Modules' }]} />
+      </div>
+      {tab === 'modules' ? <ModuleReports /> : <AdminReportView user={user} navigate={navigate} />}
+    </div>
+  );
+}
+
 // ─── Admin/Manager Report Table ───────────────────────────────────────────────
 function AdminReportView({ user, navigate }) {
   const { notify } = useNotification();
@@ -209,7 +225,6 @@ function AdminReportView({ user, navigate }) {
         name: r.assessmentTitle || r.title || 'Untitled Assessment',
         status: r.status || 'submitted',
         score: r.score ?? r.completionRate ?? 0,
-        passThreshold: r.passThreshold ?? 80,
         progress: null, // assessments are graded, not progress-tracked
         scoreOrCompletion: r.score ?? r.completionRate ?? 0, // unified field kept for sorting
         assignedDate: r.assignedAt || null,
@@ -222,8 +237,7 @@ function AdminReportView({ user, navigate }) {
         startedAt: r.startedAtResolved || null,
         timeTakenMin: Number.isFinite(Number(r.timeTakenSeconds)) ? Number(r.timeTakenSeconds) / 60 : null,
         rawScore: r.rawScore ?? r.score ?? null,
-        passed: typeof r.passed === 'boolean' ? r.passed : null,
-        grade: gradeForReport(r) || r.grade || '',
+        rating: ratingForReport(r),
         strengths: (r.strengths || []).join('; '),
         weaknesses: (r.weakAreas || []).join('; '),
         skillGaps: (r.missingCompetencies || []).join('; '),
@@ -314,20 +328,17 @@ function AdminReportView({ user, navigate }) {
       // simplified out of the on-screen table — so no data is lost by downloading.
       // Same column names as the server-built "Results" sheet.
       const headers = ['Employee ID', 'Employee Name', 'Email', 'Job Role', 'Department', 'Type', 'Assessment / Module', 'Status',
-        'Assigned On', 'Due Date', 'Started At', 'Completed On', 'Time Taken (min)', 'Score %', 'Grade', 'Result', 'Pass Mark %',
+        'Assigned On', 'Due Date', 'Started At', 'Completed On', 'Time Taken (min)', 'Score %', 'Rating',
         'Progress %', 'Manager', 'Group', 'Strengths', 'Needs Improvement', 'Missing Skills', 'Recommendations'];
       const rows = sorted.map(r => {
         const isAssessment = r.type === 'assessment';
         const scoreVal = isAssessment ? (r.rawScore ?? r.score) : null;
         const hasScore = isAssessment && exportStatus(r) === 'Completed' && scoreVal !== null && scoreVal !== undefined;
-        const passMark = r.passThreshold ?? 80;
-        const result = hasScore ? ((r.passed ?? (Number(scoreVal) + 1e-9 >= passMark)) ? 'Pass' : 'Fail') : '—';
         return [
           txt(r.staffId || r.employeeId), txt(r.employeeName), txt(r.email), txt(r.jobRole), txt(r.department),
           isAssessment ? 'Assessment' : 'Module', txt(r.name), exportStatus(r),
           fmtDateTime(r.assignedDate), fmtDateTime(r.deadline), fmtDateTime(r.startedAt), fmtDateTime(r.completedDate),
-          numOrDash(r.timeTakenMin), hasScore ? numOrDash(scoreVal) : '—', hasScore ? (gradeForReport(r) || r.grade || '—') : '—', result,
-          isAssessment ? numOrDash(passMark, 0) : '—',
+          numOrDash(r.timeTakenMin), hasScore ? numOrDash(scoreVal) : '—', hasScore ? (r.rating || '—') : '—',
           !isAssessment && r.progress != null ? numOrDash(r.progress, 0) : '—',
           txt(r.manager), txt(r.group), txt(r.strengths), txt(r.weaknesses), txt(r.skillGaps), txt(r.recommendations),
         ];
@@ -492,12 +503,11 @@ function AdminReportView({ user, navigate }) {
                 <tbody className="divide-y divide-slate-700/30">
                   {pageRows.map(r => {
                     const displayValue = Math.round(r.scoreOrCompletion || 0);
-                    // Assessment scores are pass/fail against the assessment's own
-                    // configured threshold (same fact the employee's report and
-                    // admin's export use); module completion % has no such
-                    // threshold, so it keeps its existing tiered coloring.
+                    // Assessment scores are coloured by their rating band (the same scale the
+                    // employee's report and the exports use); module completion % keeps its
+                    // existing tiered coloring.
                     const valueColor = r.type === 'assessment'
-                      ? (displayValue >= (r.passThreshold ?? 80) ? 'text-emerald-400' : 'text-red-400')
+                      ? ratingStyle(r.rating).text
                       : (displayValue >= 80 ? 'text-emerald-400' : displayValue >= 50 ? 'text-amber-400' : 'text-red-400');
                     return (
                       <tr key={r.id} className="hover:bg-slate-800/20 transition-all h-[52px]">
@@ -515,7 +525,12 @@ function AdminReportView({ user, navigate }) {
                           <span className="mr-1">{r.type === 'assessment' ? '📝' : '📚'}</span>{r.name}
                         </td>
                         <td className={TD_CLS}><span className="capitalize text-xs px-2 py-0.5 rounded bg-slate-700/40 border border-slate-600/40 whitespace-nowrap">{r.status}</span></td>
-                        <td className={TD_CLS}>{r.score != null ? <span className={`text-xs font-bold ${valueColor}`}>{Math.round(r.score)}%</span> : <span className="text-slate-600">—</span>}</td>
+                        <td className={TD_CLS}>{r.score != null ? (
+                          <span className="inline-flex items-center gap-1.5 min-w-0">
+                            <span className={`text-xs font-bold ${valueColor}`}>{Math.round(r.score)}%</span>
+                            {r.type === 'assessment' && r.rating && <span className={`truncate px-1.5 py-0.5 rounded text-[10px] font-bold ${ratingStyle(r.rating).chip}`} title={`Rating: ${r.rating}`}>{r.rating}</span>}
+                          </span>
+                        ) : <span className="text-slate-600">—</span>}</td>
                         <td className={TD_CLS}>
                           {r.progress != null ? (
                             <div className="flex items-center gap-2 min-w-[60px]">
@@ -1115,7 +1130,7 @@ export default function Report() {
   }
 
   if (isAdminOrManager) {
-    return <AdminReportView user={user} navigate={navigate} />;
+    return <AdminReportsTabs user={user} navigate={navigate} />;
   }
 
   return <EmployeeReportView user={user} navigate={navigate} />;

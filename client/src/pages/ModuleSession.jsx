@@ -1196,7 +1196,9 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
     }
   };
 
+  const answeredAtRef = useRef({}); // when each answer was last changed (saved with the report)
   const handleAnswer = (qIdx, value) => {
+    answeredAtRef.current[qIdx] = new Date().toISOString();
     setAnswers(prev => ({ ...prev, [qIdx]: value }));
   };
 
@@ -1225,7 +1227,7 @@ function QuizPhase({ session, sessionIndex, module, onComplete }) {
         isCorrect = userAnswer === correctAnswer;
       }
       if (isCorrect) correct++;
-      return { ...q, userAnswer: answers[i] || '', isCorrect };
+      return { ...q, userAnswer: answers[i] || '', isCorrect, answeredAt: answeredAtRef.current[i] || null };
     });
     const pct = Math.round((correct / questions.length) * 100);
     const scoreData = { correct, total: questions.length, pct, results };
@@ -1619,6 +1621,55 @@ export default function ModuleSession() {
   const [isObserver, setIsObserver] = useState(false);
   const [observedName, setObservedName] = useState('');
 
+  // ── Engagement tracking (feeds Reports > Modules) ──────────────────────────
+  // Counts only the seconds the tab is visible, and sends small events that the
+  // server folds into the assignment's saved engagement record.
+  const activeSecRef = useRef(0);
+  const quizStartedAtRef = useRef(null);
+  const openedAtRef = useRef(new Date().toISOString());
+  const engagementCtx = useRef({});
+  engagementCtx.current = { assignmentId, sessionIndex, isObserver, title: session?.title || session?.topic || `Day ${sessionIndex + 1}` };
+
+  const sendEngagement = (extra = {}) => {
+    const c = engagementCtx.current;
+    if (!c.assignmentId || c.isObserver) return Promise.resolve();
+    const addSeconds = activeSecRef.current;
+    activeSecRef.current = 0;
+    return authFetch(`/api/assignments/${c.assignmentId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        engagementEvent: { sessionIndex: c.sessionIndex, sessionTitle: c.title, startedAt: openedAtRef.current, addSeconds, ...extra },
+      }),
+    }).catch(() => { activeSecRef.current += addSeconds; });
+  };
+
+  useEffect(() => {
+    const tick = setInterval(() => { if (document.visibilityState === 'visible') activeSecRef.current += 5; }, 5000);
+    const flushTimer = setInterval(() => { if (activeSecRef.current >= 30) sendEngagement(); }, 60000);
+    const onHide = () => { if (document.visibilityState === 'hidden' && activeSecRef.current > 0) sendEngagement(); };
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      clearInterval(tick); clearInterval(flushTimer);
+      document.removeEventListener('visibilitychange', onHide);
+      if (activeSecRef.current > 0) sendEngagement();
+    };
+  }, []);
+
+  // First open of this day: record the start time and which sections were shown.
+  useEffect(() => {
+    if (!session || !assignmentId || isObserver) return;
+    openedAtRef.current = new Date().toISOString();
+    const blocks = Array.isArray(session.blocks) ? session.blocks : [];
+    const sections = blocks.length
+      ? blocks.map(b => ({ title: b.title || b.heading || b.type || 'Section', type: b.type || '' }))
+      : (session.topics || session.keyPoints || []).slice(0, 12).map(t => ({ title: typeof t === 'string' ? t : (t?.title || ''), type: 'topic' }));
+    sendEngagement({ opened: true, sectionsViewed: sections });
+  }, [session?.title, sessionIndex, assignmentId, isObserver]);
+
+  useEffect(() => {
+    if (phase === 'quiz') quizStartedAtRef.current = new Date().toISOString();
+  }, [phase, quizKey]);
+
   useEffect(() => {
     loadData();
   }, [moduleId, sessionIndex]);
@@ -1729,7 +1780,8 @@ export default function ModuleSession() {
       // Fetch current assignment to get the full existing state
       const current = await authFetch(`/api/assignments/${assignmentId}`);
       const existingProgress = current?.sessionProgress || current?.session_progress || {};
-      const existingProgressData = current?.progress_data || {};
+      // `engagement` is owned by the server; never echo it back (keeps the payload small).
+      const { engagement: _serverOwned, ...existingProgressData } = current?.progress_data || current?.progressData || {};
       const existingSessionReports = existingProgressData?.sessionReports || {};
 
       // Merge session completion — never overwrite previous sessions
@@ -1762,6 +1814,15 @@ export default function ModuleSession() {
         results: score.results,
       };
 
+      // Engagement for Reports > Modules: this attempt's full question-by-question
+      // record plus the time spent so far. The server merges it into what is
+      // already saved (earlier attempts and days are never overwritten).
+      const submittedAt = sessionReport.completedAt;
+      const startedAt = quizStartedAtRef.current || openedAtRef.current;
+      const attemptSeconds = Math.max(0, Math.round((new Date(submittedAt) - new Date(startedAt)) / 1000));
+      const addSeconds = activeSecRef.current;
+      activeSecRef.current = 0;
+
       await authFetch(`/api/assignments/${assignmentId}`, {
         method: 'PUT',
         body: JSON.stringify({
@@ -1772,8 +1833,15 @@ export default function ModuleSession() {
             ...existingProgressData,
             sessionReports: { ...existingSessionReports, [sessionIndex]: sessionReport },
           },
+          engagementEvent: {
+            sessionIndex,
+            sessionTitle: sessionReport.sessionTitle,
+            startedAt: openedAtRef.current,
+            addSeconds,
+            attempt: { startedAt, submittedAt, timeSpentSeconds: attemptSeconds, results: score.results },
+          },
         }),
-      });
+      }).catch((err) => { activeSecRef.current += addSeconds; throw err; });
     } catch (_) {
       setSaveError(true);
     } finally {

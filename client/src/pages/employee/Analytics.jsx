@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import { authFetch } from '../../utils/authFetch.js';
 import StatCard from '../../components/StatCard.jsx';
+import { ratingFromPercent, ratingStyle } from '../../utils/assessmentRules.js';
 
 const COLORS = {
   indigo : '#6366f1',
@@ -152,10 +153,9 @@ export default function Analytics() {
       .map((a, i) => ({
         name : (a.title || `Test ${i + 1}`).slice(0, 18),
         score: Math.round(scoreOf(a)),
-        // Same threshold the admin/manager/report views use for this exact
-        // submission — never a hardcoded split — so "pass" means the same
-        // thing everywhere this score is shown.
-        passThreshold: a.submission?.scoring?.passThreshold ?? a.scoring?.passThreshold ?? a.passThreshold ?? 80,
+        // Rating band from the exact (unrounded) score, the same scale every
+        // other view and export uses.
+        rating: ratingFromPercent(scoreOf(a)),
       }));
   }, [assessments]);
 
@@ -330,10 +330,10 @@ export default function Analytics() {
                     interval={0}
                   />
                   <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} unit="%" />
-                  <Tooltip contentStyle={customTooltipStyle} formatter={(v) => [`${v}%`, 'Score']} />
+                  <Tooltip contentStyle={customTooltipStyle} formatter={(v, _n, item) => [`${v}%  (${item?.payload?.rating || ''})`, 'Score']} />
                   <Bar dataKey="score" name="Score" radius={[6, 6, 0, 0]}>
                     {assessmentScores.map((entry, i) => (
-                      <Cell key={i} fill={entry.score >= entry.passThreshold ? COLORS.emerald : COLORS.rose} />
+                      <Cell key={i} fill={ratingStyle(entry.rating).hex} />
                     ))}
                   </Bar>
                 </BarChart>

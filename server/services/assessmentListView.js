@@ -14,7 +14,7 @@
 
 // Scalar score fields list/detail tables read from `ea.scoring`.
 // `weakAreas` is kept because "Auto-assign modules" reads it per employee.
-const SCORING_KEYS = ['score', 'rawScore', 'grade', 'correct', 'total', 'passThreshold', 'passed', 'weakAreas'];
+const SCORING_KEYS = ['score', 'rawScore', 'rating', 'grade', 'correct', 'total', 'passThreshold', 'passed', 'weakAreas'];
 
 export function slimScoring(scoring) {
   if (!scoring || typeof scoring !== 'object') return scoring;

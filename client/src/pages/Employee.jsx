@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { authFetch } from '../utils/authFetch.js';
 import { useNotification } from '../contexts/NotificationContext.jsx';
 import StatCard from '../components/StatCard.jsx';
+import { ratingForReport, ratingStyle } from '../utils/assessmentRules.js';
 
 const SkeletonCard = () => (
   <div className="rounded-2xl border border-slate-700/40 bg-slate-800/30 p-5 animate-pulse">
@@ -559,9 +560,10 @@ export default function Employee() {
                   const isNotYet = a.isVisible === false;
                   const score = a.submission?.scoring?.score ?? a.scoring?.score ?? a.score ?? null;
                   const pctScore = score !== null ? Math.round(score) : null;
-                  const scoreBg = pctScore !== null
-                    ? pctScore >= 80 ? 'text-emerald-400' : pctScore >= 60 ? 'text-amber-400' : 'text-red-400'
-                    : '';
+                  // Rating band from the exact score (same scale as the report and exports).
+                  const scoring = a.submission?.scoring ?? a.scoring ?? { score };
+                  const rating = pctScore !== null ? ratingForReport(scoring) : null;
+                  const scoreBg = rating ? ratingStyle(rating).text : '';
                   const statusBadge = isSubmitted
                     ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
                     : isExpired
@@ -587,6 +589,7 @@ export default function Employee() {
                           )}
                           <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${statusBadge}`}>{statusLabel}</span>
                           {pctScore !== null && <span className={`text-xs font-black ${scoreBg}`}>{pctScore}%</span>}
+                          {rating && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${ratingStyle(rating).chip}`} title={`Rating: ${rating}`}>{rating}</span>}
                         </div>
                       </div>
                       {!isSubmitted && !isExpired && !isNotYet && (

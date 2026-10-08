@@ -348,6 +348,18 @@ export const Submissions = {
   async update(id, updates) {
     return updateHealed('assessment_submissions', 'assessment_submissions.json', id, updates);
   },
+  async delete(id) {
+    return deleteHealed('assessment_submissions', 'assessment_submissions.json', id);
+  },
+  // Hard-delete every submission of one employee for one assessment
+  // (assessmentId + userId), or of the whole assessment when userId is null.
+  // Returns how many rows were removed.
+  async deleteByAssessmentUser(assessmentId, userId = null) {
+    const all = await this.getAll();
+    const rows = (all || []).filter(s => s.assessmentId === assessmentId && (userId == null || s.employeeId === userId || s.userId === userId));
+    for (const r of rows) await deleteHealed('assessment_submissions', 'assessment_submissions.json', r.id);
+    return rows.length;
+  },
 };
 
 // ── ASSESSMENT REPORTS ────────────────────────────────────────────────────────
@@ -377,6 +389,16 @@ export const Reports = {
   },
   async update(id, updates) {
     return updateHealed('assessment_reports', 'assessment_reports.json', id, updates);
+  },
+  async delete(id) {
+    return deleteHealed('assessment_reports', 'assessment_reports.json', id);
+  },
+  // Same contract as Submissions.deleteByAssessmentUser; returns the removed rows' ids.
+  async deleteByAssessmentUser(assessmentId, userId = null) {
+    const all = await this.getAll();
+    const rows = (all || []).filter(r => r.assessmentId === assessmentId && (userId == null || r.employeeId === userId || r.userId === userId));
+    for (const r of rows) await deleteHealed('assessment_reports', 'assessment_reports.json', r.id);
+    return rows.map(r => r.id);
   },
 };
 
@@ -1373,6 +1395,37 @@ export const EmployeeAssessmentAssignments = {
     if (idx >= 0) { all[idx] = { ...all[idx], question_order: order }; writeFile(EAA_FILE, all); return all[idx]; }
     return null;
   },
+  // Merge-safe window edit: touches ONLY start_at / due_at, never status or scoring.
+  async updateWindow(assessmentId, userId, { startAt, dueAt }) {
+    const payload = { start_at: startAt || null, due_at: dueAt || null };
+    const sb = getSB();
+    if (sb) {
+      const { error } = await sb.from('employee_assessment_assignments')
+        .update(payload).eq('assessment_id', assessmentId).eq('user_id', userId);
+      if (error) console.warn('[DataStore] employee_assessment_assignments.updateWindow:', error.message);
+    }
+    const all = readFileRecords(EAA_FILE);
+    const idx = all.findIndex(r => r.assessment_id === assessmentId && r.user_id === userId);
+    if (idx >= 0) { all[idx] = { ...all[idx], ...payload }; writeFile(EAA_FILE, all); return all[idx]; }
+    return null;
+  },
+  // HARD delete of one employee's row for one assessment (or every row of the
+  // assessment when userId is null), in Supabase AND the local file copy so the
+  // self-healing paths cannot resurrect it. Returns true when no error occurred.
+  async deleteByAssessmentUser(assessmentId, userId = null) {
+    let ok = true;
+    const sb = getSB();
+    if (sb) {
+      let q = sb.from('employee_assessment_assignments').delete().eq('assessment_id', assessmentId);
+      if (userId != null) q = q.eq('user_id', userId);
+      const { error } = await q;
+      if (error) { ok = false; console.warn('[DataStore] employee_assessment_assignments.delete:', error.message); }
+    }
+    const all = readFileRecords(EAA_FILE);
+    const keep = all.filter(r => !(r.assessment_id === assessmentId && (userId == null || r.user_id === userId)));
+    if (keep.length !== all.length) writeFile(EAA_FILE, keep);
+    return ok;
+  },
 };
 
 // ── REMINDERS ─────────────────────────────────────────────────────────────
@@ -1420,6 +1473,22 @@ export const Reminders = {
     all.push(row);
     writeFile(REMINDERS_FILE, all);
     return row;
+  },
+  // Hard-delete the reminder history of one assignment (or of a whole assessment
+  // when employeeId is null). Supabase and the local file copy.
+  async deleteByAssignment(assessmentId, employeeId = null) {
+    let ok = true;
+    const sb = getSB();
+    if (sb) {
+      let q = sb.from('reminders').delete().eq('assessment_id', assessmentId);
+      if (employeeId != null) q = q.eq('employee_id', employeeId);
+      const { error } = await q;
+      if (error) { ok = false; console.warn('[DataStore] reminders.delete:', error.message); }
+    }
+    const all = readFileRecords(REMINDERS_FILE);
+    const keep = all.filter(r => !(r.assessment_id === assessmentId && (employeeId == null || r.employee_id === employeeId)));
+    if (keep.length !== all.length) writeFile(REMINDERS_FILE, keep);
+    return ok;
   },
 };
 

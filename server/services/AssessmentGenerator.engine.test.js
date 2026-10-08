@@ -35,9 +35,16 @@ describe('generation engine', () => {
   it('finishes within the time budget with the exact count when the LLM never answers', async () => {
     hang.mockImplementation(() => new Promise(() => {})); // provider that hangs forever
     const text = doc(12);
+    // virtual clock: independent of CPU load; the hanging provider can only be got past by the time budget
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     const t0 = Date.now();
-    const qs = await generateQuestionsFromFiles([{ name: 'a.pdf', text, questionCount: 20, sourceType: 'supporting' }, { name: 'b.pdf', text: doc(8), questionCount: 10, sourceType: 'supporting' }], { jobRole: 'Order Desk', seed: 't' });
-    expect(Date.now() - t0).toBeLessThan(9000);
+    let qs;
+    try {
+      const p = generateQuestionsFromFiles([{ name: 'a.pdf', text, questionCount: 20, sourceType: 'supporting' }, { name: 'b.pdf', text: doc(8), questionCount: 10, sourceType: 'supporting' }], { jobRole: 'Order Desk', seed: 't' });
+      await vi.advanceTimersByTimeAsync(6000 + 1000);
+      qs = await p;
+      expect(Date.now() - t0).toBeLessThanOrEqual(7000); // budget (6s) + nothing more
+    } finally { vi.useRealTimers(); }
     expect(qs).toHaveLength(30);
     expect(qs.filter(q => q.isTemplateFallback)).toHaveLength(0); // document-specific completion, not generic templates
     expect(qs.every(q => q.generatedBy === 'extractive')).toBe(true);

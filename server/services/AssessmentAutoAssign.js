@@ -12,6 +12,7 @@
 import { randomUUID } from 'crypto';
 import { RoleLibrary, Assessments, QuestionBankVersions, EmployeeAssessmentAssignments } from './DataStore.js';
 import { ASSESSMENT_DURATION_MINUTES } from './assessmentDefaults.js';
+import { isRemovedFromAssessment } from './assessmentRoster.js';
 
 const shuffle = arr => [...arr].sort(() => Math.random() - 0.5);
 
@@ -52,6 +53,13 @@ export async function autoAssignPreAssessment(user) {
       // randomized), matching handleLockAssessment's guarantee.
       const allAssessments = await Assessments.getAll();
       let assessment = allAssessments.find(a => a.fromRoleId === roleMatch.id && a.isActive && (a.companyId || 'default') === companyId);
+
+      if (assessment && isRemovedFromAssessment(assessment, userId)) {
+        // An admin deleted this employee's assignment on purpose: never bring it
+        // back automatically. Only an explicit POST /:id/assign clears the tombstone.
+        console.log(`[auto-assessment] ${user.email} was removed from assessment ${assessment.id} by an admin - not re-assigning`);
+        return;
+      }
 
       if (assessment) {
         const alreadyTargeted = (assessment.targetUsers || []).includes(userId);
@@ -142,6 +150,14 @@ export async function autoAssignPreAssessment(user) {
     } else {
       // No approved version yet — legacy embedded-question path, but using
       // the FULL bank (whatever size it genuinely is), never truncated.
+      // This branch creates a NEW assessment on every call, so a deleted
+      // assignment on an existing active assessment of the role must stop it.
+      const existingForRole = (await Assessments.getAll())
+        .filter(a => a.fromRoleId === roleMatch.id && a.isActive !== false && (a.companyId || 'default') === companyId);
+      if (existingForRole.some(a => isRemovedFromAssessment(a, userId))) {
+        console.log(`[auto-assessment] ${user.email} was removed from an assessment for role "${roleMatch.roleName}" by an admin - not re-assigning`);
+        return;
+      }
       const assessment = {
         id: randomUUID(),
         // Titled from the matched Job Library role's own canonical name, not

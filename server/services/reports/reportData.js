@@ -6,7 +6,7 @@
  * Rule: nothing that reaches a downloaded file may ever read "undefined",
  * "null", "NaN" or "Invalid Date" — missing values become an em dash.
  */
-import { gradeForReport, gradeFromPercent } from '../grading.js';
+import { ratingForReport, ratingFromPercent, ratingDistribution, readinessFromRating, RATINGS } from '../grading.js';
 import { normalizeDuration } from '../assessmentDefaults.js';
 import { resolveWindow } from '../assessmentSchedule.js';
 
@@ -163,11 +163,6 @@ export function buildResultRow({ assessment = {}, ea = {}, report = null, eaaRow
   const total = num(first(sc?.total, completed ? assessment.questionCount : null, completed ? null : assessment.questionCount));
   let scorePct = num(first(sc?.rawScore, (correct !== null && total) ? (correct * 100) / total : null, sc?.score));
   if (scorePct !== null) scorePct = Math.round(scorePct * 10) / 10;
-  const passMark = num(first(sc?.passThreshold, snap.passThreshold, ea.passThreshold, assessment.settings?.passPercentage, 80));
-  let passed = null;
-  if (completed && scorePct !== null) {
-    passed = typeof sc?.passed === 'boolean' ? sc.passed : (scorePct + 1e-9 >= passMark);
-  }
 
   const skills = (Array.isArray(sc?.skillBreakdown) ? sc.skillBreakdown : []).map(s => {
     const c = num(s.correct), t = num(s.total);
@@ -195,7 +190,6 @@ export function buildResultRow({ assessment = {}, ea = {}, report = null, eaaRow
   const pick = (field, live) => (completed ? first(snap[field], ea[field], live) : first(live, ea[field]));
   const managerName = completed ? first(snap.managerName, ea.managerName, manager?.name, group?.managerName) : first(manager?.name, group?.managerName, ea.managerName);
   const managerId = pick('managerId', first(user?.managerId, group?.managerId));
-  const readiness = sc?.readinessLevel;
 
   return {
     userId: ea.userId || user?.userId || '',
@@ -224,12 +218,11 @@ export function buildResultRow({ assessment = {}, ea = {}, report = null, eaaRow
     correct,
     total,
     scorePct,
-    grade: sc ? safe(gradeForReport(sc), '') : '',
-    passed,
-    result: passed === null ? '' : (passed ? 'Pass' : 'Fail'),
-    passMark,
-    performance: safe(sc?.performanceClassification?.label, ''),
-    readiness: typeof readiness === 'string' ? safe(readiness, '') : safe(readiness?.label, ''),
+    // Rating replaces the letter grade and Pass/Fail. Old stored reports are
+    // rated here from their counts/percentage. Readiness is derived from the
+    // rating so the two can never contradict each other.
+    rating: completed && sc ? ratingForReport(sc) : '',
+    readiness: completed && sc ? readinessFromRating(ratingForReport(sc)) : '',
     skills,
     skillScoresText: skills.map(s => `${s.skill} ${s.pct === null ? DASH : `${s.pct}%`}`).join('; '),
     strengths: asList(sc?.strengths),
@@ -269,9 +262,9 @@ export function buildSummary(rows, assessment = {}, company = null, now = new Da
   const done = active.filter(r => r.status === STATUS.COMPLETED);
   const scores = done.map(r => r.scorePct).filter(s => s !== null);
   const count = (s) => active.filter(r => r.status === s).length;
-  const grades = { A: 0, B: 0, C: 0 };
-  for (const r of done) if (grades[r.grade] !== undefined) grades[r.grade]++;
-  const passedN = done.filter(r => r.passed === true).length;
+  const ratings = ratingDistribution(done.filter(r => r.rating).map(r => r.rating));
+  const ratingCounts = Object.fromEntries(ratings.map(x => [x.label, x.count]));
+  const topN = (ratingCounts.Expert || 0) + (ratingCounts.Intermediate || 0);
   const win = rows[0] ? { start: rows[0].windowStart, due: rows[0].dueAt } : { start: assessment.assessmentDate, due: assessment.deadline };
   const dues = rows.map(r => toDate(r.dueAt)).filter(Boolean).sort((a, b) => a - b);
   const starts = rows.map(r => toDate(r.windowStart)).filter(Boolean).sort((a, b) => a - b);
@@ -284,7 +277,6 @@ export function buildSummary(rows, assessment = {}, company = null, now = new Da
     startAt: starts[0] || win.start || null,
     dueAt: dues.length ? dues[dues.length - 1] : (win.due || null),
     timeLimitMin: normalizeDuration(assessment.duration),
-    passMark: num(first(assessment.settings?.passPercentage, rows.find(r => r.passMark !== null)?.passMark, 80)),
     assigned: active.length,
     completed: done.length,
     inProgress: count(STATUS.IN_PROGRESS),
@@ -296,10 +288,9 @@ export function buildSummary(rows, assessment = {}, company = null, now = new Da
     avgScore: scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null,
     highScore: scores.length ? Math.max(...scores) : null,
     lowScore: scores.length ? Math.min(...scores) : null,
-    passed: passedN,
-    failed: done.filter(r => r.passed === false).length,
-    passPct: done.length ? Math.round((passedN / done.length) * 1000) / 10 : null,
-    grades,
+    ratings,
+    ratingCounts,
+    topSharePct: done.length ? Math.round((topN / done.length) * 1000) / 10 : null,
     generatedAt: now,
   };
 }
@@ -321,9 +312,9 @@ export function skillAverages(rows) {
     .sort((a, b) => a.pct - b.pct);
 }
 
-/** Employees a manager should act on: not completed, or failed. Most urgent first. */
+/** Employees a manager should act on: not completed, or rated No Rating. Most urgent first. */
 export function followUpList(rows, now = new Date()) {
-  const rank = { [STATUS.OVERDUE]: 0, Failed: 1, [STATUS.IN_PROGRESS]: 2, [STATUS.NOT_STARTED]: 3 };
+  const rank = { [STATUS.OVERDUE]: 0, 'No Rating': 1, [STATUS.IN_PROGRESS]: 2, [STATUS.NOT_STARTED]: 3 };
   const out = [];
   for (const r of rows) {
     if (r.status === STATUS.CANCELLED) continue;
@@ -331,7 +322,7 @@ export function followUpList(rows, now = new Date()) {
     let reason = '';
     const due = toDate(r.dueAt);
     if (r.status === STATUS.COMPLETED) {
-      if (r.passed === false) { kind = 'Failed'; reason = `Scored ${fmtPct(r.scorePct, 1)}, pass mark is ${fmtPct(r.passMark)}`; }
+      if (r.rating === 'No Rating') { kind = 'No Rating'; reason = `Scored ${fmtPct(r.scorePct, 1)}, below 70%`; }
     } else if (r.status === STATUS.OVERDUE) {
       const days = due ? Math.max(1, Math.round((now - due) / 86400000)) : null;
       kind = STATUS.OVERDUE; reason = days ? `Overdue by ${days} day${days === 1 ? '' : 's'}` : 'Past the due date';
@@ -341,15 +332,14 @@ export function followUpList(rows, now = new Date()) {
       reason = days === null ? 'No due date set' : (days <= 0 ? 'Due today' : `Due in ${days} day${days === 1 ? '' : 's'}`);
       if (r.status === STATUS.IN_PROGRESS) reason = `Started, not submitted. ${reason}`;
     }
-    if (kind) out.push({ row: r, kind, status: kind === 'Failed' ? 'Failed' : r.status, reason, rank: rank[kind] ?? 9 });
+    if (kind) out.push({ row: r, kind, status: kind === 'No Rating' ? 'No Rating' : r.status, reason, rank: rank[kind] ?? 9 });
   }
   return out.sort((a, b) => a.rank - b.rank || (toDate(a.row.dueAt)?.getTime() ?? Infinity) - (toDate(b.row.dueAt)?.getTime() ?? Infinity));
 }
 
-/** "Result" label used by the PDF/Word results table. */
-export function resultLabel(r) {
-  if (r.status === STATUS.COMPLETED) return r.passed === true ? 'Passed' : r.passed === false ? 'Failed' : 'Completed';
-  return r.status;
+/** Rating when completed, otherwise the status (used by the PDF/Word results tables). */
+export function ratingLabel(r) {
+  return r.status === STATUS.COMPLETED && r.rating ? r.rating : r.status;
 }
 
 /** Picks the report that belongs to the CURRENT attempt (latest submission). */
@@ -366,4 +356,4 @@ export function safeFilename(s, fallback = 'Report') {
   return t || fallback;
 }
 
-export { gradeFromPercent };
+export { ratingFromPercent, RATINGS };

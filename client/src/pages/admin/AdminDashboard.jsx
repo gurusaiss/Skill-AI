@@ -10,6 +10,7 @@ import { authFetch } from '../../utils/authFetch.js';
 import { useNotification } from '../../contexts/NotificationContext.jsx';
 import StatCard from '../../components/StatCard.jsx';
 import TabBar from '../../components/TabBar.jsx';
+import { ratingForReport, ratingStyle, ratingDistribution } from '../../utils/assessmentRules.js';
 
 // ── Utility UI ─────────────────────────────────────────────────────────────────
 
@@ -116,13 +117,9 @@ function CodeCard({ code, busy, doAction, deleteCode }) {
 
 // ── Report helpers ─────────────────────────────────────────────────────────────
 
-function classTag(label) {
-  const l = (label || '').toLowerCase();
-  if (l.includes('outstanding') || l.includes('excellent')) return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
-  if (l.includes('good')) return 'bg-sky-500/20 text-sky-300 border-sky-500/30';
-  if (l.includes('average')) return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
-  if (l.includes('needs') || l.includes('critical')) return 'bg-red-500/20 text-red-300 border-red-500/30';
-  return 'bg-slate-700/40 text-slate-300 border-slate-600/40';
+// Rating chip classes for a stored report (rated from its exact score; old reports included).
+function ratingTag(report) {
+  return `${ratingStyle(ratingForReport(report)).chip}`;
 }
 
 function buildTimeline(empReports, empAssignments, modMap) {
@@ -144,7 +141,7 @@ function exportEmployeePDF(emp, empReports, empAssignments, modMap) {
     <tr>
       <td>${r.assessmentTitle || '—'}</td>
       <td>${r.score != null ? r.score + '%' : '—'}</td>
-      <td>${r.performanceClassification?.label || '—'}</td>
+      <td>${ratingForReport(r)}</td>
       <td>${reportDate(r) ? new Date(reportDate(r)).toLocaleDateString() : '—'}</td>
     </tr>`).join('');
   const modRows = empAssignments.map(a => `
@@ -182,7 +179,7 @@ function exportEmployeePDF(emp, empReports, empAssignments, modMap) {
       <div class="info-item"><label>Status</label><span>${emp.status || 'Active'}</span></div>
     </div>
     <h2>Assessment Reports (${empReports.length})</h2>
-    ${empReports.length > 0 ? `<table><thead><tr><th>Assessment</th><th>Score</th><th>Classification</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>` : '<p style="color:#94a3b8">No assessments completed.</p>'}
+    ${empReports.length > 0 ? `<table><thead><tr><th>Assessment</th><th>Score</th><th>Rating</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>` : '<p style="color:#94a3b8">No assessments completed.</p>'}
     <h2>Learning Modules (${empAssignments.length})</h2>
     ${empAssignments.length > 0 ? `<table><thead><tr><th>Module</th><th>Status</th><th>Assigned</th><th>Completed</th></tr></thead><tbody>${modRows}</tbody></table>` : '<p style="color:#94a3b8">No modules assigned.</p>'}
     <div class="footer">SkillForge AI — Confidential Employee Report &nbsp;|&nbsp; ${new Date().toISOString()}</div>
@@ -242,9 +239,9 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
         <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-slate-700/50 border-b border-slate-700/50">
           {[
             { label: 'Assessments', value: distinctAssessments, color: 'text-indigo-400' },
-            { label: 'Latest Score', value: latestReport && latestReport.score != null ? `${latestReport.score}%` : '—', color: latestReport?.score >= 70 ? 'text-emerald-400' : latestReport?.score != null ? 'text-amber-400' : 'text-slate-500' },
+            { label: 'Latest Score', value: latestReport && latestReport.score != null ? `${latestReport.score}%` : '—', color: latestReport?.score != null ? ratingStyle(ratingForReport(latestReport)).text : 'text-slate-500' },
             { label: 'Avg Progress', value: empLiveAssignments.length > 0 ? `${Math.round(empLiveAssignments.reduce((s,a) => s + assignmentProgress(a), 0) / empLiveAssignments.length)}%` : '—', color: 'text-emerald-400' },
-            { label: 'Classification', value: latestReport?.performanceClassification?.label || '—', color: 'text-slate-300' },
+            { label: 'Rating', value: latestReport ? ratingForReport(latestReport) : '—', color: latestReport ? ratingStyle(ratingForReport(latestReport)).text : 'text-slate-500' },
           ].map((s, i) => (
             <div key={i} className="py-3 px-4 text-center">
               <p className={`text-sm font-black ${s.color}`}>{s.value}</p>
@@ -307,15 +304,13 @@ function EmployeeDetailPopup({ employee: emp, allReports, allAssignments, module
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {r.score != null && (
-                        <span className={`text-lg font-black ${r.score >= 80 ? 'text-emerald-400' : r.score >= 60 ? 'text-amber-400' : 'text-red-400'}`}>{r.score}%</span>
+                        <span className={`text-lg font-black ${ratingStyle(ratingForReport(r)).text}`}>{r.score}%</span>
                       )}
                     </div>
                   </div>
-                  {r.performanceClassification?.label && (
-                    <span className={`mt-2 inline-block text-xs font-bold px-2.5 py-0.5 rounded-full border ${classTag(r.performanceClassification.label)}`}>
-                      {r.performanceClassification.label}
-                    </span>
-                  )}
+                  <span className={`mt-2 inline-block text-xs font-bold px-2.5 py-0.5 rounded-full ${ratingTag(r)}`}>
+                    {ratingForReport(r)}
+                  </span>
                   {r.weakAreas?.length > 0 && (
                     <div className="mt-2">
                       <p className="text-xs font-semibold text-slate-500 mb-1">Skill gaps:</p>
@@ -538,6 +533,7 @@ export default function AdminDashboard() {
         pendingRequests: Number.isFinite(serverStats?.pendingApprovals) ? serverStats.pendingApprovals : clientPending,
         assessmentsCompleted: submissions.length,
         avgAssessmentScore,
+        ratings: ratingDistribution(submissions.map(ratingForReport)),
       });
     } catch (err) {
       showToast(err.message || 'Failed to load dashboard', 'error');
@@ -686,6 +682,8 @@ export default function AdminDashboard() {
     { label: 'Completed', value: stats?.completedModules ?? '—', icon: '✅', description: 'Module assignments finished', tooltip: 'Module assignments with status "completed".', borderClass: 'border-emerald-500/20', bgClass: 'bg-emerald-500/5', textClass: 'text-emerald-400' },
     { label: 'Pending Approvals', value: stats?.pendingRequests ?? '—', icon: '⏳', description: 'Requests waiting for your decision', tooltip: 'Pending manager assignment requests plus other pending approval requests in your company, as counted by the server.', borderClass: 'border-rose-500/20', bgClass: 'bg-rose-500/5', textClass: 'text-rose-400' },
     { label: 'Assessments Done', value: stats?.assessmentsCompleted ?? '—', icon: '📝', description: 'Assessments submitted by learners', tooltip: 'Number of distinct (assessment, learner) pairs with a submission. Retakes are not counted twice.', borderClass: 'border-amber-500/20', bgClass: 'bg-amber-500/5', textClass: 'text-amber-400' },
+    { label: 'Expert + Intermediate', value: hasSubmissions ? fmtPct(((stats.ratings[0].count + stats.ratings[1].count) / stats.assessmentsCompleted) * 100) : '—', icon: '🏅', description: 'Share rated Expert or Intermediate', tooltip: 'Share of the latest submission per (assessment, learner) pair rated Expert (90% and above) or Intermediate (80% to 89.99%). The full split is shown under the cards.', borderClass: 'border-emerald-500/20', bgClass: 'bg-emerald-500/5', textClass: 'text-emerald-400' },
+    { label: 'No Rating', value: hasSubmissions ? stats.ratings[3].count : '—', icon: '🚩', description: 'Scored below 70%', tooltip: 'Latest submissions per (assessment, learner) pair with a score of 69.99% or lower, which earns no rating.', borderClass: 'border-rose-500/20', bgClass: 'bg-rose-500/5', textClass: 'text-rose-400' },
     { label: 'Avg Score', value: hasSubmissions ? fmtPct(stats?.avgAssessmentScore) : '—', icon: '🎯', description: 'Average assessment score', tooltip: 'Mean score (0-100%) of the latest submission for each distinct (assessment, learner) pair. Shows a dash until someone submits an assessment.', borderClass: 'border-indigo-500/20', bgClass: 'bg-indigo-500/5', textClass: 'text-indigo-400' },
   ];
 
@@ -776,10 +774,29 @@ export default function AdminDashboard() {
 
       {/* Stats */}
       {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">{[...Array(10)].map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4 mb-8">{[...Array(12)].map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4 mb-8">
           {statCards.map((s, i) => <StatCard key={i} {...s} />)}
+        </div>
+      )}
+
+      {/* Rating distribution of the latest submissions */}
+      {!loading && hasSubmissions && stats?.ratings && (
+        <div className="rounded-xl border border-slate-700/40 bg-slate-800/30 p-4 mb-8">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Rating distribution</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            {stats.ratings.map((x) => (
+              <div key={x.label} className="min-w-0" title={`${x.label}: score ${ratingStyle(x.label).range}`}>
+                <div className="flex items-baseline justify-between gap-2 mb-1">
+                  <span className={`text-sm font-bold truncate ${ratingStyle(x.label).text}`}>{x.label}</span>
+                  <span className="text-xs text-slate-400 shrink-0">{x.count} ({Math.round(x.percent)}%)</span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-800 overflow-hidden"><div className={`h-full ${ratingStyle(x.label).bar}`} style={{ width: `${x.percent}%` }} /></div>
+                <p className="text-[11px] text-slate-500 mt-1">{ratingStyle(x.label).range}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1144,7 +1161,7 @@ export default function AdminDashboard() {
                   { label: 'Job Role', field: 'role' },
                   { label: 'Assessment', field: null },
                   { label: 'Score', field: 'score' },
-                  { label: 'Classification', field: null },
+                  { label: 'Rating', field: null },
                   { label: 'Modules', field: null },
                   { label: 'Last Activity', field: 'activity' },
                 ].map(col => (
@@ -1208,17 +1225,17 @@ export default function AdminDashboard() {
                         {/* Score */}
                         <div className="min-w-0">
                           {latestReport?.score != null ? (
-                            <span className={`text-sm font-black ${latestReport.score >= 80 ? 'text-emerald-400' : latestReport.score >= 60 ? 'text-amber-400' : 'text-red-400'}`}>
+                            <span className={`text-sm font-black ${ratingStyle(ratingForReport(latestReport)).text}`}>
                               {latestReport.score}%
                             </span>
                           ) : <span className="text-slate-600 text-sm">—</span>}
                         </div>
 
-                        {/* Classification */}
+                        {/* Rating */}
                         <div className="min-w-0">
-                          {latestReport?.performanceClassification?.label ? (
-                            <span title={latestReport.performanceClassification.label} className={`inline-block max-w-full truncate align-middle text-[11px] xl:text-xs font-semibold px-2 py-0.5 rounded-full border ${classTag(latestReport.performanceClassification.label)}`}>
-                              {latestReport.performanceClassification.label}
+                          {latestReport ? (
+                            <span title={`Rating: ${ratingForReport(latestReport)}`} className={`inline-block max-w-full truncate align-middle text-[11px] xl:text-xs font-semibold px-2 py-0.5 rounded-full ${ratingTag(latestReport)}`}>
+                              {ratingForReport(latestReport)}
                             </span>
                           ) : <span className="text-slate-600 text-xs">—</span>}
                         </div>

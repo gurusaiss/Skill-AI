@@ -498,7 +498,7 @@ export function generateExtractiveQuestions(source, opts = {}) {
   const useDiff = !!opts.difficultyTargets;
   const filter = opts.sentenceFilter || (() => true);
   const onlyKinds = opts.onlyKinds ? new Set(opts.onlyKinds) : null;
-  const sentUsed = new Set(opts.usedSentences || []);
+  const sentUsed = new Set(opts.allowReuse ? [] : (opts.usedSentences || [])); // allowReuse: last-chance pass that may ask a second question about an already-used sentence
   const seenOptionSets = new Set(); // never return two MCQs with the same option set
 
   // 1. restrict candidate generation to the richest sentences, spread over the document
@@ -506,7 +506,7 @@ export function generateExtractiveQuestions(source, opts = {}) {
   const nSeg = Math.max(1, Math.min(12, Math.ceil(count / 2)));
   const segOf = (sIdx) => Math.min(nSeg - 1, Math.floor((sIdx / maxIdx) * nSeg));
   const eligible = model.usable.filter(s => filter(s) && !sentUsed.has(s.i));
-  const perSeg = Math.max(8, Math.ceil((count * 6) / nSeg));
+  const perSeg = opts.allowReuse ? 1e9 : Math.max(8, Math.ceil((count * 6) / nSeg));
   const bySeg = Array.from({ length: nSeg }, () => []);
   for (const s of eligible) bySeg[segOf(s.i)].push(s);
   const sents = bySeg.flatMap(arr => arr.sort((a, b) => (model.info.get(b.i) || 0) - (model.info.get(a.i) || 0)).slice(0, perSeg));

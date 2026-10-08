@@ -1689,6 +1689,14 @@ async function finalizeSource(S, rt) {
       for (const q of more) { for (const i of q._sentences || []) S.usedSentences.add(i); delete q._sentences; }
       pool = [...pool, ...more];
     }
+    // Last chance before any generic template: a second question about an already-used sentence (a different
+    // blank / construct), so a short extractive pass never lets a template into the bank.
+    if (pool.length < count) {
+      const more = generateExtractiveQuestions(S.model, { count: count - pool.length, typeCounts: { mcq: count - pool.length, fill_blank: 0, subjective: 0 }, seed: `${spec.seed}-fill3`, allowReuse: true,
+        exclude: (q) => { if (S.tracker.isDuplicate(q)) return true; S.tracker.add(q); return false; } });
+      for (const q of more) delete q._sentences;
+      pool = [...pool, ...more];
+    }
   }
   S.templateCount = 0;
   if (pool.length < count) {
@@ -1965,6 +1973,17 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
         acceptedForSource.push(tagged);
       }
       gap = count - acceptedForSource.length;
+      if (gap > 0) {
+        const again = generateExtractiveQuestions(S.model, { count: gap, typeCounts: { mcq: gap, fill_blank: 0, subjective: 0 }, seed: `${S.spec.seed}-p3`, allowReuse: true, exclude: (q) => { if (tracker.isDuplicate(q)) return true; tracker.add(q); return false; } });
+        for (const q of again) {
+          if (acceptedForSource.length >= count) break;
+          delete q._sentences;
+          const tagged = { ...q, id: randomUUID(), generatedFrom: S.spec.sourceType === 'jd' ? 'jd' : 'document', sourceFile: source.name || 'Unknown', sourceType: source.sourceType || 'jd', qualityScore: computeQuestionQualityScore(q, text), createdAt: new Date().toISOString(), stakeholderFlag: !!source.stakeholder, processDeliveryFlag: !!source.processDelivery };
+          allQuestions.push(tagged);
+          acceptedForSource.push(tagged);
+        }
+        gap = count - acceptedForSource.length;
+      }
     }
 
     if (gap > 0) {

@@ -8,6 +8,7 @@ import { Companies, ApprovalRequests, AccessCodes, Groups, Assessments, Reports 
 import { randomUUID } from 'crypto';
 import * as db from '../db/store.js';
 import { MANAGER_TIER_ROLES } from '../services/roleCapability.js';
+import { ratingForReport, ratingDistribution } from '../services/grading.js';
 
 const router = express.Router();
 
@@ -145,6 +146,8 @@ router.get('/dashboard', authenticate, requireRole('admin'), async (req, res) =>
     // Assessments: distinct (assessmentId,userId) pairs, latest report per pair
     let assessmentsCompleted = 0;
     let avgAssessmentScore = null;
+    // Rating distribution (Expert / Intermediate / Basic / No Rating) of the latest report per employee+assessment.
+    let assessmentRatings = ratingDistribution([]);
     // Real activity per day for the last 7 days (oldest first), local server time.
     const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
     const weeklyActivity = [];
@@ -174,6 +177,7 @@ router.get('/dashboard', authenticate, requireRole('admin'), async (req, res) =>
       const rows = [...latest.values()];
       assessmentsCompleted = rows.length;
       const scores = rows.map(r => Number(r.rawScore ?? r.score)).filter(n => Number.isFinite(n));
+      assessmentRatings = ratingDistribution(rows.map(r => ratingForReport(r)));
       if (scores.length) avgAssessmentScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
     } catch (e) { console.warn('[admin/dashboard] reports stats failed:', e.message); }
 
@@ -217,6 +221,8 @@ router.get('/dashboard', authenticate, requireRole('admin'), async (req, res) =>
           avgProgress,
           assessmentsCompleted,
           avgAssessmentScore,
+          assessmentRatings,
+          topRatingSharePct: assessmentsCompleted ? Math.round(((assessmentRatings[0].count + assessmentRatings[1].count) / assessmentsCompleted) * 100) : null,
           pendingRequests: pendingAssignmentRequests.length,
           admins: companyUsers.filter(u => u.role === 'admin').length,
           otherRoles: companyUsers.length - employees.length - managers.length - companyUsers.filter(u => u.role === 'admin').length,

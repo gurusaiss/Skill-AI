@@ -9,13 +9,14 @@
  *    wrapped text (nothing fixed, no padding rows)
  *  - a page is only ever added right before something is drawn on it, so there
  *    are no blank pages; the render meta reports where content ends per page
- *  - Helvetica only; one accent colour; green/red only for pass/fail, right/wrong
+ *  - Helvetica only; one accent colour; the four rating colours only for ratings, green/red for right/wrong
  */
 import PDFDocument from 'pdfkit';
 import {
   DASH, safe, fmtDate, fmtPct, fmtDuration, truncate, reportTimezone, STATUS,
-  buildSummary, skillAverages, followUpList, resultLabel,
+  buildSummary, skillAverages, followUpList, ratingLabel,
 } from './reportData.js';
+import { RATINGS } from '../grading.js';
 
 const C = {
   accent: '#4338CA', accentSoft: '#EEF2FF', ink: '#1E293B', body: '#334155', muted: '#64748B',
@@ -335,7 +336,9 @@ class Layout {
 }
 
 const generatedLine = (now, tz) => `Generated ${fmtDate(now, tz)}`;
-const resultColor = (r) => (r === 'Passed' ? C.green : r === 'Failed' ? C.red : C.ink);
+// Rating -> text colour (dark) and bar colour (solid), same four colours as Excel / Word.
+const ratingColor = (label) => { const m = RATINGS.find(r => r.label === label); return m ? `#${m.text}` : C.ink; };
+const ratingBar = (label) => { const m = RATINGS.find(r => r.label === label); return m ? `#${m.solid}` : C.accent; };
 
 // ── INDIVIDUAL REPORT ───────────────────────────────────────────────────────
 export async function renderIndividualPdf({ row, now = new Date(), tz = reportTimezone() }) {
@@ -359,15 +362,13 @@ export async function renderIndividualPdf({ row, now = new Date(), tz = reportTi
 
   // 2) at a glance
   L.section('At a glance', 48);
-  const rLabel = resultLabel(row);
+  const rLabel = ratingLabel(row);
   const scoreText = done && row.scorePct !== null
     ? `${fmtPct(row.scorePct, 1)}${row.correct !== null && row.total ? `  (${row.correct} of ${row.total} correct)` : ''}`
     : DASH;
   L.kvGrid([
     { label: 'Score', value: scoreText },
-    { label: 'Grade', value: done ? row.grade : DASH },
-    { label: 'Result', value: done ? `${rLabel} (pass mark ${fmtPct(row.passMark)})` : rLabel, color: resultColor(rLabel) },
-    { label: 'Performance level', value: row.performance },
+    { label: 'Rating', value: done ? row.rating : rLabel, color: done ? ratingColor(row.rating) : C.ink },
     { label: 'Time taken', value: row.timeTakenMin !== null ? `${fmtDuration(row.timeTakenMin)} of ${row.timeLimitMin} min` : `${DASH} (limit ${row.timeLimitMin} min)` },
     { label: 'Attempt no.', value: row.attemptNo },
     { label: 'Assigned on', value: fmtDate(row.assignedAt, tz) },
@@ -519,7 +520,6 @@ export async function renderConsolidatedPdf({ rows, summary, now = new Date(), t
     { label: 'Starts', value: fmtDate(sum.startAt, tz) },
     { label: 'Due', value: fmtDate(sum.dueAt, tz) },
     { label: 'Time limit', value: `${sum.timeLimitMin} min` },
-    { label: 'Pass mark', value: fmtPct(sum.passMark) },
   ], 4);
 
   // 2) overview
@@ -532,19 +532,19 @@ export async function renderConsolidatedPdf({ rows, summary, now = new Date(), t
     { label: 'Average score', value: fmtPct(sum.avgScore, 1) },
     { label: 'Highest score', value: fmtPct(sum.highScore, 1) },
     { label: 'Lowest score', value: fmtPct(sum.lowScore, 1) },
-    { label: 'Pass rate', value: fmtPct(sum.passPct, 1) },
+    { label: 'Expert + Intermediate', value: fmtPct(sum.topSharePct, 1) },
   ], 4);
   if (sum.completed > 0) {
-    L.subheading('Grades', 52);
-    const maxG = Math.max(1, sum.grades.A, sum.grades.B, sum.grades.C);
-    const gl = [['A', '85% and above', sum.grades.A], ['B', '70% to under 85%', sum.grades.B], ['C', 'under 70%', sum.grades.C]];
-    L.ensure(gl.length * 17);
-    gl.forEach(([g, range, n]) => {
+    L.subheading('Rating distribution', 52);
+    const maxG = Math.max(1, ...sum.ratings.map(x => x.count));
+    L.ensure(sum.ratings.length * 17);
+    sum.ratings.forEach((x) => {
       const d = L.doc;
-      d.font(BOLD).fontSize(9.5).fillColor(C.ink).text(`Grade ${g}`, L.x0, L.y + 1, { width: 52, lineBreak: false });
-      d.font(FONT).fontSize(8.5).fillColor(C.muted).text(range, L.x0 + 52, L.y + 1.5, { width: 100, lineBreak: false });
-      L.bar(L.x0 + 160, L.y + 2, L.w - 220, 9, (n / maxG) * 100);
-      d.font(BOLD).fontSize(9.5).fillColor(C.ink).text(String(n), L.x0 + L.w - 50, L.y + 1, { width: 50, align: 'right', lineBreak: false });
+      const meta = RATINGS.find(m => m.label === x.label);
+      d.font(BOLD).fontSize(9.5).fillColor(ratingColor(x.label)).text(x.label, L.x0, L.y + 1, { width: 72, lineBreak: false });
+      d.font(FONT).fontSize(8.5).fillColor(C.muted).text(meta ? meta.range : '', L.x0 + 74, L.y + 1.5, { width: 90, lineBreak: false });
+      L.bar(L.x0 + 168, L.y + 2, L.w - 280, 9, (x.count / maxG) * 100, ratingBar(x.label));
+      d.font(BOLD).fontSize(9.5).fillColor(C.ink).text(`${x.count}  (${fmtPct(x.percent, 0)})`, L.x0 + L.w - 104, L.y + 1, { width: 104, align: 'right', lineBreak: false });
       L.y += 17;
       L.mark(L.y);
     });
@@ -557,16 +557,15 @@ export async function renderConsolidatedPdf({ rows, summary, now = new Date(), t
     [
       { header: 'Employee ID', w: 62 }, { header: 'Name', w: 116 }, { header: roleOrAssessment.header, w: 92 },
       { header: 'Assigned', w: 62 }, { header: 'Completed', w: 62 },
-      { header: 'Score', w: 40, align: 'right' }, { header: 'Grade', w: 33, align: 'center' }, { header: 'Result', w: 48 },
+      { header: 'Score', w: 40, align: 'right' }, { header: 'Rating', w: 81 },
     ],
     sorted.map(r => {
-      const res = resultLabel(r);
+      const res = ratingLabel(r);
       return [
         r.employeeId, r.name, roleOrAssessment.pick(r),
         fmtDate(r.assignedAt, tz, { time: false }), fmtDate(r.completedAt, tz, { time: false }),
         r.status === STATUS.COMPLETED ? fmtPct(r.scorePct, 1) : DASH,
-        { text: r.status === STATUS.COMPLETED ? r.grade : DASH, bold: true },
-        { text: res, bold: true, color: resultColor(res) },
+        { text: res, bold: true, color: r.status === STATUS.COMPLETED ? ratingColor(res) : C.muted },
       ];
     }),
     { size: 8, emptyText: 'No employees are assigned to this assessment.' },
@@ -589,9 +588,9 @@ export async function renderConsolidatedPdf({ rows, summary, now = new Date(), t
   L.section('Needs follow-up', 50);
   const follow = followUpList(rows, now);
   if (!follow.length) {
-    L.text('Nobody needs follow-up: everyone has completed the assessment and passed.', { color: C.green, bold: true });
+    L.text('Nobody needs follow-up: everyone has completed the assessment and earned a rating.', { color: C.green, bold: true });
   } else {
-    L.text('Employees who have not completed the assessment, or did not reach the pass mark. Most urgent first.', { size: 8.5, color: C.muted, after: 5 });
+    L.text('Employees who have not completed the assessment, or finished with No Rating (below 70%). Most urgent first.', { size: 8.5, color: C.muted, after: 5 });
     L.table(
       [
         { header: 'Employee ID', w: 58 }, { header: 'Name', w: 106 }, { header: roleOrAssessment.header, w: 90 },
@@ -599,7 +598,7 @@ export async function renderConsolidatedPdf({ rows, summary, now = new Date(), t
       ],
       follow.map(f => [
         f.row.employeeId, f.row.name, roleOrAssessment.pick(f.row),
-        { text: f.status, bold: true, color: f.status === 'Failed' ? C.red : C.ink },
+        { text: f.status, bold: true, color: f.status === 'No Rating' ? ratingColor('No Rating') : C.ink },
         fmtDate(f.row.dueAt, tz, { time: false }), f.reason,
       ]),
       { size: 8 },

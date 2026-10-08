@@ -24,6 +24,7 @@ import goalRouter from './routes/goal.js';
 import diagnosticRouter from './routes/diagnostic.js';
 import sessionRouter from './routes/session.js';
 import reportRouter from './routes/report.js';
+import moduleReportsRouter from './routes/moduleReports.js';
 import simulationRouter from './routes/simulation.js';
 import marketRouter from './routes/market.js';
 import demoRouter from './routes/demo.js';
@@ -319,6 +320,7 @@ app.use('/api/goal', goalRouter);
 app.use('/api/diagnostic', diagnosticRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/report', reportRouter);
+app.use('/api/reports', moduleReportsRouter); // Reports > Modules (engagement + downloads)
 app.use('/api/simulation', simulationRouter);
 app.use('/api/market', marketRouter);
 app.use('/api/demo', demoRouter);

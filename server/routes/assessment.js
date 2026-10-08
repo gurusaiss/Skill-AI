@@ -31,9 +31,10 @@ import { generateSessionQuiz, ensureAllSessionQuizzes } from '../services/Sessio
 import { getVisibleEmployeeIds, canActAsManager } from '../services/ManagerScope.js';
 import { QUIZ_MIX, normalizeTypeName } from '../services/QuestionMix.js';
 import { startDeepContentJob } from '../services/SessionContentGenerator.js';
-import { gradeFromPercent, percentFromCounts, gradeForReport } from '../services/grading.js';
+import { ratingFromPercent, ratingForReport, readinessFromRating, percentFromCounts } from '../services/grading.js';
 import { ASSESSMENT_DURATION_MINUTES, normalizeDuration } from '../services/assessmentDefaults.js';
 import { resolveWindow, parseWindowInput } from '../services/assessmentSchedule.js';
+import { isRemovedFromAssessment, clearTombstones, deleteEmployeeAssignment, editEmployeeWindow, deleteAssessmentCascade } from '../services/assessmentRoster.js';
 import { toListAssessment, toListReport } from '../services/assessmentListView.js';
 import { loadAssessmentRows, loadSubmissionRows } from '../services/reports/reportLoader.js';
 import { buildSummary, safeFilename, STATUS as REPORT_STATUS, timeTakenSeconds } from '../services/reports/reportData.js';
@@ -327,8 +328,10 @@ async function assignEmployeesToAssessment({ assessmentId, users, startAt, dueAt
   for (const [uid, ea] of touched) if (!merged.some(m => m.userId === uid)) merged.push(ea);
 
   const targetUsers = [...new Set([...(fresh?.targetUsers || assessment.targetUsers || []), ...touched.keys()])];
-  await Assessments.update(assessmentId, { employeeAssignments: merged, targetUsers, updatedAt: nowIso });
-  return { assessment: { ...fresh, employeeAssignments: merged, targetUsers }, added, reassigned, skipped };
+  // An explicit assign is the one thing that lifts a "deleted from this assessment" tombstone.
+  const removedAssignments = clearTombstones(fresh?.removedAssignments, [...touched.keys()]);
+  await Assessments.update(assessmentId, { employeeAssignments: merged, targetUsers, removedAssignments, updatedAt: nowIso });
+  return { assessment: { ...fresh, employeeAssignments: merged, targetUsers, removedAssignments }, added, reassigned, skipped };
 }
 
 // ── Normalise answers from frontend into a dense array indexed by question pos ─
@@ -574,7 +577,11 @@ function scoreSubmission(questions, responses, passThreshold = 80, customThresho
   // pass/fail decision use it; `score` is the rounded value shown in the UI.
   const rawScore = percentFromCounts(correct, total);
   const score = Math.round(rawScore);
-  const grade = gradeFromPercent(rawScore);
+  // Rating scale (Expert / Intermediate / Basic / No Rating) replaces the letter
+  // grade. `grade` and `passed` are still stored for old consumers but are no
+  // longer shown anywhere.
+  const rating = ratingFromPercent(rawScore);
+  const grade = rating === 'Expert' ? 'A' : rating === 'Intermediate' ? 'B' : 'C';
 
   // Skill area breakdown for the report
   const skillAreas = {};
@@ -601,7 +608,7 @@ function scoreSubmission(questions, responses, passThreshold = 80, customThresho
     .map(([k]) => k);
 
   const performanceClassification = classifyPerformance(score, customThresholds);
-  const readinessLevel = getReadinessLevel(score);
+  const readinessLevel = readinessFromRating(rating);
 
   // Recommended learning areas derived from weak/missing areas
   const recommendedLearningAreas = [...new Set([...missingCompetencies, ...weakAreas])];
@@ -612,7 +619,7 @@ function scoreSubmission(questions, responses, passThreshold = 80, customThresho
   // instead of re-deriving it from a different, possibly stale assumption.
   const passed = rawScore + 1e-9 >= passThreshold;
 
-  return { score, rawScore, grade, correct, total, breakdown, skillAreas, skillBreakdown, strengths, weakAreas, missingCompetencies, performanceClassification, readinessLevel, recommendedLearningAreas, passThreshold, passed };
+  return { score, rawScore, rating, grade, correct, total, breakdown, skillAreas, skillBreakdown, strengths, weakAreas, missingCompetencies, performanceClassification, readinessLevel, recommendedLearningAreas, passThreshold, passed };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1292,9 +1299,13 @@ router.get('/my', authenticate, async (req, res) => {
     let assessments = await Assessments.getAll() || [];
     const now = new Date();
 
+    // A deleted assignment (tombstone) is never listed, even if stale data
+    // still mentions the employee.
     const findMine = (list) => list.filter(a =>
-      a.employeeAssignments?.some(ea => ea.userId === req.user.userId) ||
-      a.targetUsers?.includes(req.user.userId)
+      !isRemovedFromAssessment(a, req.user.userId) && (
+        a.employeeAssignments?.some(ea => ea.userId === req.user.userId) ||
+        a.targetUsers?.includes(req.user.userId)
+      )
     );
     let mine = findMine(assessments);
 
@@ -1971,6 +1982,70 @@ router.get('/:assessmentId/employees/:userId/reminders', authenticate, requireRo
 });
 
 /**
+ * Shared gate for the per-employee roster endpoints (edit dates / delete):
+ * assessment exists, same company, and a manager only for their own team.
+ * Sends the error response itself and returns null when refused.
+ */
+async function loadForRosterEdit(req, res) {
+  const { assessmentId, userId } = req.params;
+  if (!/^[A-Za-z0-9_-]{1,100}$/.test(String(assessmentId)) || !/^[A-Za-z0-9_-]{1,100}$/.test(String(userId))) {
+    res.status(400).json({ success: false, data: null, error: 'Invalid id' });
+    return null;
+  }
+  const assessment = await Assessments.getById(assessmentId);
+  if (!assessment || !assertSameCompany(req, assessment)) {
+    res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
+    return null;
+  }
+  if (req.user.role === 'manager') {
+    const visible = await getVisibleEmployeeIds(req.user);
+    if (!visible.has(userId)) {
+      res.status(403).json({ success: false, data: null, error: 'You can only manage employees on your own team' });
+      return null;
+    }
+  }
+  return assessment;
+}
+
+/**
+ * PUT /api/assessments/:assessmentId/employees/:userId
+ * Edit one employee's start/end window (and optional notes) WITHOUT resetting
+ * their attempt or answers. Body: { startDate?: ISO, endDate: ISO, notes?: string }
+ */
+router.put('/:assessmentId/employees/:userId', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const assessment = await loadForRosterEdit(req, res);
+    if (!assessment) return;
+    const out = await editEmployeeWindow({ assessmentId: assessment.id, userId: req.params.userId, body: req.body || {}, actor: req.user });
+    if (out.notFound) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
+    if (out.error) return res.status(out.status || 400).json({ success: false, data: null, error: out.error });
+    res.json({ success: true, data: { userId: req.params.userId, startAt: out.startAt, dueAt: out.dueAt, notes: out.entry.notes ?? null }, error: null });
+  } catch (e) {
+    console.error('[assessments edit employee]', e);
+    res.status(500).json({ success: false, data: null, error: 'Failed to update the dates' });
+  }
+});
+
+/**
+ * DELETE /api/assessments/:assessmentId/employees/:userId
+ * HARD delete of one employee's assignment everywhere (roster, assignment row,
+ * report, submission, reminders). The employee no longer sees it; auto-assign
+ * will not bring it back (tombstone). Only an audit event is kept.
+ */
+router.delete('/:assessmentId/employees/:userId', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const assessment = await loadForRosterEdit(req, res);
+    if (!assessment) return;
+    const out = await deleteEmployeeAssignment({ assessmentId: assessment.id, userId: req.params.userId, actor: req.user });
+    if (out.notFound) return res.status(404).json({ success: false, data: null, error: 'Employee is not assigned to this assessment' });
+    res.json({ success: true, data: { userId: req.params.userId, assessmentId: assessment.id, hadResults: out.hadResults, removed: out.counts }, error: null });
+  } catch (e) {
+    console.error('[assessments delete employee]', e);
+    res.status(500).json({ success: false, data: null, error: 'Failed to delete the assignment' });
+  }
+});
+
+/**
  * GET /api/assessments/:id
  * Get single assessment
  */
@@ -1985,7 +2060,8 @@ router.get('/:id', authenticate, async (req, res) => {
       if (!myAssignment) return res.status(403).json({ success: false, data: null, error: 'Access denied' });
       const { questions: resolvedQuestions } = await resolveEmployeeQuestions(assessment, myAssignment, req.user.userId);
       const resolved = resolvedQuestions ? { ...myAssignment, questions: resolvedQuestions } : myAssignment;
-      return res.json({ success: true, data: { ...assessment, employeeAssignments: [resolved] }, error: null });
+      const { removedAssignments: _removed, ...forEmployee } = assessment;
+      return res.json({ success: true, data: { ...forEmployee, employeeAssignments: [resolved] }, error: null });
     }
 
     if (!canAccessAssessment(req.user, assessment)) {
@@ -2695,8 +2771,18 @@ router.put('/:id', authenticate, requireRole('admin', 'manager'), async (req, re
       return res.status(403).json({ success: false, data: null, error: 'Access denied' });
     }
 
+    // Tombstones change only through the dedicated endpoints, and a stale
+    // full-roster PUT (question editor) must not bring back an employee whose
+    // assignment was deleted in the meantime.
+    const { removedAssignments: _ra, ...safeBody } = req.body || {};
+    if (Array.isArray(safeBody.employeeAssignments)) {
+      safeBody.employeeAssignments = safeBody.employeeAssignments.filter(ea => !isRemovedFromAssessment(existing, ea?.userId));
+    }
+    if (Array.isArray(safeBody.targetUsers)) {
+      safeBody.targetUsers = safeBody.targetUsers.filter(id => !isRemovedFromAssessment(existing, id));
+    }
     const updated = await Assessments.update(req.params.id, {
-      ...req.body,
+      ...safeBody,
       id: req.params.id,
       updatedAt: new Date().toISOString(),
     });
@@ -2719,8 +2805,20 @@ router.delete('/:id', authenticate, requireRole('admin', 'manager'), async (req,
     if (!canAccessAssessment(req.user, existing)) {
       return res.status(403).json({ success: false, data: null, error: 'Access denied' });
     }
-    await Assessments.delete(req.params.id);
-    res.json({ success: true, data: { id: req.params.id }, error: null });
+    if (req.user.role === 'manager') {
+      // A manager may only delete an assessment whose roster is entirely their own team.
+      const visible = await getVisibleEmployeeIds(req.user);
+      const outside = (existing.employeeAssignments || []).filter(ea => !visible.has(ea.userId));
+      if (outside.length > 0) {
+        return res.status(403).json({ success: false, data: null, error: 'This assessment includes employees outside your team. Ask an admin to delete it, or delete individual employees from it.' });
+      }
+    }
+    // Deleting a whole assessment is permanent: require an explicit confirmation flag.
+    if (req.query?.confirm !== 'true' && req.body?.confirm !== true) {
+      return res.status(400).json({ success: false, data: null, error: 'Deleting an assessment is permanent. Confirm the deletion to continue.' });
+    }
+    const removed = await deleteAssessmentCascade({ assessment: existing, actor: req.user });
+    res.json({ success: true, data: { id: req.params.id, removed }, error: null });
   } catch (e) {
     console.error('[assessments DELETE :id] error:', e.message);
     res.status(500).json({ success: false, data: null, error: 'Failed to delete assessment' });

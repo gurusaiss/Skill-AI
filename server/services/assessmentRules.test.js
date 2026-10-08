@@ -1,37 +1,58 @@
 import { describe, it, expect } from 'vitest';
-import { gradeFromPercent, percentFromCounts, gradeForReport } from './grading.js';
+import { ratingFromPercent, percentFromCounts, ratingForReport, RATINGS, readinessFromRating, ratingDistribution } from './grading.js';
 import { ASSESSMENT_DURATION_MINUTES, normalizeDuration } from './assessmentDefaults.js';
 import { resolveWindow, parseWindowInput } from './assessmentSchedule.js';
 
-describe('letter grades: A >= 85, B 70 to < 85, C < 70', () => {
+describe('rating scale: Expert >= 90, Intermediate 80-89.99, Basic 70-79.99, No Rating <= 69.99', () => {
   it.each([
-    [100, 'A'], [85, 'A'], [85.0001, 'A'],
-    [84.9999, 'B'], [84.99999999, 'B'], [80, 'B'], [70.0001, 'B'], [70, 'B'],
-    [69.9999, 'C'], [69, 'C'], [0, 'C'],
-  ])('%s -> %s', (pct, grade) => {
-    expect(gradeFromPercent(pct)).toBe(grade);
+    [100, 'Expert'], [90, 'Expert'], [90.0001, 'Expert'],
+    [89.99, 'Intermediate'], [89.995, 'Intermediate'], [89.99999999, 'Intermediate'], [80, 'Intermediate'], [80.5, 'Intermediate'],
+    [79.99, 'Basic'], [79.995, 'Basic'], [70, 'Basic'], [75, 'Basic'],
+    [69.99, 'No Rating'], [69.995, 'No Rating'], [50, 'No Rating'], [0, 'No Rating'],
+  ])('%s -> %s', (pct, rating) => {
+    expect(ratingFromPercent(pct)).toBe(rating);
+  });
+
+  it('handles non-numeric input', () => {
+    expect(ratingFromPercent(NaN)).toBe('No Rating');
+    expect(ratingFromPercent(undefined)).toBe('No Rating');
   });
 
   it('is exact on boundaries computed from counts (no float drift)', () => {
-    expect(gradeFromPercent(percentFromCounts(17, 20))).toBe('A'); // exactly 85
-    expect(gradeFromPercent(percentFromCounts(14, 20))).toBe('B'); // exactly 70
-    expect(gradeFromPercent(percentFromCounts(169, 200))).toBe('B'); // 84.5
-    expect(gradeFromPercent(percentFromCounts(139, 200))).toBe('C'); // 69.5, must not round up to 70
-    expect(gradeFromPercent(percentFromCounts(0, 0))).toBe('C');
+    expect(ratingFromPercent(percentFromCounts(18, 20))).toBe('Expert'); // exactly 90
+    expect(ratingFromPercent(percentFromCounts(17, 20))).toBe('Intermediate'); // exactly 85
+    expect(ratingFromPercent(percentFromCounts(16, 20))).toBe('Intermediate'); // exactly 80
+    expect(ratingFromPercent(percentFromCounts(15, 20))).toBe('Basic'); // exactly 75
+    expect(ratingFromPercent(percentFromCounts(14, 20))).toBe('Basic'); // exactly 70
+    expect(ratingFromPercent(percentFromCounts(13, 20))).toBe('No Rating'); // 65
+    expect(ratingFromPercent(percentFromCounts(179, 200))).toBe('Intermediate'); // 89.5
+    expect(ratingFromPercent(percentFromCounts(139, 200))).toBe('No Rating'); // 69.5
+    expect(ratingFromPercent(percentFromCounts(0, 0))).toBe('No Rating');
   });
 
-  it('never grades on a rounded score', () => {
-    // 84.6 rounds to 85 but is a B; 69.6 rounds to 70 but is a C.
-    expect(gradeFromPercent(84.6)).toBe('B');
-    expect(gradeFromPercent(69.6)).toBe('C');
+  it('never rates on a rounded score', () => {
+    expect(ratingFromPercent(89.6)).toBe('Intermediate'); // rounds to 90
+    expect(ratingFromPercent(79.6)).toBe('Basic'); // rounds to 80
+    expect(ratingFromPercent(69.6)).toBe('No Rating'); // rounds to 70
   });
 
-  it('regrades old reports that carry a letter from the previous scale', () => {
-    expect(gradeForReport({ correct: 87, total: 100, grade: 'B' })).toBe('A');
-    expect(gradeForReport({ score: 72, grade: 'C' })).toBe('B');
-    expect(gradeForReport({ rawScore: 84.9, score: 85, grade: 'B' })).toBe('B');
-    expect(gradeForReport({ grade: 'D' })).toBe('D');
-    expect(gradeForReport(null)).toBe('');
+  it('rates old reports that carry a letter grade or pass flag', () => {
+    expect(ratingForReport({ correct: 91, total: 100, grade: 'C' })).toBe('Expert');
+    expect(ratingForReport({ correct: 0, total: 10, grade: 'A' })).toBe('No Rating');
+    expect(ratingForReport({ score: 82, grade: 'C', passed: false })).toBe('Intermediate');
+    expect(ratingForReport({ rawScore: 79.9, score: 80, grade: 'B' })).toBe('Basic');
+    expect(ratingForReport({ grade: 'A' })).toBe('No Rating');
+    expect(ratingForReport(null)).toBe('No Rating');
+  });
+
+  it('exposes ordered ratings with colours and a derived readiness', () => {
+    expect(RATINGS.map((r) => r.label)).toEqual(['Expert', 'Intermediate', 'Basic', 'No Rating']);
+    expect(RATINGS.map((r) => r.color)).toEqual(['green', 'blue', 'amber', 'red']);
+    expect(readinessFromRating('Expert')).toBe('Ready');
+    expect(readinessFromRating('No Rating')).toBe('Not yet rated');
+    const d = ratingDistribution(['Expert', 'Expert', 'Basic', 'No Rating']);
+    expect(d.map((x) => x.count)).toEqual([2, 0, 1, 1]);
+    expect(d[0].percent).toBe(50);
   });
 });
 

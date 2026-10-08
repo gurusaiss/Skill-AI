@@ -17,7 +17,7 @@ Monorepo (npm workspaces): `client/` (React 18 + Vite + Tailwind, dark slate the
 - Guard: `cd client && npm run check:scroll` (scripts/check-no-scroll.mjs) fails on any unmarked horizontal-scroll class. Run it before committing UI work.
 
 ## Domain conventions (verified in code)
-- Grades come from ONE place: `server/services/grading.js` (mirrored client-side in `client/src/utils/assessmentRules.js`): A >= 85, B 70 to <85, C < 70, compared on the UNROUNDED percentage. Do not re-implement grade thresholds.
+- Ratings come from ONE place: `server/services/grading.js` (`ratingFromPercent`, `ratingForReport`, `RATINGS`; mirrored client-side in `client/src/utils/assessmentRules.js` with `RATING_STYLES`): Expert >= 90, Intermediate 80 to 89.99, Basic 70 to 79.99, No Rating <= 69.99, compared on the UNROUNDED percentage. There are NO letter grades and NO Pass/Fail anywhere in the UI or exports (old stored `grade`/`passed` fields are kept for compatibility but never shown). Readiness is derived from the rating, never stored separately. Do not re-implement the thresholds.
 - Assessments default to 60 minutes: `server/services/assessmentDefaults.js` (`normalizeDuration`; legacy 30 is treated as 60). Client mirror in `assessmentRules.js`. Keep both in sync.
 - API response envelope is `{ success, data, error }` (e.g. `res.json({ success: true, data, error: null })`, errors `{ success:false, data:null, error }`).
 - Client API calls go through `client/src/utils/authFetch.js` / `api.js`; roles: superadmin, admin, manager, employee (plus trainer etc. treated as staff).

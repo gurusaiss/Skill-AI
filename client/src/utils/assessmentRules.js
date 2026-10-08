@@ -1,6 +1,6 @@
 // Client mirror of server/services/grading.js and assessmentDefaults.js.
-// Keep the two in sync: the server grades new submissions, this file makes
-// older stored reports and every grade badge follow the same scale.
+// Keep the two in sync: the server rates new submissions, this file makes
+// older stored reports and every rating chip follow the same scale.
 
 export const ASSESSMENT_DURATION_MINUTES = 60;
 
@@ -11,31 +11,81 @@ export function normalizeDuration(minutes) {
   return n;
 }
 
-// A: 85 and above, B: 70 up to (not including) 85, C: below 70.
-// Pass the UNROUNDED percentage. 1e-9 only absorbs floating-point noise.
+// Expert: 90 and above. Intermediate: 80 to 89.99. Basic: 70 to 79.99.
+// No Rating: 69.99 and below. Pass the UNROUNDED percentage; 1e-9 only absorbs
+// floating-point noise.
 const EPSILON = 1e-9;
-export function gradeFromPercent(percent) {
+
+export const RATING_LABELS = ['Expert', 'Intermediate', 'Basic', 'No Rating'];
+
+export function ratingFromPercent(percent) {
   const p = Number(percent);
-  if (!Number.isFinite(p)) return 'C';
-  if (p + EPSILON >= 85) return 'A';
-  if (p + EPSILON >= 70) return 'B';
-  return 'C';
+  if (!Number.isFinite(p)) return 'No Rating';
+  if (p + EPSILON >= 90) return 'Expert';
+  if (p + EPSILON >= 80) return 'Intermediate';
+  if (p + EPSILON >= 70) return 'Basic';
+  return 'No Rating';
 }
 
-// Grade for any stored report/scoring object, including old ones that carry a
-// letter from the previous scale. Uses exact counts first, then the best
-// percentage available, and only falls back to a stored letter with no score.
-export function gradeForReport(r) {
-  if (!r) return '';
+// Rating for any stored report/scoring object, including old ones that carry a
+// letter grade or pass flag. Uses exact counts first, then the best percentage.
+export function ratingForReport(r) {
+  if (!r) return 'No Rating';
   const correct = Number(r.correct);
   const total = Number(r.total);
-  if (Number.isFinite(correct) && Number.isFinite(total) && total > 0) {
-    return gradeFromPercent((correct * 100) / total);
+  if (r.correct !== null && r.correct !== undefined && r.correct !== '' &&
+      Number.isFinite(correct) && Number.isFinite(total) && total > 0) {
+    return ratingFromPercent((correct * 100) / total);
   }
   for (const v of [r.rawScore, r.percentage, r.score]) {
     if (v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v))) {
-      return gradeFromPercent(Number(v));
+      return ratingFromPercent(Number(v));
     }
   }
-  return r.grade || '';
+  return 'No Rating';
+}
+
+// Tailwind classes for the dark slate UI. chip = pill, bar = solid fill, text = plain text colour.
+export const RATING_STYLES = {
+  Expert: {
+    chip: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40',
+    bar: 'bg-emerald-500', text: 'text-emerald-300', ring: 'text-emerald-400', hex: '#10B981',
+    range: '90 and above', readiness: 'Ready',
+  },
+  Intermediate: {
+    chip: 'bg-sky-500/15 text-sky-300 border border-sky-500/40',
+    bar: 'bg-sky-500', text: 'text-sky-300', ring: 'text-sky-400', hex: '#0EA5E9',
+    range: '80 to 89.99', readiness: 'Nearly ready',
+  },
+  Basic: {
+    chip: 'bg-amber-500/15 text-amber-300 border border-amber-500/40',
+    bar: 'bg-amber-500', text: 'text-amber-300', ring: 'text-amber-400', hex: '#F59E0B',
+    range: '70 to 79.99', readiness: 'Needs development',
+  },
+  'No Rating': {
+    chip: 'bg-rose-500/15 text-rose-300 border border-rose-500/40',
+    bar: 'bg-rose-500', text: 'text-rose-300', ring: 'text-rose-400', hex: '#F43F5E',
+    range: '69.99 and below', readiness: 'Not yet rated',
+  },
+};
+
+export function ratingStyle(label) {
+  return RATING_STYLES[label] || RATING_STYLES['No Rating'];
+}
+
+// Readiness derived from the rating so the two never contradict each other.
+export function readinessFromRating(label) {
+  return ratingStyle(label).readiness;
+}
+
+// [{label, count, percent}] for a list of rating labels, in scale order.
+export function ratingDistribution(labels = []) {
+  const counts = Object.fromEntries(RATING_LABELS.map((l) => [l, 0]));
+  for (const l of labels) if (counts[l] !== undefined) counts[l] += 1;
+  const total = labels.length;
+  return RATING_LABELS.map((label) => ({
+    label,
+    count: counts[label],
+    percent: total ? (counts[label] * 100) / total : 0,
+  }));
 }

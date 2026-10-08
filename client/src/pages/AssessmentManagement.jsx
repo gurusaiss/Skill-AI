@@ -6,8 +6,10 @@ import SearchableSelect from '../components/SearchableSelect.jsx';
 import ReminderButton from '../components/ReminderButton.jsx';
 import StatCard from '../components/StatCard.jsx';
 import { useNotification } from '../contexts/NotificationContext.jsx';
-import { ASSESSMENT_DURATION_MINUTES, normalizeDuration, gradeForReport } from '../utils/assessmentRules.js';
+import { ASSESSMENT_DURATION_MINUTES, normalizeDuration, ratingFromPercent, ratingForReport, ratingStyle, ratingDistribution } from '../utils/assessmentRules.js';
 import { AssignEmployeesModal, ReassignModal } from '../components/AssignAssessmentModals.jsx';
+import { ManageMenu, EditDatesModal, DeleteAssignmentModal, BulkReassignModal, ResultModal, DeleteAssessmentModal } from '../components/AssignmentActions.jsx';
+import { useReminder } from '../hooks/useReminder.js';
 
 const QUESTION_TYPE_OPTIONS = [
   { value: 'mcq', label: 'MCQ' },
@@ -99,7 +101,7 @@ function ExportReportsModal({ assessment, token, onClose, showToast }) {
             </p>
           )}
           <p className="text-xs text-slate-500">
-            Includes: Name, Email, ID, Job Role, Score, %, Grade, Classification, Status, Completion Date, Strengths, Improvement Areas, Recommendations.
+            Includes: Name, Email, ID, Job Role, Score, %, Rating, Classification, Status, Completion Date, Strengths, Improvement Areas, Recommendations.
           </p>
           <button onClick={handleExport} disabled={exporting}
             className="w-full py-3 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-sm font-bold text-white disabled:opacity-40 transition-all">
@@ -196,6 +198,15 @@ export default function AssessmentManagement() {
   // Giving an existing assessment to more employees / reassigning one employee.
   const [assignModal, setAssignModal] = useState(null);       // { assessment|null }
   const [reassignTarget, setReassignTarget] = useState(null); // { assessment, ea }
+  const [editDatesTarget, setEditDatesTarget] = useState(null);   // { assessment, ea }
+  const [deleteTargets, setDeleteTargets] = useState(null);       // { assessment, targets: [{ea,name,employeeId}] }
+  const [bulkReassign, setBulkReassign] = useState(null);         // { assessment, targets }
+  const [resultTarget, setResultTarget] = useState(null);         // { assessment, ea }
+  const [deleteAssessmentTarget, setDeleteAssessmentTarget] = useState(null);
+  const [pickedRows, setPickedRows] = useState(() => new Set());  // userIds ticked in the detail table
+  const [bulkReminding, setBulkReminding] = useState(false);
+  const { sendReminder } = useReminder();
+  useEffect(() => { setPickedRows(new Set()); }, [viewDetail?.id]);
   const [detailTab, setDetailTab] = useState('overview');
   const [viewReport, setViewReport] = useState(null);
   const [assigningModuleId, setAssigningModuleId] = useState(null);
@@ -411,15 +422,10 @@ export default function AssessmentManagement() {
     }
   };
 
-  const deleteAssessment = async (id) => {
-    if (!window.confirm('Delete this assessment?')) return;
-    try {
-      await authFetch(`/api/assessments/${id}`, { method: 'DELETE' });
-      setAssessments(prev => prev.filter(a => a.id !== id));
-      showToast('Assessment deleted', 'info');
-    } catch (e) {
-      showToast(e.message || 'Failed to delete', 'error');
-    }
+  // Opens the confirmation dialog (it states what is removed); the dialog does the DELETE.
+  const deleteAssessment = (id) => {
+    const a = assessments.find(x => x.id === id);
+    if (a) setDeleteAssessmentTarget(a);
   };
 
   const jobRoles = useMemo(() => {
@@ -609,10 +615,10 @@ export default function AssessmentManagement() {
             <button
               onClick={() => setAssignModal({ assessment: null })}
               disabled={!hasFeaturePermission('assessments.create') || assessments.length === 0}
-              title={!hasFeaturePermission('assessments.create') ? "You don't have permission to assign assessments" : 'Give an existing assessment to employees'}
+              title={!hasFeaturePermission('assessments.create') ? "You don't have permission to assign assessments" : 'Pick employees and give them an existing assessment, with start and end dates'}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold transition-all shadow-lg shadow-sky-500/20"
             >
-              ↻ Use Existing
+              + Assign employees
             </button>
             <button
               onClick={() => setShowManualModal(true)}
@@ -724,7 +730,6 @@ export default function AssessmentManagement() {
                 const submittedCount = empAssignments.filter(ea => ea.status === 'submitted').length;
                 const totalAssigned = empAssignments.length || a.targetUsers?.length || 0;
                 const pendingCount = totalAssigned - submittedCount;
-                const passThreshold = a.settings?.passPercentage ?? 80;
                 // Same fallback as the detail view — ea.score/ea.percentage are
                 // never actually set; the real score lives at ea.scoring.score.
                 const scores = empAssignments.filter(ea => ea.status === 'submitted').map(ea => ea.score ?? ea.percentage ?? ea.scoring?.score ?? null).filter(s => s != null && s > 0);
@@ -764,7 +769,7 @@ export default function AssessmentManagement() {
                   {/* Avg Score */}
                   <div>
                     {avgScore !== null
-                      ? <span className={`text-sm font-black ${avgScore >= passThreshold ? 'text-emerald-300' : 'text-red-300'}`}>{avgScore}%</span>
+                      ? <span className={`text-sm font-black ${ratingStyle(ratingFromPercent(avgScore)).text}`} title={ratingFromPercent(avgScore)}>{avgScore}%</span>
                       : <span className="text-xs text-slate-600">—</span>}
                   </div>
                   {/* Actions */}
@@ -1635,7 +1640,7 @@ export default function AssessmentManagement() {
                   .map((ea, i) => {
                     const sc = ea.scoring || {};
                     const score = sc.score ?? ea.score;
-                    const grade = gradeForReport(sc) || (sc.grade ?? ea.grade);
+                    const rating = ratingForReport(sc);
                     const strengths = sc.strengths || [];
                     const weakAreas = sc.weakAreas || [];
                     const missing = sc.missingCompetencies || [];
@@ -1656,9 +1661,7 @@ export default function AssessmentManagement() {
                             {score !== undefined && (
                               <span className="text-lg font-black" style={{ color: classification?.color || '#10B981' }}>{score}%</span>
                             )}
-                            {grade && (
-                              <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">Grade {grade}</span>
-                            )}
+                            <span className={`px-2 py-0.5 rounded-md text-xs font-bold ${ratingStyle(rating).chip}`}>{rating}</span>
                           </div>
                         </div>
 
@@ -1737,7 +1740,6 @@ export default function AssessmentManagement() {
       {viewDetail && (() => {
         const empAssignments = viewDetail.employeeAssignments || [];
         const submitted = empAssignments.filter(ea => ea.status === 'submitted');
-        const passThreshold = viewDetail.settings?.passPercentage ?? 80;
         // The real score lives at ea.scoring.score (set by scoreSubmission on
         // the server) — ea.score/ea.percentage are legacy fields that are
         // never actually populated for real submissions, so without this
@@ -1751,13 +1753,40 @@ export default function AssessmentManagement() {
         };
         // A legitimate 0% still counts: only missing scores are excluded.
         const scores = submitted.map(scoreOf).filter(s => s != null);
-        // Each submission is judged against the threshold stored with it, falling
-        // back to the assessment's configured pass percentage.
-        const thresholdOf = (ea) => ea.scoring?.passThreshold ?? passThreshold;
-        const passCount = submitted.filter(ea => (scoreOf(ea) ?? 0) >= thresholdOf(ea)).length;
-        const failCount = submitted.length - passCount;
-        const passRate = submitted.length ? Math.round(passCount / submitted.length * 100) : 0;
-        const failRate = submitted.length ? Math.round(failCount / submitted.length * 100) : 0;
+        // Rating distribution of the submitted results (Expert / Intermediate / Basic / No Rating).
+        const ratingDist = ratingDistribution(submitted.map(ea => ratingForReport(ea.scoring || {})));
+        const manageable = hasFeaturePermission('assessments.create');
+        const nameOfEa = (ea) => ea.userName || employees.find(e => e.userId === ea.userId)?.name || ea.userId;
+        const toTarget = (ea) => ({ ea, name: nameOfEa(ea), employeeId: employees.find(e => e.userId === ea.userId)?.employeeId || '' });
+        const pickedEas = empAssignments.filter(ea => pickedRows.has(ea.userId));
+        const allPicked = empAssignments.length > 0 && pickedEas.length === empAssignments.length;
+        const togglePick = (uid) => setPickedRows(prev => { const n = new Set(prev); if (n.has(uid)) n.delete(uid); else n.add(uid); return n; });
+        const downloadOne = (ea, fmt) => {
+          const token = localStorage.getItem('auth_token');
+          fetch(`${EXPORT_BASE_URL}/api/assessments/${viewDetail.id}/export-reports?format=${fmt}&mode=individual&userId=${ea.userId}`, { headers: { Authorization: `Bearer ${token}` } })
+            .then(r => { if (!r.ok) throw new Error('Export failed'); return r.blob(); })
+            .then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${nameOfEa(ea).replace(/[^a-zA-Z0-9-_ ]/g, '_')}-Report.${fmt}`; a.click(); URL.revokeObjectURL(url); })
+            .catch(e => showToast(e.message || 'Export failed', 'error'));
+        };
+        const remindOne = async (ea) => {
+          const r = await sendReminder(viewDetail.id, ea.userId);
+          if (r.success) { setReminderSentAt(prev => ({ ...prev, [`${viewDetail.id}:${ea.userId}`]: r.sentAt })); showToast(`Reminder sent to ${nameOfEa(ea)}`, 'success'); }
+          else showToast(r.error, 'error');
+        };
+        const remindPicked = async () => {
+          const todo = pickedEas.filter(ea => ea.status !== 'submitted' && ea.status !== 'cancelled');
+          if (todo.length === 0) { showToast('Everyone selected has already completed it', 'info'); return; }
+          setBulkReminding(true);
+          let sent = 0; const failed = [];
+          for (const ea of todo) {
+            const r = await sendReminder(viewDetail.id, ea.userId);
+            if (r.success) { sent += 1; setReminderSentAt(prev => ({ ...prev, [`${viewDetail.id}:${ea.userId}`]: r.sentAt })); }
+            else failed.push(`${nameOfEa(ea)}: ${r.error}`);
+          }
+          setBulkReminding(false);
+          showToast(failed.length ? `${sent} reminder${sent === 1 ? '' : 's'} sent, ${failed.length} not sent. ${failed[0]}` : `${sent} reminder${sent === 1 ? '' : 's'} sent`, failed.length ? 'error' : 'success');
+        };
+        const ROW_GRID = 'lg:grid-cols-[28px_minmax(0,2.1fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,1.3fr)]';
         const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
         const highScore = scores.length ? Math.round(Math.max(...scores)) : 0;
         const lowScore = scores.length ? Math.round(Math.min(...scores)) : 0;
@@ -1825,19 +1854,29 @@ export default function AssessmentManagement() {
               </div>
 
               {/* Stats cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
                   { label: 'Total Assigned', value: empAssignments.length, border: 'border-indigo-500/25', bg: 'bg-indigo-500/5', text: 'text-indigo-300', description: 'Employees given this assessment', tooltip: 'Number of employees this assessment has been assigned to. Total Assigned = Completed + Pending.' },
                   { label: 'Completed', value: submitted.length, border: 'border-emerald-500/25', bg: 'bg-emerald-500/5', text: 'text-emerald-300', description: 'Employees who submitted', tooltip: 'Assigned employees whose assessment status is submitted.' },
                   { label: 'Pending', value: empAssignments.length - submitted.length, border: 'border-amber-500/25', bg: 'bg-amber-500/5', text: 'text-amber-300', description: 'Not submitted yet', tooltip: 'Total Assigned minus Completed: employees who have not submitted (including expired or not yet open).' },
                   { label: 'Avg Score', value: scores.length ? `${avgScore}%` : '—', border: 'border-cyan-500/25', bg: 'bg-cyan-500/5', text: 'text-cyan-300', description: 'Mean score of submissions', tooltip: 'Mean score of all submissions that have a score. A score of 0% is included. Shows a dash until someone submits.' },
-                  { label: 'Pass %', value: submitted.length ? `${passRate}%` : '—', border: 'border-teal-500/25', bg: 'bg-teal-500/5', text: 'text-teal-300', description: 'Submissions at or above pass mark', tooltip: 'Submissions scoring at or above their pass threshold, divided by all submissions. Uses the threshold saved with each submission, else the assessment pass mark.' },
-                  { label: 'Fail %', value: submitted.length ? `${failRate}%` : '—', border: 'border-red-500/25', bg: 'bg-red-500/5', text: 'text-red-300', description: 'Submissions below pass mark', tooltip: 'Submissions below their pass threshold divided by all submissions. Pass % + Fail % = 100%.' },
-                  { label: 'Pass Threshold', value: `${passThreshold}%`, border: 'border-slate-500/25', bg: 'bg-slate-500/5', text: 'text-slate-300', description: 'Minimum score to pass', tooltip: "This assessment's configured pass percentage (default 80%)." },
                 ].map((m, i) => (
                   <StatCard key={i} label={m.label} value={m.value} description={m.description} tooltip={m.tooltip}
                     borderClass={m.border} bgClass={m.bg} textClass={m.text} className="text-center" />
                 ))}
+              </div>
+
+              {/* Rating distribution */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {ratingDist.map(d => {
+                  const st = ratingStyle(d.label);
+                  return (
+                    <StatCard key={d.label} label={d.label} value={d.count}
+                      description={submitted.length ? `${Math.round(d.percent)}% of results` : 'No results yet'}
+                      tooltip={`Employees whose score is ${st.range}%. Rating scale: Expert 90 and above, Intermediate 80 to 89.99, Basic 70 to 79.99, No Rating 69.99 and below.`}
+                      borderClass="border-slate-700/50" bgClass="bg-slate-800/30" textClass={st.text} className="text-center" />
+                  );
+                })}
               </div>
 
               {/* Analytics row */}
@@ -1861,17 +1900,31 @@ export default function AssessmentManagement() {
                   </h3>
                   <button
                     onClick={() => setAssignModal({ assessment: viewDetail })}
-                    disabled={!hasFeaturePermission('assessments.create') || viewDetail.isActive === false}
+                    disabled={!manageable || viewDetail.isActive === false}
                     title={viewDetail.isActive === false ? 'This assessment was replaced by a newer version' : 'Add employees to this assessment with their own start and end date'}
                     className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
                   >
                     + Assign employees
                   </button>
                 </div>
+                {pickedEas.length > 0 && (
+                  <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5">
+                    <span className="text-sm font-bold text-white mr-1">{pickedEas.length} selected</span>
+                    <button onClick={remindPicked} disabled={bulkReminding}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/40 border border-amber-500/30 text-amber-200 text-xs font-bold disabled:opacity-50">{bulkReminding ? 'Sending...' : 'Send reminders'}</button>
+                    <button onClick={() => setBulkReassign({ assessment: viewDetail, targets: pickedEas.map(toTarget) })} disabled={!manageable}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-bold disabled:opacity-40">Reassign selected</button>
+                    <button onClick={() => setDeleteTargets({ assessment: viewDetail, targets: pickedEas.map(toTarget) })} disabled={!manageable}
+                      className="px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-200 text-xs font-bold disabled:opacity-40">Delete selected</button>
+                    <button onClick={() => setPickedRows(new Set())} className="ml-auto text-xs font-semibold text-slate-300 hover:text-white">Clear selection</button>
+                  </div>
+                )}
                 <div className="rounded-2xl border border-slate-700/40 overflow-hidden">
                   {/* Table header */}
-                  <div className="hidden lg:grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1.1fr)] gap-x-3 px-3 xl:px-4 py-3 bg-slate-800/50 border-b border-slate-700/40 text-[10px] xl:text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    {['Employee','Group / Manager','Status','Score','Duration','Download','Actions'].map(h => (
+                  <div className={`hidden lg:grid ${ROW_GRID} gap-x-3 px-3 xl:px-4 py-3 bg-slate-800/50 border-b border-slate-700/40 text-[10px] xl:text-xs font-bold text-slate-500 uppercase tracking-wider items-center`}>
+                    <input type="checkbox" aria-label="Select all employees" checked={allPicked}
+                      onChange={() => setPickedRows(allPicked ? new Set() : new Set(empAssignments.map(ea => ea.userId)))} className="accent-indigo-500" />
+                    {['Employee','Group / Manager','Status','Result','Duration','Actions'].map(h => (
                       <span key={h} className="truncate" title={h}>{h}</span>
                     ))}
                   </div>
@@ -1885,12 +1938,13 @@ export default function AssessmentManagement() {
                         const managerEmp = group ? employees.find(e => e.userId === group.managerId) : (emp?.managerId ? employees.find(e => e.userId === emp.managerId) : null);
                         const sc = ea.scoring || {};
                         const scorePct = ea.score ?? ea.percentage ?? sc.score ?? null;
-                        const grade = gradeForReport(sc) || (ea.grade ?? sc.grade ?? null);
+                        const rating = ea.status === 'submitted' ? ratingForReport(sc) : null;
                         const startMark = ea.attemptStartUnknown ? null : (ea.attemptStartedAt || ea.startedAt);
                         const completionMs = ea.timeTakenSeconds != null ? ea.timeTakenSeconds * 1000 : (startMark && ea.submittedAt ? new Date(ea.submittedAt) - new Date(startMark) : null);
                         const durationStr = completionMs ? `${Math.round(completionMs / 60000)} min` : `${normalizeDuration(viewDetail.duration)} min`;
                         return (
-<div key={i} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1.1fr)] gap-x-3 gap-y-2 items-center px-3 xl:px-4 py-3 hover:bg-slate-800/20 transition-colors">
+<div key={ea.userId || i} className={`grid grid-cols-1 sm:grid-cols-2 ${ROW_GRID} gap-x-3 gap-y-2 items-center px-3 xl:px-4 py-3 hover:bg-slate-800/20 transition-colors ${pickedRows.has(ea.userId) ? 'bg-indigo-500/5' : ''}`}>
+                            <input type="checkbox" aria-label={`Select ${nameOfEa(ea)}`} checked={pickedRows.has(ea.userId)} onChange={() => togglePick(ea.userId)} className="accent-indigo-500" />
                             {/* Employee: name + ID + email stacked */}
                             <div className="min-w-0">
                               <p className="text-sm font-semibold text-white truncate" title={ea.userName || emp?.name || ea.userId}>{ea.userName || emp?.name || ea.userId}</p>
@@ -1922,57 +1976,39 @@ export default function AssessmentManagement() {
                                 </p>
                               )}
                             </div>
-                            {/* Score + % + Grade together */}
+                            {/* Score + % + rating together */}
                             <div className="min-w-0 flex items-baseline flex-wrap gap-x-1.5 text-xs">
                               <span className="font-bold text-white" title="Correct / total">
                                 {ea.status === 'submitted' && sc.correct != null ? `${sc.correct}/${sc.total ?? ea.questions?.length ?? 0}` : '—'}
                               </span>
-                              <span className={`font-bold ${scorePct != null ? (scorePct >= passThreshold ? 'text-emerald-300' : 'text-red-300') : 'text-slate-500'}`}>
+                              <span className={`font-bold ${rating ? ratingStyle(rating).text : 'text-slate-500'}`}>
                                 {scorePct != null ? `${scorePct}%` : '—'}
                               </span>
-                              <span className="font-bold text-white" title="Grade">{grade || '—'}</span>
+                              {rating ? <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${ratingStyle(rating).chip}`} title="Rating">{rating}</span> : null}
                             </div>
                             {/* Duration */}
                             <span className="text-xs text-slate-400 truncate">{durationStr}</span>
-                            {/* Download */}
-                            <div className="flex flex-wrap gap-1 min-w-0">
-                              {ea.status === 'submitted' ? (
-                                [['pdf','PDF'],['xlsx','XLS'],['docx','DOC']].map(([fmt,lbl]) => (
-                                  <button key={fmt} onClick={() => {
-                                    const EXPORT_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3001');
-                                    const token = localStorage.getItem('auth_token');
-                                    fetch(`${EXPORT_BASE}/api/assessments/${viewDetail.id}/export-reports?format=${fmt}&mode=individual&userId=${ea.userId}`, { headers: { Authorization: `Bearer ${token}` } })
-                                      .then(r => { if (!r.ok) throw new Error('Export failed'); return r.blob(); })
-                                      .then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${(ea.userName||ea.userId).replace(/[^a-zA-Z0-9-_ ]/g,'_')}-Report.${fmt}`; a.click(); URL.revokeObjectURL(url); })
-                                      .catch(e => showToast(e.message || 'Export failed', 'error'));
-                                  }} disabled={!hasFeaturePermission('reports.export')}
-                                  title={!hasFeaturePermission('reports.export') ? "You don't have permission to export reports" : undefined}
-                                  className="px-1.5 py-1 rounded bg-slate-700 hover:bg-indigo-600/40 text-[10px] font-bold text-slate-300 hover:text-indigo-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                                    {lbl}
-                                  </button>
-                                ))
-                              ) : <span className="text-xs text-slate-600">Pending</span>}
-                            </div>
-                            
-                            {/* Actions: reminder + reassign together */}
+                            {/* Actions: quick reminder + labelled Manage menu */}
                             <div className="min-w-0 flex flex-wrap items-center gap-1.5">
                               <ReminderButton
-                              assessmentId={viewDetail.id}
-                              userId={ea.userId}
-                              status={ea.status || 'assigned'}
-                              lastSentAt={reminderSentAt[`${viewDetail.id}:${ea.userId}`]}
-                              onSent={(sentAt) => setReminderSentAt(prev => ({ ...prev, [`${viewDetail.id}:${ea.userId}`]: sentAt }))}
-                            />
-                              {ea.status !== 'submitted' ? (
-                              <button
-                                onClick={() => setReassignTarget({ assessment: viewDetail, ea })}
-                                disabled={!hasFeaturePermission('assessments.create')}
-                                title="Give this employee the same assessment again with new dates"
-                                className="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-300 text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-colors w-fit"
-                              >
-                                ↻ Reassign
-                              </button>
-                            ) : <span className="text-xs text-slate-600">—</span>}
+                                assessmentId={viewDetail.id}
+                                userId={ea.userId}
+                                status={ea.status || 'assigned'}
+                                lastSentAt={reminderSentAt[`${viewDetail.id}:${ea.userId}`]}
+                                onSent={(sentAt) => setReminderSentAt(prev => ({ ...prev, [`${viewDetail.id}:${ea.userId}`]: sentAt }))}
+                              />
+                              <ManageMenu items={[
+                                ea.status === 'submitted' ? { label: 'View result', onClick: () => setResultTarget({ assessment: viewDetail, ea }) } : null,
+                                { label: 'Edit dates', disabled: !manageable || ea.status === 'submitted', title: ea.status === 'submitted' ? 'Completed: use Reassign to give it again' : undefined, onClick: () => setEditDatesTarget({ assessment: viewDetail, ea }) },
+                                { label: ea.status === 'submitted' ? 'Reassign (retake)' : 'Reassign', disabled: !manageable, onClick: () => setReassignTarget({ assessment: viewDetail, ea }) },
+                                ea.status !== 'submitted' && ea.status !== 'cancelled' ? { label: 'Send reminder', onClick: () => remindOne(ea) } : null,
+                                ea.status === 'submitted' ? { divider: true } : null,
+                                ...(ea.status === 'submitted' ? [['pdf', 'PDF'], ['xlsx', 'Excel'], ['docx', 'Word']].map(([f, l]) => ({
+                                  label: `Download report (${l})`, disabled: !hasFeaturePermission('reports.export'), onClick: () => downloadOne(ea, f),
+                                })) : []),
+                                { divider: true },
+                                { label: 'Delete assignment', danger: true, disabled: !manageable, onClick: () => setDeleteTargets({ assessment: viewDetail, targets: [toTarget(ea)] }) },
+                              ]} />
                             </div>
                           </div>
                         );
@@ -1992,7 +2028,6 @@ export default function AssessmentManagement() {
                       ['Question Order', viewDetail.settings.questionOrder || 'Same'],
                       ['Timing', viewDetail.settings.timing?.type === 'timed' ? `${normalizeDuration(viewDetail.settings.timing.totalMinutes)} min` : 'Untimed'],
                       ['Reattempts', viewDetail.settings.reattempts === -1 ? 'Unlimited' : viewDetail.settings.reattempts === 0 ? 'None' : String(viewDetail.settings.reattempts ?? '—')],
-                      ['Pass Threshold', `${passThreshold}%`],
                       ['Mandatory', viewDetail.settings.completion?.mandatory ? 'Yes' : 'No'],
                     ].map(([k,v], i) => (
                       <div key={i} className="rounded-xl bg-slate-800/60 border border-slate-700/40 px-3 py-2">
@@ -2015,6 +2050,55 @@ export default function AssessmentManagement() {
           employees={employees}
           onClose={() => setAssignModal(null)}
           onDone={refreshAssessment}
+          showToast={showToast}
+        />
+      )}
+
+      {editDatesTarget && (
+        <EditDatesModal
+          assessment={editDatesTarget.assessment}
+          ea={editDatesTarget.ea}
+          employeeName={editDatesTarget.ea.userName || employees.find(e => e.userId === editDatesTarget.ea.userId)?.name || 'this employee'}
+          onClose={() => setEditDatesTarget(null)}
+          onDone={refreshAssessment}
+          showToast={showToast}
+        />
+      )}
+
+      {resultTarget && (
+        <ResultModal
+          assessment={resultTarget.assessment}
+          ea={resultTarget.ea}
+          employeeName={resultTarget.ea.userName || employees.find(e => e.userId === resultTarget.ea.userId)?.name || 'Employee'}
+          onClose={() => setResultTarget(null)}
+        />
+      )}
+
+      {deleteTargets && (
+        <DeleteAssignmentModal
+          assessment={deleteTargets.assessment}
+          targets={deleteTargets.targets}
+          onClose={() => setDeleteTargets(null)}
+          onDone={async (id) => { await refreshAssessment(id); setPickedRows(new Set()); }}
+          showToast={showToast}
+        />
+      )}
+
+      {bulkReassign && (
+        <BulkReassignModal
+          assessment={bulkReassign.assessment}
+          targets={bulkReassign.targets}
+          onClose={() => setBulkReassign(null)}
+          onDone={async (id) => { await refreshAssessment(id); setPickedRows(new Set()); }}
+          showToast={showToast}
+        />
+      )}
+
+      {deleteAssessmentTarget && (
+        <DeleteAssessmentModal
+          assessment={deleteAssessmentTarget}
+          onClose={() => setDeleteAssessmentTarget(null)}
+          onDone={(id) => { setAssessments(prev => prev.filter(a => a.id !== id)); setViewDetail(prev => (prev && prev.id === id ? null : prev)); }}
           showToast={showToast}
         />
       )}

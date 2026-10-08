@@ -12,8 +12,9 @@ import {
 } from 'docx';
 import {
   DASH, safe, fmtDate, fmtPct, fmtDuration, truncate, reportTimezone, STATUS,
-  buildSummary, skillAverages, followUpList, resultLabel,
+  buildSummary, skillAverages, followUpList, ratingLabel,
 } from './reportData.js';
+import { RATINGS } from '../grading.js';
 
 const COLOR = {
   accent: '4338CA', accentSoft: 'EEF2FF', ink: '1E293B', body: '334155', muted: '64748B', line: 'E2E8F0', zebra: 'F8FAFC', white: 'FFFFFF',
@@ -30,7 +31,9 @@ const NONE = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
 const hair = (color = COLOR.line, size = 4) => ({ style: BorderStyle.SINGLE, size, color });
 
 const run = (text, o = {}) => new TextRun({ text: String(text ?? ''), font: FONT, size: o.size ?? 19, bold: o.bold, color: o.color ?? COLOR.body, italics: o.italics, shading: o.shading });
-const resultColor = (r) => (r === 'Passed' ? COLOR.green : r === 'Failed' ? COLOR.red : COLOR.ink);
+// Rating -> dark text colour and solid bar colour (same four colours as Excel / PDF).
+const ratingColor = (label) => RATINGS.find(r => r.label === label)?.text || COLOR.ink;
+const ratingBar = (label) => RATINGS.find(r => r.label === label)?.solid || COLOR.accent;
 
 function para(children, o = {}) {
   return new Paragraph({
@@ -108,8 +111,9 @@ function barTable(leadCols, leadRows, stripW, header = '') {
   columns[leadCols.length] = { ...columns[leadCols.length], header };
   const rows = leadRows.map(r => {
     const cells = r.slice(0, -1);
-    const pct = r[r.length - 1];
-    for (let s = 0; s < 10; s++) cells.push({ bar: pct, strip: s });
+    const last = r[r.length - 1];
+    const pct = last && typeof last === 'object' ? last.pct : last;
+    for (let s = 0; s < 10; s++) cells.push({ bar: pct, strip: s, color: last && typeof last === 'object' ? last.color : undefined });
     return cells;
   });
   // header: a single spanning cell over the strips
@@ -132,7 +136,7 @@ function buildBody(columns, rows) {
       if (c && typeof c === 'object' && c.bar !== undefined) {
         const on = Math.round((Math.max(0, Math.min(100, Number(c.bar) || 0)) / 100) * 10);
         return cell(cellPara('', { size: 8 }), {
-          width: columns[i].w, fill: c.strip < on ? COLOR.accent : COLOR.greySoft,
+          width: columns[i].w, fill: c.strip < on ? (c.color || COLOR.accent) : COLOR.greySoft,
           margins: { top: 45, bottom: 45, left: 0, right: 0 },
           borders: { top: NONE, bottom: NONE, left: hair(COLOR.white, 8), right: hair(COLOR.white, 8) },
         });
@@ -279,7 +283,7 @@ const endNote = () => para(run('End of report', { size: 15, color: COLOR.muted }
 // ── INDIVIDUAL ──────────────────────────────────────────────────────────────
 export async function buildIndividualDocx({ row, now = new Date(), tz = reportTimezone() }) {
   const done = row.status === STATUS.COMPLETED;
-  const rLabel = resultLabel(row);
+  const rLabel = ratingLabel(row);
   const children = [
     ...title1('Assessment Report', `${safe(row.name)}  |  ${safe(row.assessmentTitle)}`),
     kvGrid([
@@ -289,9 +293,7 @@ export async function buildIndividualDocx({ row, now = new Date(), tz = reportTi
     section('At a glance'),
     kvGrid([
       { label: 'Score', value: done && row.scorePct !== null ? `${fmtPct(row.scorePct, 1)}${row.correct !== null && row.total ? `  (${row.correct} of ${row.total} correct)` : ''}` : DASH },
-      { label: 'Grade', value: done ? row.grade : DASH },
-      { label: 'Result', value: done ? `${rLabel} (pass mark ${fmtPct(row.passMark)})` : rLabel, color: resultColor(rLabel) },
-      { label: 'Performance level', value: row.performance },
+      { label: 'Rating', value: done ? row.rating : rLabel, color: done ? ratingColor(row.rating) : undefined },
       { label: 'Time taken', value: row.timeTakenMin !== null ? `${fmtDuration(row.timeTakenMin)} of ${row.timeLimitMin} min` : `${DASH} (limit ${row.timeLimitMin} min)` },
       { label: 'Attempt no.', value: row.attemptNo },
       { label: 'Assigned on', value: fmtDate(row.assignedAt, tz) },
@@ -350,21 +352,21 @@ export async function buildConsolidatedDocx({ rows, summary, now = new Date(), t
     ] : [
       { label: 'Type', value: sum.type }, { label: 'Job role(s)', value: sum.jobRoles.join(', ') }, { label: 'Company', value: sum.company },
       { label: 'Created on', value: fmtDate(sum.createdAt, tz, { time: false }) }, { label: 'Starts', value: fmtDate(sum.startAt, tz) },
-      { label: 'Due', value: fmtDate(sum.dueAt, tz) }, { label: 'Time limit', value: `${sum.timeLimitMin} min` }, { label: 'Pass mark', value: fmtPct(sum.passMark) },
+      { label: 'Due', value: fmtDate(sum.dueAt, tz) }, { label: 'Time limit', value: `${sum.timeLimitMin} min` },
     ], 4),
     section('Overview'),
     statRow([
       { label: 'Assigned', value: sum.assigned }, { label: 'Completed', value: sum.completed }, { label: 'Not completed', value: sum.notCompleted }, { label: 'Completion', value: fmtPct(sum.completionPct, 1) },
-      { label: 'Average score', value: fmtPct(sum.avgScore, 1) }, { label: 'Highest score', value: fmtPct(sum.highScore, 1) }, { label: 'Lowest score', value: fmtPct(sum.lowScore, 1) }, { label: 'Pass rate', value: fmtPct(sum.passPct, 1) },
+      { label: 'Average score', value: fmtPct(sum.avgScore, 1) }, { label: 'Highest score', value: fmtPct(sum.highScore, 1) }, { label: 'Lowest score', value: fmtPct(sum.lowScore, 1) }, { label: 'Expert + Intermediate', value: fmtPct(sum.topSharePct, 1) },
     ], 4),
   ];
 
   if (sum.completed > 0) {
-    children.push(subheading('Grades'));
-    const maxG = Math.max(1, sum.grades.A, sum.grades.B, sum.grades.C);
+    children.push(subheading('Rating distribution'));
+    const maxG = Math.max(1, ...sum.ratings.map(x => x.count));
     children.push(barTable(
-      [{ header: 'Grade', w: 1500 }, { header: 'Score range', w: 2400 }, { header: 'People', w: 900, align: AlignmentType.RIGHT }],
-      [['Grade A', '85% and above', String(sum.grades.A), (sum.grades.A / maxG) * 100], ['Grade B', '70% to under 85%', String(sum.grades.B), (sum.grades.B / maxG) * 100], ['Grade C', 'under 70%', String(sum.grades.C), (sum.grades.C / maxG) * 100]],
+      [{ header: 'Rating', w: 1500 }, { header: 'Score range', w: 2000 }, { header: 'People', w: 1300, align: AlignmentType.RIGHT }],
+      sum.ratings.map(x => [{ text: x.label, bold: true, color: ratingColor(x.label) }, RATINGS.find(m => m.label === x.label)?.range || '', `${x.count} (${fmtPct(x.percent, 0)})`, { pct: (x.count / maxG) * 100, color: ratingBar(x.label) }]),
       540,
     ));
   }
@@ -376,12 +378,12 @@ export async function buildConsolidatedDocx({ rows, summary, now = new Date(), t
     children.push(dataTable(
       [
         { header: 'Employee ID', w: 1250 }, { header: 'Name', w: 2300 }, { header: roleOrAssessment.header, w: 1800 }, { header: 'Assigned', w: 1250 }, { header: 'Completed', w: 1250 },
-        { header: 'Score', w: 800, align: AlignmentType.RIGHT }, { header: 'Grade', w: 650, align: AlignmentType.CENTER }, { header: 'Result', w: 906 },
+        { header: 'Score', w: 800, align: AlignmentType.RIGHT }, { header: 'Rating', w: 1556 },
       ],
       sorted.map(r => {
-        const res = resultLabel(r);
+        const res = ratingLabel(r);
         return [r.employeeId, r.name, roleOrAssessment.pick(r), fmtDate(r.assignedAt, tz, { time: false }), fmtDate(r.completedAt, tz, { time: false }),
-          r.status === STATUS.COMPLETED ? fmtPct(r.scorePct, 1) : DASH, { text: r.status === STATUS.COMPLETED ? r.grade : DASH, bold: true }, { text: res, bold: true, color: resultColor(res) }];
+          r.status === STATUS.COMPLETED ? fmtPct(r.scorePct, 1) : DASH, { text: res, bold: true, color: r.status === STATUS.COMPLETED ? ratingColor(res) : COLOR.muted }];
       }),
     ));
   }
@@ -402,12 +404,12 @@ export async function buildConsolidatedDocx({ rows, summary, now = new Date(), t
   children.push(section('Needs follow-up'));
   const follow = followUpList(rows, now);
   if (!follow.length) {
-    children.push(para(run('Nobody needs follow-up: everyone has completed the assessment and passed.', { bold: true, color: COLOR.green })));
+    children.push(para(run('Nobody needs follow-up: everyone has completed the assessment and earned a rating.', { bold: true, color: COLOR.green })));
   } else {
-    children.push(para(run('Employees who have not completed the assessment, or did not reach the pass mark. Most urgent first.', { size: 17, color: COLOR.muted }), { after: 60, keepNext: true }));
+    children.push(para(run('Employees who have not completed the assessment, or finished with No Rating (below 70%). Most urgent first.', { size: 17, color: COLOR.muted }), { after: 60, keepNext: true }));
     children.push(dataTable(
       [{ header: 'Employee ID', w: 1150 }, { header: 'Name', w: 2100 }, { header: roleOrAssessment.header, w: 1700 }, { header: 'Status', w: 1150 }, { header: 'Due', w: 1250 }, { header: 'What to do', w: 2856 }],
-      follow.map(f => [f.row.employeeId, f.row.name, roleOrAssessment.pick(f.row), { text: f.status, bold: true, color: f.status === 'Failed' ? COLOR.red : COLOR.ink }, fmtDate(f.row.dueAt, tz, { time: false }), f.reason]),
+      follow.map(f => [f.row.employeeId, f.row.name, roleOrAssessment.pick(f.row), { text: f.status, bold: true, color: f.status === 'No Rating' ? ratingColor('No Rating') : COLOR.ink }, fmtDate(f.row.dueAt, tz, { time: false }), f.reason]),
     ));
   }
   children.push(endNote());

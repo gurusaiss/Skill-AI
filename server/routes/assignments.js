@@ -4,6 +4,7 @@ import UserStore from '../services/UserStore.js';
 import * as db from '../db/store.js';
 import { Groups } from '../services/DataStore.js';
 import { getVisibleEmployeeIds, canActAsManager } from '../services/ManagerScope.js';
+import { checkProgressData, mergeProgressData, applyEngagementEvent } from '../services/moduleEngagement.js';
 
 const router = express.Router();
 
@@ -652,7 +653,12 @@ router.get('/', authenticate, async (req, res) => {
 router.put('/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, progress, sessionProgress, progress_data } = req.body;
+    const { status, progress, sessionProgress, progress_data, engagementEvent } = req.body;
+
+    const pdCheck = checkProgressData(progress_data);
+    if (!pdCheck.ok) {
+      return res.status(413).json({ success: false, data: null, error: { code: 'ASSIGNMENT_BAD_PROGRESS_DATA', message: pdCheck.message } });
+    }
 
     const updates = {};
     if (status !== undefined) updates.status = status;
@@ -662,6 +668,9 @@ router.put('/:id', authenticate, async (req, res) => {
       updates.sessionProgress = sessionProgress;
     }
     if (progress_data !== undefined) updates.progress_data = progress_data;
+    // Module engagement (time, sections, every answered question) is folded in
+    // on the server below, so a stale browser copy can never overwrite it.
+    if (engagementEvent !== undefined && updates.progress_data === undefined) updates.progress_data = {};
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({
@@ -697,6 +706,15 @@ router.put('/:id', authenticate, async (req, res) => {
     if (sessionProgress !== undefined) {
       const existingProgress = assignment.session_progress || assignment.sessionProgress || {};
       updates.sessionProgress = { ...existingProgress, ...sessionProgress };
+    }
+
+    // Server-side safety merge for progress_data: never drop stored per-day
+    // reports or the server-owned engagement record, then apply the event.
+    if (updates.progress_data !== undefined) {
+      const existingPd = assignment.progress_data || assignment.progressData || {};
+      let merged = mergeProgressData(existingPd, updates.progress_data);
+      if (engagementEvent !== undefined) merged = applyEngagementEvent(merged, engagementEvent);
+      updates.progress_data = merged;
     }
 
     const updated = await UserStore.updateAssignment(id, updates);

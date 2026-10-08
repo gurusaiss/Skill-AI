@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { authFetch } from '../utils/authFetch.js';
-import { gradeForReport, normalizeDuration } from '../utils/assessmentRules.js';
+import { ratingForReport, ratingStyle, normalizeDuration } from '../utils/assessmentRules.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -46,8 +46,8 @@ const ConfirmDialog = ({ onConfirm, onCancel }) => (
   </div>
 );
 
-const ScoreRing = ({ pct, grade }) => {
-  const color = scoreColor(pct);
+const ScoreRing = ({ pct, rating }) => {
+  const color = ratingStyle(rating).hex;
   const r = 54;
   const circ = 2 * Math.PI * r;
   const dash = circ * (pct / 100);
@@ -65,7 +65,7 @@ const ScoreRing = ({ pct, grade }) => {
         style={{ transition: 'stroke-dasharray 1s ease' }}
       />
       <text x="70" y="65" textAnchor="middle" fill={color} fontSize="26" fontWeight="900" dy="0">{pct}%</text>
-      <text x="70" y="84" textAnchor="middle" fill="#94a3b8" fontSize="13" fontWeight="700">{grade}</text>
+      <text x="70" y="84" textAnchor="middle" fill="#94a3b8" fontSize="13" fontWeight="700">{rating}</text>
     </svg>
   );
 };
@@ -340,18 +340,16 @@ export default function Assessment() {
 
   if (report) {
     const pct = Math.round(report.score ?? report.percentage ?? 0);
-    const reportGrade = gradeForReport(report) || '—';
-    // The server stores the pass/fail decision with the report, made against the
-    // assessment's own pass mark. Old reports without it fall back to the 80% default.
-    const didPass = report.passed ?? (Number(report.rawScore ?? report.score ?? pct) >= (report.passThreshold ?? 80));
+    // Rating (Expert / Intermediate / Basic / No Rating) from the exact score; old reports
+    // that only carry a letter grade or pass flag are rated from their counts.
+    const reportRating = ratingForReport(report);
+    const ratingInfo = ratingStyle(reportRating);
     const correct = report.correct ?? report.correctCount ?? 0;
     const total = report.total ?? report.totalQuestions ?? (assessment?.questions?.length ?? 0);
     const strengths = report.strengths || report.strongAreas || [];
     const weakAreas = report.weakAreas || report.weaknesses || [];
     const missingCompetencies = report.missingCompetencies || [];
     const recommendedLearningAreas = report.recommendedLearningAreas || [];
-    const classification = report.performanceClassification;
-    const readinessLevel = report.readinessLevel;
     const skillBreakdown = report.skillBreakdown || [];
 
     return (
@@ -364,13 +362,13 @@ export default function Assessment() {
               <p className="text-center text-xs text-indigo-300 mb-6">{assessment.jobRole}</p>
             )}
 
-            <ScoreRing pct={pct} grade={reportGrade} />
+            <ScoreRing pct={pct} rating={reportRating} />
 
             <div className="grid grid-cols-3 gap-3 mb-4">
               {[
-                { label: 'Grade', value: reportGrade, color: scoreColor(pct) },
+                { label: 'Rating', value: reportRating, color: ratingInfo.hex },
+                { label: 'Score', value: `${pct}%` },
                 { label: 'Correct', value: `${correct}/${total}` },
-                { label: 'Result', value: didPass ? 'Pass' : 'Fail', color: didPass ? '#10b981' : '#ef4444' },
               ].map(item => (
                 <div key={item.label} className="rounded-xl bg-slate-800/60 border border-slate-700/30 p-3 text-center">
                   <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">{item.label}</p>
@@ -379,19 +377,11 @@ export default function Assessment() {
               ))}
             </div>
 
-            {/* Performance Classification */}
-            {classification && (
-              <div className="rounded-xl px-4 py-3 mb-4 border" style={{ borderColor: classification.color + '40', backgroundColor: classification.color + '15' }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-widest" style={{ color: classification.color }}>
-                    {classification.label}
-                  </span>
-                </div>
-                {readinessLevel && (
-                  <p className="text-xs text-slate-400 mt-1">{readinessLevel}</p>
-                )}
-              </div>
-            )}
+            {/* Rating band and what it means */}
+            <div className={`rounded-xl px-4 py-3 mb-4 ${ratingInfo.chip}`} title={`Score range for ${reportRating}: ${ratingInfo.range}`}>
+              <span className="text-xs font-black uppercase tracking-widest">{reportRating}</span>
+              <p className="text-xs text-slate-400 mt-1">{ratingInfo.readiness} (score range {ratingInfo.range})</p>
+            </div>
 
             {weakAreas.length > 0 && (
               <div className="rounded-xl px-4 py-2.5 mb-4 bg-indigo-500/8 border border-indigo-500/20">
