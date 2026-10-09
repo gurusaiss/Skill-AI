@@ -4,6 +4,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { GeneratedModules, Groups as GroupsStore, bumpTable } from '../services/DataStore.js';
 import * as mysqlDb from './mysql.js';
+import { mirrorWrite } from './mysqlMirror.js';
 
 // Same opt-in contract as DataStore.js/UserStore.js: unset DB_BACKEND (the
 // default) leaves every existing Supabase/file behavior in this file
@@ -207,8 +208,11 @@ function jsonbUpdatePayload(updates) {
   return payload;
 }
 
-// Build a safe Supabase-compatible payload from a module object
-function toSupabaseModule(module, createdBy, id) {
+// Build a safe Supabase-compatible payload from a module object.
+// Exported additively (no behavior change) so server/scripts/backfillMysql.mjs
+// can shape backfilled 'modules' rows identically to the live mirror calls
+// elsewhere in this file instead of re-deriving the column mapping.
+export function toSupabaseModule(module, createdBy, id) {
   const durationRaw = module.estimatedDuration || module.estimated_duration || '';
   const durationInt = parseInt(durationRaw) || 30;
   return {
@@ -365,6 +369,7 @@ export async function createModule(module, createdBy) {
       // Fall through to JSONB fallback
       console.warn('[createModule] Flat-column Supabase write failed, trying JSONB fallback:', error.message);
     } else {
+      mirrorWrite({ table: 'modules', op: 'upsert', id, data, idColumn: 'id' });
       return normalizeModule(data);
     }
   } // end if (isOn())
@@ -392,6 +397,11 @@ export async function createModule(module, createdBy) {
   try {
     const saved = await GeneratedModules.create(newModule);
     console.log(`[createModule] Saved to generated_modules JSONB table: ${id}`);
+    // Mirror into the real flat `modules` MySQL table regardless of which
+    // real backend (JSONB here, or the ephemeral file below) ended up
+    // persisting it — built with the same toSupabaseModule() shaping the
+    // useMySQL()/Supabase branches above already use for this table.
+    mirrorWrite({ table: 'modules', op: 'upsert', id, data: toSupabaseModule(newModule, createdBy, id), idColumn: 'id' });
     return saved || newModule;
   } catch (dsErr) {
     // Absolute last resort: ephemeral file (data will be lost on Render restart)
@@ -401,6 +411,7 @@ export async function createModule(module, createdBy) {
     f.modules.push(newModule);
     f.nextModuleId += 1;
     await writeJsonFile(path, f);
+    mirrorWrite({ table: 'modules', op: 'upsert', id, data: toSupabaseModule(newModule, createdBy, id), idColumn: 'id' });
     return newModule;
   }
 }
@@ -525,18 +536,23 @@ export async function updateModule(id, updates) {
       }
       throw error;
     }
+    mirrorWrite({ table: 'modules', op: 'upsert', id, data, idColumn: 'id' });
     return normalizeModule(data);
   }
   // Supabase not configured — try the JSONB DataStore first (its own update()
   // already falls back to the file store), then the legacy ephemeral file.
   const dsUpdated = await GeneratedModules.update(id, jsonbUpdatePayload(updates)).catch(() => null);
-  if (dsUpdated) return reconcileModuleFields(dsUpdated);
+  if (dsUpdated) {
+    mirrorWrite({ table: 'modules', op: 'upsert', id, data: toSupabaseModule(dsUpdated, dsUpdated.createdBy, id), idColumn: 'id' });
+    return reconcileModuleFields(dsUpdated);
+  }
   const path = join(DATA_DIR, 'modules.json');
   const f = await readJsonFile(path) || { modules: [] };
   const idx = f.modules.findIndex(m => m.id === id);
   if (idx === -1) return null;
   f.modules[idx] = { ...f.modules[idx], ...updates, updatedAt: new Date().toISOString() };
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'modules', op: 'upsert', id, data: toSupabaseModule(f.modules[idx], f.modules[idx].createdBy, id), idColumn: 'id' });
   return f.modules[idx];
 }
 
@@ -555,6 +571,7 @@ export async function deleteModule(id) {
     if (existing) {
       const { error } = await supabase.from('modules').delete().eq('id', id);
       if (error) throw error;
+      mirrorWrite({ table: 'modules', op: 'delete', id, idColumn: 'id' });
       return true;
     }
   }
@@ -564,12 +581,14 @@ export async function deleteModule(id) {
   f.modules = f.modules.filter(m => m.id !== id);
   if (f.modules.length !== initial) {
     await writeJsonFile(path, f);
+    mirrorWrite({ table: 'modules', op: 'delete', id, idColumn: 'id' });
     return true;
   }
   // Not in the flat table or the legacy file — check the JSONB fallback.
   const dsExisting = await GeneratedModules.getById(id).catch(() => null);
   if (dsExisting) {
     await GeneratedModules.delete(id);
+    mirrorWrite({ table: 'modules', op: 'delete', id, idColumn: 'id' });
     return true;
   }
   return false;
@@ -579,7 +598,8 @@ export async function deleteModule(id) {
 // only `id`/`category`/`created_by` are real columns, everything else the
 // caller passes goes into the `extra` JSON column and is spread back out
 // on read (see getPackages above).
-function splitPackageRow(obj, knownCols) {
+// Exported additively (no behavior change) — see toSupabaseModule() above.
+export function splitPackageRow(obj, knownCols) {
   const row = {};
   const extra = {};
   for (const [k, v] of Object.entries(obj || {})) {
@@ -600,6 +620,7 @@ export async function createPackage(pkg, createdBy) {
   if (isOn()) {
     const { data, error } = await supabase.from('packages').insert([{ ...pkg, created_by: createdBy }]).select().single();
     if (error) throw error;
+    mirrorWrite({ table: 'packages', op: 'upsert', id: data.id, data: { id: data.id, created_by: createdBy, created_at: data.created_at || new Date().toISOString(), ...splitPackageRow(pkg, ['id', 'category']) }, idColumn: 'id' });
     return data;
   }
   const path = join(DATA_DIR, 'packages.json');
@@ -609,6 +630,7 @@ export async function createPackage(pkg, createdBy) {
   f.packages.push(newPkg);
   f.nextId += 1;
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'packages', op: 'upsert', id, data: { id, created_by: createdBy, created_at: newPkg.createdAt, ...splitPackageRow(pkg, ['id', 'category']) }, idColumn: 'id' });
   return newPkg;
 }
 
@@ -626,6 +648,7 @@ export async function updatePackage(id, updates) {
   if (isOn()) {
     const { data, error } = await supabase.from('packages').update(updates).eq('id', id).select().single();
     if (error) throw error;
+    mirrorWrite({ table: 'packages', op: 'upsert', id, data: { id, updated_at: new Date().toISOString(), ...splitPackageRow(updates, ['category']) }, idColumn: 'id' });
     return data;
   }
   const path = join(DATA_DIR, 'packages.json');
@@ -634,6 +657,7 @@ export async function updatePackage(id, updates) {
   if (idx === -1) return null;
   f.packages[idx] = { ...f.packages[idx], ...updates, updatedAt: new Date().toISOString() };
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'packages', op: 'upsert', id, data: { id, updated_at: f.packages[idx].updatedAt, ...splitPackageRow(updates, ['category']) }, idColumn: 'id' });
   return f.packages[idx];
 }
 
@@ -644,6 +668,7 @@ export async function deletePackage(id) {
   if (isOn()) {
     const { error } = await supabase.from('packages').delete().eq('id', id);
     if (error) throw error;
+    mirrorWrite({ table: 'packages', op: 'delete', id, idColumn: 'id' });
     return true;
   }
   const path = join(DATA_DIR, 'packages.json');
@@ -652,6 +677,7 @@ export async function deletePackage(id) {
   f.packages = f.packages.filter(p => p.id !== id);
   if (f.packages.length === initial) return false;
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'packages', op: 'delete', id, idColumn: 'id' });
   return true;
 }
 
@@ -680,6 +706,7 @@ export async function createSkillPackage(pkg, createdBy) {
   if (isOn()) {
     const { data, error } = await supabase.from('skill_packages').insert([{ ...pkg, created_by: createdBy }]).select().single();
     if (error) throw error;
+    mirrorWrite({ table: 'skill_packages', op: 'upsert', id: data.id, data: { id: data.id, created_by: createdBy, created_at: data.created_at || new Date().toISOString(), ...splitPackageRow(pkg, ['id']) }, idColumn: 'id' });
     return data;
   }
   const path = join(DATA_DIR, 'skill_packages.json');
@@ -689,6 +716,7 @@ export async function createSkillPackage(pkg, createdBy) {
   f.skillPackages.push(newPkg);
   f.nextId += 1;
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'skill_packages', op: 'upsert', id, data: { id, created_by: createdBy, created_at: newPkg.createdAt, ...splitPackageRow(pkg, ['id']) }, idColumn: 'id' });
   return newPkg;
 }
 
@@ -705,6 +733,7 @@ export async function updateSkillPackage(id, updates) {
   if (isOn()) {
     const { data, error } = await supabase.from('skill_packages').update(updates).eq('id', id).select().single();
     if (error) throw error;
+    mirrorWrite({ table: 'skill_packages', op: 'upsert', id, data: { id, ...splitPackageRow(updates, []) }, idColumn: 'id' });
     return data;
   }
   const path = join(DATA_DIR, 'skill_packages.json');
@@ -713,6 +742,7 @@ export async function updateSkillPackage(id, updates) {
   if (idx === -1) return null;
   f.skillPackages[idx] = { ...f.skillPackages[idx], ...updates, updatedAt: new Date().toISOString() };
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'skill_packages', op: 'upsert', id, data: { id, ...splitPackageRow(updates, []) }, idColumn: 'id' });
   return f.skillPackages[idx];
 }
 
@@ -741,6 +771,7 @@ export async function createLearningTrack(track, createdBy) {
   if (isOn()) {
     const { data, error } = await supabase.from('learning_tracks').insert([{ ...track, created_by: createdBy }]).select().single();
     if (error) throw error;
+    mirrorWrite({ table: 'learning_tracks', op: 'upsert', id: data.id, data: { id: data.id, created_by: createdBy, created_at: data.created_at || new Date().toISOString(), ...splitPackageRow(track, ['id']) }, idColumn: 'id' });
     return data;
   }
   const path = join(DATA_DIR, 'learning_tracks.json');
@@ -750,6 +781,7 @@ export async function createLearningTrack(track, createdBy) {
   f.tracks.push(newTrack);
   f.nextId += 1;
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'learning_tracks', op: 'upsert', id, data: { id, created_by: createdBy, created_at: newTrack.createdAt, ...splitPackageRow(track, ['id']) }, idColumn: 'id' });
   return newTrack;
 }
 
@@ -808,11 +840,18 @@ export async function createGroup(group) {
       .select('id, data')
       .single();
     if (error) throw error;
+    mirrorWrite({ table: 'groups', op: 'upsert', id: data.id, data: { id: data.id, name: (data.data || {}).name || null, manager_id: (data.data || {}).managerId || null, data: data.data || {} }, idColumn: 'id' });
     return { id: data.id, ...(data.data || {}) };
   }
   // Same unification as getGroups() above — write through the one store
   // every other group creation path (GroupManagement.jsx → /api/groups)
   // already uses, instead of a second file format nothing else reads.
+  // NOTE: no mirrorWrite call needed here — GroupsStore.create() (DataStore.js)
+  // already mirrors this exact write into the same `groups` table itself
+  // (see its own mirrorRowUpsert call); mirroring it again here would just
+  // be a redundant duplicate write for this one path. The isOn() branch
+  // above is different: it writes straight to Supabase itself, bypassing
+  // GroupsStore entirely, so it still needs (and has) its own mirror call.
   const id = group.id || `grp_${Date.now()}`;
   return GroupsStore.create({ ...group, id });
 }
@@ -832,12 +871,14 @@ export async function addGroupMembers(groupId, userIds, roleInGroup = 'member') 
   if (isOn()) {
     const { data, error } = await supabase.from('group_memberships').insert(memberships).select();
     if (error) throw error;
+    for (const m of (data || memberships)) mirrorWrite({ table: 'group_memberships', op: 'upsert', id: m.id, data: m, idColumn: 'id' });
     return data || memberships;
   }
   const path = join(DATA_DIR, 'group_memberships.json');
   const f = await readJsonFile(path) || { memberships: [] };
   f.memberships.push(...memberships);
   await writeJsonFile(path, f);
+  for (const m of memberships) mirrorWrite({ table: 'group_memberships', op: 'upsert', id: m.id, data: m, idColumn: 'id' });
   return memberships;
 }
 
@@ -869,6 +910,7 @@ export async function logAuthEvent(eventType, userId, metadata = {}) {
   if (isOn()) {
     const { error } = await supabase.from('audit_logs').insert([logEntry]);
     if (error) console.warn('audit log error', error.message);
+    else mirrorWrite({ table: 'audit_logs', op: 'upsert', id: logEntry.log_id, data: logEntry, idColumn: 'log_id' });
     return logEntry;
   }
   const path = join(DATA_DIR, 'audit.json');
@@ -876,6 +918,7 @@ export async function logAuthEvent(eventType, userId, metadata = {}) {
   f.logs.push(logEntry);
   f.nextLogId += 1;
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'audit_logs', op: 'upsert', id: logEntry.log_id, data: logEntry, idColumn: 'log_id' });
   return logEntry;
 }
 
@@ -971,6 +1014,7 @@ async function _createAssignment(assignment) {
   if (isOn()) {
     const { data, error } = await supabase.from('assignments').insert([assignment]).select().single();
     if (error) throw error;
+    mirrorWrite({ table: 'assignments', op: 'upsert', id: data.id, data, idColumn: 'id' });
     return data;
   }
   const path = join(DATA_DIR, 'assignments.json');
@@ -980,6 +1024,7 @@ async function _createAssignment(assignment) {
   f.assignments.push(newA);
   f.nextAssignmentId += 1;
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'assignments', op: 'upsert', id: newA.id, data: newA, idColumn: 'id' });
   return newA;
 }
 
@@ -995,6 +1040,7 @@ async function _updateAssignment(id, updates) {
   if (isOn()) {
     const { data, error } = await supabase.from('assignments').update(updates).eq('id', id).select().single();
     if (error) throw error;
+    mirrorWrite({ table: 'assignments', op: 'upsert', id, data, idColumn: 'id' });
     return data;
   }
   const path = join(DATA_DIR, 'assignments.json');
@@ -1003,6 +1049,7 @@ async function _updateAssignment(id, updates) {
   if (idx === -1) return null;
   f.assignments[idx] = { ...f.assignments[idx], ...updates, updated_at: new Date().toISOString() };
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'assignments', op: 'upsert', id, data: f.assignments[idx], idColumn: 'id' });
   return f.assignments[idx];
 }
 
@@ -1017,6 +1064,7 @@ export async function createAssignmentRequest(req) {
   if (isOn()) {
     const { data, error } = await supabase.from('assignment_requests').insert([req]).select().single();
     if (error) throw error;
+    mirrorWrite({ table: 'assignment_requests', op: 'upsert', id: data.id, data, idColumn: 'id' });
     return data;
   }
   const path = join(DATA_DIR, 'assignment_requests.json');
@@ -1026,6 +1074,7 @@ export async function createAssignmentRequest(req) {
   f.requests.push(newReq);
   f.nextId += 1;
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'assignment_requests', op: 'upsert', id, data: newReq, idColumn: 'id' });
   return newReq;
 }
 
@@ -1055,6 +1104,7 @@ export async function updateAssignmentRequest(id, updates) {
   if (isOn()) {
     const { data, error } = await supabase.from('assignment_requests').update(updates).eq('id', id).select().single();
     if (error) throw error;
+    mirrorWrite({ table: 'assignment_requests', op: 'upsert', id, data, idColumn: 'id' });
     return data;
   }
   const path = join(DATA_DIR, 'assignment_requests.json');
@@ -1063,6 +1113,7 @@ export async function updateAssignmentRequest(id, updates) {
   if (idx === -1) return null;
   f.requests[idx] = { ...f.requests[idx], ...updates, decided_at: new Date().toISOString() };
   await writeJsonFile(path, f);
+  mirrorWrite({ table: 'assignment_requests', op: 'upsert', id, data: f.requests[idx], idColumn: 'id' });
   return f.requests[idx];
 }
 
@@ -1078,6 +1129,12 @@ export async function createNotification(notif) {
   if (isOn()) {
     const { data, error } = await supabase.from('notifications').insert([notif]).select().single();
     if (error) throw error;
+    // Same { id, user_id, read, payload, created_at } shaping the useMySQL()
+    // branch above already builds for this table, reused here.
+    {
+      const { user_id, read, ...rest } = notif;
+      mirrorWrite({ table: 'notifications', op: 'upsert', id: data.id, data: { id: data.id, user_id, read: read || false, payload: rest, created_at: data.created_at || new Date().toISOString() }, idColumn: 'id' });
+    }
     return data;
   }
   const path = join(DATA_DIR, 'notifications.json');
@@ -1086,6 +1143,10 @@ export async function createNotification(notif) {
   const newNotif = { id, ...notif, created_at: new Date().toISOString() };
   f.notifications.push(newNotif);
   await writeJsonFile(path, f);
+  {
+    const { user_id, read, ...rest } = notif;
+    mirrorWrite({ table: 'notifications', op: 'upsert', id, data: { id, user_id, read: read || false, payload: rest, created_at: newNotif.created_at }, idColumn: 'id' });
+  }
   return newNotif;
 }
 
@@ -1115,6 +1176,10 @@ export async function markNotificationRead(notifId, userId) {
   if (isOn()) {
     const { data, error } = await supabase.from('notifications').update({ read: true }).eq('id', notifId).eq('user_id', userId).select().single();
     if (error) throw error;
+    {
+      const { user_id, read, ...rest } = data;
+      mirrorWrite({ table: 'notifications', op: 'upsert', id: data.id, data: { id: data.id, user_id, read: !!read, payload: rest, created_at: data.created_at }, idColumn: 'id' });
+    }
     return data;
   }
   const path = join(DATA_DIR, 'notifications.json');
@@ -1123,6 +1188,10 @@ export async function markNotificationRead(notifId, userId) {
   if (idx === -1) throw new Error('Notification not found');
   f.notifications[idx].read = true;
   await writeJsonFile(path, f);
+  {
+    const { user_id, read, ...rest } = f.notifications[idx];
+    mirrorWrite({ table: 'notifications', op: 'upsert', id: notifId, data: { id: notifId, user_id, read: !!read, payload: rest, created_at: f.notifications[idx].created_at }, idColumn: 'id' });
+  }
   return f.notifications[idx];
 }
 

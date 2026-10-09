@@ -232,6 +232,12 @@ CREATE TABLE IF NOT EXISTS employee_assessment_assignments (
   question_order              JSON,
   status                      VARCHAR(30)  NOT NULL DEFAULT 'assigned',
   assigned_at                 TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+  -- Resolved once at assignment time from the assessment's schedulingPolicy
+  -- (see DataStore.js's EmployeeAssessmentAssignments.bulkCreate/updateWindow
+  -- and the matching columns the app also tries to write to Supabase, with
+  -- its own 42703-missing-column graceful fallback for older instances).
+  start_at                    TIMESTAMP    NULL,
+  due_at                      TIMESTAMP    NULL,
   submitted_at                TIMESTAMP    NULL,
   scoring                     JSON,
   UNIQUE KEY uq_eaa_assessment_user (assessment_id, user_id),
@@ -538,6 +544,25 @@ CREATE TABLE IF NOT EXISTS question_bank_archives (
   data         JSON      NOT NULL,
   created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ── reminders ───────────────────────────────────────────────
+-- Audit log + cooldown source for assessment deadline reminders
+-- (server/services/DataStore.js's Reminders collection). One row per send
+-- attempt, never updated in place — added here because DataStore.js writes
+-- to a `reminders` table that this schema file did not yet define (found
+-- while wiring the MySQL mirror; not referenced by UserStore.js/db/store.js).
+CREATE TABLE IF NOT EXISTS reminders (
+  id               VARCHAR(191) PRIMARY KEY,
+  assessment_id    VARCHAR(191) NOT NULL,
+  employee_id      VARCHAR(191) NOT NULL,
+  sender_id        VARCHAR(191),
+  type             VARCHAR(30)  NOT NULL,
+  sent_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+  delivery_status  VARCHAR(20),
+  error_message    TEXT,
+  KEY idx_reminders_assessment_employee (assessment_id, employee_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 

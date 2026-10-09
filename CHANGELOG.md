@@ -4,6 +4,35 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-09 (c) — One-time backfill script + setup docs finish the MySQL dual-write feature
+
+Closes out the MySQL mirroring work from earlier today. Every NEW write has been copying itself into MySQL in the background since the last two entries below — this adds the piece needed to get data that already existed before the mirror was turned on caught up too, plus the documentation to actually turn the whole feature on.
+`server/scripts/backfillMysql.mjs` is a new, manually-run (never automatic) script that reads every collection the app has — users, assignments, assessments, companies, modules, packages, question banks, reminders, all ~35 tables — the exact same way the live app already reads them (through DataStore.js/UserStore.js/db/store.js, never a parallel hand-rolled query), and copies it all into MySQL. It refuses to run at all if MySQL isn't configured, has a `--dry-run` flag that only counts rows and writes nothing (for a sanity check beforehand), is safe to run more than once (upsert, no duplicates), and if a handful of rows fail to copy (a bad connection blip, for instance) it keeps going and prints exactly which ones at the end instead of stopping or silently losing them. New npm scripts: `npm run db:backfill-mysql` and `npm run db:backfill-mysql:dry-run` (run from `server/`).
+Also wrote `docs/MYSQL_DUAL_WRITE.md` (the full walkthrough: what the feature does, provisioning a MySQL database, every env var, running the backfill, checking `/api/health` day-to-day) and rewrote `queries/mysql/README.md` to match — both now reflect that the mirror covers every collection, not just the older `DB_BACKEND=mysql` subset.
+This is entirely opt-in: with no MySQL environment variables set (how the app runs today), none of this does anything. Full server test suite: 295 tests passing (up from 290), run twice clean.
+Files: `server/scripts/backfillMysql.mjs` (new), `server/scripts/backfillMysql.test.js` (new), `server/package.json`, `docs/MYSQL_DUAL_WRITE.md` (new), `queries/mysql/README.md`, `server/services/UserStore.js`, `server/db/store.js` (both: two existing internal row-shaping helper functions exported, additively, so the backfill script reuses the exact same column mapping the live mirror writes use — no behavior change).
+
+---
+
+## 2026-10-09 (b) — UserStore.js and server/db/store.js now actually fire the MySQL mirror on every write
+
+Turns on the mirror plumbing added earlier today: every write in `server/services/UserStore.js` and `server/db/store.js` (create/update/delete for users, assignments, assignment requests, modules, packages, skill packages, learning tracks, groups, group memberships, notifications, and audit log entries) now ALSO copies itself into MySQL in the background, whenever a MySQL connection is configured — completely independent of the existing `DB_BACKEND=mysql` switch. With `DB_BACKEND` unset (how the app runs today), nothing about Supabase/file behavior changes; MySQL just quietly gets a copy of each write too. If `DB_BACKEND=mysql` is set (the older, separate "MySQL only" mode), the mirror call is skipped for that write since the switch already sent it straight to MySQL — no double-writing.
+Also finished the "Groups hasn't been wired for MySQL yet" TODO in `UserStore.js`'s user-deletion cleanup: since `DataStore.js`'s Groups collection now mirrors its own writes (done by a parallel change), `_cleanupUserReferences` no longer needs its own separate mirror call there — removed the stale comment and the now-redundant code.
+Found and fixed a real (pre-existing, unrelated to this change) bug while wiring `db/store.js`'s `createAssignment`: when a caller passed their own `id` in the assignment payload, the file-fallback path saved the row under that caller-given id but the write was being tracked under a different, internally-generated id — now consistent.
+Added 15 new tests (`server/services/UserStore.mirror.test.js`, `server/db/store.mirror.test.js`) covering: mirrored writes in file-mode, no double-mirroring in switch mode, mirror skipped on a failed primary write, and the Groups cascade-delete cleanup. Full suite: 290 tests passing (up from 256).
+Files: `server/services/UserStore.js`, `server/db/store.js`, `server/services/UserStore.mirror.test.js` (new), `server/db/store.mirror.test.js` (new).
+
+---
+
+## 2026-10-09 — Foundation for mirroring writes to MySQL as a second datastore (no behavior change yet)
+
+MySQL is being added as a second datastore alongside Supabase/the JSON-file fallback, which stays the one source of truth. This adds the plumbing so a later change can make every write also get copied to MySQL in the background, without ever slowing down or failing a user's request: `server/db/mysqlMirror.js` is new and does nothing at all unless MySQL is actually configured and reachable (`mirrorEnabled()`); when it is, each write gets a short 2-second attempt, and on any failure (timeout, dropped connection, etc.) it's queued to a small local file (`server/data/mysql-mirror-queue.jsonl`) and retried automatically every 2 minutes until it succeeds or is given up on after 20 tries.
+Also softened `server/db/mysql.js` so a failed MySQL connection attempt is retried again after 5 minutes instead of giving up permanently until the next restart — needed so mirroring can recover on its own if MySQL has a brief outage.
+Nothing user-facing changes yet: no code calls the new mirror, so with MySQL unconfigured (the current setup) this is zero-overhead and behaves exactly as before. Documented the relevant env vars in `.env.example`.
+Files: `server/db/mysqlMirror.js` (new), `server/db/mysqlMirror.test.js` (new), `server/db/mysql.js`, `.env.example`.
+
+---
+
 ## 2026-10-13 (c) — Small follow-up: the daily brief's button now goes somewhere
 
 The "Continue Learning" / "Take a Challenge" button on the Dashboard's daily brief card had no action. It now opens today's session.

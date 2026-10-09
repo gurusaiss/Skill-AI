@@ -19,6 +19,7 @@ import AuthService from './services/AuthService.js';
 import { authenticate, requireRole } from './middleware/auth.js';
 import { requestTiming, getPerformanceSummary } from './middleware/requestTiming.js';
 import { MANAGER_TIER_ROLES } from './services/roleCapability.js';
+import { mirrorEnabled, mirrorQueueStats } from './db/mysqlMirror.js';
 
 import goalRouter from './routes/goal.js';
 import diagnosticRouter from './routes/diagnostic.js';
@@ -269,6 +270,9 @@ app.get('/api/health', (req, res) => {
         googleOAuth: oauthService.isGoogleConfigured(),
         smtp: emailService.isEnabled(),
       },
+      // Best-effort MySQL mirror status (server/db/mysqlMirror.js) — pending/
+      // oldestPendingAt reflect the on-disk retry queue, not a live DB call.
+      mysqlMirror: { enabled: mirrorEnabled(), ...mirrorQueueStats() },
     },
   });
 });

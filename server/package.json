@@ -6,6 +6,8 @@
     "dev": "node index.js",
     "start": "node index.js",
     "seed:demo": "node seed-demo-accounts.js",
+    "db:backfill-mysql": "node scripts/backfillMysql.mjs",
+    "db:backfill-mysql:dry-run": "node scripts/backfillMysql.mjs --dry-run",
     "test": "vitest --run",
     "test:watch": "vitest"
   },

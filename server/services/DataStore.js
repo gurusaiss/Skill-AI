@@ -18,6 +18,31 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import ws from 'ws';
 import { TtlCache } from './TtlCache.js';
+import { mirrorWrite } from '../db/mysqlMirror.js';
+
+// ── MySQL best-effort mirror helpers ─────────────────────────────────────────
+// See server/db/mysqlMirror.js for the full contract: never throws, never
+// blocks/slows the caller, no-ops at ~zero cost when MySQL isn't configured.
+// Called ONLY after the real (Supabase/file) write already succeeded.
+//
+// Doc-style tables (the `{id, data JSON}` pattern used by most collections
+// here): strip `id`/`_created`/`_updated` so the mirror wraps `{id, data}`
+// itself (mysqlMirror.buildRow — data must NOT already contain `idColumn`).
+function mirrorDocUpsert(table, id, doc) {
+  if (!doc || typeof doc !== 'object') return;
+  const { id: _id, _created, _updated, ...rest } = doc;
+  mirrorWrite({ table, op: 'upsert', id, data: rest });
+}
+// Flat-column tables (question_bank_versions, employee_assessment_assignments,
+// reminders, platform_settings, groups): pass the COMPLETE row (it already
+// contains the id/idColumn field) so mysqlMirror.buildRow uses it as-is.
+function mirrorRowUpsert(table, id, row, idColumn = 'id') {
+  if (!row || typeof row !== 'object') return;
+  mirrorWrite({ table, op: 'upsert', id, data: row, idColumn });
+}
+function mirrorDelete(table, id, idColumn = 'id') {
+  mirrorWrite({ table, op: 'delete', id, idColumn });
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 import { DATA_DIR } from '../config/dataDir.js';
@@ -137,6 +162,7 @@ async function sbInsert(table, id, doc) {
       .maybeSingle();
     invalidateTable(table);
     if (error) { console.error(`[DataStore] ${table} insert:`, error.message); return null; }
+    mirrorDocUpsert(table, id, rest);
     return data ? { id: data.id, ...data.data } : doc;
   } catch (e) { console.error(`[DataStore] ${table} insert exception:`, e.message); return null; }
 }
@@ -166,6 +192,7 @@ async function sbUpdate(table, id, updates) {
     }
     invalidateTable(table);
     if (error) { console.error(`[DataStore] ${table} update:`, error.message); return null; }
+    mirrorDocUpsert(table, id, rest);
     return data ? { id: data.id, ...data.data } : merged;
   } catch (e) { console.error(`[DataStore] ${table} update exception:`, e.message); return null; }
 }
@@ -177,6 +204,7 @@ async function sbDelete(table, id) {
     const { error } = await sb.from(table).delete().eq('id', id);
     invalidateTable(table);
     if (error) { console.error(`[DataStore] ${table} delete:`, error.message); return false; }
+    mirrorDelete(table, id);
     return true;
   } catch (e) { return false; }
 }
@@ -258,7 +286,16 @@ async function updateHealed(table, fileName, id, updates) {
   }
   const all = readFileRecords(fileName);
   const idx = all.findIndex(r => r?.id === id);
-  if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile(fileName, all); return all[idx]; }
+  if (idx >= 0) {
+    all[idx] = { ...all[idx], ...updates };
+    writeFile(fileName, all);
+    // Reached only when Supabase isn't configured, or just failed/returned
+    // null above — the file write is this request's real, successful
+    // persistence, so mirror it (mirroring is independent of which primary
+    // backend answered the write).
+    mirrorDocUpsert(table, id, all[idx]);
+    return all[idx];
+  }
   return null;
 }
 
@@ -266,10 +303,14 @@ async function updateHealed(table, fileName, id, updates) {
 // otherwise be resurrected by the self-healing read.
 async function deleteHealed(table, fileName, id) {
   const sb = getSB();
-  if (sb) await sbDelete(table, id);
+  // sbDelete() already mirrors the delete on success; only mirror here when
+  // that didn't already happen (no Supabase configured, or it just failed),
+  // so a successful Supabase delete is never double-mirrored.
+  const sbOk = sb ? await sbDelete(table, id) : false;
   const all = readFileRecords(fileName);
   if (all.some(r => r?.id === id)) {
     writeFile(fileName, all.filter(r => r?.id !== id));
+    if (!sbOk) mirrorDelete(table, id);
   }
 }
 
@@ -306,6 +347,7 @@ export const Assessments = {
     const all = readFile('assessments.json');
     all.push(doc);
     writeFile('assessments.json', all);
+    mirrorDocUpsert('assessments', doc.id, doc);
     return doc;
   },
   async update(id, updates) {
@@ -343,6 +385,7 @@ export const Submissions = {
     const all = readFile('assessment_submissions.json');
     all.push(doc);
     writeFile('assessment_submissions.json', all);
+    mirrorDocUpsert('assessment_submissions', doc.id, doc);
     return doc;
   },
   async update(id, updates) {
@@ -385,6 +428,7 @@ export const Reports = {
     const all = readFile('assessment_reports.json');
     all.push(doc);
     writeFile('assessment_reports.json', all);
+    mirrorDocUpsert('assessment_reports', doc.id, doc);
     return doc;
   },
   async update(id, updates) {
@@ -425,6 +469,7 @@ export const PendingModules = {
     const all = readFile('pending_modules.json');
     all.push(doc);
     writeFile('pending_modules.json', all);
+    mirrorDocUpsert('pending_modules', doc.id, doc);
     return doc;
   },
   async update(id, updates) {
@@ -454,6 +499,7 @@ export const ModuleAssignments = {
     const all = readFile('module_assignments.json');
     all.push(doc);
     writeFile('module_assignments.json', all);
+    mirrorDocUpsert('module_assignments', doc.id, doc);
     return doc;
   },
   async update(id, updates) {
@@ -488,6 +534,7 @@ export const Companies = {
     const all = readFile('companies.json');
     all.push(doc);
     writeFile('companies.json', all);
+    mirrorDocUpsert('companies', doc.id, doc);
     return doc;
   },
   async update(id, updates) {
@@ -533,7 +580,10 @@ export const PlatformSettings = {
           { company_id: key, settings: merged, updated_at: new Date().toISOString() },
           { onConflict: 'company_id' }
         );
-        if (!error) return merged;
+        if (!error) {
+          mirrorRowUpsert('platform_settings', key, { company_id: key, settings: merged, updated_at: new Date().toISOString() }, 'company_id');
+          return merged;
+        }
       } catch (e) {
         console.warn('[DataStore] platform_settings.updateSection:', e.message);
       }
@@ -543,6 +593,7 @@ export const PlatformSettings = {
     const row = { companyId: key, settings: merged, updatedAt: new Date().toISOString() };
     if (idx >= 0) all[idx] = row; else all.push(row);
     writeFile('platform_settings.json', all);
+    mirrorRowUpsert('platform_settings', key, { company_id: key, settings: merged, updated_at: row.updatedAt }, 'company_id');
     return merged;
   },
 };
@@ -571,6 +622,7 @@ export const Organizations = {
     const all = await this.getAll();
     all.push(doc);
     writeFileSync(join(DATA_DIR, 'organizations.json'), JSON.stringify({ organizations: all }, null, 2));
+    mirrorDocUpsert('organizations', doc.id, doc);
     return doc;
   },
   async update(id, updates) {
@@ -581,7 +633,12 @@ export const Organizations = {
     }
     const all = await this.getAll();
     const idx = all.findIndex(o => o.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFileSync(join(DATA_DIR, 'organizations.json'), JSON.stringify({ organizations: all }, null, 2)); return all[idx]; }
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...updates };
+      writeFileSync(join(DATA_DIR, 'organizations.json'), JSON.stringify({ organizations: all }, null, 2));
+      mirrorDocUpsert('organizations', id, all[idx]);
+      return all[idx];
+    }
     return null;
   },
 };
@@ -613,6 +670,7 @@ export const Departments = {
     const all = await this.getAll();
     all.push(doc);
     writeFileSync(join(DATA_DIR, 'departments.json'), JSON.stringify({ departments: all }, null, 2));
+    mirrorDocUpsert('departments', doc.id, doc);
     return doc;
   },
   async update(id, updates) {
@@ -623,7 +681,12 @@ export const Departments = {
     }
     const all = await this.getAll();
     const idx = all.findIndex(d => d.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFileSync(join(DATA_DIR, 'departments.json'), JSON.stringify({ departments: all }, null, 2)); return all[idx]; }
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...updates };
+      writeFileSync(join(DATA_DIR, 'departments.json'), JSON.stringify({ departments: all }, null, 2));
+      mirrorDocUpsert('departments', id, all[idx]);
+      return all[idx];
+    }
     return null;
   },
 };
@@ -664,6 +727,7 @@ export const Teams = {
     const all = await this.getAll();
     all.push(doc);
     writeFileSync(join(DATA_DIR, 'teams.json'), JSON.stringify({ teams: all }, null, 2));
+    mirrorDocUpsert('teams', doc.id, doc);
     return doc;
   },
   async update(id, updates) {
@@ -674,7 +738,12 @@ export const Teams = {
     }
     const rawAll = await this.getAll();
     const idx = rawAll.findIndex(t => t.id === id);
-    if (idx >= 0) { rawAll[idx] = { ...rawAll[idx], ...updates }; writeFileSync(join(DATA_DIR, 'teams.json'), JSON.stringify({ teams: rawAll }, null, 2)); return rawAll[idx]; }
+    if (idx >= 0) {
+      rawAll[idx] = { ...rawAll[idx], ...updates };
+      writeFileSync(join(DATA_DIR, 'teams.json'), JSON.stringify({ teams: rawAll }, null, 2));
+      mirrorDocUpsert('teams', id, rawAll[idx]);
+      return rawAll[idx];
+    }
     return null;
   },
 };
@@ -702,6 +771,7 @@ export const ApprovalRequests = {
     const all = readFile('approval_requests.json');
     all.push(doc);
     writeFile('approval_requests.json', all);
+    mirrorDocUpsert('approval_requests', doc.id, doc);
     return doc;
   },
   async update(id, updates) {
@@ -736,12 +806,17 @@ export const Groups = {
         .maybeSingle();
       invalidateTable('groups');
       if (error) throw new Error(`Failed to save group: ${error.message} (code: ${error.code})`);
+      mirrorRowUpsert('groups', doc.id, { id: doc.id, name: doc.name, data: rest });
       return data ? { id: data.id, ...data.data } : doc;
     }
     // No Supabase configured — file fallback is acceptable for local dev
     const all = readFileRecords('groups.json');
     all.push(doc);
     writeFile('groups.json', all);
+    {
+      const { id: _id, name: _name, _created, _updated, ...rest } = doc;
+      mirrorRowUpsert('groups', doc.id, { id: doc.id, name: doc.name, data: rest });
+    }
     return doc;
   },
   async update(id, updates) {
@@ -766,7 +841,10 @@ export const Groups = {
             .maybeSingle());
         }
         invalidateTable('groups');
-        if (!error && data) return { id: data.id, ...data.data, name: mergedName || data.data?.name };
+        if (!error && data) {
+          mirrorRowUpsert('groups', id, { id, name: mergedName || data.data?.name, data: data.data });
+          return { id: data.id, ...data.data, name: mergedName || data.data?.name };
+        }
         if (error) console.error('[DataStore] groups update:', error.message);
       } catch (e) {
         console.error('[DataStore] groups update exception:', e.message);
@@ -774,7 +852,13 @@ export const Groups = {
     }
     const all = readFileRecords('groups.json');
     const idx = all.findIndex(r => r?.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile('groups.json', all); return all[idx]; }
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...updates };
+      writeFile('groups.json', all);
+      const { id: _id, name: _name, _created, _updated, ...rest } = all[idx];
+      mirrorRowUpsert('groups', id, { id, name: all[idx].name, data: rest });
+      return all[idx];
+    }
     return null;
   },
   async delete(id) {
@@ -800,6 +884,7 @@ export const UserJDProfiles = {
     const entry = { id: userId, ...jdData };
     if (idx >= 0) all[idx] = entry; else all.push(entry);
     writeFile('user_jd_profiles.json', all);
+    mirrorDocUpsert('user_jd_profiles', userId, entry);
     return entry;
   },
   async getAll() {
@@ -824,7 +909,7 @@ export const UserJDProfiles = {
 
 // ── ACTIVATION TOKENS ─────────────────────────────────────────────────────────
 export const ActivationTokens = {
-  async create(doc)       { return (await (async () => { const sb = getSB(); if (sb) { const r = await sbInsert('activation_tokens', doc.id, doc); if (r) return r; } const all = readFile('activation_tokens.json'); all.push(doc); writeFile('activation_tokens.json', all); return doc; })()) },
+  async create(doc)       { return (await (async () => { const sb = getSB(); if (sb) { const r = await sbInsert('activation_tokens', doc.id, doc); if (r) return r; } const all = readFile('activation_tokens.json'); all.push(doc); writeFile('activation_tokens.json', all); mirrorDocUpsert('activation_tokens', doc.id, doc); return doc; })()) },
   async getAll()           { return getAllHealed('activation_tokens', 'activation_tokens.json'); },
   async getById(id) {
     const sb = getSB();
@@ -911,6 +996,7 @@ export const RoleLibrary = {
     const all = readFile('role_library.json');
     all.push(doc);
     writeFile('role_library.json', all);
+    mirrorDocUpsert('role_library', doc.id, doc);
     return doc;
   },
   async update(id, updates) { return updateHealed('role_library', 'role_library.json', id, updates); },
@@ -933,6 +1019,7 @@ export const EmployeeChecklists = {
     const entry = { id: userId, ...doc };
     if (idx >= 0) all[idx] = entry; else all.push(entry);
     writeFile('employee_checklists.json', all);
+    mirrorDocUpsert('employee_checklists', userId, entry);
     return entry;
   },
   async updateItem(userId, itemId, updates) {
@@ -962,6 +1049,7 @@ export const GeneratedContent = {
     const all = readFile('generated_content.json');
     all.push(doc);
     writeFile('generated_content.json', all);
+    mirrorDocUpsert('generated_content', doc.id, doc);
     return doc;
   },
   async update(id, updates) { return updateHealed('generated_content', 'generated_content.json', id, updates); },
@@ -1032,6 +1120,7 @@ export const AccessCodes = {
     const all = readFile('access_codes.json');
     all.push(doc);
     writeFile('access_codes.json', all);
+    mirrorDocUpsert('access_codes', doc.id, doc);
     return doc;
   },
   async update(id, updates) { return updateHealed('access_codes', 'access_codes.json', id, updates); },
@@ -1056,6 +1145,7 @@ export const AssessmentThresholds = {
     const idx = all.findIndex(r => r.id === id);
     if (idx >= 0) all[idx] = doc; else all.push(doc);
     writeFile('assessment_thresholds.json', all);
+    mirrorDocUpsert('assessment_thresholds', id, doc);
     return doc;
   },
 };
@@ -1089,6 +1179,7 @@ export const GeneratedModules = {
     const all = readFile('generated_modules_ds.json');
     all.push(doc);
     writeFile('generated_modules_ds.json', all);
+    mirrorDocUpsert('generated_modules', doc.id, doc);
     return doc;
   },
   async update(id, updates) {
@@ -1132,6 +1223,7 @@ export const QuestionBankArchives = {
     const all = readFileRecords('question_bank_archives.json');
     all.push(doc);
     writeFile('question_bank_archives.json', all);
+    mirrorDocUpsert('question_bank_archives', doc.id, doc);
     return doc;
   },
 };
@@ -1191,12 +1283,16 @@ export const QuestionBankVersions = {
     const sb = getSB();
     if (sb) {
       const { data, error } = await sb.from('question_bank_versions').insert(row).select('*').maybeSingle();
-      if (!error) return data || row;
+      if (!error) {
+        mirrorRowUpsert('question_bank_versions', row.id, data || row);
+        return data || row;
+      }
       console.warn('[DataStore] question_bank_versions.create:', error.message);
     }
     const all = readFileRecords(QBV_FILE);
     all.push(row);
     writeFile(QBV_FILE, all);
+    mirrorRowUpsert('question_bank_versions', row.id, row);
     return row;
   },
   // Approves one version and archives (never deletes) any prior approved
@@ -1215,12 +1311,20 @@ export const QuestionBankVersions = {
     const sb = getSB();
     if (sb) {
       const { data, error } = await sb.from('question_bank_versions').update(updates).eq('id', id).select('*').maybeSingle();
-      if (!error) return data;
+      if (!error) {
+        mirrorRowUpsert('question_bank_versions', id, data || { id, ...updates });
+        return data;
+      }
       console.warn('[DataStore] question_bank_versions._setStatus:', error.message);
     }
     const all = readFileRecords(QBV_FILE);
     const idx = all.findIndex(r => r.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile(QBV_FILE, all); return all[idx]; }
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...updates };
+      writeFile(QBV_FILE, all);
+      mirrorRowUpsert('question_bank_versions', id, all[idx]);
+      return all[idx];
+    }
     return null;
   },
   // Generic questions-array updater for an EDITABLE (draft) version — used by
@@ -1233,12 +1337,20 @@ export const QuestionBankVersions = {
     const sb = getSB();
     if (sb) {
       const { data, error } = await sb.from('question_bank_versions').update(updates).eq('id', id).select('*').maybeSingle();
-      if (!error) return data;
+      if (!error) {
+        mirrorRowUpsert('question_bank_versions', id, data || { id, ...updates });
+        return data;
+      }
       console.warn('[DataStore] question_bank_versions.updateQuestions:', error.message);
     }
     const all = readFileRecords(QBV_FILE);
     const idx = all.findIndex(r => r.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; writeFile(QBV_FILE, all); return all[idx]; }
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...updates };
+      writeFile(QBV_FILE, all);
+      mirrorRowUpsert('question_bank_versions', id, all[idx]);
+      return all[idx];
+    }
     return null;
   },
   // Every version across every role — used only by the retention cleanup
@@ -1259,12 +1371,13 @@ export const QuestionBankVersions = {
     const sb = getSB();
     if (sb) {
       const { error } = await sb.from('question_bank_versions').delete().eq('id', id);
-      if (!error) return true;
+      if (!error) { mirrorDelete('question_bank_versions', id); return true; }
       console.warn('[DataStore] question_bank_versions.delete:', error.message);
     }
     const all = readFileRecords(QBV_FILE);
     const next = all.filter(r => r.id !== id);
     writeFile(QBV_FILE, next);
+    if (next.length !== all.length) mirrorDelete('question_bank_versions', id);
     return next.length !== all.length;
   },
 };
@@ -1348,7 +1461,10 @@ export const EmployeeAssessmentAssignments = {
           .upsert(stripped, { onConflict: 'assessment_id,user_id' })
           .select('*'));
       }
-      if (!error) return data || prepared;
+      if (!error) {
+        for (const row of (data || prepared)) mirrorRowUpsert('employee_assessment_assignments', row.id, row);
+        return data || prepared;
+      }
       console.warn('[DataStore] employee_assessment_assignments.bulkCreate:', error.message);
     }
     const all = readFileRecords(EAA_FILE);
@@ -1357,6 +1473,7 @@ export const EmployeeAssessmentAssignments = {
       if (idx >= 0) all[idx] = row; else all.push(row);
     }
     writeFile(EAA_FILE, all);
+    for (const row of prepared) mirrorRowUpsert('employee_assessment_assignments', row.id, row);
     return prepared;
   },
   async updateSubmission(id, updates) {
@@ -1367,12 +1484,20 @@ export const EmployeeAssessmentAssignments = {
     const sb = getSB();
     if (sb) {
       const { data, error } = await sb.from('employee_assessment_assignments').update(payload).eq('id', id).select('*').maybeSingle();
-      if (!error) return data;
+      if (!error) {
+        if (data) mirrorRowUpsert('employee_assessment_assignments', id, data);
+        return data;
+      }
       console.warn('[DataStore] employee_assessment_assignments.updateSubmission:', error.message);
     }
     const all = readFileRecords(EAA_FILE);
     const idx = all.findIndex(r => r.id === id);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...payload }; writeFile(EAA_FILE, all); return all[idx]; }
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...payload };
+      writeFile(EAA_FILE, all);
+      mirrorRowUpsert('employee_assessment_assignments', id, all[idx]);
+      return all[idx];
+    }
     return null;
   },
   // Merge-safe: touches ONLY question_order, by (assessment_id, user_id) —
@@ -1387,12 +1512,20 @@ export const EmployeeAssessmentAssignments = {
         .update({ question_order: order })
         .eq('assessment_id', assessmentId).eq('user_id', userId)
         .select('*').maybeSingle();
-      if (!error) return data;
+      if (!error) {
+        if (data) mirrorRowUpsert('employee_assessment_assignments', data.id, data);
+        return data;
+      }
       console.warn('[DataStore] employee_assessment_assignments.updateQuestionOrder:', error.message);
     }
     const all = readFileRecords(EAA_FILE);
     const idx = all.findIndex(r => r.assessment_id === assessmentId && r.user_id === userId);
-    if (idx >= 0) { all[idx] = { ...all[idx], question_order: order }; writeFile(EAA_FILE, all); return all[idx]; }
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], question_order: order };
+      writeFile(EAA_FILE, all);
+      mirrorRowUpsert('employee_assessment_assignments', all[idx].id, all[idx]);
+      return all[idx];
+    }
     return null;
   },
   // Merge-safe window edit: touches ONLY start_at / due_at, never status or scoring.
@@ -1406,7 +1539,12 @@ export const EmployeeAssessmentAssignments = {
     }
     const all = readFileRecords(EAA_FILE);
     const idx = all.findIndex(r => r.assessment_id === assessmentId && r.user_id === userId);
-    if (idx >= 0) { all[idx] = { ...all[idx], ...payload }; writeFile(EAA_FILE, all); return all[idx]; }
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...payload };
+      writeFile(EAA_FILE, all);
+      mirrorRowUpsert('employee_assessment_assignments', all[idx].id, all[idx]);
+      return all[idx];
+    }
     return null;
   },
   // HARD delete of one employee's row for one assessment (or every row of the
@@ -1422,8 +1560,12 @@ export const EmployeeAssessmentAssignments = {
       if (error) { ok = false; console.warn('[DataStore] employee_assessment_assignments.delete:', error.message); }
     }
     const all = readFileRecords(EAA_FILE);
+    const matching = all.filter(r => r.assessment_id === assessmentId && (userId == null || r.user_id === userId));
     const keep = all.filter(r => !(r.assessment_id === assessmentId && (userId == null || r.user_id === userId)));
-    if (keep.length !== all.length) writeFile(EAA_FILE, keep);
+    if (keep.length !== all.length) {
+      writeFile(EAA_FILE, keep);
+      for (const r of matching) mirrorDelete('employee_assessment_assignments', r.id);
+    }
     return ok;
   },
 };
@@ -1466,12 +1608,16 @@ export const Reminders = {
     const sb = getSB();
     if (sb) {
       const { data, error } = await sb.from('reminders').insert(row).select('*').maybeSingle();
-      if (!error) return data || row;
+      if (!error) {
+        mirrorRowUpsert('reminders', row.id, data || row);
+        return data || row;
+      }
       console.warn('[DataStore] reminders.create:', error.message);
     }
     const all = readFileRecords(REMINDERS_FILE);
     all.push(row);
     writeFile(REMINDERS_FILE, all);
+    mirrorRowUpsert('reminders', row.id, row);
     return row;
   },
   // Hard-delete the reminder history of one assignment (or of a whole assessment
@@ -1486,8 +1632,12 @@ export const Reminders = {
       if (error) { ok = false; console.warn('[DataStore] reminders.delete:', error.message); }
     }
     const all = readFileRecords(REMINDERS_FILE);
+    const matching = all.filter(r => r.assessment_id === assessmentId && (employeeId == null || r.employee_id === employeeId));
     const keep = all.filter(r => !(r.assessment_id === assessmentId && (employeeId == null || r.employee_id === employeeId)));
-    if (keep.length !== all.length) writeFile(REMINDERS_FILE, keep);
+    if (keep.length !== all.length) {
+      writeFile(REMINDERS_FILE, keep);
+      for (const r of matching) mirrorDelete('reminders', r.id);
+    }
     return ok;
   },
 };

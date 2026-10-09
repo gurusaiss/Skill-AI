@@ -9,6 +9,7 @@ import { UserJDProfiles, Groups, getTableVersion, bumpTable } from './DataStore.
 import { TtlCache } from './TtlCache.js';
 import { canActAsManager } from './roleCapability.js';
 import * as mysqlDb from '../db/mysql.js';
+import { mirrorWrite } from '../db/mysqlMirror.js';
 import { DATA_DIR } from '../config/dataDir.js';
 
 // MySQL is opt-in via DB_BACKEND=mysql — unset (the default) or any other
@@ -114,7 +115,10 @@ function rowToUser(row) {
   };
 }
 
-function userToRow(u) {
+// Exported additively (no behavior change) so server/scripts/backfillMysql.mjs
+// can shape backfilled rows identically to the live mirror calls above instead
+// of re-deriving the column mapping.
+export function userToRow(u) {
   const row = {};
   if (u.userId       !== undefined) row.user_id            = u.userId;
   if (u.email        !== undefined) row.email              = u.email;
@@ -148,6 +152,33 @@ function userToRow(u) {
   if (u.resetTokenExpires !== undefined) row.reset_token_expires = u.resetTokenExpires;
   if (u.mustChangePassword !== undefined) row.must_change_password = u.mustChangePassword;
   return row;
+}
+
+// Shared row-shaping for the `assignments` flat MySQL table — used by the
+// existing useMySQL() switch branches AND (additively) by the new mirror
+// calls in the Supabase/file paths, so both describe the exact same row.
+// Tolerates either calling shape: a freshly-built assignment object (which
+// carries `title`, not `module_name`) or a row already read back from
+// Supabase/MySQL (which carries `module_name` directly).
+// Exported additively (no behavior change) — see userToRow() above.
+export function assignmentToMysqlRow(a) {
+  return {
+    id:                  a.id,
+    type:                a.type,
+    assignable_id:       a.assignable_id,
+    assignable_type:     a.assignable_type,
+    assigned_by:         a.assigned_by || null,
+    assigned_to_user:    a.assigned_to_user,
+    assigned_to_group:   a.assigned_to_group,
+    assigned_by_manager: a.assigned_by_manager || null,
+    priority:            a.priority,
+    due_date:            a.due_date,
+    status:              a.status,
+    progress:            a.progress,
+    module_name:         a.module_name !== undefined ? a.module_name : (a.title || null),
+    created_at:          a.created_at,
+    updated_at:          a.updated_at,
+  };
 }
 
 // JD fields stored in user_jd_profiles table (separate from users table schema)
@@ -339,6 +370,10 @@ class UserStore {
         console.error('[UserStore] createUser Supabase error:', error.message);
         throw new Error(error.message);
       }
+      // Mirror — same row shape the useMySQL() branch above already builds
+      // for this exact write (userToRow(newUser)), fired additionally and
+      // independently of DB_BACKEND, best-effort (never throws).
+      mirrorWrite({ table: 'users', op: 'upsert', id: newUser.userId, data: userToRow(newUser), idColumn: 'user_id' });
       return data ? rowToUser(data) : newUser;
     }
 
@@ -350,6 +385,7 @@ class UserStore {
     data.users.push(newUser);
     data.nextUserId += 1;
     await this.writeUsersFile(data);
+    mirrorWrite({ table: 'users', op: 'upsert', id: newUser.userId, data: userToRow(newUser), idColumn: 'user_id' });
     return newUser;
   }
 
@@ -515,6 +551,12 @@ class UserStore {
           // Don't throw — fall through and return partial update
           return { userId, ...updates };
         }
+        // Mirror — same row shape as this branch's own Supabase write
+        // (userToRow(updates) + updated_at), fired additionally regardless
+        // of DB_BACKEND. `row` doesn't carry user_id (it's applied via
+        // .eq(), not as an update column) — added here just for the mirror
+        // row, so mysqlMirror recognizes this as a flat row, not a doc.
+        mirrorWrite({ table: 'users', op: 'upsert', id: userId, data: { ...row, user_id: userId }, idColumn: 'user_id' });
         const user = data ? rowToUser(data) : { userId, ...updates };
         // Merge JD from separate table so the response always has JD data
         return mergeJD(user, jdUpdates.jobDescription !== undefined ? jdUpdates : null);
@@ -533,6 +575,7 @@ class UserStore {
     delete allowed.userId; delete allowed.createdAt;
     data.users[idx] = { ...data.users[idx], ...allowed, updatedAt: new Date().toISOString() };
     await this.writeUsersFile(data);
+    mirrorWrite({ table: 'users', op: 'upsert', id: userId, data: { ...userToRow(allowed), user_id: userId, updated_at: data.users[idx].updatedAt }, idColumn: 'user_id' });
     return data.users[idx];
   }
 
@@ -558,6 +601,7 @@ class UserStore {
     if (sb) {
       const { error } = await sb.from('users').delete().eq('user_id', userId);
       if (error) throw new Error(error.message);
+      mirrorWrite({ table: 'users', op: 'delete', id: userId, idColumn: 'user_id' });
       return true;
     }
     const data = await this.readUsersFile();
@@ -568,6 +612,7 @@ class UserStore {
     aData.assignments = aData.assignments.filter(a => a.managerId !== userId && a.employeeId !== userId);
     await this.writeAssignmentsFile(aData);
     await this.writeUsersFile(data);
+    mirrorWrite({ table: 'users', op: 'delete', id: userId, idColumn: 'user_id' });
     return true;
   }
 
@@ -592,10 +637,14 @@ class UserStore {
     } catch (e) { console.warn('[deleteUser] assignment cleanup failed:', e.message); }
 
     // Group membership — remove from employeeIds, clear managerId if they managed it.
-    // NOTE: Groups (DataStore.js) hasn't been wired for MySQL yet — this still
-    // reads/writes wherever Groups itself is currently configured (Supabase
-    // or file), independent of this file's DB_BACKEND setting, until
-    // DataStore.js gets its own MySQL wiring in a later commit.
+    // Groups (DataStore.js) is now wired for MySQL itself: Groups.update()
+    // already fires its own mirrorRowUpsert('groups', ...) against the real
+    // `groups` flat table (sql/mysql_schema.sql) after its own Supabase/file
+    // write succeeds — see DataStore.js's Groups.update(). This call was
+    // previously a dead end for the mirror (per the old TODO here, written
+    // before that wiring existed); nothing further is needed on this side —
+    // adding a second, independently-built mirrorWrite here would just be a
+    // redundant duplicate write racing the one Groups.update() already does.
     try {
       const allGroups = await Groups.getAll();
       for (const g of allGroups || []) {
@@ -900,23 +949,7 @@ class UserStore {
     };
 
     if (useMySQL()) {
-      const mysqlRow = {
-        id:                  newA.id,
-        type:                newA.type,
-        assignable_id:       newA.assignable_id,
-        assignable_type:     newA.assignable_type,
-        assigned_by:         newA.assigned_by || null,
-        assigned_to_user:    newA.assigned_to_user,
-        assigned_to_group:   newA.assigned_to_group,
-        assigned_by_manager: newA.assigned_by_manager || null,
-        priority:            newA.priority,
-        due_date:            newA.due_date,
-        status:              newA.status,
-        progress:            newA.progress,
-        module_name:         newA.title || null,
-        created_at:          newA.created_at,
-        updated_at:          newA.updated_at,
-      };
+      const mysqlRow = assignmentToMysqlRow(newA);
       await mysqlDb.upsertRow('assignments', mysqlRow, Object.keys(mysqlRow).filter(k => k !== 'id'));
       return mysqlRow;
     }
@@ -953,6 +986,7 @@ class UserStore {
         console.error('[UserStore] createAssignment Supabase error:', error.message, '| code:', error.code);
         throw new Error(`[assignments] Supabase insert failed: ${error.message}`);
       }
+      mirrorWrite({ table: 'assignments', op: 'upsert', id: newA.id, data: assignmentToMysqlRow(data || newA), idColumn: 'id' });
       return data || newA;
     }
 
@@ -961,6 +995,7 @@ class UserStore {
     data.assignments.push(newA);
     data.nextAssignmentId = (data.nextAssignmentId || 1) + 1;
     await this.writeAssignmentsFile(data);
+    mirrorWrite({ table: 'assignments', op: 'upsert', id: newA.id, data: assignmentToMysqlRow(newA), idColumn: 'id' });
     return newA;
   }
 
@@ -1004,6 +1039,11 @@ class UserStore {
         data  = retry.data;
       }
       if (error) throw new Error(error.message);
+      // Mirror the full post-update row returned by .select() (it already
+      // carries every column, including those this call didn't touch) —
+      // only when a row actually came back, since a partial field-set can't
+      // safely be upserted as a standalone row otherwise.
+      if (data) mirrorWrite({ table: 'assignments', op: 'upsert', id: assignmentId, data: assignmentToMysqlRow(data), idColumn: 'id' });
       return data;
     }
     const data = await this.readAssignmentsFile();
@@ -1012,6 +1052,7 @@ class UserStore {
     const allowed = { ...updates }; delete allowed.id; delete allowed.created_at;
     data.assignments[idx] = { ...data.assignments[idx], ...allowed, updated_at: new Date().toISOString() };
     await this.writeAssignmentsFile(data);
+    mirrorWrite({ table: 'assignments', op: 'upsert', id: assignmentId, data: assignmentToMysqlRow(data.assignments[idx]), idColumn: 'id' });
     return data.assignments[idx];
   }
 
@@ -1029,6 +1070,7 @@ class UserStore {
     if (sb) {
       const { error } = await sb.from('assignments').delete().eq('id', assignmentId);
       if (error) throw new Error(error.message);
+      mirrorWrite({ table: 'assignments', op: 'delete', id: assignmentId, idColumn: 'id' });
       return true;
     }
     const data = await this.readAssignmentsFile();
@@ -1036,6 +1078,7 @@ class UserStore {
     data.assignments = data.assignments.filter(a => a.id !== assignmentId);
     if (data.assignments.length === before) throw new Error('Assignment not found');
     await this.writeAssignmentsFile(data);
+    mirrorWrite({ table: 'assignments', op: 'delete', id: assignmentId, idColumn: 'id' });
     return true;
   }
 
@@ -1101,6 +1144,7 @@ class UserStore {
         fileData.nextId = (fileData.nextId || 1) + 1;
         await this.writeRequestsFile(fileData);
       }
+      mirrorWrite({ table: 'assignment_requests', op: 'upsert', id: newReq.id, data: data || newReq, idColumn: 'id' });
       return data || newReq;
     }
     const fileData = await this.readRequestsFile();
@@ -1121,6 +1165,7 @@ class UserStore {
     fileData.requests.push(newReq);
     fileData.nextId = (fileData.nextId || 1) + 1;
     await this.writeRequestsFile(fileData);
+    mirrorWrite({ table: 'assignment_requests', op: 'upsert', id: newReq.id, data: newReq, idColumn: 'id' });
     return newReq;
   }
 
@@ -1162,6 +1207,7 @@ class UserStore {
         .update({ ...updates, decided_at: new Date().toISOString() })
         .eq('id', requestId).select().maybeSingle();
       if (error) { console.error('[UserStore] updateAssignmentRequest:', error.message); }
+      if (data) mirrorWrite({ table: 'assignment_requests', op: 'upsert', id: requestId, data, idColumn: 'id' });
       return data || { id: requestId, ...updates };
     }
     const fileData = await this.readRequestsFile();
@@ -1169,6 +1215,7 @@ class UserStore {
     if (idx === -1) throw new Error('Request not found');
     fileData.requests[idx] = { ...fileData.requests[idx], ...updates };
     await this.writeRequestsFile(fileData);
+    mirrorWrite({ table: 'assignment_requests', op: 'upsert', id: requestId, data: fileData.requests[idx], idColumn: 'id' });
     return fileData.requests[idx];
   }
 
@@ -1185,12 +1232,14 @@ class UserStore {
     const logId = `log_${uuidv4().slice(0, 12)}`;
     const timestamp = new Date().toISOString();
     const logEntry = { logId, eventType, userId: userId || null, timestamp, metadata };
+    // Shared row shape — used by the useMySQL() switch branch's direct
+    // insert AND (additively) by the mirror calls in the Supabase/file
+    // branches below, so both describe the exact same row.
+    const mysqlRow = { log_id: logId, event_type: eventType, user_id: userId || null, metadata, timestamp };
 
     if (useMySQL()) {
       try {
-        await mysqlDb.insertRow('audit_logs', {
-          log_id: logId, event_type: eventType, user_id: userId || null, metadata, timestamp,
-        });
+        await mysqlDb.insertRow('audit_logs', mysqlRow);
         return logEntry;
       } catch (e) {
         console.warn('[UserStore] logAuthEvent MySQL insert failed, falling back to file:', e.message);
@@ -1200,10 +1249,11 @@ class UserStore {
     const sb = getSB();
     if (sb) {
       try {
-        const { error } = await sb.from('audit_logs').insert({
-          log_id: logId, event_type: eventType, user_id: userId || null, metadata, timestamp,
-        });
-        if (!error) return logEntry;
+        const { error } = await sb.from('audit_logs').insert(mysqlRow);
+        if (!error) {
+          mirrorWrite({ table: 'audit_logs', op: 'upsert', id: logId, data: mysqlRow, idColumn: 'log_id' });
+          return logEntry;
+        }
       } catch { /* fall through to file */ }
     }
 
@@ -1212,6 +1262,7 @@ class UserStore {
       auditData.logs.push(logEntry);
       auditData.nextLogId = (auditData.nextLogId || 1) + 1;
       await this.writeAuditFile(auditData);
+      mirrorWrite({ table: 'audit_logs', op: 'upsert', id: logId, data: mysqlRow, idColumn: 'log_id' });
       return logEntry;
     } catch { return {}; }
   }

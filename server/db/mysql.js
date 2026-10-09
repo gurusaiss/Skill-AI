@@ -25,10 +25,23 @@ import mysql from 'mysql2/promise';
 
 let _pool = null;
 let _poolFailed = false;
+let _poolFailedAt = 0;
+
+// How long to wait before retrying pool creation after a failed attempt.
+// Was previously a permanent latch (never retried without a process restart).
+// Softened for mysqlMirror.js, which wants to notice "MySQL became reachable"
+// without a restart (e.g. a managed MySQL instance that was briefly down when
+// the server booted). Cheap: this only re-runs createPool(), it does not open
+// a connection eagerly — mysql2 pools connect lazily on first query.
+const POOL_RETRY_MS = parseInt(process.env.MYSQL_POOL_RETRY_MS || '300000', 10); // 5 min
 
 export function getPool() {
   if (_pool) return _pool;
-  if (_poolFailed) return null;
+  if (_poolFailed) {
+    if (Date.now() - _poolFailedAt < POOL_RETRY_MS) return null;
+    // Retry window elapsed — clear the latch and try again below.
+    _poolFailed = false;
+  }
 
   const url = process.env.MYSQL_URL || process.env.DATABASE_URL;
   const hasDiscreteConfig = process.env.MYSQL_HOST && process.env.MYSQL_USER && process.env.MYSQL_DATABASE;
@@ -60,6 +73,7 @@ export function getPool() {
   } catch (e) {
     console.error('[mysql] pool init failed:', e.message);
     _poolFailed = true;
+    _poolFailedAt = Date.now();
     return null;
   }
   return _pool;
