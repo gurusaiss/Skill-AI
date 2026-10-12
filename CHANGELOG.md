@@ -4,6 +4,13 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-12 — Full runbook for turning on MySQL on the company server
+
+**Added:** `docs/mysql.report.md` — one in-order checklist covering everything needed to actually turn on the MySQL mirror on the real Azure company server: deploying the code, provisioning Azure Database for MySQL (with the specific networking setting that avoids a connection-refused error), running the schema file, the exact environment variables to set, confirming it's live via `/api/health`, and running the one-time backfill of existing data (including why that must run on the server itself, not a laptop, so production database credentials never need to leave it).
+Files: `docs/mysql.report.md` (new).
+
+---
+
 ## 2026-10-09 (c) — One-time backfill script + setup docs finish the MySQL dual-write feature
 
 Closes out the MySQL mirroring work from earlier today. Every NEW write has been copying itself into MySQL in the background since the last two entries below — this adds the piece needed to get data that already existed before the mirror was turned on caught up too, plus the documentation to actually turn the whole feature on.
