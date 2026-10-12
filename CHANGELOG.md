@@ -4,6 +4,14 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-12 (c) — Backfill script now fails with a clear message if Supabase itself is unreachable
+
+**Why:** The backfill script's very first step reads all users from Supabase. If Supabase is down, paused, or access-restricted, that read throws and the whole script used to crash with a raw error message. It still stops either way (nothing gets written to MySQL until Supabase works again), but now it says so plainly instead of showing a stack trace.
+**Note:** creating the MySQL schema itself is unaffected by this — that step never touches Supabase.
+Files: `server/scripts/backfillMysql.mjs`, `docs/mysql.report.md`.
+
+---
+
 ## 2026-10-12 (b) — MySQL runbook updated for self-hosting (not a managed service)
 
 **Why:** The original runbook assumed a managed database (Azure Database for MySQL, PlanetScale, etc.). Self-hosting means you own patching, backups and uptime yourself — the steps are different, and the tradeoffs needed saying plainly.

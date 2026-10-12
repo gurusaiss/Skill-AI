@@ -207,6 +207,12 @@ copy across. The script for this (`server/scripts/backfillMysql.mjs`) reads thro
 code the live app uses, so it needs access to BOTH the production Supabase credentials (to
 read existing data) AND the new MySQL credentials (to write it) at the same time.
 
+**If Supabase itself is down, paused, or access-restricted, this step will fail immediately**
+with a clear message saying so, and will not write anything to MySQL. That's expected — this
+script reads through the live app's own Supabase connection, so it can only copy data Supabase
+will actually hand over. Wait until Supabase access is confirmed working again, then re-run it;
+nothing about the MySQL schema or mirror setup needs to be redone.
+
 **The safest place to run it is on the server itself**, since that's the one place both sets
 of credentials are already configured correctly:
 

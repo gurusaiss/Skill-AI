@@ -382,7 +382,29 @@ export async function main() {
   // Users/groups/question_bank_versions are backfilled first so every later
   // table's foreign key target already exists on a fresh database.
   console.log('\n[backfill] UserStore.js users (users.manager_id is self-referencing — written in two passes):');
-  const users = await backfillUsers();
+  let users;
+  try {
+    users = await backfillUsers();
+  } catch (e) {
+    // This is always the FIRST read the script does, so a Supabase outage/
+    // restriction shows up here first, every time — give a specific, friendly
+    // message instead of a raw stack trace, since "Supabase is unreachable
+    // right now" is a completely different situation (nothing was written,
+    // try again later) from an actual bug in this script.
+    const msg = String(e?.message || e);
+    const looksUnreachable = /fetch failed|ENOTFOUND|ETIMEDOUT|ECONNREFUSED|network|timeout/i.test(msg);
+    if (looksUnreachable) {
+      throw new Error(
+        `[backfill] Could not reach Supabase to read existing data (${msg}). ` +
+        'This script reads through the live app\'s own Supabase connection, so if Supabase ' +
+        'is down, paused, or access-restricted right now, this will always fail at this exact ' +
+        'step — nothing has been written to MySQL. Wait until Supabase access is confirmed ' +
+        'working again, then re-run this script. (The MySQL schema itself is unaffected by ' +
+        'this and does not need to be re-created.)'
+      );
+    }
+    throw e;
+  }
   const userIds = users.map(u => u.userId).filter(Boolean);
 
   console.log('\n[backfill] DataStore.js row-style collections:');
