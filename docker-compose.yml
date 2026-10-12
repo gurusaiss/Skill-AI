@@ -77,9 +77,44 @@ services:
     profiles:
       - full
 
+  # ── Self-hosted MySQL (optional — the dual-write mirror, see docs/mysql.report.md) ──
+  # Off by default: only starts with `docker compose --profile mysql up -d`.
+  # sql/mysql_schema.sql is mounted into docker-entrypoint-initdb.d, which the
+  # official MySQL image runs automatically — but ONLY the very first time it
+  # starts with an empty data volume. A later schema change needs a manual run
+  # (`docker compose exec mysql mysql -u root -p skillforge < sql/mysql_schema.sql`),
+  # it will not re-apply on its own.
+  # Port 3306 is intentionally NOT published to the host here (no `ports:`) — the
+  # app reaches it over the private `skillforge-net` network only, at hostname
+  # `mysql`, which is why MYSQL_HOST=mysql (not an IP) is correct in .env. Add a
+  # `ports: ['3306:3306']` line yourself only if you specifically need to connect
+  # a desktop MySQL client from outside the server — doing so on a real machine
+  # exposes the database to the internet unless your own firewall blocks it.
+  mysql:
+    image: mysql:8
+    container_name: skillforge-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-skillforge}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql/mysql_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - skillforge-net
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-u', 'root', '-p$$MYSQL_ROOT_PASSWORD']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    profiles:
+      - mysql
+
 volumes:
   skillforge-data:
   redis-data:
+  mysql-data:
 
 networks:
   skillforge-net:

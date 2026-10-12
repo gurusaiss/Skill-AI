@@ -4,6 +4,15 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-12 (b) — MySQL runbook updated for self-hosting (not a managed service)
+
+**Why:** The original runbook assumed a managed database (Azure Database for MySQL, PlanetScale, etc.). Self-hosting means you own patching, backups and uptime yourself — the steps are different, and the tradeoffs needed saying plainly.
+**Added:** a `mysql` service in `docker-compose.yml` (off by default — only starts with `docker compose --profile mysql up -d mysql`), with its own persistent storage, a health check, and the schema file mounted so it sets itself up automatically the first time it starts.
+**Rewrote `docs/mysql.report.md`** with two self-hosting paths: **Option A** — MySQL as a container next to the app, if the server already runs via Docker Compose (one command, schema applies itself). **Option B** — a separate small VM running MySQL directly, for Azure App Service or any non-Docker setup, including the firewall rule that matters (only the app's own IP, never the whole internet) and a reminder that backups are now your own responsibility either way.
+Files: `docker-compose.yml`, `docs/mysql.report.md`.
+
+---
+
 ## 2026-10-12 — Full runbook for turning on MySQL on the company server
 
 **Added:** `docs/mysql.report.md` — one in-order checklist covering everything needed to actually turn on the MySQL mirror on the real Azure company server: deploying the code, provisioning Azure Database for MySQL (with the specific networking setting that avoids a connection-refused error), running the schema file, the exact environment variables to set, confirming it's live via `/api/health`, and running the one-time backfill of existing data (including why that must run on the server itself, not a laptop, so production database credentials never need to leave it).
