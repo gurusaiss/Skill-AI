@@ -86,16 +86,24 @@ function writeFile(name, data) {
 // Every list page used to re-download/re-parse the WHOLE table on every call
 // (assessments, reports, users, groups...). Several of those run per request and
 // several run in parallel on one page load. This cache:
-//   * lives <= 5 s when Supabase is the source (30 s in file mode, where it is
+//   * lives <= 25 s when Supabase is the source (30 s in file mode, where it is
 //     additionally validated against the backing file's mtime+size, so even a
 //     writer that bypasses DataStore is noticed immediately),
 //   * coalesces concurrent identical reads into one backend call,
 //   * is invalidated by EVERY write path in this module: sbInsert/sbUpdate/sbDelete
 //     (by table), writeFile (by file name), the direct Groups upserts, and
-//     bumpTable() for any caller that writes behind our back.
+//     bumpTable() for any caller that writes behind our back — so raising the
+//     TTL never serves stale data after a write, it only matters for how often
+//     an UNCHANGED table gets re-read.
+// The Supabase TTL was 5 s, but every client-side poller refreshes every 30 s
+// (see Navbar.jsx, AssignmentManagement.jsx, UserManagement.jsx), so a 5 s
+// cache window never overlapped the next poll — every single poll re-ran a
+// full `select('*')` against Supabase. That's what blew a 45 MB database's
+// read quota to 17 GB. 25 s keeps a comfortable margin under every known
+// 30 s poller while still coalescing bursts of near-simultaneous page loads.
 // Callers get a shallow copy of the array (safe to push/filter/sort); the row
 // objects are shared, so rows must be treated as read-only (spread to modify).
-const tableCache = new TtlCache({ ttlMs: 5000, maxEntries: 100 });
+const tableCache = new TtlCache({ ttlMs: 25000, maxEntries: 100 });
 const tableVersions = new Map();           // table -> write counter (also read by UserStore)
 const fileToTables = new Map();            // file name -> Set(table) (filled on first read)
 export function getTableVersion(table) { return tableVersions.get(table) || 0; }
@@ -233,7 +241,7 @@ async function getAllHealed(table, fileName) {
   if (!fileToTables.has(fileName)) fileToTables.set(fileName, new Set());
   fileToTables.get(fileName).add(table);
   const rows = await tableCache.get(table, () => getAllHealedUncached(table, fileName), {
-    ttlMs: getSB() ? 5000 : 30000,
+    ttlMs: getSB() ? 25000 : 30000,
     meta: () => fileSig(fileName),
     validate: (sig) => sig === fileSig(fileName),
   });
@@ -1243,6 +1251,25 @@ export const QuestionBankVersions = {
       console.warn('[DataStore] question_bank_versions.getByRole:', error.message);
     }
     return readFileRecords(QBV_FILE).filter(r => r.role_id === roleId).sort((a, b) => a.version - b.version);
+  },
+  // Lightweight companion to getByRole for the generation-status poller
+  // (every 3 s for up to 45 min per in-flight generation): the full `questions`
+  // column can be a large JSON blob, and the poller only ever needed the count
+  // and id of the latest version, both already stored in their own columns.
+  // Pulling the full row 900 times per generation run was a real contributor
+  // to the Supabase egress quota being exceeded (45 MB DB, 17 GB read).
+  async getLatestSummaryByRole(roleId) {
+    const sb = getSB();
+    if (sb) {
+      const { data, error } = await sb.from('question_bank_versions')
+        .select('id, version, status, question_count, created_at')
+        .eq('role_id', roleId).order('version', { ascending: false }).limit(1).maybeSingle();
+      if (!error) return data || null;
+      console.warn('[DataStore] question_bank_versions.getLatestSummaryByRole:', error.message);
+    }
+    const all = readFileRecords(QBV_FILE).filter(r => r.role_id === roleId).sort((a, b) => b.version - a.version);
+    const latest = all[0];
+    return latest ? { id: latest.id, version: latest.version, status: latest.status, question_count: latest.question_count ?? latest.questions?.length ?? 0, created_at: latest.created_at } : null;
   },
   async getApproved(roleId) {
     const all = await this.getByRole(roleId);

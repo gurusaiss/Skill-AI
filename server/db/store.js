@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { GeneratedModules, Groups as GroupsStore, bumpTable } from '../services/DataStore.js';
 import * as mysqlDb from './mysql.js';
 import { mirrorWrite } from './mysqlMirror.js';
+import { TtlCache } from '../services/TtlCache.js';
 
 // Same opt-in contract as DataStore.js/UserStore.js: unset DB_BACKEND (the
 // default) leaves every existing Supabase/file behavior in this file
@@ -1119,6 +1120,7 @@ export async function updateAssignmentRequest(id, updates) {
 
 // Notifications
 export async function createNotification(notif) {
+  notificationsCache.invalidate(notif.user_id);
   if (useMySQL()) {
     const id = notif.id || `notif_${Date.now()}`;
     const { user_id, read, ...rest } = notif;
@@ -1150,7 +1152,20 @@ export async function createNotification(notif) {
   return newNotif;
 }
 
+// Navbar.jsx polls this every 30 s for as long as ANY authenticated tab is
+// open, for every role — the single highest call-count contributor to the
+// Supabase egress quota (45 MB DB, 17 GB read) getting blown, since it was
+// previously uncached and re-queried Supabase on every poll tick. 20 s keeps
+// margin under the 30 s poll interval; every write path below invalidates
+// the affected user's entry immediately, so a new notification or a
+// mark-read still shows up on the very next poll, not after a stale TTL.
+const notificationsCache = new TtlCache({ ttlMs: 20000, maxEntries: 2000 });
+
 export async function getNotifications(userId) {
+  return notificationsCache.get(userId, () => getNotificationsUncached(userId));
+}
+
+async function getNotificationsUncached(userId) {
   if (useMySQL()) {
     const pool = mysqlDb.getPool();
     const [rows] = await pool.query('SELECT * FROM `notifications` WHERE `user_id` = ? ORDER BY `created_at` DESC', [userId]);
@@ -1166,6 +1181,7 @@ export async function getNotifications(userId) {
 }
 
 export async function markNotificationRead(notifId, userId) {
+  notificationsCache.invalidate(userId);
   if (useMySQL()) {
     const pool = mysqlDb.getPool();
     const [result] = await pool.query('UPDATE `notifications` SET `read` = TRUE WHERE `id` = ? AND `user_id` = ?', [notifId, userId]);
@@ -1196,6 +1212,7 @@ export async function markNotificationRead(notifId, userId) {
 }
 
 export async function markAllNotificationsRead(userId) {
+  notificationsCache.invalidate(userId);
   if (useMySQL()) {
     const pool = mysqlDb.getPool();
     await pool.query('UPDATE `notifications` SET `read` = TRUE WHERE `user_id` = ? AND `read` = FALSE', [userId]);

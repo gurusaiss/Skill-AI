@@ -1975,9 +1975,8 @@ router.get('/:id/archives/:archiveId', authenticate, requireRole('admin', 'manag
 router.get('/:id/generation-status', authenticate, requireRole('admin', 'manager'), async (req, res) => {
   try {
     const job = GenerationJobs.get(req.params.id);
-    const versions = await QuestionBankVersions.getByRole(req.params.id);
-    const latest = versions[versions.length - 1];
-    const savedCount = latest?.questions?.length || 0;
+    const latest = await QuestionBankVersions.getLatestSummaryByRole(req.params.id);
+    const savedCount = latest?.question_count || 0;
 
     res.json({
       success: true,

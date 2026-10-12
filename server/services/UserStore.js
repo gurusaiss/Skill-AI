@@ -205,10 +205,16 @@ function mergeJD(user, jdProfile) {
 // immediately in this process, and at the very latest after the TTL.
 export const AUTH_USER_TTL_MS = 4000;
 const userByIdCache = new TtlCache({ ttlMs: AUTH_USER_TTL_MS, maxEntries: 2000 });
-const allUsersCache = new TtlCache({ ttlMs: 5000, maxEntries: 2 });
+// Full-table lists read by 30 s client-side pollers (UserManagement.jsx,
+// AssignmentManagement.jsx). A 5 s TTL never overlapped a 30 s poll, so every
+// poll re-ran a full Supabase select — a direct contributor to the egress
+// quota getting blown (45 MB DB, 17 GB read). 25 s keeps margin under the
+// poll interval; writes still invalidate immediately via invalidateUserCaches
+// / bumpTable('assignments'), so this never serves stale data after a write.
+const allUsersCache = new TtlCache({ ttlMs: 25000, maxEntries: 2 });
 // Unfiltered assignments list (admin/manager dashboards). Invalidated through
 // bumpTable('assignments') by every writer (UserStore + db/store.js).
-const assignmentsCache = new TtlCache({ ttlMs: 5000, maxEntries: 2 });
+const assignmentsCache = new TtlCache({ ttlMs: 25000, maxEntries: 2 });
 function invalidateUserCaches(userId) {
   if (userId) userByIdCache.invalidate(userId); else userByIdCache.invalidateAll();
   allUsersCache.invalidateAll();

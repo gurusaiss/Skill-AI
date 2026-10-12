@@ -4,6 +4,15 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-12 (d) — Fixed the real cause of the Supabase egress quota getting blown (45 MB DB, 17 GB read)
+
+**Why:** Supabase suspended the project for exceeding its egress quota (45 MB database, 17 GB read — ~378x). The cause: several admin/employee pages poll the backend every 30 seconds (notifications in the header, user management, assignment management), but the server-side read cache in front of Supabase only lived 5 seconds. A 5 s cache never overlaps a 30 s poll, so every single poll re-ran a full, uncached `select('*')` against Supabase. A separate poller (generation-status, every 3 s during question-bank generation) was also pulling the full `questions` JSON blob on every tick when it only ever needed a count and an id, both already stored in their own small columns.
+**Fix:** raised the Supabase-backed read caches from 5 s to 25 s (`DataStore.js`'s shared table cache, plus `UserStore.js`'s users/assignments list caches) and added a 20 s cache to notifications — all still invalidate immediately on every write, so this only cuts down on re-reading *unchanged* data, it never serves stale data after a save. Added a lightweight `QuestionBankVersions.getLatestSummaryByRole()` that selects only `id, version, status, question_count, created_at` instead of the full row with its `questions` blob, and pointed the generation-status endpoint at it.
+**Note:** this does not restore the suspended project by itself — Supabase's own quota needs to reset (Oct 23) or the plan needs upgrading from the Supabase billing dashboard. This fix is about not immediately re-blowing the quota the moment service resumes.
+Files: `server/services/DataStore.js`, `server/services/UserStore.js`, `server/db/store.js`, `server/routes/roles.js`.
+
+---
+
 ## 2026-10-12 (c) — Backfill script now fails with a clear message if Supabase itself is unreachable
 
 **Why:** The backfill script's very first step reads all users from Supabase. If Supabase is down, paused, or access-restricted, that read throws and the whole script used to crash with a raw error message. It still stops either way (nothing gets written to MySQL until Supabase works again), but now it says so plainly instead of showing a stack trace.
