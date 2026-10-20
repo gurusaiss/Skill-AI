@@ -195,7 +195,8 @@ export function buildResultRow({ assessment = {}, ea = {}, report = null, eaaRow
     userId: ea.userId || user?.userId || '',
     employeeId: safe(pick('employeeId', user?.employeeId), ''),
     name: safe(first(ea.userName, snap.userName, user?.name, ea.userId), ''),
-    email: safe(first(ea.userEmail, snap.userEmail, user?.email), ''),
+    // Live user record first (it is the current address); snapshots only fill gaps.
+    email: safe(first(user?.email, ea.userEmail, snap.userEmail, ea.email, snap.email), ''),
     phone: safe(pick('phone', user?.phone), ''),
     jobRole: safe(first(ea.jobRole, snap.jobRole, user?.jobRole), ''),
     department: safe(pick('department', user?.department), ''),

@@ -445,7 +445,7 @@ export function buildAllReportsWorkbook({ rows, summary, tz = reportTimezone() }
   ];
   const overview = overviewSheet({
     title: 'All assessment reports',
-    subtitle: `One record per employee per assessment   |   Generated ${new Intl.DateTimeFormat('en-GB', { timeZone: tz, dateStyle: 'medium', timeStyle: 'short' }).format(generated)}`,
+    subtitle: `One record per employee per assessment (submitted and pending)   |   Generated ${new Intl.DateTimeFormat('en-GB', { timeZone: tz, dateStyle: 'medium', timeStyle: 'short' }).format(generated)}`,
     kpis, distribution: summary.ratings, tz,
   });
   return writeWorkbook([overview, resultsSheet(rows, tz, true), detailsSheet(rows, tz, true)]);

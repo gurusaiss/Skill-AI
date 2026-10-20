@@ -38,6 +38,7 @@ function exportStatus(r) {
   if (s === 'submitted' || s === 'completed') return 'Completed';
   if (s === 'in_progress') return 'In progress';
   if (s === 'cancelled') return 'Cancelled';
+  if (s === 'overdue' || s === 'expired') return 'Overdue';
   if (s === 'assigned') return 'Not started';
   return txt(r.status);
 }
@@ -172,7 +173,7 @@ function AdminReportView({ user, navigate }) {
       setLoading(false);
     }
     try {
-      const arData = await authFetch('/api/assessments/reports/all');
+      const arData = await authFetch('/api/assessments/reports/all?includePending=1');
       setAssessmentReports(Array.isArray(arData) ? arData : []);
     } catch { /* non-fatal */ }
     try {
@@ -227,9 +228,10 @@ function AdminReportView({ user, navigate }) {
         jobRole: r.jobRole || '—',
         name: r.assessmentTitle || r.title || 'Untitled Assessment',
         status: r.status || 'submitted',
-        score: r.score ?? r.completionRate ?? 0,
+        score: r.pending ? null : (r.score ?? r.completionRate ?? 0),
+        pending: Boolean(r.pending),
         progress: null, // assessments are graded, not progress-tracked
-        scoreOrCompletion: r.score ?? r.completionRate ?? 0, // unified field kept for sorting
+        scoreOrCompletion: r.pending ? 0 : (r.score ?? r.completionRate ?? 0), // unified field kept for sorting
         assignedDate: r.assignedAt || null,
         deadline: r.deadline || null,
         completedDate: r.submittedAt || r.completedAt || null,
@@ -239,8 +241,8 @@ function AdminReportView({ user, navigate }) {
         department: r.department || '',
         startedAt: r.startedAtResolved || null,
         timeTakenMin: Number.isFinite(Number(r.timeTakenSeconds)) ? Number(r.timeTakenSeconds) / 60 : null,
-        rawScore: r.rawScore ?? r.score ?? null,
-        rating: ratingForReport(r),
+        rawScore: r.pending ? null : (r.rawScore ?? r.score ?? null),
+        rating: r.pending ? '' : ratingForReport(r),
         strengths: (r.strengths || []).join('; '),
         weaknesses: (r.weakAreas || []).join('; '),
         skillGaps: (r.missingCompetencies || []).join('; '),
@@ -549,8 +551,8 @@ function AdminReportView({ user, navigate }) {
                           ) : (
                             <button
                               onClick={() => setRowDownloadTarget(r)}
-                              disabled={!hasFeaturePermission('reports.download')}
-                              title={!hasFeaturePermission('reports.download') ? "You don't have permission to download reports" : 'Download full report'}
+                              disabled={!hasFeaturePermission('reports.download') || r.pending}
+                              title={r.pending ? 'Not submitted yet, so there is no report to download' : !hasFeaturePermission('reports.download') ? "You don't have permission to download reports" : 'Download full report'}
                               className="px-3 py-2 rounded-lg border text-sm font-semibold whitespace-nowrap bg-slate-700/30 border-slate-600/30 text-slate-300 hover:bg-slate-700/50 hover:border-slate-500/50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                             >
                               Download Report

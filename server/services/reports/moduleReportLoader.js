@@ -8,6 +8,7 @@ import UserStore from '../UserStore.js';
 import { Companies } from '../DataStore.js';
 import * as db from '../../db/store.js';
 import { getVisibleEmployeeIds } from '../ManagerScope.js';
+import { ensureUsers } from './reportLoader.js';
 import { buildEngagement } from './moduleReportData.js';
 
 const isModuleAssignment = (a) => (a.assignable_type || a.type || 'module') === 'module' && !!(a.assigned_to_user || a.assignedToUser);
@@ -42,6 +43,7 @@ export async function loadModuleRows(actor, { now = new Date() } = {}) {
     loadModules([...new Set(mine.map(a => a.assignable_id || a.assignableId).filter(Boolean))]),
     companyFor(actor.companyId),
   ]);
+  await ensureUsers(userById, mine.map(a => a.assigned_to_user || a.assignedToUser));
   const rows = mine.map((a) => {
     const user = userById.get(a.assigned_to_user || a.assignedToUser) || null;
     const manager = user?.managerId ? (userById.get(user.managerId) || null) : null;

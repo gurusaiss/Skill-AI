@@ -1180,7 +1180,7 @@ export function validateQuestionBank(questions, target, config = {}) {
 
     // MCQ shape + duplicate options — hard fail
     if (q.type === 'mcq') {
-      if (!Array.isArray(q.options) || q.options.length !== 4 || !/^[A-D]$/i.test(String(q.answer).trim())) {
+      if (!Array.isArray(q.options) || q.options.length !== 4 || !/^[A-D](\s*,\s*[A-D])*$/i.test(String(Array.isArray(q.answer) ? q.answer.join(',') : q.answer).trim())) {
         hardFailures.push(`Question ${i}: malformed MCQ (must have 4 options and an A-D answer)`);
         checks.malformedMcq.push(i);
       }

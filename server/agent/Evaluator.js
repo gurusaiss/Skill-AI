@@ -94,7 +94,9 @@ Be honest — don't inflate scores for effort alone.`;
       let feedback = '';
 
       if (question.type === 'multiple_choice') {
-        if (userAnswer.answer === question.correct) {
+        const norm = (v) => String(v ?? '').trim().toLowerCase();
+        const accepted = (Array.isArray(question.correct) ? question.correct : [question.correct]).map(norm);
+        if (accepted.includes(norm(userAnswer.answer))) {
           score = 100;
           feedback = `Correct! ${question.explanation}`;
         } else {

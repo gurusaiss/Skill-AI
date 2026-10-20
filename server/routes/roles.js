@@ -21,6 +21,7 @@ import { RoleLibrary, EmployeeChecklists, Assessments, GeneratedContent, Questio
 import { pickArchiveSource, buildArchiveDoc, findIdenticalArchive, nextQuarterNumber, quarterLabel, archiveSummary } from '../services/quarterArchive.js';
 import { generateQuestionsFromJD, validateQuestionBank, generateQuestionsFromFiles, assessSourceQuality, MIN_SOURCE_CHARS } from '../services/AssessmentGenerator.js';
 import UserStore from '../services/UserStore.js';
+import { MANAGER_TIER_ROLES } from '../services/roleCapability.js';
 import GenerationJobs from '../services/GenerationJobs.js';
 import { preprocessDocumentText, extractJDCoreContent, removeFilenameFromText } from '../utils/textPreprocessor.js';
 import GeminiService from '../services/GeminiService.js';
@@ -32,6 +33,25 @@ import { collectRemovedUserIds } from '../services/assessmentRoster.js';
 const _require = createRequire(import.meta.url);
 
 const router = express.Router();
+
+/**
+ * Managers have VIEW-ONLY access to the Role Library. Every mutating route
+ * (create/edit/delete/generate/approve/lock/import/upload/question edits)
+ * stacks this before requireRole so a manager always gets a clear 403.
+ */
+// Roles allowed to edit: admin plus the manager-tier roles OTHER than plain
+// 'manager' (they keep today's access; plain managers are view-only).
+export const EDIT_ROLES = ['admin', ...MANAGER_TIER_ROLES.filter(r => r !== 'manager')];
+
+export function denyManager(req, res, next) {
+  const u = req.user;
+  const isSuper = u && (u.role === 'superadmin' || u.primaryRole === 'superadmin');
+  const isManager = u && (u.role === 'manager' || (u.primaryRole === 'manager' && u.role !== 'admin'));
+  if (isManager && !isSuper) {
+    return res.status(403).json({ success: false, data: null, error: 'View only: managers cannot edit the Role Library' });
+  }
+  next();
+}
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -549,7 +569,7 @@ async function extractTextFromBuffer(buffer, originalname) {
 // ── POST /api/roles/parse-jd — extract text from uploaded JD or supporting file ─
 // Supports: PDF, DOCX, DOC, PPTX, TXT, RTF, CSV, XLS, XLSX, ZIP
 // File is processed in-memory and immediately discarded — only extracted text returned
-router.post('/parse-jd', authenticate, requireRole('admin', 'manager'), upload.single('file'), async (req, res) => {
+router.post('/parse-jd', authenticate, denyManager, requireRole(...EDIT_ROLES), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
     const ext = (req.file.originalname?.split('.').pop() || '').toLowerCase();
@@ -649,7 +669,7 @@ router.get('/:id', authenticate, async (req, res) => {
  * expected of training-module content. Generated once and persisted on
  * the role (structuredOverview); pass { force: true } to regenerate.
  */
-router.post('/:id/generate-overview', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.post('/:id/generate-overview', authenticate, denyManager, requireRole(...EDIT_ROLES), async (req, res) => {
   try {
     const role = await RoleLibrary.getById(req.params.id);
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
@@ -697,7 +717,7 @@ Return ONLY valid JSON:
 });
 
 // ── POST /api/roles — create ──────────────────────────────────────────────────
-router.post('/', authenticate, requireRole('admin'), requirePermission('roles.create'), async (req, res) => {
+router.post('/', authenticate, denyManager, requireRole('admin'), requirePermission('roles.create'), async (req, res) => {
   try {
     const companyId = req.user.companyId || 'default';
     const { roleName, department, jobDescription, skills, status, jdFiles, supportingFiles, jdSources, supportingDocs } = req.body;
@@ -795,7 +815,7 @@ router.post('/', authenticate, requireRole('admin'), requirePermission('roles.cr
 });
 
 // ── PUT /api/roles/:id/document-text — save edited parsed text for one file ───
-router.put('/:id/document-text', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.put('/:id/document-text', authenticate, denyManager, requireRole(...EDIT_ROLES), async (req, res) => {
   try {
     const role = await RoleLibrary.getById(req.params.id);
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
@@ -837,7 +857,7 @@ router.put('/:id/document-text', authenticate, requireRole('admin', 'manager'), 
 });
 
 // ── DELETE /api/roles/:id/documents/:fileId — remove one uploaded file ────────
-router.delete('/:id/documents/:fileId', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.delete('/:id/documents/:fileId', authenticate, denyManager, requireRole(...EDIT_ROLES), async (req, res) => {
   try {
     const role = await RoleLibrary.getById(req.params.id);
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
@@ -866,7 +886,7 @@ router.delete('/:id/documents/:fileId', authenticate, requireRole('admin', 'mana
 });
 
 // ── PUT /api/roles/:id — update ───────────────────────────────────────────────
-router.put('/:id', authenticate, requireRole('admin'), requirePermission('roles.edit'), async (req, res) => {
+router.put('/:id', authenticate, denyManager, requireRole('admin'), requirePermission('roles.edit'), async (req, res) => {
   try {
     const existing = await RoleLibrary.getById(req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'Role not found' });
@@ -966,7 +986,7 @@ router.put('/:id', authenticate, requireRole('admin'), requirePermission('roles.
 });
 
 // ── DELETE /api/roles/:id ─────────────────────────────────────────────────────
-router.delete('/:id', authenticate, requireRole('admin'), requirePermission('roles.edit'), async (req, res) => {
+router.delete('/:id', authenticate, denyManager, requireRole('admin'), requirePermission('roles.edit'), async (req, res) => {
   try {
     const existing = await RoleLibrary.getById(req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'Role not found' });
@@ -978,7 +998,7 @@ router.delete('/:id', authenticate, requireRole('admin'), requirePermission('rol
 });
 
 // ── POST /api/roles/import — bulk import ──────────────────────────────────────
-router.post('/import', authenticate, requireRole('admin'), requirePermission('roles.import'), upload.single('file'), async (req, res) => {
+router.post('/import', authenticate, denyManager, requireRole('admin'), requirePermission('roles.import'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
     const companyId = req.user.companyId || 'default';
@@ -1123,7 +1143,7 @@ router.put('/checklist/:userId/item/:itemId', authenticate, async (req, res) => 
 
 // ── POST /api/roles/:id/generate-assessment ───────────────────────────────────
 // Generate and store a pre-assessment template for a role (admin-triggered bulk prep)
-router.post('/:id/generate-assessment', authenticate, requireRole('admin'), requirePermission('questions.generate'), async (req, res) => {
+router.post('/:id/generate-assessment', authenticate, denyManager, requireRole('admin'), requirePermission('questions.generate'), async (req, res) => {
   try {
     const role = await RoleLibrary.getById(req.params.id);
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
@@ -1217,7 +1237,7 @@ router.post('/:id/generate-assessment', authenticate, requireRole('admin'), requ
 
 // ── POST /api/roles/bulk-generate-assessments ─────────────────────────────────
 // Generate assessment templates for ALL roles in company (admin bulk action)
-router.post('/bulk-generate-assessments', authenticate, requireRole('admin'), requirePermission('questions.generate'), async (req, res) => {
+router.post('/bulk-generate-assessments', authenticate, denyManager, requireRole('admin'), requirePermission('questions.generate'), async (req, res) => {
   try {
     const companyId = req.user.companyId || 'default';
     const roles = await RoleLibrary.getByCompany(companyId);
@@ -1360,7 +1380,7 @@ function enforceLockedQuestions(storedQuestions, incomingQuestions) {
 }
 
 // ── PUT /api/roles/:id/questions — replace entire question bank ───────────────
-router.put('/:id/questions', authenticate, requireRole('admin', 'manager'), requirePermission('questions.edit'), async (req, res) => {
+router.put('/:id/questions', authenticate, denyManager, requireRole(...EDIT_ROLES), requirePermission('questions.edit'), async (req, res) => {
   try {
     const ctx = await requireEditableQuestions(req, res);
     if (!ctx) return;
@@ -1385,7 +1405,7 @@ router.put('/:id/questions', authenticate, requireRole('admin', 'manager'), requ
 });
 
 // ── POST /api/roles/:id/questions — add single question ──────────────────────
-router.post('/:id/questions', authenticate, requireRole('admin', 'manager'), requirePermission('questions.edit'), async (req, res) => {
+router.post('/:id/questions', authenticate, denyManager, requireRole(...EDIT_ROLES), requirePermission('questions.edit'), async (req, res) => {
   try {
     const ctx = await requireEditableQuestions(req, res);
     if (!ctx) return;
@@ -1473,7 +1493,7 @@ async function recordRemovedQuestions(role, stored, enforced) {
   await RoleLibrary.update(role.id, { deletedQuestions: updated });
 }
 
-router.delete('/:id/questions/:qid', authenticate, requireRole('admin', 'manager'), requirePermission('questions.edit'), async (req, res) => {
+router.delete('/:id/questions/:qid', authenticate, denyManager, requireRole(...EDIT_ROLES), requirePermission('questions.edit'), async (req, res) => {
   try {
     const ctx = await requireEditableQuestions(req, res);
     if (!ctx) return;
@@ -1550,15 +1570,15 @@ async function setQuestionLock(req, res, locked) {
 // (never regenerated, never auto-replaced) until explicitly unlocked. Persists
 // in the question's own object (locked/lockedAt/lockedBy), so it survives
 // refresh/logout/restart/deployment exactly like every other question field.
-router.post('/:id/questions/:qid/lock', authenticate, requireRole('admin', 'manager'), requirePermission('questions.edit'), (req, res) => setQuestionLock(req, res, true));
+router.post('/:id/questions/:qid/lock', authenticate, denyManager, requireRole(...EDIT_ROLES), requirePermission('questions.edit'), (req, res) => setQuestionLock(req, res, true));
 
 // ── POST /api/roles/:id/questions/:qid/unlock — unlock one question ──────────
-router.post('/:id/questions/:qid/unlock', authenticate, requireRole('admin', 'manager'), requirePermission('questions.edit'), (req, res) => setQuestionLock(req, res, false));
+router.post('/:id/questions/:qid/unlock', authenticate, denyManager, requireRole(...EDIT_ROLES), requirePermission('questions.edit'), (req, res) => setQuestionLock(req, res, false));
 
 // ── POST /api/roles/:id/regenerate-questions — re-generate question bank ──────
 // Same flow also serves POST /:id/new-generation (quarterly refresh) via
 // opts.newGeneration — one generator pipeline, one job/progress mechanism.
-router.post('/:id/regenerate-questions', authenticate, requireRole('admin'), requirePermission('questions.edit'), (req, res) => regenerateQuestionsHandler(req, res, {}));
+router.post('/:id/regenerate-questions', authenticate, denyManager, requireRole('admin'), requirePermission('questions.edit'), (req, res) => regenerateQuestionsHandler(req, res, {}));
 
 async function regenerateQuestionsHandler(req, res, opts = {}) {
   try {
@@ -1924,7 +1944,7 @@ async function regenerateQuestionsHandler(req, res, opts = {}) {
 // regenerate-questions. Previously issued assessments/assignments are untouched
 // (they hold their own question copies / version ids; this only ever INSERTS a
 // new archive row and a new DRAFT version).
-router.post('/:id/new-generation', authenticate, requireRole('admin'), requirePermission('questions.edit'), (req, res) => regenerateQuestionsHandler(req, res, { newGeneration: true }));
+router.post('/:id/new-generation', authenticate, denyManager, requireRole('admin'), requirePermission('questions.edit'), (req, res) => regenerateQuestionsHandler(req, res, { newGeneration: true }));
 
 // Shared role lookup + company scoping for the archive read endpoints.
 async function getScopedRole(req, res) {
@@ -2002,7 +2022,7 @@ router.get('/:id/generation-status', authenticate, requireRole('admin', 'manager
 // The ONLY place a question_bank_versions row transitions to 'approved'. Any
 // previously-approved version for this role is archived (never deleted), so
 // employees already assigned against it keep resolving correctly.
-router.post('/:id/versions/:versionId/approve', authenticate, requireRole('admin'), async (req, res) => {
+router.post('/:id/versions/:versionId/approve', authenticate, denyManager, requireRole('admin'), async (req, res) => {
   try {
     const role = await RoleLibrary.getById(req.params.id);
     if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
@@ -2338,7 +2358,7 @@ async function handleLockAssessment(req, res) {
   }
 }
 
-router.post('/:id/lock', authenticate, requireRole('admin', 'manager'), handleLockAssessment);
-router.post('/:id/approve-assessment', authenticate, requireRole('admin', 'manager'), handleLockAssessment);
+router.post('/:id/lock', authenticate, denyManager, requireRole(...EDIT_ROLES), handleLockAssessment);
+router.post('/:id/approve-assessment', authenticate, denyManager, requireRole(...EDIT_ROLES), handleLockAssessment);
 
 export default router;

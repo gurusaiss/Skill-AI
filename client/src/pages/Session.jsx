@@ -353,7 +353,9 @@ function QuizPhase({ questions, topic, skillName, onSubmit }) {
       const userAnswer = answers[q.id] || '';
       let correct = false;
       if (q.type === 'mcq') {
-        correct = userAnswer === q.correct;
+        const norm = (v) => String(v ?? '').trim().toLowerCase();
+        const accepted = (Array.isArray(q.correct) ? q.correct : [q.correct]).map(norm);
+        correct = accepted.includes(norm(userAnswer));
       } else {
         const userLower = userAnswer.toLowerCase().trim();
         const keywords = (q.keywords?.length ? q.keywords : [q.answer || '']).map(k => k.toLowerCase().trim());

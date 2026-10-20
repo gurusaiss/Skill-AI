@@ -692,8 +692,17 @@ function ViewDocRow({ file, accent = 'indigo', onDelete }) {
   );
 }
 
+// Shown to managers: the Role Library is view-only for them (server enforces 403 too).
+function ReadOnlyNotice() {
+  return (
+    <div role="status" className="mb-4 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-2.5 text-sm text-sky-200">
+      View only — managers cannot edit the Role Library
+    </div>
+  );
+}
+
 // ── View modal ────────────────────────────────────────────────────────────────
-function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
+function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated, readOnly = false }) {
   const { notify: toast } = useNotification();
   const [role, setRole] = useState(initialRole);
   const [overviewLoading, setOverviewLoading] = useState(false);
@@ -753,7 +762,7 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-medium text-slate-400">ROLE OVERVIEW</p>
-                {role.structuredOverview && (
+                {role.structuredOverview && !readOnly && (
                   <button
                     onClick={() => generateOverview(true)}
                     disabled={overviewLoading}
@@ -805,6 +814,8 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
                     </div>
                   )}
                 </div>
+              ) : readOnly ? (
+                <p className="text-sm text-slate-400">No AI overview has been generated for this role yet.</p>
               ) : (
                 <button
                   onClick={() => generateOverview(false)}
@@ -820,7 +831,7 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
             <div>
               <p className="text-sm font-medium text-slate-400 mb-2">JD FILES ({role.jdFiles.length})</p>
               <div className="space-y-1.5">
-                {role.jdFiles.map((f, i) => <ViewDocRow key={f.id || i} file={f} accent="indigo" onDelete={handleDeleteDoc} />)}
+                {role.jdFiles.map((f, i) => <ViewDocRow key={f.id || i} file={f} accent="indigo" onDelete={readOnly ? undefined : handleDeleteDoc} />)}
               </div>
             </div>
           ) : role.jobDescription ? (
@@ -835,7 +846,7 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
               <div>
                 <p className="text-sm font-medium text-slate-400 mb-2">SUPPORTING DOCUMENTS ({docs.length})</p>
                 <div className="space-y-1.5">
-                  {docs.map((doc, i) => <ViewDocRow key={doc.id || i} file={doc} accent="emerald" onDelete={handleDeleteDoc} />)}
+                  {docs.map((doc, i) => <ViewDocRow key={doc.id || i} file={doc} accent="emerald" onDelete={readOnly ? undefined : handleDeleteDoc} />)}
                 </div>
               </div>
             );
@@ -844,7 +855,9 @@ function ViewModal({ role: initialRole, onClose, onEdit, onRoleUpdated }) {
             <span className={`px-2 py-0.5 rounded-full text-sm font-semibold ${role.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-600'}`}>{role.status}</span>
             {role.updatedAt && <span className="text-sm text-slate-400 my-auto">Updated {new Date(role.updatedAt).toLocaleDateString()}</span>}
           </div>
-          <button onClick={onEdit} className="w-full px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">Edit Role</button>
+          {readOnly
+            ? <ReadOnlyNotice />
+            : <button onClick={onEdit} className="w-full px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">Edit Role</button>}
         </div>
       </div>
     </div>
@@ -919,7 +932,7 @@ const Q_TYPES = [
   { value: 'subjective', label: 'Subjective',          icon: '📝', desc: 'Open-ended model answer' },
 ];
 
-function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
+function QuestionBankModal({ role, onClose, onGenerated, onApprove, readOnly = false }) {
   const { notify: toast } = useNotification();
   const { hasFeaturePermission } = useAuth();
   const [questions, setQuestions] = useState([]);
@@ -1211,14 +1224,14 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
               })()}
             </div>
             <div className="flex flex-wrap gap-2 items-center">
-              {onApprove && questions.length > 0 && (
+              {!readOnly && onApprove && questions.length > 0 && (
                 <Button
                   variant="success"
                   onClick={() => onApprove(role)}
                   title="Review stays right here. This only opens the small scheduling confirmation"
                 >Approve</Button>
               )}
-              <ActionMenu
+              {!readOnly && <ActionMenu
                 label="Regenerate"
                 items={[
                   {
@@ -1239,7 +1252,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                     divider: true,
                   },
                 ]}
-              />
+              />}
               <Button variant="secondary" onClick={onClose} aria-label="Close question bank">Close</Button>
             </div>
           </div>
@@ -1421,7 +1434,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
               {d === 'all' ? `All (${questions.length})` : `${d} (${counts[d] ?? 0})`}
             </button>
           ))}
-          <div className="ml-auto relative">
+          {readOnly ? <span className="ml-auto text-sm text-sky-200">View only — managers cannot edit the Role Library</span> : <div className="ml-auto relative">
             <button
               onClick={() => { setQTypePicker(v => !v); setAddMode(false); }}
               disabled={!hasFeaturePermission('questions.edit')}
@@ -1455,7 +1468,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                 ))}
               </div>
             )}
-          </div>
+          </div>}
         </div>
 
         {/* Body */}
@@ -1538,7 +1551,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
           )}
 
           {/* Add new question form */}
-          {addMode && (
+          {addMode && !readOnly && (
             <div className="bg-[#0F172A] border border-indigo-500/40 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-base">{Q_TYPES.find(t => t.value === newQ.type)?.icon}</span>
@@ -1563,10 +1576,24 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                     <input key={oi} className={inputCls} value={opt} onChange={e => { const o = [...(newQ.options || ['A) ','B) ','C) ','D) '])]; o[oi] = e.target.value; setNewQ(p => ({ ...p, options: o })); }} placeholder={`Option ${['A','B','C','D'][oi]}`} />
                   ))}
                   <div>
-                    <label className={labelCls}>Correct Answer</label>
-                    <select className={inputCls} value={newQ.answer || 'A'} onChange={e => setNewQ(p => ({ ...p, answer: e.target.value }))}>
-                      {['A','B','C','D'].map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
+                    <label className={labelCls}>Correct Answer(s) <span className="text-slate-400 font-normal">(tick more than one if several are correct)</span></label>
+                    <div className="flex flex-wrap gap-2">
+                      {['A','B','C','D'].map(l => {
+                        const picked = String(newQ.answer || 'A').split(',').map(s => s.trim()).filter(Boolean);
+                        const on = picked.includes(l);
+                        return (
+                          <label key={l} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm cursor-pointer ${on ? 'bg-emerald-600/20 border-emerald-500/60 text-emerald-200' : 'bg-slate-900 border-slate-700 text-slate-300'}`}>
+                            <input type="checkbox" checked={on} className="accent-emerald-500"
+                              onChange={() => {
+                                const next = on ? picked.filter(x => x !== l) : [...picked, l];
+                                if (next.length === 0) return;
+                                setNewQ(p => ({ ...p, answer: ['A','B','C','D'].filter(x => next.includes(x)).join(',') }));
+                              }} />
+                            {l}
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                 </>
               )}
@@ -1592,7 +1619,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
 
           {filtered.map((q, i) => {
             const realIdx = questions.indexOf(q);
-            const isEditing = editIdx === realIdx;
+            const isEditing = !readOnly && editIdx === realIdx;
             return (
               <div key={q.id || i} className={isEditing ? "bg-[#0F172A] border border-slate-700 rounded-xl p-4" : undefined}>
                 {isEditing ? (
@@ -1643,7 +1670,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove }) {
                   </div>
                 ) : (
                   <QuestionCard
-                    q={q} index={i} canEdit={hasFeaturePermission('questions.edit')} lockingQid={lockingQid}
+                    q={q} index={i} readOnly={readOnly} canEdit={!readOnly && hasFeaturePermission('questions.edit')} lockingQid={lockingQid}
                     onEdit={() => startEdit(realIdx)} onToggleLock={() => toggleQuestionLock(q)} onDelete={() => deleteQ(realIdx)}
                   />
                 )}
@@ -1901,7 +1928,9 @@ function ApproveModal({ role, onClose }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function RoleLibrary() {
   const { notify: toast } = useNotification();
-  const { hasFeaturePermission } = useAuth();
+  const { hasFeaturePermission, activeRole, user } = useAuth();
+  // Managers get a strictly view-only Role Library (server returns 403 on writes).
+  const readOnly = (activeRole || user?.role) === 'manager';
   const [roles, setRoles]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
@@ -1962,8 +1991,8 @@ export default function RoleLibrary() {
       <PageHeader
         icon="🧩"
         title="Role Library"
-        subtitle="Manage job roles, descriptions, and skills for your company"
-        actions={(
+        subtitle={readOnly ? 'Browse job roles, question banks and assessment status' : 'Manage job roles, descriptions, and skills for your company'}
+        actions={readOnly ? null : (
           <>
             <Button variant="secondary" onClick={() => setModal({ type: 'import' })}
               disabled={!hasFeaturePermission('roles.import')}
@@ -1978,6 +2007,8 @@ export default function RoleLibrary() {
           </>
         )}
       />
+
+      {readOnly && <ReadOnlyNotice />}
 
       {loadError && (
         <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -2070,10 +2101,10 @@ export default function RoleLibrary() {
                         label="More"
                         size="sm"
                         items={[
-                          { label: 'Edit role', onClick: () => setModal({ type: 'edit', role }), disabled: !canEdit },
-                          { label: 'Approve assessment', onClick: () => setApproveRole(role), hidden: !(role.questionBankCount > 0) || !!role.approved },
+                          { label: 'Edit role', onClick: () => setModal({ type: 'edit', role }), disabled: !canEdit, hidden: readOnly },
+                          { label: 'Approve assessment', onClick: () => setApproveRole(role), hidden: readOnly || !(role.questionBankCount > 0) || !!role.approved },
                           { label: 'Version & assignment history', onClick: () => setHistoryRole(role) },
-                          { label: 'Delete role', onClick: () => setDelId(role.id), danger: true, divider: true, disabled: !canEdit },
+                          { label: 'Delete role', onClick: () => setDelId(role.id), danger: true, divider: true, disabled: !canEdit, hidden: readOnly },
                         ]}
                       />
                     </div>
@@ -2089,7 +2120,7 @@ export default function RoleLibrary() {
       </div>
 
       {/* Modals */}
-      {(modal?.type === 'add' || modal?.type === 'edit') && (
+      {!readOnly && (modal?.type === 'add' || modal?.type === 'edit') && (
         <RoleModal
           role={modal.type === 'edit' ? modal.role : null}
           onClose={() => setModal(null)}
@@ -2105,6 +2136,7 @@ export default function RoleLibrary() {
       {modal?.type === 'view' && (
         <ViewModal
           role={modal.role}
+          readOnly={readOnly}
           onClose={() => setModal(null)}
           onEdit={() => setModal({ type: 'edit', role: modal.role })}
           onRoleUpdated={updated => {
@@ -2113,17 +2145,17 @@ export default function RoleLibrary() {
           }}
         />
       )}
-      {modal?.type === 'import' && (
+      {!readOnly && modal?.type === 'import' && (
         <ImportModal onClose={() => setModal(null)} onImported={() => { setModal(null); load(); }} />
       )}
 
       {/* Question Bank Modal */}
       {qBankRole && (
-        <QuestionBankModal role={qBankRole} onClose={() => setQBankRole(null)} onGenerated={handleBankGenerated} onApprove={setApproveRole} />
+        <QuestionBankModal role={qBankRole} onClose={() => setQBankRole(null)} onGenerated={handleBankGenerated} onApprove={readOnly ? undefined : setApproveRole} readOnly={readOnly} />
       )}
 
       {/* Approve Assessment Modal */}
-      {approveRole && (
+      {!readOnly && approveRole && (
         <ApproveModal
           role={approveRole}
           onClose={(result) => {
@@ -2142,7 +2174,7 @@ export default function RoleLibrary() {
       )}
 
       {/* Delete confirmation */}
-      {delId && (
+      {!readOnly && delId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
           <div className="bg-[#1E293B] border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl">
             <h3 className="text-lg font-semibold text-white mb-2">Delete Role?</h3>

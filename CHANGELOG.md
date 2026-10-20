@@ -4,6 +4,19 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-20 — Six assessment fixes: emails, tab-switch refresh, answer case, multiple correct answers, pending employees in reports, view-only Role Library for managers
+
+1. **Missing employee emails in reports:** the email was taken from the saved assignment/report first and the live user only as a backup, and the backup lookup could miss. Reports now read the live user's email first, fill in any missing users one by one, and the Reports list now returns the email too. Files: `server/services/reports/reportLoader.js`, `reportData.js`, `moduleReportLoader.js`, `server/routes/assessment.js`.
+2. **Assessment page reloading when switching browser tabs:** the login session refreshes every time the tab regains focus and handed the page a brand-new user object, which restarted the assessment load. The page now depends only on the user id, and the session refresh keeps the same object when nothing changed. Files: `client/src/pages/Assessment.jsx`, `client/src/contexts/AuthContext.jsx`.
+3. **Lowercase answers rejected:** all answer checks (assessment scoring, practice sessions, agent evaluator) now compare ignoring letter case, and a plain "a user..." option text is no longer misread as option A. Files: `server/services/answerMatching.js` (new), `server/routes/assessment.js`, `server/agent/Evaluator.js`, `client/src/pages/Session.jsx`.
+4. **Several correct answers:** multiple-choice questions can now have more than one correct option (stored as e.g. `A,C`). Employees see tick boxes with "select all correct answers"; scoring is all-or-nothing and ignores order and case. Fill-in answers can list alternatives with `||`. Admins can tick several correct answers when adding questions. Files: `server/services/answerMatching.js`, `QuestionMix.js`, `AssessmentGenerator.js`, `client/src/pages/Assessment.jsx`, `AssessmentManagement.jsx`, `admin/RoleLibrary.jsx`, `client/src/utils/assessmentRules.js`.
+5. **Pending employees missing from the manager report:** the all-reports download and Reports page listed only submitted results. They now also list assigned-but-not-submitted employees (Not started / In progress / Overdue) with blank score and rating, in Excel, PDF and Word. Add `?includePending=0` to get the old file. Files: `server/services/reports/*`, `server/routes/assessment.js`, `client/src/pages/Report.jsx`.
+6. **Role Library view-only for managers:** every edit/create/delete/generate/approve route returns 403 for the manager role, and the page hides all edit controls and shows a "View only" notice. Admins are unchanged. Files: `server/routes/roles.js`, `client/src/pages/admin/RoleLibrary.jsx`.
+
+Tests: 330 server tests pass (new: answer matching, manager read-only, report email/pending); `check:scroll`, `check:layout` and the client build pass.
+
+---
+
 ## 2026-10-12 (d) — Fixed the real cause of the Supabase egress quota getting blown (45 MB DB, 17 GB read)
 
 **Why:** Supabase suspended the project for exceeding its egress quota (45 MB database, 17 GB read — ~378x). The cause: several admin/employee pages poll the backend every 30 seconds (notifications in the header, user management, assignment management), but the server-side read cache in front of Supabase only lived 5 seconds. A 5 s cache never overlaps a 30 s poll, so every single poll re-ran a full, uncached `select('*')` against Supabase. A separate poller (generation-status, every 3 s during question-bank generation) was also pulling the full `questions` JSON blob on every tick when it only ever needed a count and an id, both already stored in their own small columns.

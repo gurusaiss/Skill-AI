@@ -315,7 +315,15 @@ export const AuthProvider = ({ children }) => {
         });
         if (res.ok) {
           const payload = await res.json();
-          setUser(prev => (prev ? { ...prev, ...(payload.data ?? payload) } : (payload.data ?? payload)));
+          // Keep the SAME user object when nothing changed. A new object on every
+          // tab focus re-ran every effect that depends on `user` and made pages
+          // (notably an in-progress assessment) reload when switching tabs.
+          setUser(prev => {
+            const incoming = payload.data ?? payload;
+            const next = prev ? { ...prev, ...incoming } : incoming;
+            try { if (prev && JSON.stringify(prev) === JSON.stringify(next)) return prev; } catch { /* fall through */ }
+            return next;
+          });
         }
       } catch { /* transient network hiccup — next trigger will retry */ }
     };

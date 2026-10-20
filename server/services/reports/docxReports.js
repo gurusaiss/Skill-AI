@@ -345,7 +345,7 @@ export async function buildConsolidatedDocx({ rows, summary, now = new Date(), t
   const multi = sum.multi || null;
   const roleOrAssessment = multi ? { header: 'Assessment', pick: r => r.assessmentTitle } : { header: 'Job role', pick: r => r.jobRole };
   const children = [
-    ...title1(safe(sum.title, 'Assessment'), multi ? 'All submitted assessments' : 'Assessment results report'),
+    ...title1(safe(sum.title, 'Assessment'), multi ? 'All assessments (submitted and pending)' : 'Assessment results report'),
     kvGrid(multi ? [
       { label: 'Assessments covered', value: multi.assessments }, { label: 'Records', value: rows.length },
       { label: 'Company', value: sum.company }, { label: 'Generated on', value: fmtDate(now, tz, { time: false }) },

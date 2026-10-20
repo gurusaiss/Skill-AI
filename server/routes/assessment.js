@@ -36,7 +36,7 @@ import { ASSESSMENT_DURATION_MINUTES, normalizeDuration } from '../services/asse
 import { resolveWindow, parseWindowInput } from '../services/assessmentSchedule.js';
 import { isRemovedFromAssessment, clearTombstones, deleteEmployeeAssignment, editEmployeeWindow, deleteAssessmentCascade } from '../services/assessmentRoster.js';
 import { toListAssessment, toListReport } from '../services/assessmentListView.js';
-import { loadAssessmentRows, loadSubmissionRows } from '../services/reports/reportLoader.js';
+import { loadAssessmentRows, loadSubmissionRows, loadPendingRows, ensureUsers } from '../services/reports/reportLoader.js';
 import { buildSummary, safeFilename, STATUS as REPORT_STATUS, timeTakenSeconds } from '../services/reports/reportData.js';
 import { buildAssessmentWorkbook, buildAllReportsWorkbook, buildIndividualWorkbook, buildTableWorkbook } from '../services/reports/xlsxReports.js';
 import { buildConsolidatedPdf, buildIndividualPdf, buildTablePdf } from '../services/reports/pdfReports.js';
@@ -47,6 +47,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 import { DATA_DIR } from '../config/dataDir.js';
+import { answerLetters, optionLetter, isMcqCorrect, isMultiAnswer, acceptedTextAnswers } from '../services/answerMatching.js';
 
 const router = express.Router();
 
@@ -433,7 +434,7 @@ function getReadinessLevel(score) {
 // Remove all punctuation and symbols, collapse whitespace.
 // "If-Else" → "if else", "AHT!" → "aht", "call centre" → "call centre"
 function normalizeAnswer(s) {
-  return (s || '')
+  return String(s ?? '')
     .toLowerCase()
     .replace(/[''`]/g, '')           // drop apostrophes (don't → dont)
     .replace(/[-–—_/\\|]/g, ' ')    // hyphens/slashes → space (if-else → if else)
@@ -523,40 +524,30 @@ function scoreSubmission(questions, responses, passThreshold = 80, customThresho
   let total = 0;
   const breakdown = [];
 
-  // Extract just the letter from answers like "B) some text" or "B"
-  const extractLetter = s => {
-    const str = (s || '').trim().toUpperCase();
-    // Matches "B)" or "B " or "B." at the start, or just "A"/"B"/"C"/"D" alone
-    const m = str.match(/^([A-D])[)\s.]/);
-    if (m) return m[1];
-    if (/^[A-D]$/.test(str)) return str;
-    return '';
-  };
-
   questions.forEach((q, i) => {
     const resp = responses[i] || { answer: '' };
     const userAnswer = resp.answer || '';
     let isCorrect = false;
+    const isMcq = q.type === 'mcq' || q.type === 'multiple_choice';
 
-    if (q.type === 'mcq' || q.type === 'multiple_choice') {
-      const userLetter = extractLetter(userAnswer);
-      const correctLetter = extractLetter(q.answer || '');
-      isCorrect = userLetter !== '' && userLetter === correctLetter;
-    } else if (q.type === 'fill_blank' || q.type === 'fill_in_blank') {
-      isCorrect = isAnswerCorrect(userAnswer, q.answer || '', 'fill_blank');
+    if (isMcq) {
+      // Letter-set comparison: case-insensitive, supports several correct options.
+      isCorrect = isMcqCorrect(userAnswer, q);
     } else {
-      isCorrect = isAnswerCorrect(userAnswer, q.answer || '', 'subjective');
+      // Any one accepted alternative ("a || b" or an array) is enough.
+      const kind = (q.type === 'fill_blank' || q.type === 'fill_in_blank') ? 'fill_blank' : 'subjective';
+      isCorrect = acceptedTextAnswers(q.answer).some(alt => isAnswerCorrect(userAnswer, alt, kind));
     }
 
     total++;
     if (isCorrect) correct++;
 
-    // Find the full correct option text for MCQ (e.g. "B) To install dependencies...")
-    let correctOptionText = q.answer;
-    if ((q.type === 'mcq' || q.type === 'multiple_choice') && Array.isArray(q.options)) {
-      const correctLetter = extractLetter(q.answer || '');
-      const found = q.options.find(opt => extractLetter(opt) === correctLetter);
-      if (found) correctOptionText = found;
+    // Full text of every correct option (e.g. "B) To install dependencies...")
+    let correctOptionText = Array.isArray(q.answer) ? q.answer.join(' || ') : q.answer;
+    if (isMcq && Array.isArray(q.options)) {
+      const wanted = answerLetters(q.answer, q.options);
+      const found = q.options.filter(opt => wanted.has(optionLetter(opt)));
+      if (found.length) correctOptionText = found.join(' || ');
     }
 
     breakdown.push({
@@ -564,6 +555,7 @@ function scoreSubmission(questions, responses, passThreshold = 80, customThresho
       question: q.question,
       type: q.type,
       options: q.options || null,
+      multipleCorrect: isMcq && isMultiAnswer(q),
       userAnswer: userAnswer || null,      // null = no answer (displayed as "(no answer)")
       correctAnswer: q.answer,
       correctOptionText,
@@ -1534,6 +1526,7 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
     // Fill in what older reports never saved (staff ID, department, assigned and
     // due dates) from live records so the Reports table and its downloads match.
     const userById = new Map(allUsers.map(u => [u.userId || u.id, u]));
+    await ensureUsers(userById, filteredReports.map(r => r.userId || r.user_id || r.submittedBy));
     // Cache the PROMISE (not the result): with the old result-cache, every
     // report with missing dates started its own getById before the first one
     // resolved - thousands of concurrent whole-table/row reads (and in file
@@ -1564,6 +1557,8 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
       return {
         ...(fullReports ? r : toListReport(r)),
         staffId: r.employeeId || u?.employeeId || '',
+        // Live user record first, saved snapshot as fallback, so no row loses its email.
+        email: u?.email || r.email || r.userEmail || '',
         department: r.department || u?.department || '',
         assignedAt,
         dueAt,
@@ -1571,6 +1566,25 @@ router.get('/reports/all', authenticate, requireRole('admin', 'manager'), async 
         startedAtResolved: r.attemptStartUnknown ? null : (r.attemptStartedAt || null),
       };
     }));
+
+    // includePending=1 (the Reports page): also list employees who were assigned
+    // but have not submitted, scoped to the same visible employees, with no score.
+    if (req.query?.includePending === '1') {
+      try {
+        const assessments = ((await Assessments.getAll()) || []).filter(x => companyId === 'default' || (x.companyId || 'default') === companyId);
+        const pendingRows = await loadPendingRows({ assessments, allowedIds, companyId: req.user?.companyId });
+        const RAW = { 'Not started': 'assigned', 'In progress': 'in_progress', Overdue: 'overdue' };
+        for (const p of pendingRows) {
+          enriched.push({
+            id: `pending-${p.assessmentId}-${p.userId}`, pending: true, userId: p.userId, userName: p.name, employeeName: p.name,
+            email: p.email, jobRole: p.jobRole, department: p.department, staffId: p.employeeId,
+            assessmentId: p.assessmentId, assessmentTitle: p.assessmentTitle, status: RAW[p.status] || 'assigned',
+            score: null, assignedAt: p.assignedAt || null, dueAt: p.dueAt || null, deadline: p.dueAt || null,
+            submittedAt: null, startedAtResolved: p.startedAt || null,
+          });
+        }
+      } catch (e) { console.warn('[reports/all] pending rows skipped:', e.message); }
+    }
 
     res.json({ success: true, data: enriched, error: null });
   } catch (e) {
@@ -1591,6 +1605,7 @@ router.get('/export-all-reports', authenticate, requirePermission('reports.expor
     const allReports = await Reports.getAll();
 
     let reports;
+    let scopeIds = null; // null = everyone in the company (admin); otherwise the caller's visible employees
     const isAdminExport = role === 'admin' || role === 'superadmin';
     // Gate on capability, not the raw current view — an access-grant manager
     // browsing in the employee view still gets their team's export here,
@@ -1599,9 +1614,11 @@ router.get('/export-all-reports', authenticate, requirePermission('reports.expor
     // durable manager_id path).
     if (!isAdminExport && canActAsManager(req.user)) {
       const allowedIds = await getVisibleEmployeeIds(req.user);
+      scopeIds = allowedIds;
       reports = allReports.filter(r => allowedIds.has(r.userId || r.user_id || r.submittedBy));
     } else if (!isAdminExport) {
       // Genuine employee (no manager capability): only their own reports
+      scopeIds = new Set([req.user.userId]);
       reports = allReports.filter(r => (r.userId || r.user_id) === req.user.userId);
     } else {
       // admin / superadmin: filter by company
@@ -1610,6 +1627,7 @@ router.get('/export-all-reports', authenticate, requirePermission('reports.expor
         const companyUserIds = new Set(
           allUsers.filter(u => (u.companyId || 'default') === companyId).map(u => u.userId || u.id)
         );
+        scopeIds = companyUserIds;
         reports = allReports.filter(r => companyUserIds.has(r.userId || r.user_id || r.submittedBy));
       } else {
         reports = allReports;
@@ -1617,7 +1635,19 @@ router.get('/export-all-reports', authenticate, requirePermission('reports.expor
     }
 
     const format = (req.query.format || 'xlsx').toLowerCase();
-    const { rows } = await loadSubmissionRows({ reports, companyId: req.user?.companyId });
+    const { rows: doneRows } = await loadSubmissionRows({ reports, companyId: req.user?.companyId });
+    // Assigned-but-not-submitted employees (not started / in progress / overdue)
+    // appear too, status-marked with blank score and rating, scoped like the
+    // submitted rows. Pass includePending=0 for the old completed-only file.
+    let rows = doneRows;
+    if (req.query.includePending !== '0') {
+      try {
+        const assessments = ((await Assessments.getAll()) || [])
+          .filter(a => companyId === 'default' || (a.companyId || 'default') === companyId);
+        const pendingRows = await loadPendingRows({ assessments, allowedIds: scopeIds, companyId: req.user?.companyId });
+        rows = [...doneRows, ...pendingRows];
+      } catch (e) { console.warn('[export-all-reports] pending rows skipped:', e.message); }
+    }
     const summary = {
       ...buildSummary(rows, {}, null),
       title: 'All Assessment Reports',

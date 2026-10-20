@@ -16,6 +16,8 @@
  *     more written answers because it is formative, not scored for hiring.
  */
 
+import { answerLetters } from './answerMatching.js';
+
 export const ASSESSMENT_MIX = { mcq: 0.90, subjective: 0.08, fill_blank: 0.02 };
 export const QUIZ_MIX       = { mcq: 0.70, subjective: 0.20, fill_blank: 0.10 };
 
@@ -151,7 +153,19 @@ export function normalizeQuestionShape(q) {
     options = options.slice(0, 4);
     // Re-letter so labels are always A)..D) in order, regardless of input.
     const bodies = options.map(o => o.replace(/^\s*[A-Da-d][).:-]\s*/, ''));
-    const answerRaw = String(q.answer ?? q.correct ?? '').trim();
+    const rawAnswer = q.answer ?? q.correct ?? '';
+    const answerRaw = (Array.isArray(rawAnswer) ? rawAnswer.join(',') : String(rawAnswer)).trim();
+    // More than one correct option ("A,C", "a and c", ["A","C"]): keep them all.
+    const multi = [...answerLetters(rawAnswer, bodies)].filter(l => LETTERS.indexOf(l) !== -1 && LETTERS.indexOf(l) < bodies.length).sort();
+    if (multi.length > 1) {
+      return {
+        ...base,
+        options: bodies.map((b, i) => `${LETTERS[i]}) ${b}`),
+        answer: multi.join(','),
+        multiple: true,
+        explanation: String(q.explanation || '').trim(),
+      };
+    }
     let idx = LETTERS.indexOf(answerRaw.toUpperCase().charAt(0));
     if (idx === -1 || idx >= bodies.length) {
       // Answer given as full option text rather than a letter — match it back.

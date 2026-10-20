@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { authFetch } from '../utils/authFetch.js';
-import { ratingForReport, ratingStyle, normalizeDuration } from '../utils/assessmentRules.js';
+import { ratingForReport, ratingStyle, normalizeDuration, isMultiAnswerQuestion, MULTI_ANSWER_SEPARATOR } from '../utils/assessmentRules.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -116,10 +116,14 @@ export default function Assessment() {
 
   // ── load assessment ──────────────────────────────────────────────────────
 
+  // Keyed on the stable user id, NOT the user object: AuthContext refreshes
+  // `user` whenever the browser tab regains focus, and depending on the object
+  // reloaded the whole assessment (spinner, timer reset) on every tab switch.
+  const userId = user?.userId;
   useEffect(() => {
-    if (!user) { navigate('/'); return; }
+    if (!userId) { navigate('/'); return; }
     loadAssessment();
-  }, [user, assessmentId]);
+  }, [userId, assessmentId]);
 
   const loadAssessment = async () => {
     setLoading(true);
@@ -277,11 +281,22 @@ export default function Assessment() {
           </div>
         );
       }
+      // Several correct options: tick boxes, answer = chosen option texts in
+      // option order joined by MULTI_ANSWER_SEPARATOR (server compares as a set).
+      const multi = isMultiAnswerQuestion(q);
+      const optTexts = options.map(opt => (typeof opt === 'string' ? opt : opt.text || opt.value || String(opt)));
+      const chosen = multi ? String(val).split(MULTI_ANSWER_SEPARATOR).filter(Boolean) : [];
+      const toggle = (optVal) => {
+        const next = chosen.includes(optVal) ? chosen.filter(c => c !== optVal) : [...chosen, optVal];
+        handleAnswer(idx, optTexts.filter(t => next.includes(t)).join(MULTI_ANSWER_SEPARATOR));
+      };
       return (
         <div className="space-y-2.5">
-          {options.map((opt, oi) => {
-            const optVal = typeof opt === 'string' ? opt : opt.text || opt.value || String(opt);
-            const selected = val === optVal || val === String(oi);
+          {multi && (
+            <p className="text-xs font-semibold text-indigo-300">Select all correct answers (more than one may apply).</p>
+          )}
+          {optTexts.map((optVal, oi) => {
+            const selected = multi ? chosen.includes(optVal) : (val === optVal || val === String(oi));
             return (
               <label
                 key={oi}
@@ -292,11 +307,11 @@ export default function Assessment() {
                 }`}
               >
                 <input
-                  type="radio"
+                  type={multi ? 'checkbox' : 'radio'}
                   name={`q_${idx}`}
                   value={optVal}
                   checked={selected}
-                  onChange={() => handleAnswer(idx, optVal)}
+                  onChange={() => (multi ? toggle(optVal) : handleAnswer(idx, optVal))}
                   className="sr-only"
                 />
                 <span className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-black border ${
@@ -304,7 +319,7 @@ export default function Assessment() {
                 }`}>
                   {optionLabels[oi] || oi + 1}
                 </span>
-                <span className="text-sm">{optVal}</span>
+                <span className="text-sm min-w-0 break-words">{optVal}</span>
               </label>
             );
           })}

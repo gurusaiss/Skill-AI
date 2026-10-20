@@ -1498,7 +1498,7 @@ export default function AssessmentManagement() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-bold text-slate-400 mb-1 block">
-                        {q.type === 'mcq' ? 'Correct Answer (A/B/C/D)' : q.type === 'fill_blank' ? 'Correct Answer' : 'Suggested Answer / Evaluation Notes'}
+                        {q.type === 'mcq' ? 'Correct Answer(s): A, B, C, D (several allowed, e.g. A,C)' : q.type === 'fill_blank' ? 'Correct Answer (alternatives: separate with ||)' : 'Suggested Answer / Evaluation Notes'}
                       </label>
                       {q.type === 'subjective' ? (
                         <textarea
@@ -1513,7 +1513,7 @@ export default function AssessmentManagement() {
                           type="text"
                           value={q.answer || ''}
                           onChange={e => updateQuestion(qi, 'answer', e.target.value)}
-                          placeholder={q.type === 'mcq' ? 'A / B / C / D' : 'Exact answer phrase'}
+                          placeholder={q.type === 'mcq' ? 'A  or  A,C  (all correct options)' : 'Exact answer phrase, or: answer one || answer two'}
                           className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm focus:border-indigo-500 focus:outline-none"
                         />
                       )}
@@ -2491,11 +2491,24 @@ function ManualAssessmentModal({ employees, onClose, onCreated }) {
                     ))}
                     <div className="flex items-center gap-3">
                       <div className="flex-1">
-                        <label className="text-sm text-slate-300 mb-1 block">Correct Answer</label>
-                        <select value={newQ.answer} onChange={e => setNewQ(p => ({ ...p, answer: e.target.value }))}
-                          className="w-full bg-[#0F172A] border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none">
-                          {['A','B','C','D'].map(l => <option key={l}>{l}</option>)}
-                        </select>
+                        <label className="text-sm text-slate-300 mb-1 block">Correct Answer(s) — tick more than one if several are correct</label>
+                        <div className="flex flex-wrap gap-2">
+                          {['A','B','C','D'].map(l => {
+                            const picked = String(newQ.answer || 'A').split(',').map(s => s.trim()).filter(Boolean);
+                            const on = picked.includes(l);
+                            return (
+                              <label key={l} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm cursor-pointer ${on ? 'bg-emerald-600/20 border-emerald-500/60 text-emerald-200' : 'bg-[#0F172A] border-slate-700 text-slate-300'}`}>
+                                <input type="checkbox" checked={on} className="accent-emerald-500"
+                                  onChange={() => {
+                                    const next = on ? picked.filter(x => x !== l) : [...picked, l];
+                                    if (next.length === 0) return;
+                                    setNewQ(p => ({ ...p, answer: ['A','B','C','D'].filter(x => next.includes(x)).join(',') }));
+                                  }} />
+                                {l}
+                              </label>
+                            );
+                          })}
+                        </div>
                       </div>
                       <button onClick={addQuestion} disabled={!newQ.question.trim()}
                         className="mt-4 px-5 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-500 disabled:opacity-40">

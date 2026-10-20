@@ -506,7 +506,7 @@ export async function renderConsolidatedPdf({ rows, summary, now = new Date(), t
   // 1) title + facts
   const multi = sum.multi || null;
   const roleOrAssessment = multi ? { header: 'Assessment', pick: r => r.assessmentTitle } : { header: 'Job role', pick: r => r.jobRole };
-  L.title1(safe(sum.title, 'Assessment'), multi ? 'All submitted assessments' : 'Assessment results report');
+  L.title1(safe(sum.title, 'Assessment'), multi ? 'All assessments (submitted and pending)' : 'Assessment results report');
   L.kvGrid(multi ? [
     { label: 'Assessments covered', value: multi.assessments },
     { label: 'Records', value: rows.length },

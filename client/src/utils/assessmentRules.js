@@ -4,6 +4,18 @@
 
 export const ASSESSMENT_DURATION_MINUTES = 60;
 
+// Multiple-choice questions can have more than one correct option. The server
+// stores the correct set as "A,C" (or flags `multiple`); mirror of
+// server/services/answerMatching.js, kept small because only detection and the
+// separator are needed here.
+export const MULTI_ANSWER_SEPARATOR = ' || ';
+export function isMultiAnswerQuestion(q) {
+  if (!q) return false;
+  if (q.multiple === true || q.multiSelect === true) return true;
+  const a = Array.isArray(q.answer) ? q.answer.join(',') : String(q.answer ?? '');
+  return (a.toUpperCase().match(/\b[A-D]\b/g) || []).length > 1 && /^\s*[A-Da-d](\s*(,|;|&|\/|\band\b)\s*[A-Da-d])+\s*$/i.test(a);
+}
+
 // Assessments saved with the old 30-minute default are shown and timed as 60.
 export function normalizeDuration(minutes) {
   const n = Number(minutes);
