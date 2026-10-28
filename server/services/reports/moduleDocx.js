@@ -155,8 +155,10 @@ export async function buildModuleDocx({ record: r, now = new Date(), tz = report
   const children = [
     ...title1('Module Engagement Report', `${safe(r.name)}  |  ${safe(r.moduleTitle)}`),
     kvGrid([
-      { label: 'Employee ID', value: r.employeeId }, { label: 'Job role', value: r.jobRole }, { label: 'Department', value: r.department },
-      { label: 'Manager', value: r.managerName }, { label: 'Module', value: r.moduleTitle }, { label: 'Status', value: r.status },
+      { label: 'Employee ID', value: r.employeeId }, { label: 'Employee name', value: r.name }, { label: 'Email', value: r.email },
+      { label: 'Phone', value: r.phone }, { label: 'Job role', value: r.jobRole }, { label: 'Department', value: r.department },
+      { label: 'Manager', value: r.managerName }, { label: 'Manager ID', value: r.managerId }, { label: 'Company', value: r.companyName },
+      { label: 'Module', value: r.moduleTitle }, { label: 'Status', value: r.status },
     ], 3),
     section('At a glance'),
     kvGrid([
@@ -223,8 +225,34 @@ export async function buildConsolidatedModuleDocx({ rows, summary = {}, company 
   ];
   if (!rows.length) children.push(para(run('No records match the selected filters.', { color: COLOR.muted })));
   else children.push(dataTable(
-    [{ header: 'Employee ID', w: 1150 }, { header: 'Name', w: 1900 }, { header: 'Module', w: 2100 }, { header: 'Completed', w: 1200 }, { header: 'Days', w: 650, align: AlignmentType.CENTER }, { header: 'Time', w: 900 }, { header: 'Score', w: 750, align: AlignmentType.RIGHT }, { header: 'Rating', w: 1556 }],
-    rows.map(r => [r.employeeId, r.name, r.moduleTitle, fmtDate(r.completedAt, tz, { time: false }), `${r.daysCompleted}/${r.daysTotal}`, fmtSeconds(r.timeSpentSec), r.scorePct === null ? DASH : fmtPct(r.scorePct, 1), { text: r.rating || DASH, bold: true, color: RATING_COLOR[r.rating] }]),
+    [
+      { header: 'Employee ID', w: 850 },
+      { header: 'Name', w: 1200 },
+      { header: 'Email', w: 1350 },
+      { header: 'Role', w: 950 },
+      { header: 'Department', w: 900 },
+      { header: 'Module', w: 1200 },
+      { header: 'Status', w: 800 },
+      { header: 'Completed', w: 800 },
+      { header: 'Days', w: 480, align: AlignmentType.CENTER },
+      { header: 'Time', w: 580 },
+      { header: 'Score', w: 480, align: AlignmentType.RIGHT },
+      { header: 'Rating', w: 616 },
+    ],
+    rows.map(r => [
+      r.employeeId,
+      r.name,
+      r.email,
+      r.jobRole,
+      r.department,
+      r.moduleTitle,
+      r.status,
+      fmtDate(r.completedAt, tz, { time: false }),
+      `${r.daysCompleted}/${r.daysTotal}`,
+      fmtSeconds(r.timeSpentSec),
+      r.scorePct === null ? DASH : fmtPct(r.scorePct, 1),
+      { text: r.rating || DASH, bold: true, color: RATING_COLOR[r.rating] },
+    ]),
   ));
   children.push(endNote());
   return pack({ title: 'Module Completion Report', company, now, tz, children });

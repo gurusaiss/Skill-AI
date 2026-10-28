@@ -1145,6 +1145,22 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove, readOnly = f
     finally { setLockingQid(null); }
   };
 
+  const handleLockAllQuestions = async (lock) => {
+    setSaving(true);
+    try {
+      const endpoint = lock ? 'lock-all' : 'unlock-all';
+      const res = await authFetch(`/api/roles/${role.id}/questions/${endpoint}`, { method: 'POST' });
+      const updated = res?.data ?? res;
+      if (Array.isArray(updated)) {
+        setQuestions(updated);
+      } else {
+        setQuestions(prev => prev.map(x => ({ ...x, locked: lock })));
+      }
+      toast(lock ? `All questions locked (${questions.length})` : 'All questions unlocked');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
   const startEdit = (i) => { setEditIdx(i); setEditQ({ ...questions[i] }); };
   const cancelEdit = () => { setEditIdx(null); setEditQ(null); };
 
@@ -1227,7 +1243,7 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove, readOnly = f
               {!readOnly && onApprove && questions.length > 0 && (
                 <Button
                   variant="success"
-                  onClick={() => onApprove(role)}
+                  onClick={() => onApprove({ ...role, currentQuestions: questions })}
                   title="Review stays right here. This only opens the small scheduling confirmation"
                 >Approve</Button>
               )}
@@ -1427,13 +1443,35 @@ function QuestionBankModal({ role, onClose, onGenerated, onApprove, readOnly = f
         </div>
 
         {/* Filters */}
-        <div className="flex gap-2 px-5 py-3 border-b border-slate-700 flex-shrink-0">
+        <div className="flex gap-2 px-5 py-3 border-b border-slate-700 flex-shrink-0 items-center flex-wrap">
           {['all', 'easy', 'medium', 'hard'].map(d => (
             <button key={d} onClick={() => setDiffFilter(d)}
               className={`px-3 py-1 rounded-lg text-sm font-semibold capitalize transition-colors ${diffFilter === d ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
               {d === 'all' ? `All (${questions.length})` : `${d} (${counts[d] ?? 0})`}
             </button>
           ))}
+          {!readOnly && questions.length > 0 && (
+            <div className="flex items-center gap-1.5 ml-2">
+              <button
+                type="button"
+                onClick={() => handleLockAllQuestions(true)}
+                disabled={saving || questions.every(q => q.locked)}
+                className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/40 disabled:opacity-40 transition-colors font-medium"
+                title="Lock all questions — only locked questions are assigned to employees"
+              >
+                🔒 Lock All
+              </button>
+              <button
+                type="button"
+                onClick={() => handleLockAllQuestions(false)}
+                disabled={saving || !questions.some(q => q.locked)}
+                className="text-xs px-2.5 py-1 rounded-lg bg-slate-700/60 text-slate-300 border border-slate-600 hover:bg-slate-700 disabled:opacity-40 transition-colors font-medium"
+                title="Unlock all questions"
+              >
+                🔓 Unlock All
+              </button>
+            </div>
+          )}
           {readOnly ? <span className="ml-auto text-sm text-sky-200">View only — managers cannot edit the Role Library</span> : <div className="ml-auto relative">
             <button
               onClick={() => { setQTypePicker(v => !v); setAddMode(false); }}
@@ -1820,6 +1858,42 @@ function ApproveModal({ role, onClose }) {
   const [deadline, setDeadline] = useState('');
   const [durationDays, setDurationDays] = useState(5);
   const [locking, setLocking] = useState(false);
+  const [questions, setQuestions] = useState(role.currentQuestions || []);
+  const [loadingQuestions, setLoadingQuestions] = useState(!role.currentQuestions);
+  const [lockingAll, setLockingAll] = useState(false);
+
+  useEffect(() => {
+    if (!role.currentQuestions && role.id) {
+      setLoadingQuestions(true);
+      authFetch(`/api/roles/${role.id}/questions`)
+        .then(res => {
+          const qs = Array.isArray(res) ? res : (res?.data ?? []);
+          setQuestions(qs);
+        })
+        .catch(err => {
+          toast(err.message || 'Failed to load questions', 'error');
+        })
+        .finally(() => setLoadingQuestions(false));
+    }
+  }, [role.id, role.currentQuestions]);
+
+  const handleLockAllInApprove = async () => {
+    setLockingAll(true);
+    try {
+      const res = await authFetch(`/api/roles/${role.id}/questions/lock-all`, { method: 'POST' });
+      const updated = res?.data ?? res;
+      if (Array.isArray(updated)) {
+        setQuestions(updated);
+      } else {
+        setQuestions(prev => prev.map(q => ({ ...q, locked: true })));
+      }
+      toast('All questions locked');
+    } catch (e) {
+      toast(e.message || 'Failed to lock questions', 'error');
+    } finally {
+      setLockingAll(false);
+    }
+  };
 
   const handleLock = async () => {
     setLocking(true);
@@ -1842,7 +1916,8 @@ function ApproveModal({ role, onClose }) {
     }
   };
 
-  const maxQ = role.questionBankCount || 50;
+  const totalCount = questions.length || role.questionBankCount || 0;
+  const lockedCount = questions.filter(q => q && (q.locked === true || q.locked === 'true')).length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -1855,11 +1930,47 @@ function ApproveModal({ role, onClose }) {
           <button onClick={() => onClose(false)} className="text-slate-400 hover:text-white text-xl">✕</button>
         </div>
         <div className="p-5 space-y-4">
-          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3">
-            <p className="text-sm text-emerald-300">
-              This publishes the current <strong>{maxQ}-question bank</strong> exactly as-is and assigns it to every employee with the role <strong>"{role.roleName}"</strong>. You can still lock individual questions and regenerate the rest at any time afterward — a future approval creates a new version without affecting employees already assigned to this one.
-            </p>
-          </div>
+          {loadingQuestions ? (
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
+              <p className="text-sm text-slate-400">Loading questions status…</p>
+            </div>
+          ) : lockedCount === 0 ? (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 space-y-2">
+              <p className="text-sm text-amber-300 font-semibold">
+                ⚠️ No locked questions found ({totalCount} total in bank).
+              </p>
+              <p className="text-xs text-amber-200/80">
+                Only locked questions are delivered to employees as assessments. Unlocked questions are excluded. You must lock at least one question before approving.
+              </p>
+              <button
+                type="button"
+                onClick={handleLockAllInApprove}
+                disabled={lockingAll || totalCount === 0}
+                className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              >
+                {lockingAll ? 'Locking…' : `🔒 Lock All ${totalCount} Questions Now`}
+              </button>
+            </div>
+          ) : (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 space-y-2">
+              <p className="text-sm text-emerald-300">
+                🔒 <strong>{lockedCount}</strong> of <strong>{totalCount}</strong> questions are locked and will be published and assigned to employees with the role <strong>"{role.roleName}"</strong>.
+              </p>
+              <p className="text-xs text-emerald-200/70">
+                Only locked questions will be delivered to employees. Unlocked questions will not go into the assessment.
+              </p>
+              {lockedCount < totalCount && (
+                <button
+                  type="button"
+                  onClick={handleLockAllInApprove}
+                  disabled={lockingAll}
+                  className="text-xs px-2.5 py-1 rounded bg-emerald-600/30 text-emerald-200 border border-emerald-500/40 hover:bg-emerald-600/50 disabled:opacity-50 transition-colors"
+                >
+                  {lockingAll ? 'Locking…' : `Lock Remaining ${totalCount - lockedCount} Questions`}
+                </button>
+              )}
+            </div>
+          )}
           <div>
             <label className={labelCls}>Start Date &amp; Time <span className="text-slate-400">(optional)</span></label>
             <input
@@ -1915,7 +2026,7 @@ function ApproveModal({ role, onClose }) {
             <button onClick={() => onClose(false)} className="flex-1 px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:border-slate-400">
               Cancel
             </button>
-            <button onClick={handleLock} disabled={locking} className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
+            <button onClick={handleLock} disabled={locking || loadingQuestions || lockedCount === 0} className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
               {locking ? 'Approving…' : '✓ Approve & Assign'}
             </button>
           </div>

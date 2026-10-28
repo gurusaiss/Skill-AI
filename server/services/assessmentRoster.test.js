@@ -22,7 +22,7 @@ beforeAll(async () => {
   fs.writeFileSync(path.join(tmp, 'role_library.json'), JSON.stringify([{ id: 'r1', roleName: 'QA Tester', companyId: 'default' }]));
   fs.writeFileSync(path.join(tmp, 'question_bank_versions.json'), JSON.stringify([{
     id: 'qbv1', role_id: 'r1', version: 1, status: 'approved',
-    questions: Array.from({ length: 5 }, (_, i) => ({ id: `q${i}`, type: 'mcq', question: 'q', answer: 'A' })),
+    questions: Array.from({ length: 5 }, (_, i) => ({ id: `q${i}`, type: 'mcq', question: 'q', answer: 'A', locked: true })),
   }]));
 });
 afterAll(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
@@ -129,6 +129,88 @@ describe('editEmployeeWindow', () => {
   it('rejects a tombstoned/unknown employee', async () => {
     const out = await roster.editEmployeeWindow({ assessmentId: A, userId: 'u1', body: { endDate: future(3) }, actor: {} });
     expect(out.status).toBe(404);
+  });
+});
+
+// ── Fix 4: RoleLibrary.findExact — exact role-name matching for assessment assignment ─────
+describe('RoleLibrary.findExact — exact role matching', () => {
+  const RL_FILE = () => path.join(tmp, 'role_library.json');
+  let savedRoles;
+
+  beforeAll(() => {
+    // Save existing role_library.json content so we can restore after
+    try { savedRoles = fs.readFileSync(RL_FILE(), 'utf8'); } catch { savedRoles = '[]'; }
+    // Write the three roles that share words but must never be confused
+    fs.writeFileSync(RL_FILE(), JSON.stringify([
+      { id: 'rx1', roleName: 'Telecom Analyst',        companyId: 'acme' },
+      { id: 'rx2', roleName: 'Senior Telecom Analyst', companyId: 'acme' },
+      { id: 'rx3', roleName: 'Telecom Analyst Junior', companyId: 'acme' },
+      { id: 'rx4', roleName: 'QA Engineer',            companyId: 'acme' },
+    ]));
+  });
+
+  afterAll(() => {
+    // Restore original role_library.json content
+    fs.writeFileSync(RL_FILE(), savedRoles);
+  });
+
+  it('finds the exact role when name matches exactly', async () => {
+    const match = await DS.RoleLibrary.findExact('Telecom Analyst', 'acme');
+    expect(match?.id).toBe('rx1');
+  });
+
+  it('returns null for "Telecom Analyst Junior" when looking up "Telecom Analyst"', async () => {
+    // findExact must NOT return rx3 when searching for rx1's name
+    const match = await DS.RoleLibrary.findExact('Telecom Analyst', 'acme');
+    expect(match?.id).not.toBe('rx3');
+  });
+
+  it('"Telecom Analyst Junior" resolves to its own role only', async () => {
+    const match = await DS.RoleLibrary.findExact('Telecom Analyst Junior', 'acme');
+    expect(match?.id).toBe('rx3');
+  });
+
+  it('"Senior Telecom Analyst" resolves to its own role only', async () => {
+    const match = await DS.RoleLibrary.findExact('Senior Telecom Analyst', 'acme');
+    expect(match?.id).toBe('rx2');
+  });
+
+  it('does NOT fuzzy-match "Telecom Analyst Junior" onto "Telecom Analyst"', async () => {
+    // The critical regression guard: 50%+ word overlap must NOT cause a match.
+    const junior = await DS.RoleLibrary.findExact('Telecom Analyst Junior', 'acme');
+    const base   = await DS.RoleLibrary.findExact('Telecom Analyst', 'acme');
+    expect(junior?.id).not.toBe(base?.id);
+  });
+
+  it('is case-insensitive and trims whitespace', async () => {
+    const match = await DS.RoleLibrary.findExact('  TELECOM ANALYST JUNIOR  ', 'acme');
+    expect(match?.id).toBe('rx3');
+  });
+
+  it('normalizes separators (hyphen/slash treated as space)', async () => {
+    // "QA-Engineer" should still match "QA Engineer"
+    const match = await DS.RoleLibrary.findExact('QA-Engineer', 'acme');
+    expect(match?.id).toBe('rx4');
+  });
+
+  it('returns null for unknown role names', async () => {
+    const match = await DS.RoleLibrary.findExact('Unknown Role XYZ', 'acme');
+    expect(match).toBeNull();
+  });
+
+  it('returns null for wrong companyId', async () => {
+    const match = await DS.RoleLibrary.findExact('Telecom Analyst', 'wrong-company');
+    expect(match).toBeNull();
+  });
+
+  it('findByName (fuzzy) still finds exact match first — tier-1 wins in both', async () => {
+    // Both findByName and findExact must return rx1 for exact input "Telecom Analyst".
+    // This confirms findExact and findByName agree on tier-1 (exact) matches;
+    // they differ only on tier-2/3 (contains/word-overlap) matches.
+    const fuzzy = await DS.RoleLibrary.findByName('Telecom Analyst', 'acme');
+    const exact  = await DS.RoleLibrary.findExact('Telecom Analyst', 'acme');
+    expect(exact?.id).toBe('rx1');
+    expect(fuzzy?.id).toBe('rx1');
   });
 });
 

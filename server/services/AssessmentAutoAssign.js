@@ -26,7 +26,10 @@ export async function autoAssignPreAssessment(user) {
   if (!user.jobRole) return;
   try {
     const companyId = user.companyId || 'default';
-    const roleMatch = await RoleLibrary.findByName(user.jobRole, companyId);
+    // Use findExact (not findByName) so "Telecom Analyst Junior" never
+    // cross-assigns to employees under "Telecom Analyst" or vice-versa.
+    // Any single character/word difference = completely different role.
+    const roleMatch = await RoleLibrary.findExact(user.jobRole, companyId);
     if (!roleMatch) {
       console.warn(`[auto-assessment] No role library entry for "${user.jobRole}" — skipping`);
       return;
@@ -36,10 +39,12 @@ export async function autoAssignPreAssessment(user) {
     // truth once a role has been locked via the Role Library, and the same
     // full bank every other employee with this role already received.
     const approvedVersion = await QuestionBankVersions.getApproved(roleMatch.id);
-    const bank = approvedVersion ? approvedVersion.questions : (roleMatch.questionBank || []);
+    const rawBank = approvedVersion ? approvedVersion.questions : (roleMatch.questionBank || []);
+    // Only locked questions are delivered to employees as assessments
+    const bank = (rawBank || []).filter(q => q.locked === true || q.locked === 'true');
 
-    if (!bank?.length || bank.length < 5) {
-      console.warn(`[auto-assessment] Role "${user.jobRole}" has no usable question bank (${bank?.length || 0} q) — skipping`);
+    if (!bank?.length) {
+      console.warn(`[auto-assessment] Role "${user.jobRole}" has no locked questions (${bank?.length || 0} q) — skipping`);
       return;
     }
 

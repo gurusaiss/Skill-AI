@@ -1565,6 +1565,44 @@ async function setQuestionLock(req, res, locked) {
   }
 }
 
+// Bulk lock/unlock all questions in the role's current editable question bank.
+async function setAllQuestionsLock(req, res, locked) {
+  try {
+    const role = await RoleLibrary.getById(req.params.id);
+    if (!role) return res.status(404).json({ success: false, error: 'Role not found' });
+    const target = await resolveQuestionEditTarget(req.params.id);
+    const sourceBank = target.mode === 'legacy' ? (role.questionBank || []) : (target.version.questions || []);
+
+    const updated = sourceBank.map(q => ({
+      ...q,
+      locked,
+      lockedAt: locked ? new Date().toISOString() : null,
+      lockedBy: locked ? req.user.userId : null,
+    }));
+
+    if (target.mode === 'legacy') {
+      await RoleLibrary.update(req.params.id, { questionBank: updated, updatedAt: new Date().toISOString() });
+    } else {
+      await QuestionBankVersions.updateQuestions(target.version.id, updated);
+    }
+
+    await UserStore.logAuthEvent(locked ? 'all_questions_locked' : 'all_questions_unlocked', req.user.userId, {
+      roleId: role.id, roleName: role.roleName, count: updated.length,
+      versionId: target.mode === 'legacy' ? null : target.version.id,
+    });
+
+    res.json({ success: true, data: updated, count: updated.length });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+}
+
+// ── POST /api/roles/:id/questions/lock-all — lock all questions ──────────────
+router.post('/:id/questions/lock-all', authenticate, denyManager, requireRole(...EDIT_ROLES), requirePermission('questions.edit'), (req, res) => setAllQuestionsLock(req, res, true));
+
+// ── POST /api/roles/:id/questions/unlock-all — unlock all questions ──────────
+router.post('/:id/questions/unlock-all', authenticate, denyManager, requireRole(...EDIT_ROLES), requirePermission('questions.edit'), (req, res) => setAllQuestionsLock(req, res, false));
+
 // ── POST /api/roles/:id/questions/:qid/lock — lock one question ──────────────
 // Locked questions are preserved byte-identical by regenerate-questions
 // (never regenerated, never auto-replaced) until explicitly unlocked. Persists
@@ -2203,10 +2241,16 @@ async function handleLockAssessment(req, res) {
     const schedulingPolicy = mode === 'relative'
       ? { mode: 'relative', fixedDeadline: null, durationDays: Math.max(1, parseInt(durationDays) || 5) }
       : { mode: 'fixed', fixedDeadline: deadline ? new Date(deadline).toISOString() : null, durationDays: null };
-    const bank = approvedVersion.questions;
-    // Every employee gets the FULL approved bank — count is never sampled or
-    // subset — only the delivery ORDER is randomized per employee, and even
-    // that is resolved at read-time, not baked into stored question content.
+    // Only locked questions are published and delivered to employees as assessments.
+    // Unlocked draft questions are preserved in the bank for editing/regeneration but never assigned.
+    const lockedBank = (approvedVersion.questions || []).filter(q => q.locked === true || q.locked === 'true');
+    if (lockedBank.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No questions are locked. Please lock the questions you want to include in the assessment before approving.',
+      });
+    }
+    const bank = lockedBank;
     const qCount = bank.length;
 
     // Find all employees with this job role in this company. Normalized the

@@ -96,7 +96,9 @@ async function hydrateAssignmentsForAdmin(assessment, { shared = false } = {}) {
   if (!assessment?.questionBankVersionId || !Array.isArray(assessment.employeeAssignments)) return assessment;
   const version = await getApprovedBankCached(assessment.questionBankVersionId);
   if (!version?.questions?.length) return assessment;
-  const byId = new Map(version.questions.map(q => [q.id, q]));
+  const lockedQuestions = version.questions.filter(q => q.locked === true || q.locked === 'true');
+  const allowedBank = lockedQuestions.length > 0 ? lockedQuestions : version.questions;
+  const byId = new Map(allowedBank.map(q => [q.id, q]));
   const eaaRows = await EmployeeAssessmentAssignments.getByAssessment(assessment.id);
   const orderByUser = new Map(eaaRows.map(r => [r.user_id, r.question_order]));
   const windowByUser = new Map(eaaRows.map(r => [r.user_id, { startAt: r.start_at || null, dueAt: r.due_at || null }]));
@@ -113,7 +115,7 @@ async function hydrateAssignmentsForAdmin(assessment, { shared = false } = {}) {
       // early on any embedded array, so admin previews kept showing a stale
       // 10-question set for employees who will actually receive the full bank.
       if (isAssignmentLocked(ea) && Array.isArray(ea.questions)) return ea;
-      const order = orderByUser.get(ea.userId) || version.questions.map(q => q.id);
+      const order = orderByUser.get(ea.userId) || allowedBank.map(q => q.id);
       const resolved = order.map(qid => byId.get(qid)).filter(Boolean);
       if (resolved.length === 0) return ea;
       // shared mode: every employee of a version-backed assessment gets the
@@ -123,7 +125,7 @@ async function hydrateAssignmentsForAdmin(assessment, { shared = false } = {}) {
       if (shared) return { ...ea, questionIds: resolved.map(q => q.id) };
       return { ...ea, questions: resolved };
     }),
-    ...(shared ? { sharedQuestions: version.questions } : {}),
+    ...(shared ? { sharedQuestions: allowedBank } : {}),
   };
 }
 
@@ -170,7 +172,10 @@ async function resolveEmployeeQuestions(assessment, assignment, userId, prefetch
         getApprovedBankCached(assessment.questionBankVersionId),
       ]);
       if (version?.questions?.length) {
-        const byId = new Map(version.questions.map(q => [q.id, q]));
+        // Only locked questions are delivered to employees in assessments
+        const lockedQuestions = version.questions.filter(q => q.locked === true || q.locked === 'true');
+        const allowedBank = lockedQuestions.length > 0 ? lockedQuestions : version.questions;
+        const byId = new Map(allowedBank.map(q => [q.id, q]));
         const storedOrder = eaa?.question_order?.length ? eaa.question_order : [];
 
         // THE 10-question bug: the stored order was previously trusted as
@@ -182,16 +187,14 @@ async function resolveEmployeeQuestions(assessment, assignment, userId, prefetch
         // the full 30 and the assessment's own questionCount says 30.
         //
         // Fix: keep whatever ordering the employee already has for ids still
-        // present in the CURRENT approved version, then append any version
-        // questions that order doesn't cover yet. A first-ever resolve (no
-        // stored order) still gets the full bank in bank order, same as
-        // before. An order that's already complete round-trips unchanged.
+        // present in the CURRENT approved locked version, then append any locked
+        // questions that order doesn't cover yet.
         const orderedIds = storedOrder.filter(qid => byId.has(qid));
-        const missingIds = version.questions.map(q => q.id).filter(qid => !orderedIds.includes(qid));
+        const missingIds = allowedBank.map(q => q.id).filter(qid => !orderedIds.includes(qid));
         const order = [...orderedIds, ...missingIds];
 
         if (missingIds.length > 0) {
-          console.warn(`[assessment] question_order for assessment=${assessment.id} user=${userId} covered ${orderedIds.length}/${version.questions.length} approved questions — reconciled by appending ${missingIds.length} missing question(s).`);
+          console.warn(`[assessment] question_order for assessment=${assessment.id} user=${userId} covered ${orderedIds.length}/${allowedBank.length} approved locked questions — reconciled by appending ${missingIds.length} missing question(s).`);
           // Persist the reconciliation so it's stable across requests instead
           // of being silently recomputed every time — this is the only write
           // on an otherwise read path, fires only when there's something to
@@ -803,8 +806,14 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
       if (bankSubsetByRole.has(key)) return bankSubsetByRole.get(key);
       let result = null;
       try {
-        const roleForBank = await RoleLibrary.findByName(jobRole, companyId);
-        const fullBank = roleForBank?.questionBank || [];
+        // Use findExact (not findByName) so each role name is treated as
+        // unique: "Telecom Analyst Junior" must never resolve to the
+        // "Telecom Analyst" or "Senior Telecom Analyst" question bank.
+        // Any single character/word difference = a completely different role.
+        const roleForBank = await RoleLibrary.findExact(jobRole, companyId);
+        const rawBank = roleForBank?.questionBank || [];
+        const lockedOnly = rawBank.filter(q => q.locked === true || q.locked === 'true');
+        const fullBank = lockedOnly.length > 0 ? lockedOnly : rawBank;
         if (fullBank.length > 0) {
           const pctEasy   = easyPct   != null ? Number(easyPct)   : 34;
           const pctMedium = mediumPct != null ? Number(mediumPct) : 33;
@@ -1315,7 +1324,10 @@ router.get('/my', authenticate, async (req, res) => {
     try {
       const user = await UserStore.getUserById(req.user.userId);
       if (user?.jobRole) {
-        const roleMatch = await RoleLibrary.findByName(user.jobRole, user.companyId || 'default');
+        // Use findExact (not findByName) — an employee whose job role is
+        // "Telecom Analyst" must NOT get auto-assigned into the assessment
+        // bank of "Telecom Analyst Junior" just because the names share words.
+        const roleMatch = await RoleLibrary.findExact(user.jobRole, user.companyId || 'default');
         if (roleMatch) {
           // With re-approval versioning (roles.js handleLockAssessment), a
           // role can have more than one assessment record: old ones the

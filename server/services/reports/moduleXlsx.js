@@ -50,15 +50,15 @@ function kv(pairs) {
 
 // ── column sets ─────────────────────────────────────────────────────────────
 export const EMPLOYEE_HEADERS = [
-  'Employee ID', 'Employee Name', 'Job Role', 'Department', 'Manager', 'Module', 'Status', 'Assigned On', 'Started', 'Completed On',
+  'Employee ID', 'Employee Name', 'Email', 'Phone', 'Job Role', 'Department', 'Manager', 'Manager ID', 'Company', 'Module', 'Status', 'Assigned On', 'Started', 'Completed On',
   'Days Completed', 'Days Total', 'Progress %', 'Time Spent (min)', 'Questions Answered', 'Correct', 'Wrong', 'Not Answered', 'Score %', 'Rating',
 ];
 const employeeCells = (r, tz) => [
-  S(r.employeeId), S(r.name), S(r.jobRole), S(r.department), S(r.managerName), S(r.moduleTitle), S(r.status),
+  S(r.employeeId), S(r.name), S(r.email), S(r.phone), S(r.jobRole), S(r.department), S(r.managerName), S(r.managerId), S(r.companyName), S(r.moduleTitle), S(r.status),
   D(r.assignedAt, tz), D(r.startedAt, tz), D(r.completedAt, tz),
   N(r.daysCompleted), N(r.daysTotal), N(r.progressPct), MIN(r.timeSpentSec), N(r.questionsAnswered), N(r.correct), N(r.wrong), N(r.skipped), N(r.scorePct, '0.0'), ratingCell(r.rating),
 ];
-const EMPLOYEE_W = [14, 24, 22, 18, 22, 32, 13, 21, 21, 21, 10, 9, 10, 12, 11, 8, 8, 10, 9, 14];
+const EMPLOYEE_W = [14, 24, 26, 16, 22, 18, 22, 16, 22, 32, 13, 21, 21, 21, 10, 9, 10, 12, 11, 8, 8, 10, 9, 14];
 
 export const DAY_HEADERS = ['Employee ID', 'Employee Name', 'Module', 'Day', 'Day Title', 'Status', 'Started', 'Completed On', 'Time Spent (min)', 'Sections Opened', 'Attempts', 'Questions', 'Correct', 'Wrong', 'Not Answered', 'Score %'];
 const dayCells = (r, d, tz) => [
@@ -108,7 +108,7 @@ function write(sheets) {
 
 export function buildModuleWorkbook({ record: r, tz = reportTimezone(), now = new Date() }) {
   const overview = kv([
-    ['Employee ID', S(r.employeeId)], ['Employee name', S(r.name)], ['Email', S(r.email)], ['Job role', S(r.jobRole)], ['Department', S(r.department)], ['Manager', S(r.managerName)],
+    ['Employee ID', S(r.employeeId)], ['Employee name', S(r.name)], ['Email', S(r.email)], ['Phone', S(r.phone)], ['Job role', S(r.jobRole)], ['Department', S(r.department)], ['Manager', S(r.managerName)], ['Manager ID', S(r.managerId)],
     ['Company', S(r.companyName)], ['Module', S(r.moduleTitle)], ['Status', S(r.status)],
     ['Assigned on', D(r.assignedAt, tz)], ['Started', D(r.startedAt, tz)], ['Completed on', D(r.completedAt, tz)], ['Due date', D(r.dueAt, tz)],
     ['Days completed', S(`${r.daysCompleted} of ${r.daysTotal}`)], ['Progress %', N(r.progressPct)], ['Time spent', S(fmtSeconds(r.timeSpentSec))],

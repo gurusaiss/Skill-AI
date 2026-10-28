@@ -7,6 +7,7 @@ import { buildModuleWorkbook, buildConsolidatedModuleWorkbook, EMPLOYEE_HEADERS,
 import { renderModulePdf, renderConsolidatedModulePdf } from './modulePdf.js';
 import { buildModuleDocx, buildConsolidatedModuleDocx } from './moduleDocx.js';
 import { applyEngagementEvent, mergeProgressData, checkProgressData } from '../moduleEngagement.js';
+import { getRecencyScore, isMoreRecent } from './moduleReportLoader.js';
 import { FAKE_MODULE, FAKE_USERS, FAKE_MANAGER, fakeCompleted, fakeLegacyInProgress, fakeNoData, fakeMany, fakeResults } from './moduleReportFixtures.js';
 
 const BAD = /undefined|\bnull\b|NaN|Invalid Date/;
@@ -216,5 +217,86 @@ describe('Word exports', () => {
   it('consolidated renders', async () => {
     const buf = await buildConsolidatedModuleDocx({ rows: allLight, summary: summarizeRows(allLight), now: NOW });
     expect(xmlOf(buf)).toContain('Module Completion Report');
+  });
+});
+
+describe('employee details & deduplication', () => {
+  it('extracts employeeId and all personal details with fallbacks', () => {
+    const userWithAll = {
+      userId: 'usr-123',
+      employeeId: 'EMP-999',
+      name: 'John Doe',
+      email: 'john@example.com',
+      phone: '+1 555-0199',
+      jobRole: 'Software Engineer',
+      department: 'Engineering',
+      managerId: 'mgr-456',
+      companyName: 'Acme Corp',
+    };
+    const manager = { userId: 'mgr-456', name: 'Jane Boss', email: 'jane@example.com' };
+    const comp = { name: 'Acme Corp' };
+    const rec = buildEngagement({
+      assignment: { id: 'asgn-1', assigned_to_user: 'usr-123', status: 'completed' },
+      user: userWithAll,
+      manager,
+      company: comp,
+      light: true,
+      now: NOW,
+    });
+    expect(rec.employeeId).toBe('EMP-999');
+    expect(rec.name).toBe('John Doe');
+    expect(rec.email).toBe('john@example.com');
+    expect(rec.phone).toBe('+1 555-0199');
+    expect(rec.jobRole).toBe('Software Engineer');
+    expect(rec.department).toBe('Engineering');
+    expect(rec.managerName).toBe('Jane Boss');
+    expect(rec.managerId).toBe('mgr-456');
+    expect(rec.companyName).toBe('Acme Corp');
+  });
+
+  it('falls back gracefully when user fields vary', () => {
+    const userAlt = {
+      id: 'usr-alt',
+      employee_id: 'EMP-ALT',
+      phone_number: '1234567890',
+      job_role: 'Designer',
+    };
+    const rec = buildEngagement({
+      assignment: { id: 'asgn-2', assigned_to_user: 'usr-alt', status: 'in_progress' },
+      user: userAlt,
+      light: true,
+      now: NOW,
+    });
+    expect(rec.employeeId).toBe('EMP-ALT');
+    expect(rec.phone).toBe('1234567890');
+    expect(rec.jobRole).toBe('Designer');
+  });
+
+  it('isMoreRecent correctly picks the latest active/logout phase over older phases', () => {
+    // 1. Assigned phase (initial assignment, no progress)
+    const assignedItem = {
+      assignment: { id: 'a1', assigned_to_user: 'u1', status: 'assigned', assigned_at: '2026-10-01T08:00:00Z' },
+      row: { status: 'Not started', progressPct: 0, assignedAt: '2026-10-01T08:00:00Z' },
+    };
+
+    // 2. In progress phase (employee logged in, started, did some work, logged out at 5pm)
+    const inProgressItem = {
+      assignment: { id: 'a2', assigned_to_user: 'u1', status: 'in_progress', updated_at: '2026-10-02T17:00:00Z', progress: 50 },
+      row: { status: 'In progress', progressPct: 50, startedAt: '2026-10-02T09:00:00Z', updated_at: '2026-10-02T17:00:00Z' },
+    };
+
+    // 3. Completed phase (employee completed the module on day 3)
+    const completedItem = {
+      assignment: { id: 'a3', assigned_to_user: 'u1', status: 'completed', completed_at: '2026-10-03T14:00:00Z', progress: 100 },
+      row: { status: 'Completed', progressPct: 100, completedAt: '2026-10-03T14:00:00Z' },
+    };
+
+    // In progress is more recent than initial assigned
+    expect(isMoreRecent(inProgressItem, assignedItem)).toBe(true);
+    expect(isMoreRecent(assignedItem, inProgressItem)).toBe(false);
+
+    // Completed is more recent than in progress
+    expect(isMoreRecent(completedItem, inProgressItem)).toBe(true);
+    expect(isMoreRecent(inProgressItem, completedItem)).toBe(false);
   });
 });

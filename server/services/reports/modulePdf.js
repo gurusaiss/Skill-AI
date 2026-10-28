@@ -203,8 +203,10 @@ export async function renderModulePdf({ record: r, now = new Date(), tz = report
   const L = new Layout({ title: `Module Engagement Report - ${safe(r.name, 'Employee')} - ${safe(r.moduleTitle, 'Module')}`, company: r.companyName || 'SkillForge', generatedText: gen(now, tz) });
   L.title1('Module Engagement Report', `${safe(r.name)}  |  ${safe(r.moduleTitle)}`);
   L.kvGrid([
-    { label: 'Employee ID', value: r.employeeId }, { label: 'Job role', value: r.jobRole }, { label: 'Department', value: r.department },
-    { label: 'Manager', value: r.managerName }, { label: 'Module', value: r.moduleTitle }, { label: 'Status', value: r.status },
+    { label: 'Employee ID', value: r.employeeId }, { label: 'Employee name', value: r.name }, { label: 'Email', value: r.email },
+    { label: 'Phone', value: r.phone }, { label: 'Job role', value: r.jobRole }, { label: 'Department', value: r.department },
+    { label: 'Manager', value: r.managerName }, { label: 'Manager ID', value: r.managerId }, { label: 'Company', value: r.companyName },
+    { label: 'Module', value: r.moduleTitle }, { label: 'Status', value: r.status },
   ], 3);
 
   L.section('At a glance', 48);
@@ -275,9 +277,35 @@ export async function renderConsolidatedModulePdf({ rows, summary = {}, company 
   L.text(`Total time spent: ${fmtSeconds(summary.totalTimeSec)}`, { size: 9, color: C.muted });
   L.section('Employee modules', 40);
   L.table(
-    [{ header: 'Employee ID', w: 54 }, { header: 'Name', w: 96 }, { header: 'Module', w: 104 }, { header: 'Completed', w: 58 }, { header: 'Days', w: 32, align: 'center' }, { header: 'Time', w: 44 }, { header: 'Score', w: 38, align: 'right' }, { header: 'Rating', w: 54 }],
-    rows.map(r => [r.employeeId, r.name, r.moduleTitle, fmtDate(r.completedAt, tz, { time: false }), `${r.daysCompleted}/${r.daysTotal}`, fmtSeconds(r.timeSpentSec), r.scorePct === null ? DASH : fmtPct(r.scorePct, 1), { text: r.rating || DASH, bold: true, color: ratingColor(r.rating) }]),
-    { size: 8, emptyText: 'No records match the selected filters.' },
+    [
+      { header: 'Employee ID', w: 42 },
+      { header: 'Name', w: 54 },
+      { header: 'Email', w: 58 },
+      { header: 'Role', w: 46 },
+      { header: 'Department', w: 42 },
+      { header: 'Module', w: 60 },
+      { header: 'Status', w: 38 },
+      { header: 'Completed', w: 44 },
+      { header: 'Days', w: 26, align: 'center' },
+      { header: 'Time', w: 34 },
+      { header: 'Score', w: 32, align: 'right' },
+      { header: 'Rating', w: 39 },
+    ],
+    rows.map(r => [
+      r.employeeId,
+      r.name,
+      r.email,
+      r.jobRole,
+      r.department,
+      r.moduleTitle,
+      r.status,
+      fmtDate(r.completedAt, tz, { time: false }),
+      `${r.daysCompleted}/${r.daysTotal}`,
+      fmtSeconds(r.timeSpentSec),
+      r.scorePct === null ? DASH : fmtPct(r.scorePct, 1),
+      { text: r.rating || DASH, bold: true, color: ratingColor(r.rating) }
+    ]),
+    { size: 7.5, emptyText: 'No records match the selected filters.' },
   );
   return L.finish();
 }

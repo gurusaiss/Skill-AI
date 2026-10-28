@@ -967,6 +967,22 @@ export const RoleLibrary = {
     }
     return best;
   },
+  // Strict exact-match lookup for ASSESSMENT ASSIGNMENT — unlike findByName's
+  // fuzzy tiers (contains/word-overlap), this ONLY matches when the
+  // normalized names are byte-for-byte identical. Used exclusively in
+  // assessment assignment code paths so that "Telecom Analyst Junior"
+  // is never confused with "Telecom Analyst" or "Senior Telecom Analyst"
+  // even though they share many words. Any single character/word difference
+  // = completely different job role = no assessment cross-assignment.
+  // Do NOT use for JD/skills/module lookup — those must remain on findByName.
+  async findExact(roleName, companyId) {
+    const all = await this.getByCompany(companyId);
+    if (!roleName?.trim() || !all?.length) return null;
+    const norm = (s) => (s || '').toLowerCase().trim().replace(/[-_/]+/g, ' ').replace(/\s+/g, ' ');
+    const q = norm(roleName);
+    return all.find(r => norm(r.roleName) === q) || null;
+  },
+
   // Exact-duplicate check for ROLE CREATION ONLY — completely separate from
   // findByName's intentional fuzzy matching (contains/word-overlap tiers),
   // which is correct and must stay unchanged for its actual use cases

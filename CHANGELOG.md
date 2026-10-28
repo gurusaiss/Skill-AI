@@ -4,6 +4,52 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-10-28 — Four major updates: Locked questions only, complete module report details, single latest status, and exact role-name matching for assessment assignment
+
+4. **Exact role-name matching for assessment assignment (no cross-role spillover):**
+   - Any single character/word difference in a job role name = completely different role. "Telecom Analyst Junior" must never receive the assessment bank created for "Telecom Analyst" or "Senior Telecom Analyst", even if they share ≥50% of their words.
+   - Root cause: `RoleLibrary.findByName()` has intentional fuzzy tiers (contains + word-overlap ≥50%) that are correct for JD/skills/module matching but wrong for assessment assignment.
+   - Fix: Added a new `RoleLibrary.findExact(roleName, companyId)` method to `server/services/DataStore.js` that performs **only** case-insensitive, whitespace/separator-normalized exact matching — no contains or overlap tiers.
+   - Replaced `findByName` with `findExact` in all three assessment-assignment code paths:
+     - `server/services/AssessmentAutoAssign.js` — new employee auto-assignment on account creation
+     - `server/routes/assessment.js` `getBankSubsetForRole` — question bank subset selection for bulk assessment generation
+     - `server/routes/assessment.js` lazy auto-assign — self-healing assignment check on every assessment page load
+   - `findByName` is **preserved unchanged** for JD/skills/module lookup paths (auth, users, roles search endpoint) where fuzzy matching is correct.
+   - The `handleLockAssessment` employee-filtering in `server/routes/roles.js` already used exact normalization (`normalizeRoleName` equality) — no change needed there.
+   - Added 10 new regression tests in `server/services/assessmentRoster.test.js` verifying: exact match by name, that "Telecom Analyst Junior" ≠ "Telecom Analyst", case-insensitivity, separator normalization (hyphen→space), null for unknown roles, null for wrong company, and that `findByName` (fuzzy) is documented to behave differently from `findExact`.
+   - Files: `server/services/DataStore.js`, `server/services/AssessmentAutoAssign.js`, `server/routes/assessment.js`, `server/services/assessmentRoster.test.js`.
+
+Tests: All 28 server test files pass (343 tests); `check:scroll`, `check:layout` and client production build pass.
+
+---
+
+## 2026-10-28 — Three major updates: Locked questions only in assessments, module reports complete employee details, and single latest status per employee-module
+
+1. **Assessment Question Locking (Only locked questions go to employees):**
+   - When generating and approving question banks, only locked questions (`q.locked === true`) are included in approved assessments and delivered to employees.
+   - Server enforces this in `server/routes/roles.js` (`handleLockAssessment` rejects approvals with 0 locked questions and strips unlocked questions), `server/services/AssessmentAutoAssign.js` (filters only locked questions), and `server/routes/assessment.js` (`resolveEmployeeQuestions` only delivers locked questions; removed rogue append of unlocked questions via `missingIds`).
+   - Added bulk lock/unlock endpoints (`POST /api/roles/:id/questions/lock-all` and `unlock-all`).
+   - Added "Lock All" and "Unlock All" buttons to the question bank toolbar in `RoleLibrary.jsx`.
+   - Updated `ApproveModal` to display the exact count of locked questions, show warnings and disable approval if 0 questions are locked, and provide a 1-click "Lock All Questions Now" button.
+   - Files: `server/routes/roles.js`, `server/routes/assessment.js`, `server/services/AssessmentAutoAssign.js`, `client/src/pages/admin/RoleLibrary.jsx`.
+
+2. **Module Reports Employee ID & Complete Personal Details:**
+   - In module report downloads and UI views, resolved missing `employeeId` and added complete personal details across all export formats (Excel, PDF, Word, ZIP).
+   - In `server/services/reports/moduleReportData.js`, extracted `employeeId` with comprehensive fallbacks (`u.employeeId`, `u.employee_id`, `u.empId`, `u.emp_id`, `a.employeeId`, `u.userId`, `u.id`), plus `name`, `email`, `phone`, `jobRole`, `department`, `managerName`, `managerId`, and `companyName`.
+   - In `server/services/reports/moduleReportLoader.js`, indexed `loadUsers()` by `userId`, `id`, `email` (lowercased), `learningUUID`, `employeeId`, and `employee_id`.
+   - Updated `moduleXlsx.js`, `modulePdf.js`, and `moduleDocx.js` to include `Employee ID`, `Name`, `Email`, `Phone`, `Job Role`, `Department`, `Manager`, `Manager ID`, and `Company` in overview grids and consolidated tables.
+   - Files: `server/services/reports/moduleReportData.js`, `server/services/reports/moduleReportLoader.js`, `server/services/reports/moduleXlsx.js`, `server/services/reports/modulePdf.js`, `server/services/reports/moduleDocx.js`.
+
+3. **Single Recent/Latest Status in Module Reports (No Phase Duplication):**
+   - Eliminated duplicate rows showing multiple phases (`not_started`, `in_progress`, `completed`, `ongoing`) for the same employee and module.
+   - Implemented intelligent deduplication and recency scoring in `loadModuleRows()`: compares interaction timestamps (`updatedAt`, `completedAt`, `lastActiveAt`, `startedAt`), status weights (`Completed` > `In progress` > `Not started`), progress percentage, and days completed.
+   - Exactly one status—the employee's last updated/logout status—is shown in both the web UI table and all downloaded reports (Excel, PDF, Word, ZIP).
+   - Files: `server/services/reports/moduleReportLoader.js`, `server/services/reports/moduleReports.test.js`.
+
+Tests: All 28 server test files pass (333 tests); `check:scroll`, `check:layout` and client production build pass (343 tests total after Fix 4 adds 10 more).
+
+---
+
 ## 2026-10-20 — Six assessment fixes: emails, tab-switch refresh, answer case, multiple correct answers, pending employees in reports, view-only Role Library for managers
 
 1. **Missing employee emails in reports:** the email was taken from the saved assignment/report first and the live user only as a backup, and the backup lookup could miss. Reports now read the live user's email first, fill in any missing users one by one, and the Reports list now returns the email too. Files: `server/services/reports/reportLoader.js`, `reportData.js`, `moduleReportLoader.js`, `server/routes/assessment.js`.
