@@ -96,8 +96,9 @@ async function hydrateAssignmentsForAdmin(assessment, { shared = false } = {}) {
   if (!assessment?.questionBankVersionId || !Array.isArray(assessment.employeeAssignments)) return assessment;
   const version = await getApprovedBankCached(assessment.questionBankVersionId);
   if (!version?.questions?.length) return assessment;
-  const lockedQuestions = version.questions.filter(q => q.locked === true || q.locked === 'true');
-  const allowedBank = lockedQuestions.length > 0 ? lockedQuestions : version.questions;
+  // Only locked questions are delivered/visible in the assessment.
+  // Never fall back to unlocked questions.
+  const allowedBank = version.questions.filter(q => q.locked === true || q.locked === 'true');
   const byId = new Map(allowedBank.map(q => [q.id, q]));
   const eaaRows = await EmployeeAssessmentAssignments.getByAssessment(assessment.id);
   const orderByUser = new Map(eaaRows.map(r => [r.user_id, r.question_order]));
@@ -172,9 +173,9 @@ async function resolveEmployeeQuestions(assessment, assignment, userId, prefetch
         getApprovedBankCached(assessment.questionBankVersionId),
       ]);
       if (version?.questions?.length) {
-        // Only locked questions are delivered to employees in assessments
-        const lockedQuestions = version.questions.filter(q => q.locked === true || q.locked === 'true');
-        const allowedBank = lockedQuestions.length > 0 ? lockedQuestions : version.questions;
+        // Only locked questions are delivered to employees in assessments.
+        // If NO questions are marked locked, fail-safe to empty array (never leak unlocked questions).
+        const allowedBank = version.questions.filter(q => q.locked === true || q.locked === 'true');
         const byId = new Map(allowedBank.map(q => [q.id, q]));
         const storedOrder = eaa?.question_order?.length ? eaa.question_order : [];
 
@@ -232,11 +233,14 @@ async function assignEmployeesToAssessment({ assessmentId, users, startAt, dueAt
   let templateQuestions = null;
   if (versionBacked) {
     const version = await getApprovedBankCached(assessment.questionBankVersionId);
-    bankIds = (version?.questions || []).map(q => q.id);
-    if (bankIds.length === 0) return { error: 'This assessment has no questions to assign', status: 400 };
+    const lockedVersionQuestions = (version?.questions || []).filter(q => q.locked === true || q.locked === 'true');
+    bankIds = lockedVersionQuestions.map(q => q.id);
+    if (bankIds.length === 0) return { error: 'This assessment has no locked questions to assign', status: 400 };
   } else {
-    templateQuestions = roster.find(ea => Array.isArray(ea.questions) && ea.questions.length > 0)?.questions || null;
-    if (!templateQuestions) return { error: 'This assessment has no questions to assign', status: 400 };
+    const rawTemplate = roster.find(ea => Array.isArray(ea.questions) && ea.questions.length > 0)?.questions || null;
+    const lockedTemplate = (rawTemplate || []).filter(q => q.locked === true || q.locked === 'true');
+    templateQuestions = lockedTemplate.length > 0 ? lockedTemplate : rawTemplate;
+    if (!templateQuestions || templateQuestions.length === 0) return { error: 'This assessment has no questions to assign', status: 400 };
   }
 
   const nowIso = new Date().toISOString();
@@ -812,8 +816,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), requirePermissio
         // Any single character/word difference = a completely different role.
         const roleForBank = await RoleLibrary.findExact(jobRole, companyId);
         const rawBank = roleForBank?.questionBank || [];
-        const lockedOnly = rawBank.filter(q => q.locked === true || q.locked === 'true');
-        const fullBank = lockedOnly.length > 0 ? lockedOnly : rawBank;
+        const fullBank = rawBank.filter(q => q.locked === true || q.locked === 'true');
         if (fullBank.length > 0) {
           const pctEasy   = easyPct   != null ? Number(easyPct)   : 34;
           const pctMedium = mediumPct != null ? Number(mediumPct) : 33;
@@ -2409,9 +2412,22 @@ For EACH weak area, write one concrete, specific improvement recommendation (1-2
       });
     }
 
-    // ── Auto-generate + auto-assign module (non-blocking) ─────────────────────
+    // ── Post-assessment training module generation (opt-in / policy gated) ───────
+    // Check if post-assessment module generation is enabled. By default, competency
+    // assessments should not silently generate and force unvetted training modules
+    // onto employees unless explicitly configured in assessment.autoGenerateModules
+    // or company platform_settings.autoPostAssessmentModules === true.
     setImmediate(async () => {
       try {
+        const companySettings = await PlatformSettings.getByCompany(req.user.companyId || 'default');
+        const autoModuleEnabled = assessment.autoGenerateModules === true ||
+                                  companySettings?.general?.autoPostAssessmentModules === true;
+
+        if (!autoModuleEnabled) {
+          console.log(`[post-assessment] Skipping auto module generation for assessment=${req.params.id} (not enabled).`);
+          return;
+        }
+
         const targetUserId = req.user.userId;
         console.log(`[auto-assign] Starting for user=${targetUserId} report=${report.id}`);
 

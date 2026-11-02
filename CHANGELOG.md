@@ -4,6 +4,22 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
+## 2026-11-02 — Competency assessment controls: Approval gating, strict locked questions, post-assessment module policy
+
+1. **Assessment Assignment Approval Gate:**
+   - In `server/services/AssessmentAutoAssign.js`, removed the unapproved draft fallback that automatically assigned raw question banks when employees joined or were created. Assessments now strictly require an officially approved question bank version (`QuestionBankVersions.getApproved`).
+   - If a role does not yet have an approved question bank version, automatic assignment safely skips and waits until an admin explicitly reviews, locks, and approves the role in the Role Library.
+
+2. **Strict Question Locking (No Unlocked Question Leakage):**
+   - In `server/routes/assessment.js`, tightened `resolveEmployeeQuestions`, `hydrateAssignmentsForAdmin`, and `assignEmployeesToAssessment` to strictly deliver `locked: true` questions.
+   - Removed legacy fallbacks (`allowedBank = locked.length > 0 ? locked : rawBank`) that allowed unlocked draft questions to leak into assessments when none were marked locked.
+
+3. **Post-Assessment Training Module Policy Gate:**
+   - In `server/routes/assessment.js` (`POST /:id/submit`), gated the automatic post-assessment module generation behind explicit policy flags (`assessment.autoGenerateModules === true` or `platform_settings.general.autoPostAssessmentModules === true`).
+   - Prevents unsolicited, unvetted training modules from automatically appearing on employee dashboards after assessment completion unless explicitly desired by the organization.
+
+---
+
 ## 2026-10-28 — Four major updates: Locked questions only, complete module report details, single latest status, and exact role-name matching for assessment assignment
 
 4. **Exact role-name matching for assessment assignment (no cross-role spillover):**
