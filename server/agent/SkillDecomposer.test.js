@@ -8,6 +8,7 @@ import SkillDecomposer from './SkillDecomposer.js';
 describe('SkillDecomposer Property Tests', () => {
   let decomposer;
   const VALID_DOMAINS = [
+    'frontend_development',
     'backend_development',
     'machine_learning',
     'ui_ux_design',

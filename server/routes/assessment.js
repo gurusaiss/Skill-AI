@@ -2519,7 +2519,6 @@ For EACH weak area, write one concrete, specific improvement recommendation (1-2
         const jdContext = (user?.jobDescription || '').slice(0, 2000);
         const jdSkillsCtx = (user?.jdSkills || []).join(', ');
         const jobRole = report.jobRole || user?.jobRole || 'Professional';
-        const score = report.score || 0;
         const classification = report.performanceClassification?.label || 'Average';
 
         // ── Adaptive learning-path sizing (enterprise LMS pattern) ──────────
