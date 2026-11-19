@@ -109,19 +109,115 @@ export default function Assessment() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [report, setReport] = useState(null); // set after submit or if already submitted
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
-  // timer
+  // timer — absolute deadline architecture (immune to tab switching, browser suspension, and reloads)
   const [timeLeft, setTimeLeft] = useState(null);
-  const timerRef = useRef(null);
+  const deadlineRef = useRef(null);
+  const timerIntervalRef = useRef(null);
+  const loadedAssessmentIdRef = useRef(null);
+  const syncTimeoutRef = useRef(null);
+
+  // ── Network online/offline monitoring ────────────────────────────────────
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      // Trigger background sync of local draft answers
+      if (assessment?.id && Object.keys(answers).length > 0) {
+        authFetch(`/api/assessments/${assessment.id}/progress`, {
+          method: 'POST',
+          body: JSON.stringify({ answers }),
+        }).catch(() => {});
+      }
+    };
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [assessment?.id, answers]);
+
+  // ── submission ───────────────────────────────────────────────────────────
+
+  const handleSubmitFinal = useCallback(async () => {
+    if (!assessment || submitting) return;
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    setShowConfirm(false);
+    setSubmitting(true);
+    try {
+      const questions = assessment.questions || [];
+      const answersPayload = questions.map((_, idx) => ({
+        questionIndex: idx,
+        answer: answers[idx] ?? '',
+      }));
+
+      const id = assessment.id || assessment._id;
+      const result = await authFetch(`/api/assessments/${id}/submit`, {
+        method: 'POST',
+        body: JSON.stringify({ answers: answersPayload }),
+      });
+
+      const scoring = result?.scoring || result?.report || result;
+      setReport(scoring);
+      if (draftKey) { try { localStorage.removeItem(draftKey); } catch {} }
+      const deadlineKey = `assessment_deadline_${id}`;
+      try { localStorage.removeItem(deadlineKey); } catch {}
+    } catch (e) {
+      setError(e.message || 'Failed to submit assessment');
+      setSubmitting(false);
+    }
+  }, [assessment, answers, submitting]);
+
+  // ── Timer tick & update from absolute deadline ───────────────────────────
+
+  const syncTimerWithDeadline = useCallback(() => {
+    if (!deadlineRef.current || report) return;
+    const nowMs = Date.now();
+    const remaining = Math.max(0, Math.round((deadlineRef.current - nowMs) / 1000));
+    setTimeLeft(remaining);
+    if (remaining <= 0) {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      handleSubmitFinal();
+    }
+  }, [report, handleSubmitFinal]);
+
+  // Visibility and focus: immediately resynchronize timer against wall-clock deadline
+  useEffect(() => {
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        syncTimerWithDeadline();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+    window.addEventListener('focus', onVisibilityOrFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+      window.removeEventListener('focus', onVisibilityOrFocus);
+    };
+  }, [syncTimerWithDeadline]);
+
+  // Running interval that counts down against deadline
+  useEffect(() => {
+    if (deadlineRef.current && !report) {
+      syncTimerWithDeadline();
+      timerIntervalRef.current = setInterval(syncTimerWithDeadline, 1000);
+    }
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    };
+  }, [deadlineRef.current, report, syncTimerWithDeadline]);
 
   // ── load assessment ──────────────────────────────────────────────────────
 
-  // Keyed on the stable user id, NOT the user object: AuthContext refreshes
-  // `user` whenever the browser tab regains focus, and depending on the object
-  // reloaded the whole assessment (spinner, timer reset) on every tab switch.
   const userId = user?.userId;
   useEffect(() => {
     if (!userId) { navigate('/'); return; }
+    // Only load if not already loaded into memory for this assessment id
+    const targetKey = `${userId}_${assessmentId || 'default'}`;
+    if (loadedAssessmentIdRef.current === targetKey && assessment) return;
     loadAssessment();
   }, [userId, assessmentId]);
 
@@ -137,7 +233,7 @@ export default function Assessment() {
         found = list.find(a => String(a.id) === String(assessmentId) || String(a._id) === String(assessmentId));
       }
       if (!found) {
-        found = list.find(a => a.status === 'assigned' || a.status === 'pending');
+        found = list.find(a => a.status === 'assigned' || a.status === 'in_progress' || a.status === 'pending');
       }
       if (!found && list.length > 0) found = list[0];
 
@@ -148,19 +244,54 @@ export default function Assessment() {
       }
 
       setAssessment(found);
+      const aid = found.id || found._id;
+      loadedAssessmentIdRef.current = `${userId}_${assessmentId || 'default'}`;
 
       // If already submitted, surface the report directly
       const scoring = found.submission?.scoring || found.scoring;
       if ((found.status === 'submitted' || found.status === 'completed') && scoring) {
         setReport(scoring);
+        setLoading(false);
+        return;
       }
 
-      // Init timer — only if visible, not expired, not submitted
+      // Initialize persistent deadline timer
       if (!scoring && found.isVisible !== false && found.status !== 'expired') {
-        setTimeLeft(normalizeDuration(found.duration) * 60);
-        // Record when the attempt really began (powers "started" / "time taken" in
-        // reports). Server side it is idempotent; a failure must never block the test.
-        authFetch(`/api/assessments/${found.id || found._id}/start`, { method: 'POST' }).catch(() => {});
+        const timerKey = `assessment_deadline_${aid}`;
+        const totalDurationSec = normalizeDuration(found.duration) * 60;
+        const nowMs = Date.now();
+        let targetDeadline = null;
+
+        // 1. Check local persistent deadline
+        try {
+          const stored = localStorage.getItem(timerKey);
+          if (stored) {
+            const parsed = Number(stored);
+            if (Number.isFinite(parsed) && parsed > nowMs - 24 * 3600 * 1000) {
+              targetDeadline = parsed;
+            }
+          }
+        } catch {}
+
+        // 2. Check server start time
+        if (!targetDeadline && found.attemptStartedAt) {
+          const serverStartMs = new Date(found.attemptStartedAt).getTime();
+          if (Number.isFinite(serverStartMs) && serverStartMs > 0) {
+            targetDeadline = serverStartMs + totalDurationSec * 1000;
+          }
+        }
+
+        // 3. Brand new attempt start
+        if (!targetDeadline) {
+          targetDeadline = nowMs + totalDurationSec * 1000;
+          try { localStorage.setItem(timerKey, String(targetDeadline)); } catch {}
+          // Inform server of start
+          authFetch(`/api/assessments/${aid}/start`, { method: 'POST' }).catch(() => {});
+        }
+
+        deadlineRef.current = targetDeadline;
+        const remaining = Math.max(0, Math.round((targetDeadline - nowMs) / 1000));
+        setTimeLeft(remaining);
       }
     } catch (e) {
       setError(e.message || 'Failed to load assessment');
@@ -169,43 +300,42 @@ export default function Assessment() {
     }
   };
 
-  // ── timer ────────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (timeLeft === null || report) return;
-    if (timeLeft <= 0) {
-      handleSubmitFinal();
-      return;
-    }
-    timerRef.current = setTimeout(() => setTimeLeft(t => t - 1), 1000);
-    return () => clearTimeout(timerRef.current);
-  }, [timeLeft, report]);
-
   // ── answer handling ──────────────────────────────────────────────────────
 
-  // A paper can now be hundreds of questions spread over many pages, so an
-  // accidental refresh or closed tab must not discard the work. Kept local
-  // (no server round-trip per keystroke); cleared once submitted.
   const draftKey = assessment?.id ? `assessment_draft_${assessment.id}` : null;
 
   useEffect(() => {
     if (!draftKey || report) return;
     try {
       const saved = localStorage.getItem(draftKey);
+      let localDraft = {};
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === 'object') {
-          setAnswers(prev => (Object.keys(prev).length > 0 ? prev : parsed));
-        }
+        if (parsed && typeof parsed === 'object') localDraft = parsed;
       }
-    } catch { /* corrupt draft — start clean rather than blocking the page */ }
-  }, [draftKey, report]);
+      const serverDraft = assessment?.draftAnswers && typeof assessment.draftAnswers === 'object' ? assessment.draftAnswers : {};
+      const merged = { ...serverDraft, ...localDraft };
+      if (Object.keys(merged).length > 0) {
+        setAnswers(prev => (Object.keys(prev).length > 0 ? prev : merged));
+      }
+    } catch { /* start clean */ }
+  }, [draftKey, report, assessment]);
 
   const handleAnswer = (idx, value) => {
     setAnswers(prev => {
       const next = { ...prev, [idx]: value };
       if (draftKey) {
-        try { localStorage.setItem(draftKey, JSON.stringify(next)); } catch { /* quota/private mode */ }
+        try { localStorage.setItem(draftKey, JSON.stringify(next)); } catch {}
+      }
+      // Debounced background sync to server
+      if (assessment?.id) {
+        clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = setTimeout(() => {
+          authFetch(`/api/assessments/${assessment.id}/progress`, {
+            method: 'POST',
+            body: JSON.stringify({ answers: next }),
+          }).catch(() => {});
+        }, 800);
       }
       return next;
     });
@@ -218,40 +348,6 @@ export default function Assessment() {
       return ans !== undefined && ans !== null && String(ans).trim() !== '';
     });
   };
-
-  // ── submission ───────────────────────────────────────────────────────────
-
-  const handleSubmitFinal = useCallback(async () => {
-    if (!assessment) return;
-    clearTimeout(timerRef.current);
-    setShowConfirm(false);
-    setSubmitting(true);
-    try {
-      // Build ordered answers array — include ALL questions (even unanswered ones)
-      const questions = assessment.questions || [];
-      const answersPayload = questions.map((_, idx) => ({
-        questionIndex: idx,
-        answer: answers[idx] ?? '',   // empty string for unanswered → shows "(no answer)" correctly
-      }));
-
-      const id = assessment.id || assessment._id;
-      const result = await authFetch(`/api/assessments/${id}/submit`, {
-        method: 'POST',
-        body: JSON.stringify({ answers: answersPayload }),
-      });
-
-      // Backend returns { report, scoring } — try both paths
-      const scoring = result?.scoring || result?.report || result;
-      setReport(scoring);
-      // Submitted successfully — the local draft has served its purpose.
-      if (draftKey) { try { localStorage.removeItem(draftKey); } catch { /* ignore */ } }
-
-      // Module generation + assignment now happens automatically on the server after submit
-    } catch (e) {
-      setError(e.message || 'Failed to submit assessment');
-      setSubmitting(false);
-    }
-  }, [assessment, answers, user]);
 
   // ── timer color ──────────────────────────────────────────────────────────
 
@@ -666,6 +762,12 @@ export default function Assessment() {
       )}
 
       <div className="w-full px-3 sm:px-5 lg:px-6 2xl:px-8 py-4 sm:py-6">
+        {!isOnline && (
+          <div className="mb-4 flex items-center gap-2 p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-sm font-semibold">
+            <span>⚠️</span>
+            <span>You are currently offline. Your timer and answers remain safely preserved on this device.</span>
+          </div>
+        )}
         {/* Header */}
         <div className="mb-6">
           <div className="flex flex-wrap items-center gap-2 mb-3">

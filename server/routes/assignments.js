@@ -375,9 +375,10 @@ router.get('/dashboard', authenticate, async (req, res) => {
     const userId = req.user.userId || req.user.id;
 
     const allAssignments = await UserStore.getAssignments({});
-    const userAssignments = allAssignments.filter(
+    let userAssignments = allAssignments.filter(
       a => a.assigned_to_user === userId || a.assigned_by === userId
     );
+    userAssignments = deduplicateAssignmentsList(userAssignments);
 
     // Overdue is derived from due_date (status 'overdue' is never written).
     // Cancelled assignments are excluded from avgProgress and overdue.
@@ -567,6 +568,30 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
+function deduplicateAssignmentsList(list) {
+  if (!Array.isArray(list) || list.length <= 1) return list || [];
+  const map = new Map();
+  const statusRank = { completed: 3, in_progress: 2, ongoing: 2, assigned: 1, pending: 1, cancelled: 0 };
+  for (const a of list) {
+    const key = `${a.assigned_to_user || a.userId}:::${a.assignable_id || a.module_id || a.id}`;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, a);
+    } else {
+      const candRank = statusRank[String(a.status || '').toLowerCase()] ?? 1;
+      const existRank = statusRank[String(existing.status || '').toLowerCase()] ?? 1;
+      if (candRank > existRank) {
+        map.set(key, a);
+      } else if (candRank === existRank) {
+        const candTime = new Date(a.updated_at || a.completed_at || a.created_at || 0).getTime();
+        const existTime = new Date(existing.updated_at || existing.completed_at || existing.created_at || 0).getTime();
+        if (candTime >= existTime) map.set(key, a);
+      }
+    }
+  }
+  return [...map.values()];
+}
+
 /**
  * GET /api/assignments - Get all assignments (with filters)
  */
@@ -579,18 +604,6 @@ router.get('/', authenticate, async (req, res) => {
     if (status) filters.status = status;
     if (type) filters.type = type;
 
-    // Restrict non-admins to their own assignments (or, for managers, their direct reports').
-    // A client-supplied `userId` must never let a non-admin read another user's assignments.
-    //
-    // Was `req.user.role === 'admin' / === 'manager'` — a raw role check that
-    // (a) sent anyone whose manager capability comes only from an access
-    // grant (primary role employee, accesses:['manager']) into the plain
-    // "restricted to self" branch below, so their whole team's assignments
-    // vanished, and (b) sourced the team from getManagerEmployees() alone,
-    // missing anyone visible only via Groups membership. This is the route
-    // ManagerDashboard's employee-detail click and dashboard stats depend on
-    // (fetchJSON('/api/assignments') / '?userId=X'), so a Group-scoped
-    // manager saw "Failed to load assignments" opening any employee's card.
     if (req.user.role === 'admin' || req.user.role === 'superadmin') {
       if (userId) filters.user_id = userId;
     } else if (canActAsManager(req.user)) {
@@ -608,6 +621,7 @@ router.get('/', authenticate, async (req, res) => {
           employeeIds.includes(a.assigned_to_user) ||
           a.assigned_by === req.user.userId
         );
+        filtered = deduplicateAssignmentsList(filtered);
         filtered = await enrichAssignmentTitles(filtered);
         return res.json({ success: true, data: { assignments: filtered, count: filtered.length }, error: null });
       }
@@ -629,6 +643,7 @@ router.get('/', authenticate, async (req, res) => {
       );
     }
 
+    result = deduplicateAssignmentsList(result);
     // Enrich assignments missing title/module_name by looking up the module
     result = await enrichAssignmentTitles(result);
 

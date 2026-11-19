@@ -59,6 +59,49 @@ async function companyFor(id) {
 
 const remindersFor = (assessmentId, userId) => Reminders.getByAssignment(assessmentId, userId).catch(() => []);
 
+/**
+ * Deduplicate rows to show ONLY the latest/current status for each employee + assessment pair.
+ * Completed status strictly replaces In Progress / Not Started / Overdue.
+ */
+export function deduplicateAssessmentRows(rows) {
+  if (!Array.isArray(rows) || rows.length <= 1) return rows || [];
+  const map = new Map();
+  const getWeight = (status) => {
+    const s = String(status || '').toLowerCase();
+    if (s.includes('complete') || s.includes('submitted')) return 4;
+    if (s.includes('progress')) return 3;
+    if (s.includes('overdue')) return 2;
+    if (s.includes('not started') || s.includes('assigned')) return 1;
+    return 0;
+  };
+  const getTime = (r) => {
+    const d = r.completedAt || r.startedAt || r.windowStart || r.assignedAt;
+    const t = d ? new Date(d).getTime() : 0;
+    return Number.isFinite(t) ? t : 0;
+  };
+
+  for (const r of rows) {
+    const empKey = String(r.userId || r.employeeId || r.email || '').trim().toLowerCase();
+    const assessKey = String(r.assessmentId || r.assessmentTitle || '').trim().toLowerCase();
+    const key = `${empKey}:::${assessKey}`;
+
+    if (!map.has(key)) {
+      map.set(key, r);
+    } else {
+      const existing = map.get(key);
+      const candWeight = getWeight(r.status);
+      const existWeight = getWeight(existing.status);
+
+      if (candWeight > existWeight) {
+        map.set(key, r);
+      } else if (candWeight === existWeight && getTime(r) >= getTime(existing)) {
+        map.set(key, r);
+      }
+    }
+  }
+  return [...map.values()];
+}
+
 /** One row per assigned employee of ONE assessment (completed or not). */
 export async function loadAssessmentRows({ assessment, assignments, reports, companyId, now = new Date() }) {
   const { userById, groups } = await lookups(companyId);
@@ -67,7 +110,29 @@ export async function loadAssessmentRows({ assessment, assignments, reports, com
     ? await EmployeeAssessmentAssignments.getByAssessment(assessment.id).catch(() => [])
     : [];
   const eaaByUser = new Map((eaaRows || []).map(r => [r.user_id, r]));
-  await ensureUsers(userById, assignments.map(ea => ea.userId));
+
+  // Canonical assignment projection: ensure only the latest assignment entry per employee
+  const uniqueAssignmentsMap = new Map();
+  for (const ea of assignments || []) {
+    if (!ea?.userId) continue;
+    const existing = uniqueAssignmentsMap.get(ea.userId);
+    if (!existing) {
+      uniqueAssignmentsMap.set(ea.userId, ea);
+    } else {
+      const isCandDone = ea.status === 'submitted' || ea.status === 'completed';
+      const isExistDone = existing.status === 'submitted' || existing.status === 'completed';
+      if (isCandDone && !isExistDone) {
+        uniqueAssignmentsMap.set(ea.userId, ea);
+      } else if (isCandDone === isExistDone) {
+        const candTime = new Date(ea.updatedAt || ea.submittedAt || ea.attemptStartedAt || ea.assignedAt || 0).getTime();
+        const existTime = new Date(existing.updatedAt || existing.submittedAt || existing.attemptStartedAt || existing.assignedAt || 0).getTime();
+        if (candTime >= existTime) uniqueAssignmentsMap.set(ea.userId, ea);
+      }
+    }
+  }
+  const cleanAssignments = [...uniqueAssignmentsMap.values()];
+
+  await ensureUsers(userById, cleanAssignments.map(ea => ea.userId));
   const reportsByUser = new Map();
   for (const r of reports) {
     if (r.assessmentId !== assessment.id) continue;
@@ -75,7 +140,7 @@ export async function loadAssessmentRows({ assessment, assignments, reports, com
     reportsByUser.get(r.userId).push(r);
   }
 
-  const rows = await mapLimit(assignments, 10, async (ea) => {
+  const rawRows = await mapLimit(cleanAssignments, 10, async (ea) => {
     const user = userById.get(ea.userId) || null;
     const group = groups.find(g => (g.employeeIds || []).includes(ea.userId)) || null;
     const managerId = user?.managerId || group?.managerId;
@@ -86,11 +151,12 @@ export async function loadAssessmentRows({ assessment, assignments, reports, com
       user, manager, group, company, reminders, now,
     });
   });
+  const rows = deduplicateAssessmentRows(rawRows);
   const summary = buildSummary(rows, assessment, company, now);
   return { rows, summary, company };
 }
 
-/** One row per SUBMISSION (report) across assessments. */
+/** One row per SUBMISSION (report) across assessments — only latest attempt per employee+assessment. */
 export async function loadSubmissionRows({ reports, companyId, now = new Date() }) {
   const { userById, groups } = await lookups(companyId);
   const assessmentCache = new Map();
@@ -115,8 +181,16 @@ export async function loadSubmissionRows({ reports, companyId, now = new Date() 
     attemptOf.set(r, n);
   }
 
-  await ensureUsers(userById, sortedAll.map(r => r.userId));
-  const rows = await mapLimit(sortedAll, 10, async (report) => {
+  // Deduplicate to only the single latest submission per employee + assessment
+  const latestReportsMap = new Map();
+  for (const r of sortedAll) {
+    const k = `${r.assessmentId || r.assessmentTitle}|${r.userId || r.user_id}`;
+    latestReportsMap.set(k, r); // sorted ascending, so later submittedAt overwrites earlier
+  }
+  const latestReports = [...latestReportsMap.values()];
+
+  await ensureUsers(userById, latestReports.map(r => r.userId));
+  const rows = await mapLimit(latestReports, 10, async (report) => {
     const assessment = (await getAssessment(report.assessmentId)) || { id: report.assessmentId, title: report.assessmentTitle };
     const rosterEa = (assessment.employeeAssignments || []).find(e => e.userId === report.userId) || {};
     const ea = {
@@ -148,14 +222,25 @@ export async function loadSubmissionRows({ reports, companyId, now = new Date() 
  */
 export async function loadPendingRows({ assessments, allowedIds = null, companyId, now = new Date() }) {
   const { userById, groups } = await lookups(companyId);
-  const pending = [];
+  const pendingMap = new Map();
   for (const assessment of assessments || []) {
     for (const ea of assessment.employeeAssignments || []) {
-      if (!ea?.userId || ea.status === 'submitted' || ea.status === 'cancelled') continue;
+      if (!ea?.userId || ea.status === 'submitted' || ea.status === 'completed' || ea.status === 'cancelled') continue;
       if (allowedIds && !allowedIds.has(ea.userId)) continue;
-      pending.push({ assessment, ea });
+      const key = `${ea.userId}:::${assessment.id}`;
+      const existing = pendingMap.get(key);
+      if (!existing) {
+        pendingMap.set(key, { assessment, ea });
+      } else {
+        const isCandStarted = Boolean(ea.attemptStartedAt || ea.startedAt || ea.status === 'in_progress');
+        const isExistStarted = Boolean(existing.ea.attemptStartedAt || existing.ea.startedAt || existing.ea.status === 'in_progress');
+        if (isCandStarted && !isExistStarted) {
+          pendingMap.set(key, { assessment, ea });
+        }
+      }
     }
   }
+  const pending = [...pendingMap.values()];
   await ensureUsers(userById, pending.map(p => p.ea.userId));
   const companyCache = new Map();
   const eaaCache = new Map();

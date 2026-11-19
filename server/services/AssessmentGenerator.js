@@ -12,6 +12,7 @@ import { chunkDensity, contentTokens, BM25 } from './TextRanking.js';
 import { buildDocumentModel, generateExtractiveQuestions } from './ExtractiveQuestionGenerator.js';
 import { TaskPool, TimeBudget, mapPool } from './GenScheduler.js';
 import questionChunkCache, { chunkCacheKey } from './QuestionChunkCache.js';
+import { sanitizeDocumentReferences, validateFillBlankQuality } from './QuestionStyleLearning.js';
 
 // ── Generation tuning ────────────────────────────────────────────────────────
 // Where the time used to go: Groq's free tier allows only ~7,000 tokens per
@@ -477,11 +478,15 @@ function buildCompactSystemPrompt(mode = 'doc') {
     ? `You write role-specific assessment questions from a job-description excerpt (it may include process documents).
 RULES
 1. Every question tests a responsibility, skill, process, tool or competency EXPLICITLY present in the excerpt, in the JD's own domain and at its seniority level, using its terminology. No outside knowledge; no coding questions unless the JD requires programming.
-2. Never ask about titles, headings, authors, versions, dates, page numbers or file names.`
+2. Never ask about titles, headings, authors, versions, dates, page numbers or file names.
+3. Self-contained questions only: NEVER use phrases like "According to the document...", "As per page X...", "Based on the section...", or mention document/file/page references in questions or options. Questions must read naturally as professional workplace assessments.
+4. For fill-in-the-blank questions: test domain terminology, technical parameters, or operational codes. NEVER test trivial grammar words (such as "is", "was", "the", "a", "an").`
     : `You write precise, document-specific assessment questions from ONE source excerpt.
 RULES
 1. Test only facts, steps, rules, thresholds, codes, systems and exceptions EXPLICITLY stated in the excerpt, using its exact terminology. No outside knowledge, no general best practice.
-2. Never ask about titles, headings, authors, reviewers, versions, dates, page numbers, file names or confidentiality labels. Draw on procedure steps, tables, decision rules, exceptions and body text.`;
+2. Never ask about titles, headings, authors, reviewers, versions, dates, page numbers, file names or confidentiality labels. Draw on procedure steps, tables, decision rules, exceptions and body text.
+3. Self-contained questions only: NEVER use phrases like "According to the document...", "As per page X...", "Based on the section...", or mention document/file/page references in questions or options. Questions must read naturally as professional workplace assessments.
+4. For fill-in-the-blank questions: test domain terminology, technical parameters, or operational codes. NEVER test trivial grammar words (such as "is", "was", "the", "a", "an").`;
   return `${head}\n${COMPACT_TAIL}`;
 }
 
@@ -524,7 +529,7 @@ function distribute(total, weights) {
   return out;
 }
 
-function buildCompactUserPrompt({ count, mode = 'doc', jobRole, sourceText, sourceName, sourceType, seed, skillsContext = [], stakeholder = false, processDelivery = false, avoidQuestions = [], typeNeeds = null, diffNeeds = null }) {
+function buildCompactUserPrompt({ count, mode = 'doc', jobRole, sourceText, sourceName, sourceType, seed, skillsContext = [], stakeholder = false, processDelivery = false, avoidQuestions = [], typeNeeds = null, diffNeeds = null, styleProfile = null }) {
   const docLabel = mode === 'jd' || sourceType === 'jd' ? 'Job Description' : 'Process Document / Internal Reference';
   const typeCounts = typeNeeds || { mcq: count };
   const tparts = [['mcq', 'mcq'], ['fill_blank', 'fill'], ['subjective', 'subj']].filter(([k]) => typeCounts[k] > 0).map(([k, s]) => `${s} x${typeCounts[k]}`);
@@ -538,10 +543,13 @@ function buildCompactUserPrompt({ count, mode = 'doc', jobRole, sourceText, sour
     ? 'SLA/KPI/governance content: allowed only where the excerpt states the exact thresholds, KPI names or reporting formats.'
     : 'Do NOT ask about governance, SLA/KPI management, reporting or delivery management unless that is the whole subject of the excerpt.');
   const skills = skillsContext.length > 0 ? `Role skills (context only, not a question source): ${skillsContext.slice(0, 12).join(', ')}\n` : '';
+  const styleSection = styleProfile && typeof styleProfile.toPromptInstructions === 'function' && styleProfile.toPromptInstructions()
+    ? `\n${styleProfile.toPromptInstructions()}\n`
+    : '';
   return `Role: ${jobRole || 'Professional'} | Source: ${sourceName || 'Source Document'} (${docLabel}) | Seed: ${seed}
 Write exactly ${count} questions (${tparts.join(', ')}; ${dparts.join(', ')}). Scenario/application questions where the excerpt allows; direct recall only for hard facts.
 ${scope.join(' ')}
-${skills}${buildAvoidSection(avoidQuestions, sourceText)}
+${skills}${styleSection}${buildAvoidSection(avoidQuestions, sourceText)}
 EXCERPT:
 ${sourceText}`;
 }
@@ -1355,7 +1363,9 @@ function isMetadataDerived(q) {
   return HEADER_FOOTER_PATTERNS.some(re => re.test(t)) || PERSON_NAME_PATTERNS.some(re => re.test(t));
 }
 function qualityFilter(batch, windowText) {
-  const noGeneric = filterGenericPhrasing(batch);
+  const sanitized = (batch || []).map(q => sanitizeDocumentReferences(q));
+  const validBlanks = sanitized.filter(q => validateFillBlankQuality(q)?.valid !== false);
+  const noGeneric = filterGenericPhrasing(validBlanks);
   const keywordPrefiltered = filterGrounded(noGeneric, windowText);
   const grounded = verifyQuoteGrounded(keywordPrefiltered, windowText);
   return grounded.filter(q => !isMetadataDerived(q));
@@ -1561,6 +1571,7 @@ async function runLLMTask(task, rt) {
     count: ask, mode: S.mode, jobRole: spec.jobRole, sourceText: excerpt, sourceName: S.name, sourceType: spec.sourceType,
     seed: `${spec.seed}-w${win.i}-r${task.round}`, skillsContext: spec.skillsContext || [], stakeholder: !!spec.stakeholder, processDelivery: !!spec.processDelivery,
     avoidQuestions: avoid, typeNeeds: task.typeNeeds && task.round === 0 ? scaleNeeds(task.typeNeeds, ask) : typeNeedsFor(S, ask), diffNeeds: task.diffNeeds && task.round === 0 ? scaleNeeds(task.diffNeeds, ask) : diffNeedsFor(S, ask),
+    styleProfile: spec.styleProfile,
   });
   let throttled = false;
   const onThrottle = (ms) => { if (!throttled) { throttled = true; rt.throttled++; } if (rt.throttled >= rt.inflight && rt.inflight > 0) rt.emit.throttle(ms); };
@@ -1832,7 +1843,7 @@ function tagMetadata(questions, { generatedFrom, stakeholderFlag = false, proces
   }));
 }
 
-export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed, supportingDocs, avoidQuestions = [], startingComboCounters = null, onProgress = null }) {
+export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkills, questionCount, questionTypes, employeeSeed, supportingDocs, avoidQuestions = [], startingComboCounters = null, onProgress = null, styleProfile = null }) {
   const num = Math.min(Math.max(parseInt(questionCount) || 5, 2), 100);
   const types = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes : ['mcq'];
   const baseSeed = employeeSeed || randomUUID().slice(0, 8);
@@ -1853,6 +1864,7 @@ export async function generateQuestionsFromJD({ jobRole, jobDescription, jdSkill
   const spec = {
     idx: 0, name: jobRole || 'Job Description', text: combinedSource, sourceType: 'jd', count: num, types,
     seed: baseSeed, jobRole, skillsContext: skillsList, mode: 'jd', skillsList, startingComboCounters, avoidQuestions,
+    styleProfile,
   };
   const { batches } = await runGeneration([spec], { onProgress, label: `JD "${jobRole || ''}"` });
   const result = batches[0];
@@ -1900,6 +1912,7 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
     avoidQuestions = [],                  // cross-version "don't repeat these" set, applied per-source
     startingComboCountersBySource = {},   // { [sourceName]: {easy,medium,hard} } from the previous version
     onProgress = null,                    // optional progress hook (see makeProgressEmitter)
+    styleProfile = null,                  // optional learned style profile from manual questions
   } = globalContext;
   fileSources = expandSplitSources(fileSources);
   const overallTotal = fileSources.reduce((s, f) => s + Math.min(100, Math.max(1, parseInt(f.questionCount) || 5)), 0);
@@ -1920,6 +1933,7 @@ export async function generateQuestionsFromFiles(fileSources, globalContext = {}
       idx, name: source.name, text, sourceType: source.sourceType || 'supporting', count, types: buildTypeSeqLocal(count), seed: srcSeed,
       jobRole: source.jobRole || jobRole, skillsContext: source.skills || skills, stakeholder: !!source.stakeholder, processDelivery: !!source.processDelivery,
       mode: 'doc', avoidQuestions, startingComboCounters: startingComboCountersBySource[source.name] || null,
+      styleProfile: source.styleProfile || styleProfile,
     };
   });
   let batches = [], states = [];

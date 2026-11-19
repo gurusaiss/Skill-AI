@@ -23,7 +23,7 @@ vi.mock('../DataStore.js', () => ({
   Reminders: { getByAssignment: vi.fn(async () => []) },
 }));
 
-const { loadAssessmentRows, loadSubmissionRows, loadPendingRows } = await import('./reportLoader.js');
+const { loadAssessmentRows, loadSubmissionRows, loadPendingRows, deduplicateAssessmentRows } = await import('./reportLoader.js');
 
 const assessment = {
   id: 'a1', title: 'SQL Basics', duration: 60, questionCount: 10, deadline: '2999-01-01T00:00:00Z',
@@ -59,5 +59,34 @@ describe('pending employees', () => {
   it('is limited to the caller\'s visible employees', async () => {
     const rows = await loadPendingRows({ assessments: [assessment], allowedIds: new Set(['u3']) });
     expect(rows.map(r => r.userId)).toEqual(['u3']);
+  });
+});
+
+describe('deduplicateAssessmentRows - Latest Status Only acceptance requirement', () => {
+  it('collapses historical Not Started -> In Progress -> Completed into exactly ONE Completed row', () => {
+    const historicalRows = [
+      { userId: 'emp_101', assessmentId: 'assess_sql', status: 'Not started', assignedAt: '2026-11-15T09:00:00Z' },
+      { userId: 'emp_101', assessmentId: 'assess_sql', status: 'In progress', startedAt: '2026-11-17T11:00:00Z' },
+      { userId: 'emp_101', assessmentId: 'assess_sql', status: 'Completed', completedAt: '2026-11-18T14:30:00Z', scorePct: 92 },
+    ];
+
+    const deduplicated = deduplicateAssessmentRows(historicalRows);
+    expect(deduplicated).toHaveLength(1);
+    expect(deduplicated[0].userId).toBe('emp_101');
+    expect(deduplicated[0].assessmentId).toBe('assess_sql');
+    expect(deduplicated[0].status).toBe('Completed');
+    expect(deduplicated[0].completedAt).toBe('2026-11-18T14:30:00Z');
+    expect(deduplicated[0].scorePct).toBe(92);
+  });
+
+  it('preserves separate records for genuinely different assessments for the same employee', () => {
+    const rows = [
+      { userId: 'emp_101', assessmentId: 'assess_sql', status: 'Completed', completedAt: '2026-11-18T14:30:00Z' },
+      { userId: 'emp_101', assessmentId: 'assess_python', status: 'In progress', startedAt: '2026-11-18T15:00:00Z' },
+    ];
+
+    const deduplicated = deduplicateAssessmentRows(rows);
+    expect(deduplicated).toHaveLength(2);
+    expect(deduplicated.map(r => r.assessmentId).sort()).toEqual(['assess_python', 'assess_sql']);
   });
 });

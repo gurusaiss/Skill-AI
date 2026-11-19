@@ -20,6 +20,7 @@ const store = () => new Proxy({}, { get: (_t, name) => (name === 'then' ? undefi
 vi.mock('../services/DataStore.js', () => ({
   RoleLibrary: store(), EmployeeChecklists: store(), Assessments: store(), GeneratedContent: store(),
   QuestionBankVersions: store(), QuestionBankArchives: store(), EmployeeAssessmentAssignments: store(),
+  PlatformSettings: store(),
 }));
 vi.mock('../services/UserStore.js', () => ({ default: new Proxy({}, { get: () => vi.fn(async () => null) }) }));
 vi.mock('../services/GenerationJobs.js', () => ({ default: new Proxy({}, { get: () => vi.fn(() => null) }) }));

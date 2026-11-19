@@ -933,6 +933,34 @@ class UserStore {
   }
 
   async _createAssignment(assignmentData) {
+    const targetUser = assignmentData.assigned_to_user || assignmentData.assignedToUser;
+    const targetModule = assignmentData.assignable_id || assignmentData.assignableId;
+
+    // Idempotent assignment check: avoid creating duplicate assignment rows for the same employee + module
+    if (targetUser && targetModule && !assignmentData.allowDuplicate) {
+      try {
+        const existingList = await this.getAssignments({ assigned_to_user: targetUser });
+        const existing = (existingList || []).find(a => (a.assignable_id || a.assignableId) === targetModule);
+        if (existing) {
+          const isCompleted = existing.status === 'completed';
+          const newStatus = isCompleted && (!assignmentData.status || assignmentData.status === 'assigned')
+            ? 'completed'
+            : (assignmentData.status || existing.status);
+          const updates = {
+            ...assignmentData,
+            status: newStatus,
+            progress: isCompleted ? 100 : (assignmentData.progress ?? existing.progress ?? 0),
+            updated_at: new Date().toISOString(),
+          };
+          delete updates.id;
+          delete updates.created_at;
+          return await this.updateAssignment(existing.id, updates);
+        }
+      } catch (err) {
+        console.warn('[UserStore] Existing assignment lookup warning:', err.message);
+      }
+    }
+
     const sb = getSB();
     const newA = {
       id:                 `assign_${uuidv4().slice(0, 8)}`,

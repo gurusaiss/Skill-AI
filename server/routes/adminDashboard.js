@@ -4,7 +4,7 @@
 import express from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import UserStore from '../services/UserStore.js';
-import { Companies, ApprovalRequests, AccessCodes, Groups, Assessments, Reports } from '../services/DataStore.js';
+import { Companies, ApprovalRequests, AccessCodes, Groups, Assessments, Reports, PendingModules } from '../services/DataStore.js';
 import { randomUUID } from 'crypto';
 import * as db from '../db/store.js';
 import { MANAGER_TIER_ROLES } from '../services/roleCapability.js';
@@ -105,19 +105,44 @@ router.get('/dashboard', authenticate, requireRole('admin'), async (req, res) =>
     const companyUserIds = new Set(companyUsers.map(u => u.userId || u.id));
 
     // 3. Assignments for company users
-    const [assignmentsRaw, modulesRaw, requestsRaw, approvalsRaw] = await Promise.allSettled([
+    const [assignmentsRaw, modulesRaw, requestsRaw, approvalsRaw, pendingModulesRaw] = await Promise.allSettled([
       UserStore.getAssignments({}),
       db.getModules(),
       UserStore.getAssignmentRequests({}),
       ApprovalRequests.getAll(),
+      PendingModules.getAll(),
     ]);
 
     const allAssignments = assignmentsRaw.status === 'fulfilled' ? (assignmentsRaw.value || []) : [];
     const allModules = modulesRaw.status === 'fulfilled' ? (modulesRaw.value || []) : [];
     const allRequests = requestsRaw.status === 'fulfilled' ? (requestsRaw.value || []) : [];
     const allApprovals = approvalsRaw.status === 'fulfilled' ? (approvalsRaw.value || []) : [];
+    const allPendingModules = pendingModulesRaw.status === 'fulfilled' ? (pendingModulesRaw.value || []) : [];
+    const postAssessmentModules = allPendingModules.filter(pm =>
+      pm && (pm.companyId === companyId || companyUserIds.has(pm.userId))
+    );
 
-    const companyAssignments = allAssignments.filter(a => companyUserIds.has(a.assigned_to_user));
+    // Deduplicate company assignments to canonical latest status per employee + module
+    const uniqueAssignmentsMap = new Map();
+    const statusRank = { completed: 3, in_progress: 2, ongoing: 2, assigned: 1, pending: 1, cancelled: 0 };
+    for (const a of allAssignments.filter(a => companyUserIds.has(a.assigned_to_user))) {
+      const key = `${a.assigned_to_user}:::${a.assignable_id || a.module_id || a.id}`;
+      const existing = uniqueAssignmentsMap.get(key);
+      if (!existing) {
+        uniqueAssignmentsMap.set(key, a);
+      } else {
+        const candRank = statusRank[String(a.status || '').toLowerCase()] ?? 1;
+        const existRank = statusRank[String(existing.status || '').toLowerCase()] ?? 1;
+        if (candRank > existRank) {
+          uniqueAssignmentsMap.set(key, a);
+        } else if (candRank === existRank) {
+          const candTime = new Date(a.updated_at || a.completed_at || a.created_at || 0).getTime();
+          const existTime = new Date(existing.updated_at || existing.completed_at || existing.created_at || 0).getTime();
+          if (candTime >= existTime) uniqueAssignmentsMap.set(key, a);
+        }
+      }
+    }
+    const companyAssignments = [...uniqueAssignmentsMap.values()];
     const completedAssignments = companyAssignments.filter(a => a.status === 'completed');
     const activeAssignments = companyAssignments.filter(a => a.status === 'in_progress');
     const pendingAssignments = companyAssignments.filter(a => a.status === 'assigned');
@@ -231,6 +256,7 @@ router.get('/dashboard', authenticate, requireRole('admin'), async (req, res) =>
           pendingApprovals: totalPendingApprovals,
         },
         recentActivity,
+        postAssessmentModules,
       },
       error: null,
     });

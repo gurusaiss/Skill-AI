@@ -20,7 +20,7 @@ import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import multer from 'multer';
 import UserStore from '../services/UserStore.js';
-import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds, Groups, Companies, QuestionBankVersions, EmployeeAssessmentAssignments, Reminders } from '../services/DataStore.js';
+import { Assessments, Submissions, Reports, RoleLibrary, ModuleAssignments, GeneratedContent, AssessmentThresholds, Groups, Companies, QuestionBankVersions, EmployeeAssessmentAssignments, Reminders, PlatformSettings, PendingModules } from '../services/DataStore.js';
 import EmailService from '../services/EmailService.js';
 import * as db from '../db/store.js';
 import { generateQuestionsFromJD } from '../services/AssessmentGenerator.js';
@@ -36,7 +36,7 @@ import { ASSESSMENT_DURATION_MINUTES, normalizeDuration } from '../services/asse
 import { resolveWindow, parseWindowInput } from '../services/assessmentSchedule.js';
 import { isRemovedFromAssessment, clearTombstones, deleteEmployeeAssignment, editEmployeeWindow, deleteAssessmentCascade } from '../services/assessmentRoster.js';
 import { toListAssessment, toListReport } from '../services/assessmentListView.js';
-import { loadAssessmentRows, loadSubmissionRows, loadPendingRows, ensureUsers } from '../services/reports/reportLoader.js';
+import { loadAssessmentRows, loadSubmissionRows, loadPendingRows, ensureUsers, deduplicateAssessmentRows } from '../services/reports/reportLoader.js';
 import { buildSummary, safeFilename, STATUS as REPORT_STATUS, timeTakenSeconds } from '../services/reports/reportData.js';
 import { buildAssessmentWorkbook, buildAllReportsWorkbook, buildIndividualWorkbook, buildTableWorkbook } from '../services/reports/xlsxReports.js';
 import { buildConsolidatedPdf, buildIndividualPdf, buildTablePdf } from '../services/reports/pdfReports.js';
@@ -1486,6 +1486,9 @@ router.get('/my', authenticate, async (req, res) => {
         jobRole: myAssignment?.jobRole || '',
         isVisible,
         isExpired,
+        attemptStartedAt: myAssignment?.attemptStartedAt || null,
+        draftAnswers: myAssignment?.draftAnswers || null,
+        settings: a.settings || null,
         scoring: assignmentStatus === 'submitted' ? myAssignment?.scoring : null,
       };
     }));
@@ -1660,8 +1663,10 @@ router.get('/export-all-reports', authenticate, requirePermission('reports.expor
         const assessments = ((await Assessments.getAll()) || [])
           .filter(a => companyId === 'default' || (a.companyId || 'default') === companyId);
         const pendingRows = await loadPendingRows({ assessments, allowedIds: scopeIds, companyId: req.user?.companyId });
-        rows = [...doneRows, ...pendingRows];
+        rows = deduplicateAssessmentRows([...doneRows, ...pendingRows]);
       } catch (e) { console.warn('[export-all-reports] pending rows skipped:', e.message); }
+    } else {
+      rows = deduplicateAssessmentRows(doneRows);
     }
     const summary = {
       ...buildSummary(rows, {}, null),
@@ -2170,7 +2175,7 @@ router.post('/:id/start', authenticate, async (req, res) => {
       const i = roster.findIndex(ea => ea.userId === userId);
       if (i < 0) break;
       if (roster[i].status === 'submitted' || roster[i].attemptStartedAt) { saved = roster[i].attemptStartedAt || null; break; }
-      roster[i] = { ...roster[i], attemptStartedAt: startedIso };
+      roster[i] = { ...roster[i], attemptStartedAt: startedIso, status: 'in_progress' };
       await Assessments.update(req.params.id, { employeeAssignments: roster, updatedAt: startedIso });
       const check = await Assessments.getById(req.params.id);
       const mine = check?.employeeAssignments?.find(ea => ea.userId === userId);
@@ -2180,6 +2185,39 @@ router.post('/:id/start', authenticate, async (req, res) => {
   } catch (e) {
     console.error('[POST /api/assessments/:id/start]', e.message);
     res.status(500).json({ success: false, data: null, error: 'Failed to record the start time' });
+  }
+});
+
+/**
+ * POST /api/assessments/:id/progress
+ * Safe incremental draft persistence — preserves answer state without submitting.
+ */
+router.post('/:id/progress', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { answers } = req.body || {};
+    const assessment = await Assessments.getById(req.params.id);
+    if (!assessment) return res.status(404).json({ success: false, data: null, error: 'Assessment not found' });
+    const entry = assessment.employeeAssignments?.find(ea => ea.userId === userId);
+    if (!entry) return res.status(403).json({ success: false, data: null, error: 'Not assigned to this assessment' });
+    if (entry.status === 'submitted') {
+      return res.json({ success: true, data: { status: 'submitted' }, error: null });
+    }
+    const nowIso = new Date().toISOString();
+    const roster = (assessment.employeeAssignments || []).map(ea => {
+      if (ea.userId !== userId) return ea;
+      return {
+        ...ea,
+        status: ea.status === 'submitted' ? 'submitted' : 'in_progress',
+        draftAnswers: answers !== undefined ? answers : ea.draftAnswers,
+        lastActiveAt: nowIso,
+      };
+    });
+    await Assessments.update(req.params.id, { employeeAssignments: roster, updatedAt: nowIso });
+    res.json({ success: true, data: { savedAt: nowIso }, error: null });
+  } catch (e) {
+    console.error('[POST /api/assessments/:id/progress]', e.message);
+    res.status(500).json({ success: false, data: null, error: 'Failed to save progress' });
   }
 });
 
@@ -2412,26 +2450,67 @@ For EACH weak area, write one concrete, specific improvement recommendation (1-2
       });
     }
 
-    // ── Post-assessment training module generation (opt-in / policy gated) ───────
-    // Check if post-assessment module generation is enabled. By default, competency
-    // assessments should not silently generate and force unvetted training modules
-    // onto employees unless explicitly configured in assessment.autoGenerateModules
-    // or company platform_settings.autoPostAssessmentModules === true.
+    // ── Post-assessment training module generation (adaptive & idempotent) ──────
     setImmediate(async () => {
+      const pmRecordId = `pm_${report.id}`;
+      const targetUserId = req.user.userId;
       try {
-        const companySettings = await PlatformSettings.getByCompany(req.user.companyId || 'default');
-        const autoModuleEnabled = assessment.autoGenerateModules === true ||
-                                  companySettings?.general?.autoPostAssessmentModules === true;
+        const companySettings = await PlatformSettings.getByCompany(req.user.companyId || 'default').catch(() => null);
+        const autoModuleDisabled = assessment.autoGenerateModules === false ||
+                                  companySettings?.general?.autoPostAssessmentModules === false;
 
-        if (!autoModuleEnabled) {
-          console.log(`[post-assessment] Skipping auto module generation for assessment=${req.params.id} (not enabled).`);
+        const user = await UserStore.getUserById(targetUserId).catch(() => null);
+        const score = report.score || 0;
+        const hasGaps = (report.weakAreas && report.weakAreas.length > 0) || (report.missingCompetencies && report.missingCompetencies.length > 0);
+
+        if (autoModuleDisabled || (score >= 95 && !hasGaps)) {
+          console.log(`[post-assessment] Auto module not required for assessment=${req.params.id} user=${targetUserId} (score=${score}, hasGaps=${hasGaps}).`);
+          await Reports.update(report.id, { moduleGenerationStatus: 'not_required' }).catch(() => {});
+          await PendingModules.create({
+            id: pmRecordId,
+            assessmentId: req.params.id,
+            assessmentTitle: assessment.title || 'Assessment',
+            reportId: report.id,
+            userId: targetUserId,
+            userName: user?.name || req.user.name || 'Employee',
+            companyId: req.user.companyId || 'default',
+            status: 'not_required',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }).catch(() => {});
           return;
         }
 
-        const targetUserId = req.user.userId;
-        console.log(`[auto-assign] Starting for user=${targetUserId} report=${report.id}`);
+        // Idempotency: skip if already assigned for this submission
+        const existingMA = (await ModuleAssignments.getByUserId(targetUserId).catch(() => [])).find(a => a.assessmentReportId === report.id);
+        if (existingMA) {
+          console.log(`[auto-assign] Module already assigned for report=${report.id}, skipping duplicate generation.`);
+          await Reports.update(report.id, { moduleGenerationStatus: 'assigned', generatedModuleId: existingMA.moduleId }).catch(() => {});
+          await PendingModules.update(pmRecordId, { status: 'assigned', moduleId: existingMA.moduleId, updatedAt: new Date().toISOString() }).catch(() => {});
+          return;
+        }
 
-        const user = await UserStore.getUserById(targetUserId);
+        // 1. Pending status
+        await Reports.update(report.id, { moduleGenerationStatus: 'pending' }).catch(() => {});
+        await PendingModules.create({
+          id: pmRecordId,
+          assessmentId: req.params.id,
+          assessmentTitle: assessment.title || 'Assessment',
+          reportId: report.id,
+          userId: targetUserId,
+          userName: user?.name || req.user.name || 'Employee',
+          companyId: req.user.companyId || 'default',
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }).catch(() => {});
+
+        // 2. Processing status
+        await Reports.update(report.id, { moduleGenerationStatus: 'processing' }).catch(() => {});
+        await PendingModules.update(pmRecordId, { status: 'processing', updatedAt: new Date().toISOString() }).catch(() => {});
+
+        console.log(`[auto-assign] Starting module generation for user=${targetUserId} report=${report.id}`);
+
         const skills = report.weakAreas?.length > 0
           ? report.weakAreas
           : report.missingCompetencies?.length > 0
@@ -2702,9 +2781,15 @@ Return ONLY valid JSON matching exactly this structure:
         const moduleId = newModule?.id;
         if (!moduleId) {
           console.error('[auto-assign] Module creation returned no ID — possible DB schema issue. Check Supabase modules table.');
+          await Reports.update(report.id, { moduleGenerationStatus: 'failed', moduleGenerationError: 'Module creation returned no ID' }).catch(() => {});
+          await PendingModules.update(pmRecordId, { status: 'failed', error: 'Module creation returned no ID', updatedAt: new Date().toISOString() }).catch(() => {});
           return;
         }
         console.log(`[auto-assign] Module created: id=${moduleId}`);
+
+        // 3. Generated status
+        await Reports.update(report.id, { moduleGenerationStatus: 'generated', generatedModuleId: moduleId }).catch(() => {});
+        await PendingModules.update(pmRecordId, { status: 'generated', moduleId, updatedAt: new Date().toISOString() }).catch(() => {});
 
         // Verify sessions were persisted — re-fetch and patch if content is empty
         try {
@@ -2777,10 +2862,16 @@ Return ONLY valid JSON matching exactly this structure:
           dueDate: endDate.toISOString(),
         });
 
+        // 4. Assigned status
+        await Reports.update(report.id, { moduleGenerationStatus: 'assigned', generatedModuleId: moduleId }).catch(() => {});
+        await PendingModules.update(pmRecordId, { status: 'assigned', moduleId, updatedAt: new Date().toISOString() }).catch(() => {});
+
         console.log(`[auto-assign] ✅ Complete — module "${moduleTitle}" assigned to user ${targetUserId}`);
       } catch (e) {
         console.error('[auto-assign] FAILED:', e.message);
         if (e.stack) console.error('[auto-assign] Stack:', e.stack.split('\n').slice(0, 5).join('\n'));
+        await Reports.update(report.id, { moduleGenerationStatus: 'failed', moduleGenerationError: e.message }).catch(() => {});
+        await PendingModules.update(pmRecordId, { status: 'failed', error: e.message, updatedAt: new Date().toISOString() }).catch(() => {});
       }
     });
 

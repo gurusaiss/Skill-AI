@@ -47,6 +47,6 @@ coverage/
 # Temporary files
 *.tmp
 .cache/
-.claude/worktrees/
+.claude/
 server/db/_probe2.js
 supabaseinfo.*

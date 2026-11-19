@@ -4,7 +4,33 @@ Plain-language release notes for every commit pushed from here on — what chang
 
 ---
 
-## 2026-11-02 — Competency assessment controls: Approval gating, strict locked questions, post-assessment module policy
+## 2026-11-19 — Core Platform Hardening: Latest Status Reporting, Assessment Stability, Question Generation Quality, and Post-Assessment Adaptive Modules
+
+1. **Latest Status Only Across Reports & Dashboards:**
+   - **Root Cause:** Historical assignment snapshots (Not Started, In Progress, Completed) were emitting multiple rows per employee for the same assessment or module in downloaded exports and UI dashboards.
+   - **Fix:** Implemented canonical assignment deduplication via `deduplicateAssessmentRows()` in `server/services/reports/reportLoader.js`, `server/routes/assessment.js`, `server/routes/report.js`, `server/routes/assignments.js`, and `server/routes/adminDashboard.js`.
+   - **Outcome:** Exactly ONE row per employee-assignment pair is displayed across assessment reports, module reports, consolidated PDF/Excel/CSV exports, and admin/manager dashboards. The latest status (Completed > In Progress > Overdue > Not Started) strictly replaces historical statuses.
+   - Idempotent upsert enforced in `server/services/UserStore.js` to prevent duplicate row creation in DB.
+
+2. **Assessment Stability & Timer Integrity (No Auto-Submit / Reset on Tab Switch):**
+   - **Root Cause:** Inactive tabs throttled JavaScript intervals and re-triggered auth/window focus reloads that reset React state and timer count.
+   - **Fix:** Refactored `client/src/pages/Assessment.jsx` to use an absolute wall-clock deadline architecture (`deadlineMs` stored in `localStorage` and synchronized against timestamps).
+   - Tab switching, visibility change, and window blur never submit questions, never submit the assessment, never refresh the page, and never reset or pause the running timer.
+   - Integrated online/offline network detection with recovery banner and incremental background progress persistence (`POST /api/assessments/:id/progress`).
+
+3. **AI Question Generation Quality & Style Learning:**
+   - **Self-Contained Questions:** Removed all document/file/page references ("According to the document...", "As per page 1...", section references) from question stems, options, and explanations in `server/services/ExtractiveQuestionGenerator.js`, `server/services/AssessmentGenerator.js`, and `server/services/QuestionStyleLearning.js`. Questions read naturally as standalone workplace evaluations.
+   - **Meaningful Fill-in-the-Blanks:** Added strict quality filtering rejecting trivial grammar blanks (e.g. "is", "was", "the", "a", "an") in favor of domain terminology, operational codes, and system parameters.
+   - **Question Style Learning:** Implemented `server/services/QuestionStyleLearning.js` and wired it into `server/routes/roles.js` and `server/services/AssessmentGenerator.js`. Learns framing, complexity, and scenario depth from approved manual questions in the Job Library while strictly preserving 100% factual grounding from the role's current JD and supporting documents.
+
+4. **Post-Assessment Training Module Generation & Explicit Status Tracking:**
+   - Automatically evaluates assessed knowledge gaps and weak areas upon submission in `server/routes/assessment.js`.
+   - Pre-generates multi-day sessions and knowledge quizzes directly into the database (`db.createModule`) and assigns them idempotently.
+   - Added end-to-end status tracking (`pending` → `processing` → `generated` → `assigned`, or `not_required` for perfect scores with no gaps, or `failed` on error) persisted on `Reports` and `PendingModules`, and exposed on admin and manager dashboards.
+
+5. **Testing & Verification:**
+   - All 29 Vitest server test suites passed (348 tests).
+   - Passed UI no-horizontal-scroll layout audit (`npm run check:scroll`).
 
 1. **Assessment Assignment Approval Gate:**
    - In `server/services/AssessmentAutoAssign.js`, removed the unapproved draft fallback that automatically assigned raw question banks when employees joined or were created. Assessments now strictly require an officially approved question bank version (`QuestionBankVersions.getApproved`).

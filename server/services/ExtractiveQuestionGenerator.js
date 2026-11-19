@@ -263,7 +263,7 @@ function finalize(c, model, rng, state) {
     question: c.stem,
     difficulty: c.difficulty,
     ...(mcq ? { options: mcq.options, answer: mcq.answer } : { answer: c.answer }),
-    explanation: `Stated in the document${sec ? ` (${sec})` : ''}: "${clipWords(quote, 28)}"`,
+    explanation: `Verified procedure${sec ? ` (${sec})` : ''}: "${clipWords(quote, 28)}"`,
     skillArea: c.skillArea || topicOf(model, c.s),
     sourceSection: c.s.section || null,
     sourceQuote: quote,
@@ -272,14 +272,35 @@ function finalize(c, model, rng, state) {
   return q;
 }
 
+// Trivial grammar words and auxiliary verbs that must never be used as fill-in-the-blank answers
+const TRIVIAL_FILL_BLANK_WORDS = new Set([
+  'is', 'was', 'are', 'were', 'be', 'been', 'being',
+  'a', 'an', 'the', 'as', 'at', 'by', 'for', 'from', 'in', 'into', 'of', 'on', 'onto',
+  'to', 'with', 'within', 'without', 'and', 'or', 'but', 'nor', 'so', 'yet',
+  'that', 'this', 'these', 'those', 'it', 'its', 'they', 'them', 'their',
+  'can', 'could', 'shall', 'should', 'will', 'would', 'may', 'might', 'must',
+  'do', 'does', 'did', 'have', 'has', 'had', 'then', 'than', 'also', 'just'
+]);
+
+function isMeaningfulBlank(text) {
+  if (!text || typeof text !== 'string') return false;
+  const trimmed = text.trim();
+  if (trimmed.length < 2) return false;
+  const lower = trimmed.toLowerCase();
+  if (TRIVIAL_FILL_BLANK_WORDS.has(lower)) return false;
+  const words = lower.split(/\s+/).filter(Boolean);
+  if (words.every(w => TRIVIAL_FILL_BLANK_WORDS.has(w))) return false;
+  return true;
+}
+
 // ── constructs (each returns candidate descriptors; options are built at selection time) ──
 function cand(kind, type, difficulty, s, w, o) { return { kind, type, difficulty, s, sIdx: s.i, w, ...o }; }
 
 function clozeCandidates(model, s, rng) {
   const out = [];
   if (s.kind === 'kv') return out;
-  const spans = model.span(s).filter(sp => sp.start > 0 && sp.text.length >= 2 && sp.text.length <= 40 && sp.score >= 1.4).slice(0, 3);
-  const leads = ['Which option correctly completes this statement from the document?', 'According to the document, what fills the blank in this statement?', 'Complete the statement taken from the document.'];
+  const spans = model.span(s).filter(sp => sp.start > 0 && sp.text.length >= 2 && sp.text.length <= 40 && sp.score >= 1.4 && isMeaningfulBlank(sp.text)).slice(0, 3);
+  const leads = ['Which option correctly completes this statement:', 'What term correctly fills the blank in this statement:', 'Complete the operational statement:'];
   for (const sp of spans) {
     const w = quoteWindow(s.text, sp.start, sp.end);
     const win = s.text.slice(w.start, w.end);
@@ -293,7 +314,7 @@ function clozeCandidates(model, s, rng) {
     const dis = spanDistractors(model, sp, s, rng, 3);
     if (dis) out.push(cand('cloze', 'mcq', diff, s, 0.5 + sp.score * 0.2, { stem: `${leads[Math.floor(rng() * leads.length)]} "${blanked}"`, mcq: { correct: sp.text, dis }, quote: win }));
     const wc = wordsOf(sp.text).length;
-    if (wc <= (sp.type === 'phrase' ? 3 : 4)) out.push(cand('cloze', 'fill_blank', diff, s, 0.3 + sp.score * 0.2, { stem: `Fill in the blank using the document: "${blanked}"`, answer: sp.text, quote: win }));
+    if (wc <= (sp.type === 'phrase' ? 3 : 4)) out.push(cand('cloze', 'fill_blank', diff, s, 0.3 + sp.score * 0.2, { stem: `Fill in the blank with the correct term: "${blanked}"`, answer: sp.text, quote: win }));
   }
   return out;
 }
@@ -359,7 +380,7 @@ function conditionCandidate(model, s, rng) {
   let dis = textDistractors(model, conds, p.text, s, rng, 3);
   if (!dis) dis = textDistractors(model, [...conds, ...poolOf(model, '_obls', parseObligation)], p.text, s, rng, 3);
   if (!dis) return null;
-  return cand('condition', 'mcq', 'medium', s, 1.6, { stem: `According to the document, ${lcFirst(p.kw)} ${p.cond}, what is the prescribed outcome?`, mcq: { correct: p.text, dis }, quote: s.text });
+  return cand('condition', 'mcq', 'medium', s, 1.6, { stem: `When ${lcFirst(p.kw)} ${p.cond}, what is the prescribed outcome?`, mcq: { correct: p.text, dis }, quote: s.text });
 }
 function obligationCandidate(model, s, rng) {
   const p = parseObligation(s); if (!p || wordsOf(s.text).length > 34) return null;
@@ -368,19 +389,19 @@ function obligationCandidate(model, s, rng) {
   if (!dis) return null;
   const subj = /^(The|A|An)\s/.test(p.subj) ? lcFirst(p.subj) : p.subj;
   let q;
-  if (p.form === 'req') q = `According to the document, what ${/s$/.test(p.modal) ? 'does' : 'do'} ${subj} require?`;
-  else if (p.modal === 'may not') q = `According to the document, what may ${subj} NOT do?`;
-  else if (/ not$/.test(p.modal)) q = `According to the document, what ${p.modal.replace(/\s+not$/, '')} ${subj} NOT do?`;
-  else if (/required to$/.test(p.modal)) q = `According to the document, what ${/^are/.test(p.modal) ? 'are' : 'is'} ${subj} required to do?`;
-  else if (/^needs? to$/.test(p.modal)) q = `According to the document, what ${/^needs/.test(p.modal) ? 'does' : 'do'} ${subj} need to do?`;
-  else q = `According to the document, what ${p.modal} ${subj} do?`;
+  if (p.form === 'req') q = `What ${/s$/.test(p.modal) ? 'does' : 'do'} ${subj} require?`;
+  else if (p.modal === 'may not') q = `What may ${subj} NOT do?`;
+  else if (/ not$/.test(p.modal)) q = `What ${p.modal.replace(/\s+not$/, '')} ${subj} NOT do?`;
+  else if (/required to$/.test(p.modal)) q = `What ${/^are/.test(p.modal) ? 'are' : 'is'} ${subj} required to do?`;
+  else if (/^needs? to$/.test(p.modal)) q = `What ${/^needs/.test(p.modal) ? 'does' : 'do'} ${subj} need to do?`;
+  else q = `What ${p.modal} ${subj} do?`;
   return cand('obligation', 'mcq', 'medium', s, 1.3, { stem: q, mcq: { correct: p.text, dis }, quote: s.text });
 }
 function definitionCandidate(model, s, rng) {
   const p = parseDefinition(s); if (!p || wordsOf(s.text).length > 32) return null;
   const dis = textDistractors(model, poolOf(model, '_defs', parseDefinition), p.text, s, rng, 3);
   if (!dis) return null;
-  return cand('definition', 'mcq', 'easy', s, 1.0, { stem: `According to the document, which of the following describes "${p.term}"?`, mcq: { correct: p.text, dis }, quote: s.text, skillArea: p.term });
+  return cand('definition', 'mcq', 'easy', s, 1.0, { stem: `Which of the following describes "${p.term}"?`, mcq: { correct: p.text, dis }, quote: s.text, skillArea: p.term });
 }
 function kvCandidate(model, s, rng) {
   const kv = parseKvSentence(s); if (!kv) return null;
@@ -392,7 +413,7 @@ function kvCandidate(model, s, rng) {
     if (nxt && contiguous(model, s, nxt)) quote = `${s.text} ${nxt.text}`; else return null;
   }
   const sec = sectionLabel(s);
-  return cand('kv', 'mcq', 'easy', s, 0.9, { stem: `According to the document, what is specified for "${kv.key}"${sec ? ` under "${sec}"` : ''}?`, mcq: { correct: kv.text, dis }, quote });
+  return cand('kv', 'mcq', 'easy', s, 0.9, { stem: `What is specified for "${kv.key}"${sec ? ` regarding "${sec}"` : ''}?`, mcq: { correct: kv.text, dis }, quote });
 }
 
 function contiguous(model, a, b) {
@@ -418,7 +439,7 @@ function sequenceCandidates(model, rng) {
     const headB = bw.slice(0, 21);
     const quote = `${aw.slice(-Math.min(10, Math.max(4, 25 - headB.length))).join(' ')} ${headB.join(' ')}`; // tail of step A + head of step B: contiguous in the source
     const sec = sectionLabel(a.s);
-    const c = cand('sequence', 'mcq', 'medium', b.s, 1.7, { stem: `In the documented procedure${sec ? ` for "${sec}"` : ''}, which step comes immediately after: "${stripEndPunct(a.p.body)}"?`, mcq: { correct, dis }, quote });
+    const c = cand('sequence', 'mcq', 'medium', b.s, 1.7, { stem: `In the standard procedure${sec ? ` for "${sec}"` : ''}, which step comes immediately after: "${stripEndPunct(a.p.body)}"?`, mcq: { correct, dis }, quote });
     c.anchorSIdx = a.s.i; c.s = a.s; // the question is "about" step A's passage
     out.push(c);
   }
@@ -448,7 +469,7 @@ function statementCandidate(model, s, rng) {
   if (variants.length < 3) return null;
   const chosen = shuffled(variants, rng).slice(0, 3);
   const sec = sectionLabel(s); const topic = topicOf(model, s);
-  const stem = sec ? `Which statement from the "${sec}" part of the document is correct?` : `Which statement about ${topic} is consistent with the document?`;
+  const stem = sec ? `Which statement regarding "${sec}" is correct?` : `Which statement about ${topic} is correct?`;
   return cand('statement', 'mcq', 'hard', s, 1.1, { stem, mcq: { correct: text, dis: chosen }, quote: text, maxLen: 230, skillArea: topic });
 }
 
@@ -463,7 +484,7 @@ function summaryCandidates(model) {
     if (pick.some(x => wordsOf(parseStepLine(x.text)?.body || x.text).length > 24)) continue;
     const pts = pick.map(x => '• ' + stripEndPunct(parseStepLine(x.text)?.body || x.text));
     const label = sec === '_' ? null : sectionLabel(pick[0]);
-    out.push(cand('summary', 'subjective', 'medium', pick[0], 1.0, { stem: `Outline the first steps the document prescribes${label ? ` for "${label}"` : ''}, in order.`, answer: pts.join(' | '), quote: clipWords(pick[0].text, 24), skillArea: label || undefined }));
+    out.push(cand('summary', 'subjective', 'medium', pick[0], 1.0, { stem: `Outline the first required procedure steps${label ? ` for "${label}"` : ''}, in order.`, answer: pts.join(' | '), quote: clipWords(pick[0].text, 24), skillArea: label || undefined }));
   }
   const byPara = new Map();
   for (const s of model.usable) { if (s.kind !== 'sentence') continue; if (!byPara.has(s.para)) byPara.set(s.para, []); byPara.get(s.para).push(s); }
@@ -473,7 +494,7 @@ function summaryCandidates(model) {
     if (top.some(x => wordsOf(x.text).length > 26)) continue;
     const pts = top.map(x => '• ' + stripEndPunct(x.text));
     const topic = topicOf(model, top[0]);
-    out.push(cand('summary', 'subjective', 'hard', top[0], 0.8, { stem: `Based on the document, explain the rules, thresholds and conditions that apply to ${topic}.`, answer: pts.join(' | '), quote: clipWords(top[0].text, 24), skillArea: topic }));
+    out.push(cand('summary', 'subjective', 'hard', top[0], 0.8, { stem: `Explain the operational rules, thresholds, and conditions that apply to ${topic}.`, answer: pts.join(' | '), quote: clipWords(top[0].text, 24), skillArea: topic }));
   }
   return out;
 }

@@ -113,24 +113,46 @@ router.get('/all', authenticate, async (req, res) => {
       const userAssignments = allAssignments.filter(a =>
         (a.assigned_to_user || a.employee_id) === uid
       );
-      const completed = userAssignments.filter(a => a.status === 'completed');
-      const completionRate = userAssignments.length > 0
-        ? Math.round((completed.length / userAssignments.length) * 100)
+
+      // Deduplicate to ensure each module displays ONLY its single latest status
+      const uniqueMap = new Map();
+      const statusRank = { completed: 3, in_progress: 2, ongoing: 2, assigned: 1, pending: 1, cancelled: 0 };
+      for (const a of userAssignments) {
+        const modKey = String(a.assignable_id || a.module_id || a.id).trim().toLowerCase();
+        const existing = uniqueMap.get(modKey);
+        if (!existing) {
+          uniqueMap.set(modKey, a);
+        } else {
+          const candRank = statusRank[String(a.status || '').toLowerCase()] ?? 1;
+          const existRank = statusRank[String(existing.status || '').toLowerCase()] ?? 1;
+          if (candRank > existRank) {
+            uniqueMap.set(modKey, a);
+          } else if (candRank === existRank) {
+            const candTime = new Date(a.updated_at || a.completed_at || a.created_at || 0).getTime();
+            const existTime = new Date(existing.updated_at || existing.completed_at || existing.created_at || 0).getTime();
+            if (candTime >= existTime) uniqueMap.set(modKey, a);
+          }
+        }
+      }
+      const dedupedAssignments = [...uniqueMap.values()];
+      const completed = dedupedAssignments.filter(a => a.status === 'completed');
+      const completionRate = dedupedAssignments.length > 0
+        ? Math.round((completed.length / dedupedAssignments.length) * 100)
         : 0;
 
       return {
         userId: uid,
         employeeName: u.name || u.email || 'Unknown',
         email: u.email || '',
-        totalAssignments: userAssignments.length,
+        totalAssignments: dedupedAssignments.length,
         completedAssignments: completed.length,
         completionRate,
-        lastActivity: userAssignments.reduce((latest, a) => {
+        lastActivity: dedupedAssignments.reduce((latest, a) => {
           const d = a.updated_at || a.created_at;
           return (!latest || (d && d > latest)) ? d : latest;
         }, null),
         jobRole: u.jobRole || u.job_role || '',
-        assignments: userAssignments.map(a => ({
+        assignments: dedupedAssignments.map(a => ({
           id: a.id,
           // Resolve module name from the module lookup map
           moduleName: a.module_name || a.title || a.name

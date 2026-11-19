@@ -20,6 +20,7 @@ import { authenticate, requireRole, requirePermission } from '../middleware/auth
 import { RoleLibrary, EmployeeChecklists, Assessments, GeneratedContent, QuestionBankVersions, QuestionBankArchives, EmployeeAssessmentAssignments } from '../services/DataStore.js';
 import { pickArchiveSource, buildArchiveDoc, findIdenticalArchive, nextQuarterNumber, quarterLabel, archiveSummary } from '../services/quarterArchive.js';
 import { generateQuestionsFromJD, validateQuestionBank, generateQuestionsFromFiles, assessSourceQuality, MIN_SOURCE_CHARS } from '../services/AssessmentGenerator.js';
+import { buildStyleProfileFromQuestions } from '../services/QuestionStyleLearning.js';
 import UserStore from '../services/UserStore.js';
 import { MANAGER_TIER_ROLES } from '../services/roleCapability.js';
 import GenerationJobs from '../services/GenerationJobs.js';
@@ -946,10 +947,12 @@ router.put('/:id', authenticate, denyManager, requireRole('admin'), requirePermi
             // generation the same way Regenerate does, and must respect the
             // same "don't bring back what the admin deleted" contract.
             const avoidQuestions = buildAvoidQuestions(mergedRole, mergedRole.questionBank || []);
+            const manualQuestions = (mergedRole.questions || []).filter(q => q && (q.isManual === true || q.isManual === 'true'));
+            const styleProfile = buildStyleProfileFromQuestions(effectiveRole, manualQuestions, req.params.id);
             if (fileSources.length > 0) {
               questions = await generateQuestionsFromFiles(fileSources, {
                 jobRole: effectiveRole, skills: effectiveSkills, seed: `qbank-${req.params.id}-upd`,
-                onProgress, avoidQuestions,
+                onProgress, avoidQuestions, styleProfile,
               });
             } else {
               questions = await generateQuestionsFromJD({
@@ -958,7 +961,7 @@ router.put('/:id', authenticate, denyManager, requireRole('admin'), requirePermi
                 questionTypes: buildTypeSequence(targetCount),
                 employeeSeed: `qbank-${req.params.id}-upd-${Date.now()}`,
                 supportingDocs: mergedRole.supportingDocs || [],
-                onProgress, avoidQuestions,
+                onProgress, avoidQuestions, styleProfile,
               });
             }
             // Save partial results rather than discarding everything on a
@@ -1832,6 +1835,7 @@ async function regenerateQuestionsHandler(req, res, opts = {}) {
       try {
         const onProgress = (evt) => GenerationJobs.progress(req.params.id, evt);
         let aiQuestions;
+        const styleProfile = buildStyleProfileFromQuestions(updatedRole.roleName, manualQuestions, updatedRole.id);
         if (hasFiles) {
           let genSources = fileSources;
           // Scale per-file counts proportionally whenever anything is being
@@ -1846,6 +1850,7 @@ async function regenerateQuestionsHandler(req, res, opts = {}) {
             avoidQuestions,
             startingComboCountersBySource: (priorComboCounters && typeof priorComboCounters === 'object' && !('easy' in priorComboCounters)) ? priorComboCounters : {},
             onProgress,
+            styleProfile,
           });
         } else {
           aiQuestions = await generateQuestionsFromJD({
@@ -1860,6 +1865,7 @@ async function regenerateQuestionsHandler(req, res, opts = {}) {
             avoidQuestions,
             startingComboCounters: (priorComboCounters && 'easy' in priorComboCounters) ? priorComboCounters : null,
             onProgress,
+            styleProfile,
           });
         }
 
