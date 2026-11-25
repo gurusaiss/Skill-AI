@@ -154,16 +154,19 @@ function isAssignmentLocked(assignment) {
   return Boolean(assignment.startedAt) || ['in_progress', 'submitted'].includes(assignment.status);
 }
 
-async function resolveEmployeeQuestions(assessment, assignment, userId, prefetchedEaa) {
+export async function resolveEmployeeQuestions(assessment, assignment, userId, prefetchedEaa) {
   if (!assignment) return { questions: null, source: null };
 
+  const locked = isAssignmentLocked(assignment);
   const embedded = Array.isArray(assignment.questions)
     ? assignment.questions.map(stripInternalMetadata)
     : null;
 
-  // A locked (started/submitted) assignment keeps exactly what it was served.
-  if (isAssignmentLocked(assignment)) {
-    return embedded ? { questions: embedded, source: 'embedded' } : { questions: null, source: null };
+  // A locked (started/submitted) assignment with embedded questions keeps
+  // exactly what it was served. Version-backed assignments hold no embedded
+  // array, so they must still resolve from questionBankVersionId below.
+  if (locked && embedded) {
+    return { questions: embedded, source: 'embedded' };
   }
 
   if (assessment?.questionBankVersionId) {
@@ -190,11 +193,17 @@ async function resolveEmployeeQuestions(assessment, assignment, userId, prefetch
         // Fix: keep whatever ordering the employee already has for ids still
         // present in the CURRENT approved locked version, then append any locked
         // questions that order doesn't cover yet.
+        //
+        // Only append missing questions when the assignment has NOT started yet
+        // (or has no stored order), so an in-progress/submitted attempt never
+        // has its question count or positions altered mid-flight.
         const orderedIds = storedOrder.filter(qid => byId.has(qid));
-        const missingIds = allowedBank.map(q => q.id).filter(qid => !orderedIds.includes(qid));
+        const missingIds = (!locked || orderedIds.length === 0)
+          ? allowedBank.map(q => q.id).filter(qid => !orderedIds.includes(qid))
+          : [];
         const order = [...orderedIds, ...missingIds];
 
-        if (missingIds.length > 0) {
+        if (missingIds.length > 0 && !locked) {
           console.warn(`[assessment] question_order for assessment=${assessment.id} user=${userId} covered ${orderedIds.length}/${allowedBank.length} approved locked questions — reconciled by appending ${missingIds.length} missing question(s).`);
           // Persist the reconciliation so it's stable across requests instead
           // of being silently recomputed every time — this is the only write
@@ -2314,6 +2323,15 @@ router.post('/:id/submit', authenticate, async (req, res) => {
     // being scored is always identical to the set that was served.
     const { questions: resolvedForScoring } = await resolveEmployeeQuestions(assessment, assignment, req.user.userId);
     const questions = resolvedForScoring || [];
+
+    if (questions.length === 0) {
+      console.error(`[submit] Cannot score assessment ${req.params.id}/${req.user.userId}: resolved 0 questions`);
+      return res.status(500).json({
+        success: false,
+        data: null,
+        error: 'Unable to load assessment questions for scoring. Please contact your administrator.',
+      });
+    }
 
     // Safety net against the exact class of bug being fixed here: if the
     // client answered more questions than we just resolved, the two sides
